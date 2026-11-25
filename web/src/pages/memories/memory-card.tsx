@@ -34,7 +34,11 @@ export function MemoryCard({
           <MoreButton></MoreButton>
         </MemoryDropdown>
       }
-      sharedBadge={<SharedBadge>{data?.owner_name}</SharedBadge>}
+      sharedBadge={
+        <SharedBadge userId={data?.user_id} ownerNickname={data?.nickname}>
+          {data?.nickname}
+        </SharedBadge>
+      }
       onClick={navigateToMemory(data?.id)}
     />
   );

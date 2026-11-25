@@ -6,6 +6,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/progressstore"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 )
@@ -28,6 +29,8 @@ type DatasetService struct {
 	docEngine        engine.DocEngine
 	embeddingCache   *utility.EmbeddingLRU
 	checkpointLoader syncCheckpointLoader
+	// progressReader reads the running-state snapshot. Tests inject a fake.
+	progressReader progressReader
 	// tagVocabularyLoader resolves the selectable-tag vocabulary for a tag
 	// source file (parser_config.tags.tag_file_id). It is a field so tests can
 	// inject a fake; in production it defaults to
@@ -52,6 +55,7 @@ func NewDatasetService() *DatasetService {
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        engine.Get(),
 		embeddingCache:   utility.NewEmbeddingLRU(1000),
+		progressReader:   progressstore.Default(),
 	}
 	if loader, ok := engine.GetMessageQueueEngine().(syncCheckpointLoader); ok {
 		datasetService.checkpointLoader = loader

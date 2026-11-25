@@ -12,11 +12,12 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
 func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
 	}, true, false)
@@ -30,7 +31,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 }
 
 func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
 	}, false, false)
@@ -45,7 +46,7 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
 	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
 	// tokens; a capitalized query term must not silently match nothing.
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
 	}, false, false)
 
@@ -61,7 +62,7 @@ func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
 	// Only AND/OR/NOT are operators, and only in upper case: a folded "or" is a
 	// term clause, which re-bases minimum_should_match and turns a 94-hit search
 	// into a 32-hit one (see lowerCaseQueryText).
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: `(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("MES"^0.7)`,
 	}, false, false)
 
@@ -74,9 +75,7 @@ func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -612,10 +611,10 @@ func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 // weights address keys inside the tag_feas map, while pagerank addresses the
 // top-level pagerank_fea rank_feature field.
 func TestBuildRankFeatureQueryUsesTopLevelPagerank(t *testing.T) {
-	queries := buildRankFeatureQuery(map[string]float64{
+	queries := esoscommon.BuildRankFeatureQuery(map[string]float64{
 		common.PAGERANK_FLD: 10,
 		"tag_a":             0.8,
-	})
+	}, true)
 	if len(queries) != 2 {
 		t.Fatalf("queries = %d, want 2", len(queries))
 	}
@@ -837,7 +836,7 @@ func assertEqual(t *testing.T, got, want interface{}) {
 // their storage counterparts and content is tokenized before write,
 // mirroring Python memory/utils/es_conn.py:map_message_to_es_fields.
 func TestMapMemoryMessageToESDoc(t *testing.T) {
-	doc := mapMemoryMessageToESDoc(map[string]interface{}{
+	doc := esoscommon.MapMemoryMessageToESDoc(map[string]interface{}{
 		"id":           "mem-1_42",
 		"doc_id":       "mem-1",
 		"message_id":   int64(42),
@@ -884,9 +883,7 @@ func TestMapMemoryMessageToESDoc(t *testing.T) {
 // of the bool taken when the kNN clause is built and must keep only the scope and
 // lexical predicates.
 func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -947,9 +944,7 @@ func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
 // TestSearchKeepsEveryRankFeatureClause covers the multi-feature case: appending
 // to the pre-loop should header used to keep only the last clause.
 func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -1019,9 +1014,7 @@ func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
 // through the rank_feature clause and the final similarity through the reranker;
 // folding it in here again would count it twice.
 func TestSearchDoesNotAddPageRankToHitScore(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		w.Header().Set("Content-Type", "application/json")
@@ -1064,7 +1057,7 @@ func TestSearchDoesNotAddPageRankToHitScore(t *testing.T) {
 // the update path recomputes tokenized_content_ltks before write, same
 // as the Python update path.
 func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
-	doc := mapMemoryMessageESUpdateFields(map[string]interface{}{
+	doc := esoscommon.MapMemoryMessageESUpdateFields(map[string]interface{}{
 		"content": "fresh content",
 		"status":  0,
 	})

@@ -50,10 +50,15 @@ export interface IDataset {
   tenant_avatar: string;
   tenant_embd_id: number;
   tenant_id: string;
+  user_id?: string;
   operator_permission: number;
   token_num: number;
   update_date: string;
   update_time: number;
+  // version is the dataset's own change sequence. Every recorded version — a
+  // settings change, an upload, a parse, a chunk edit — advances it, and the
+  // sidebar shows it beside "Updated".
+  version?: number;
   keywords_similarity_weight: number;
   connectors: IConnector[];
 }
@@ -132,6 +137,7 @@ export interface IKnowledgeFile {
   update_date: string;
   update_time: number;
   parser_config: IKnowledgeFileParserConfig;
+  operator_permission?: number;
 }
 
 export interface ITenantInfo {
@@ -146,6 +152,9 @@ export type ChunkDocType = 'image' | 'table' | 'text';
 export interface IChunk {
   available_int: number; // Whether to enable, 0: not enabled, 1: enabled
   chunk_id: string;
+  // Version of the text shown: 0 for the parser's output, higher after edits.
+  // Absent on editions that keep no chunk history.
+  content_version?: number;
   content_with_weight: string;
   doc_id: string;
   doc_name: string;

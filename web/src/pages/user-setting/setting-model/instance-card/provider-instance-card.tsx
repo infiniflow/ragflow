@@ -49,6 +49,7 @@ import {
 import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
+  canManageProviderInstance,
 } from './interface';
 
 /**
@@ -83,13 +84,23 @@ const GenericProviderInstanceCard = forwardRef<
   },
   ref,
 ) {
+  // Provider-specific config includes defaults and transforms for providers
+  // whose fields do not map directly onto `api_key` / `base_url`.
+  const providerConfig = useMemo(
+    () => getProviderConfig(providerName),
+    [providerName],
+  );
+
   // Drafts always start open (the user just added them and needs to
   // fill the fields); saved cards default to collapsed unless the
   // parent flagged this card as the one to expand initially (typically
   // the first instance in the list).
   const [open, setOpen] = useState(isDraft || defaultOpen);
-  // Drafts start with an empty name - the user types it themselves.
-  const [draftName, setDraftName] = useState('');
+  // Most drafts start empty; providers may supply a useful default name.
+  const [draftName, setDraftName] = useState(
+    providerConfig.defaultInstanceName ?? '',
+  );
+  const [draftNameError, setDraftNameError] = useState('');
   // For saved cards: the instance name as shown in the UI. Initialized
   // from the persisted name and updated when the user double-clicks the
   // name to rename it. Persisted via the card's Save button.
@@ -103,22 +114,17 @@ const GenericProviderInstanceCard = forwardRef<
   const modelInfoRef = useRef<IModelInfo[]>([]);
   const modelsLoadedRef = useRef(false);
 
-  // Provider-specific config: carries `verifyTransform` / `submitTransform`
-  // for providers whose form field names don't map directly onto
-  // `api_key` / `base_url` (e.g. OpenDataLoader's nested
-  // `opendataloader_apiserver` / `opendataloader_api_key`). When present
-  // the transforms take precedence over the generic field mapping inside
-  // `useVerifyProvider` and `useInstanceSaveState.buildPayload`.
-  const providerConfig = useMemo(
-    () => getProviderConfig(providerName),
-    [providerName],
-  );
-
   useEffect(() => {
     if (isDraft) {
-      setDraftName('');
+      setDraftName(providerConfig.defaultInstanceName ?? '');
+      setDraftNameError('');
     }
-  }, [providerName, isDraft]);
+  }, [providerName, isDraft, providerConfig.defaultInstanceName]);
+
+  const handleDraftNameChange = useCallback((name: string) => {
+    setDraftName(name);
+    setDraftNameError('');
+  }, []);
 
   // Reset the edited name when the persisted instance changes (e.g.
   // after a successful rename + refetch, or when switching providers).
@@ -135,7 +141,7 @@ const GenericProviderInstanceCard = forwardRef<
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
   const { baseUrlOptions, urlHint } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
-    providerName,
+    isDraft ? providerName : instance.provider_id || providerName,
     instance.id,
     isDraft,
     open,
@@ -204,7 +210,10 @@ const GenericProviderInstanceCard = forwardRef<
     // not include the instance_name field, so `trigger()` won't
     // catch it). For both drafts and saved cards, run the form's
     // own validation so errors surface in the UI.
-    if (isDraft && !draftName.trim()) return false;
+    if (isDraft && !draftName.trim()) {
+      setDraftNameError(t('setting.instanceNameMessage'));
+      return false;
+    }
     if (!isDraft && instanceDetails && !modelsLoadedRef.current) {
       message.error(t('setting.selectModelBeforeSave'));
       return false;
@@ -264,7 +273,8 @@ const GenericProviderInstanceCard = forwardRef<
           instance={instance}
           modelInfoRef={modelInfoRef}
           draftName={draftName}
-          setDraftName={setDraftName}
+          setDraftName={handleDraftNameChange}
+          draftNameError={draftNameError}
           verifyTransform={providerConfig.verifyTransform}
         />
       ) : (
@@ -282,6 +292,7 @@ const GenericProviderInstanceCard = forwardRef<
           editedInstanceName={editedInstanceName}
           onRename={setEditedInstanceName}
           instance={{ ...instance, ...(instanceDetails ?? {}) }}
+          canManage={canManageProviderInstance(instance)}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
           onInstanceModelsStatusChange={(ready) => {

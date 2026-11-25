@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
@@ -182,6 +183,7 @@ func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
 	insertCompilationOwnerKB(t, "kb-1", "user-1")
 	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
 	insertMessageRun(t, "zero-run", "kb-1", "doc-3", entity.TaskStatusDone, 0)
+	insertMessageDocument(t, "kb-1", "doc-2")
 	progressMessage := "Python parse completed"
 	if err := db.Create(&entity.PipelineOperationLog{
 		ID: "python-run", DocumentID: "doc-2", TenantID: "user-1", KbID: "kb-1",
@@ -361,6 +363,9 @@ func TestIngestionEventWriterFeedsRunScopedLogReaders(t *testing.T) {
 
 func insertMessageRun(t *testing.T, id, kbID, documentID string, status entity.TaskStatus, runCount int) {
 	t.Helper()
+	if documentID != entity.DatasetLogDocumentID {
+		insertMessageDocument(t, kbID, documentID)
+	}
 	runCountPtr := &runCount
 	if err := dao.DB.Create(&entity.PipelineOperationLog{
 		ID:              id,
@@ -377,6 +382,24 @@ func insertMessageRun(t *testing.T, id, kbID, documentID string, status entity.T
 		RunCount:        runCountPtr,
 	}).Error; err != nil {
 		t.Fatalf("insert run: %v", err)
+	}
+}
+
+func insertMessageDocument(t *testing.T, kbID, documentID string) {
+	t.Helper()
+	var document entity.Document
+	err := dao.DB.Where("id = ?", documentID).Take(&document).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		document = entity.Document{
+			ID: documentID, KbID: kbID, CreatedBy: "user-1", ParserID: "naive",
+			ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "text",
+			Status: sptr(string(entity.StatusValid)),
+		}
+		if err := dao.DB.Create(&document).Error; err != nil {
+			t.Fatalf("insert run document: %v", err)
+		}
+	} else if err != nil {
+		t.Fatalf("load run document: %v", err)
 	}
 }
 
@@ -472,6 +495,7 @@ func TestListIngestionLogsExposesPipelineVersionID(t *testing.T) {
 	insertCompilationOwnerKB(t, "kb-1", "user-1")
 	runCount := 1
 	versionID := "ver-1"
+	insertMessageDocument(t, "kb-1", "doc-1")
 	if err := db.Create(&entity.PipelineOperationLog{
 		ID:                "run-1",
 		DocumentID:        "doc-1",

@@ -4,7 +4,7 @@ slug: /configure_memory
 title: Configure Memory
 sidebar_label: Configure Memory
 sidebar_custom_props: {
-  categoryIcon: LucideBox
+  categoryIcon: LucideMonitorCog
 }
 ---
 

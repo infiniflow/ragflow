@@ -56,7 +56,7 @@ function InnerRetrievalNode({
   // the node as well. Stays empty while the lookup is in flight.
   const { staleDatasetIds } = useStaleDatasetIds(persistedDatasetIds, canvasID);
 
-  const memoryList = useFetchAllMemoryList(canvasID);
+  const memoryList = useFetchAllMemoryList();
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>

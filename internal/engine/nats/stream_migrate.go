@@ -26,10 +26,18 @@ import (
 // ensureStreamConfig creates the stream, or - when it already exists with an
 // older configuration (e.g. created by a previous deployment) - migrates it in
 // place via UpdateStream instead of failing with "stream name already in
-// use". Only the capacity/dedup/discard fields (MaxBytes, MaxMsgs, Duplicates,
-// Discard) are migrated; the server-side current config is the merge base so a
-// partial update can never reset fields this helper does not own (Subjects,
-// Retention, Storage, ...).
+// use". The capacity/dedup/discard fields (MaxBytes, MaxMsgs, Duplicates,
+// Discard) and Subjects are migrated; the server-side current config is the
+// merge base so a partial update can never reset fields this helper does not
+// own (Retention, Storage, ...).
+//
+// Subjects must be migrated even though they are not a capacity knob: a lane
+// rename (e.g. "tasks.RAGFLOW.high" -> "high.tasks.RAGFLOW") that is not pushed
+// onto an already-existing stream can never self-heal. The stale stream keeps
+// only the old subject, every publish to the new subject gets
+// "nats: no response from stream" (JetStream 503 no responders - no stream is
+// interested in that subject), and each restart re-reads the same stale config,
+// so the failure survives every redeploy.
 func ensureStreamConfig(ctx context.Context, js jetstream.JetStream, want jetstream.StreamConfig) (jetstream.Stream, error) {
 	st, err := js.CreateStream(ctx, want)
 	if err == nil {
@@ -54,6 +62,9 @@ func ensureStreamConfig(ctx context.Context, js jetstream.JetStream, want jetstr
 	if want.Discard != jetstream.DiscardOld && cur.Discard != want.Discard {
 		needUpdate = true
 	}
+	if len(want.Subjects) > 0 && !equalSubjects(cur.Subjects, want.Subjects) {
+		needUpdate = true
+	}
 	if needUpdate {
 		merged := cur
 		merged.MaxBytes = want.MaxBytes
@@ -64,10 +75,34 @@ func ensureStreamConfig(ctx context.Context, js jetstream.JetStream, want jetstr
 		if want.Discard != jetstream.DiscardOld {
 			merged.Discard = want.Discard
 		}
+		// An empty wanted list means "whatever the server has" (some streams are
+		// created without explicit subjects), so it never clears them.
+		if len(want.Subjects) > 0 {
+			merged.Subjects = want.Subjects
+		}
 		st, err = js.UpdateStream(ctx, merged)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return st, nil
+}
+
+// equalSubjects reports whether the two subject lists carry the same set of
+// subjects. Order is not significant: the server may return the configured list
+// verbatim, but a reordered list is not a reason to rewrite the stream.
+func equalSubjects(cur, want []string) bool {
+	if len(cur) != len(want) {
+		return false
+	}
+	have := make(map[string]struct{}, len(cur))
+	for _, s := range cur {
+		have[s] = struct{}{}
+	}
+	for _, s := range want {
+		if _, ok := have[s]; !ok {
+			return false
+		}
+	}
+	return true
 }

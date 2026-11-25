@@ -144,7 +144,6 @@ const {
   adminRevokeRolePermissions,
 
   adminGetUserPermissions,
-  adminUpdateUserRole,
 
   adminListResources,
 
@@ -175,10 +174,15 @@ export const logout = () => request.post<ResponseData<void>>(adminLogout);
 export const listUsers = () =>
   request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
 
-export const createUser = (email: string, password: string) =>
+export const createUser = (
+  email: string,
+  password: string,
+  nickname?: string,
+) =>
   request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
     username: email,
     password,
+    nickname,
   });
 
 export const grantSuperuser = (email: string) =>
@@ -260,10 +264,6 @@ export const revokeRolePermissions = (
     data: { revoke_permissions: permissions },
   });
 
-export const updateUserRole = (username: string, role: string) =>
-  request.put<ResponseData<never>>(adminUpdateUserRole(username), {
-    role_name: role,
-  });
 export const getUserPermissions = (username: string) =>
   request.get<ResponseData<AdminService.UserDetailWithPermission>>(
     adminGetUserPermissions(username),

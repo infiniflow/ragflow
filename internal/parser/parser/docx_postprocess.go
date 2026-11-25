@@ -74,8 +74,23 @@ func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []m
 	}
 
 	if len(outlineTitles) > 0 {
+		// Logical-deletion view: mark instead of O(n) append-shift, compact once.
+		alive := make([]bool, len(items))
+		for i := range alive {
+			alive[i] = true
+		}
+		next := func(from int) int {
+			for from < len(items) && !alive[from] {
+				from++
+			}
+			return from
+		}
 		i := 0
 		for i < len(items) {
+			i = next(i)
+			if i >= len(items) {
+				break
+			}
 			text := strings.ToLower(strings.TrimSpace(itemText(items[i])))
 			normalized := whitespacePattern.ReplaceAllString(strings.SplitN(text, "@@", 2)[0], "")
 			if !tocHeadingPattern.MatchString(normalized) {
@@ -83,14 +98,15 @@ func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []m
 				continue
 			}
 			// Drop the TOC heading.
-			items = append(items[:i], items[i+1:]...)
+			alive[i] = false
 			// Drop following entries matching outline-title prefix
 			// or dot+page-number pattern.
-			for i < len(items) {
+			for i = next(i); i < len(items); {
 				raw := itemText(items[i])
 				normalized := strings.ToLower(strings.TrimSpace(strings.SplitN(raw, "@@", 2)[0]))
 				if normalized == "" {
-					items = append(items[:i], items[i+1:]...)
+					alive[i] = false
+					i = next(i)
 					continue
 				}
 				matched := false
@@ -101,13 +117,25 @@ func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []m
 					}
 				}
 				if matched || dotPageNumberPattern.MatchString(raw) {
-					items = append(items[:i], items[i+1:]...)
+					alive[i] = false
+					i = next(i)
 					continue
 				}
 				break
 			}
 			break
 		}
+		w := 0
+		for i := range items {
+			if alive[i] {
+				items[w] = items[i]
+				w++
+			}
+		}
+		// Clear the vacated tail so removed item maps are not retained by the
+		// backing array beyond the surviving slice length.
+		clear(items[w:])
+		items = items[:w]
 	}
 
 	return removeContentsTable(items, eng)

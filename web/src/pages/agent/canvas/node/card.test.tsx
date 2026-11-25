@@ -15,7 +15,8 @@
  */
 
 import { render, screen } from '@testing-library/react';
-import { OwnerTenantIdContext } from '../../context';
+import { ResourceTenantIdContext } from '../../context';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import { CompilationTemplateLabelCard, LLMLabelCard } from './card';
 
 const mockUseModelValidIds = jest.fn();
@@ -37,6 +38,9 @@ const mockOwnerModels = [
 ];
 
 jest.mock('@/hooks/use-llm-request', () => ({
+  ModelResourceAccessUserIdContext: jest
+    .requireActual('react')
+    .createContext(undefined),
   useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
   // The display name resolves through the owner's list; validity does not.
   useFetchAllAddedModels: () => ({ data: mockOwnerModels }),
@@ -54,19 +58,34 @@ jest.mock('@/components/svg-icon', () => ({
   LlmIcon: () => null,
 }));
 
+jest.mock('@/ee/components/model-reference-label', () => {
+  const LLMLabel = jest.requireActual(
+    '@/components/llm-select/llm-label',
+  ).default;
+  return {
+    ModelReferenceLabel: ({
+      value,
+      ownerTenantId,
+    }: {
+      value?: string;
+      ownerTenantId?: string;
+    }) => <LLMLabel value={value} resourceTenantId={ownerTenantId} />,
+  };
+});
+
 function renderCard(llmId?: string) {
   return render(
-    <OwnerTenantIdContext.Provider value="owner-tenant">
+    <ResourceTenantIdContext.Provider value="owner-tenant">
       <LLMLabelCard llmId={llmId} />
-    </OwnerTenantIdContext.Provider>,
+    </ResourceTenantIdContext.Provider>,
   );
 }
 
 function renderGroupCard(groupId?: string) {
   return render(
-    <OwnerTenantIdContext.Provider value="owner-tenant">
+    <ModelResourceAccessUserIdContext.Provider value="owner-user">
       <CompilationTemplateLabelCard groupId={groupId} />
-    </OwnerTenantIdContext.Provider>,
+    </ModelResourceAccessUserIdContext.Provider>,
   );
 }
 
@@ -132,7 +151,7 @@ describe('LLMLabelCard', () => {
     renderCard('m1');
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       'owner-tenant',
     );
   });
@@ -144,16 +163,16 @@ describe('LLMLabelCard', () => {
     }));
 
     const { container } = render(
-      <OwnerTenantIdContext.Provider value="owner-tenant">
+      <ResourceTenantIdContext.Provider value="owner-tenant">
         <LLMLabelCard
           llmId="decision-model"
-          modelTypes={['chat', 'vision', 'decision']}
+          modelTypes={['chat', 'vlm', 'decision']}
         />
-      </OwnerTenantIdContext.Provider>,
+      </ResourceTenantIdContext.Provider>,
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision', 'decision'],
+      ['chat', 'vlm', 'decision'],
       'owner-tenant',
     );
     expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();
@@ -239,7 +258,7 @@ describe('CompilationTemplateLabelCard', () => {
     expect(container.querySelector('svg.text-state-error')).toBeNull();
   });
 
-  it('resolves names and validity against the canvas owner tenant', () => {
+  it('resolves names and validity against the canvas owner user', () => {
     mockUseCompilationTemplateGroupValidIds.mockReturnValue({
       validIds: new Set(['g1']),
       isFetched: true,
@@ -248,10 +267,10 @@ describe('CompilationTemplateLabelCard', () => {
     renderGroupCard('g1');
 
     expect(mockUseCompilationTemplateGroupOptions).toHaveBeenCalledWith(
-      'owner-tenant',
+      'owner-user',
     );
     expect(mockUseCompilationTemplateGroupValidIds).toHaveBeenCalledWith(
-      'owner-tenant',
+      'owner-user',
     );
   });
 });

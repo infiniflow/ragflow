@@ -13,6 +13,7 @@ jest.mock('@/components/ui/message', () => ({
 }));
 
 jest.mock('react-i18next', () => ({
+  ...jest.requireActual('react-i18next'),
   useTranslation: () => ({
     t: (key: string) => {
       const labels: Record<string, string> = {
@@ -32,8 +33,12 @@ jest.mock('@/hooks/use-llm-request', () => ({
   })),
 }));
 
+jest.mock('@/hooks/use-user-setting-request', () => ({
+  useFetchTenantInfo: () => ({ data: {} }),
+}));
+
 jest.mock('../../context', () => ({
-  useOwnerTenantId: () => 'canvas-owner',
+  useResourceTenantId: () => 'canvas-owner',
 }));
 
 jest.mock('@/components/llm-select/llm-label', () => ({
@@ -135,7 +140,7 @@ describe('image OCR engine selection', () => {
       name: 'Not an OCR model',
       provider_name: 'PaddleOCR',
       instance_name: 'Vision',
-      model_type: ['vision'],
+      model_type: ['vlm'],
     },
   ];
 

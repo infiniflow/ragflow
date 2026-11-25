@@ -26,8 +26,13 @@ const generalParserID = "general"
 // governs the file. Mirrors Python's FileService.get_parser
 // (api/db/services/file_service.py:734-743): images and video are parsed by the
 // picture pipeline, audio by audio, presentations by presentation and mail by
-// email.
+// email. An edition may add a file type of its own through
+// dedicatedParserExtension.
 func dedicatedDocumentParserID(filetype utility.FileType, filename string) string {
+	if id := dedicatedParserExtension(filetype, filename); id != "" {
+		return id
+	}
+
 	switch filetype {
 	case utility.FileTypeVISUAL:
 		return "picture"
@@ -35,13 +40,16 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 		return "audio"
 	}
 
-	// The presentation and email extensions all classify as FileTypeDOC, so the
-	// name decides which dedicated pipeline owns them.
+	switch utility.GetFileType(filename) {
+	case utility.FileTypePPT, utility.FileTypePPTX:
+		return "presentation"
+	}
+
+	// Remaining presentation and email formats are selected by filename because
+	// their upload category is the shared document bucket.
 	name := strings.ToLower(filename)
 	switch {
-	case strings.HasSuffix(name, ".ppt"),
-		strings.HasSuffix(name, ".pptx"),
-		strings.HasSuffix(name, ".pages"):
+	case strings.HasSuffix(name, ".pages"):
 		return "presentation"
 	case strings.HasSuffix(name, ".msg"),
 		strings.HasSuffix(name, ".eml"):
@@ -199,6 +207,7 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 	if meta, ok := raw["metadata"]; ok {
 		cleaned["metadata"] = meta
 	}
+	inheritFallbackParserOptions(cleaned, raw, componentpkg.ParserFileFamily(utility.GetFileExtension(filename)))
 	pipelinepkg.ApplyParentChildChunkerConfig(cleaned, raw)
 	llmID := ""
 	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {

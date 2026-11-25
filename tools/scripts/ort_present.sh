@@ -6,13 +6,17 @@
 #   $2 = ort_dir_prefix             platform top-level dir prefix
 #                                     (see build.sh ort_static_lib_prefix)
 #   $3 = ort_version                DeepDocORTVersion (internal/common/environments.go)
+#   $4 = variant_suffix             optional; narrows the dir glob to a specific
+#                                   variant (e.g. "-full"). Omitted => "*" so
+#                                   the 3-arg callers keep the legacy behaviour.
 #
 # Exits 0 (present) when at least one real base libonnxruntime*.a lives under a
-# dir matching BOTH the target platform and the required version —
-# */${ort_dir_prefix}${ort_version}*/lib/*.a — and 1 (missing) otherwise. This is
-# the SAME dir check_onnxruntime_deps links, so a shared cache holding only an
-# OLD version or a DIFFERENT platform's ORT is reported missing (and the
-# controlled auto-downloader runs) instead of being silently treated as present
+# dir matching the target platform, the required version AND the optional
+# variant suffix ($4, default "*") —
+# */${ort_dir_prefix}${ort_version}${variant_suffix}/lib/*.a — and 1 (missing)
+# otherwise. This is the SAME dir check_onnxruntime_deps links, so a cache
+# holding only an OLD version or a DIFFERENT platform's ORT is reported missing
+# (and the controlled auto-downloader runs) instead of being silently treated as present
 # and failing only at link time.
 #
 # The lib/ segment is required so a stray .a sitting in the prefix root (not
@@ -21,13 +25,14 @@
 # link-time selection in check_onnxruntime_deps.
 ragflow_ort_present() {
     local prefix="$1" ort_dir_prefix="$2" ort_version="$3"
+    local variant_suffix="${4:-*}"
     local f
     while IFS= read -r f; do
         case "$(basename "$f")" in
             *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
         esac
         case "$f" in
-            */${ort_dir_prefix}${ort_version}*/lib/*.a) return 0 ;;
+            */${ort_dir_prefix}${ort_version}${variant_suffix}/lib/*.a) return 0 ;;
         esac
     done < <(find "$prefix" -type f -name '*.a' 2>/dev/null)
     return 1

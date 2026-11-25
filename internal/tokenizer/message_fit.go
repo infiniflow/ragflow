@@ -98,7 +98,11 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 	// Only system messages were retained (no non-system message): spread the
 	// whole budget across every retained system message.
 	if lastNonSystem < 0 {
-		trimSystems(kept, budget)
+		counts := make([]int, len(kept))
+		for i := range kept {
+			counts[i] = NumTokensFromString(kept[i].Content)
+		}
+		trimSystems(kept, budget, counts)
 		return kept, keptIdx, countTokens(kept)
 	}
 
@@ -106,9 +110,11 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 	// is the final non-system message.
 	sys := kept[:len(kept)-1]
 	last := &kept[len(kept)-1]
+	sysCounts := make([]int, len(sys))
 	ll := 0
 	for i := range sys {
-		ll += NumTokensFromString(sys[i].Content)
+		sysCounts[i] = NumTokensFromString(sys[i].Content)
+		ll += sysCounts[i]
 	}
 	ll2 := NumTokensFromString(last.Content)
 	total := ll + ll2
@@ -121,10 +127,10 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 		// remaining budget to the system messages.
 		preserved := min(ll2, budget)
 		last.Content = TrimContentToTokenLimit(last.Content, preserved)
-		trimSystems(sys, max(0, budget-preserved))
+		trimSystems(sys, max(0, budget-preserved), sysCounts)
 	} else {
 		preserved := min(ll, budget)
-		trimSystems(sys, preserved)
+		trimSystems(sys, preserved, sysCounts)
 		last.Content = TrimContentToTokenLimit(last.Content, max(0, budget-preserved))
 	}
 	return kept, keptIdx, countTokens(kept)
@@ -133,8 +139,9 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 // trimSystems trims each system message so their combined token count fits
 // within budget. The budget is allocated in proportion to each message's
 // original token count, with the last message taking any remainder so the
-// total never exceeds budget.
-func trimSystems(sys []Message, budget int) {
+// total never exceeds budget. counts, when provided, holds the precomputed
+// token count of each message (Fit already computed them); nil re-computes.
+func trimSystems(sys []Message, budget int, counts []int) {
 	if len(sys) == 0 {
 		return
 	}
@@ -144,9 +151,14 @@ func trimSystems(sys []Message, budget int) {
 		}
 		return
 	}
+	useCounts := counts != nil && len(counts) == len(sys)
 	total := 0
-	for i := range sys {
-		total += NumTokensFromString(sys[i].Content)
+	if useCounts {
+		total = sumInts(counts)
+	} else {
+		for i := range sys {
+			total += NumTokensFromString(sys[i].Content)
+		}
 	}
 	if total <= 0 {
 		return
@@ -155,7 +167,16 @@ func trimSystems(sys []Message, budget int) {
 	for i := range sys {
 		limit := remaining
 		if i < len(sys)-1 {
-			tokens := NumTokensFromString(sys[i].Content)
+			// Only read the cached count when it is actually valid; otherwise
+			// recompute from the original content. Indexing counts[i] before
+			// this guard would panic on a nil/short counts slice even though
+			// the fallback exists.
+			var tokens int
+			if useCounts {
+				tokens = counts[i]
+			} else {
+				tokens = NumTokensFromString(sys[i].Content)
+			}
 			limit = int(float64(budget) * float64(tokens) / float64(total))
 			if limit > remaining {
 				limit = remaining
@@ -164,6 +185,14 @@ func trimSystems(sys []Message, budget int) {
 		sys[i].Content = TrimContentToTokenLimit(sys[i].Content, limit)
 		remaining -= NumTokensFromString(sys[i].Content)
 	}
+}
+
+func sumInts(xs []int) int {
+	s := 0
+	for _, x := range xs {
+		s += x
+	}
+	return s
 }
 
 func countTokens(msgs []Message) int {

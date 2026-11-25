@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Form } from '@/components/ui/form';
 import { FileType } from '@/constants/file';
+import { ParserExtensionFields } from '@/ee/components/parser-extension-fields';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LucideTrash2 } from 'lucide-react';
@@ -70,7 +71,7 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
-      : () => <></>;
+      : null;
 
   const handleRemove = useCallback(() => {
     onRemove(index);
@@ -97,9 +98,11 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
           ) : undefined
         }
       >
-        <div className="space-y-5">
-          <Widget prefix={prefix}></Widget>
-        </div>
+        {Widget && (
+          <div className="space-y-5">
+            <Widget prefix={prefix} />
+          </div>
+        )}
       </Collapse>
     </Card>
   );
@@ -192,6 +195,7 @@ const ParserForm = ({
     <Form {...form}>
       <form className="space-y-5 px-5 pt-4">
         <VisionEnhancementFormFields />
+        <ParserExtensionFields />
         {fields.map((field, index) => {
           return (
             <ParserItem

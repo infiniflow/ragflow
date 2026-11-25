@@ -1,9 +1,10 @@
 import { NextMessageInput } from '@/components/message-input/next';
+import { useChatSessionAccess } from '@/ee/pages/next-chats/chat-session-access';
 import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { VirtualMessageList } from '@/components/virtual-message-list';
-import { MessageType } from '@/constants/chat';
+import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
@@ -41,11 +42,19 @@ export function SingleChatBox({ conversation }: IProps) {
   } = useSendMessage();
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
+  const { conversationId, isNew } = useGetChatSearchParams();
+  const sessionAccess = useChatSessionAccess(
+    currentDialog,
+    userInfo.id,
+    conversation.user_id,
+    !conversationId || isNew === 'true' || conversation.is_new,
+  );
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
-  const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
+  const isChannelConversation =
+    conversation.source === ChatSessionSource.ChatChannel;
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -101,9 +110,18 @@ export function SingleChatBox({ conversation }: IProps) {
               clickDocumentButton={clickDocumentButton}
               index={i}
               isLast={(messages?.length ?? 0) - 1 === i}
-              removeMessageById={removeMessageById}
+              removeMessageById={
+                isChannelConversation || !sessionAccess.canDeleteMessages
+                  ? undefined
+                  : removeMessageById
+              }
+              showLikeButton={sessionAccess.canFeedback}
               deleteDisabled={message.awaitingServerId}
-              regenerateMessage={regenerateMessage}
+              regenerateMessage={
+                isChannelConversation || !sessionAccess.canSend
+                  ? undefined
+                  : regenerateMessage
+              }
               sendLoading={sendLoading}
             />
           )}
@@ -112,8 +130,10 @@ export function SingleChatBox({ conversation }: IProps) {
 
       <div className="p-5 pt-0">
         <NextMessageInput
-          disabled={disabled}
-          sendDisabled={sendDisabled}
+          disabled={disabled || isChannelConversation || !sessionAccess.canSend}
+          sendDisabled={
+            sendDisabled || isChannelConversation || !sessionAccess.canSend
+          }
           sendLoading={sendLoading}
           value={value}
           resize="vertical"

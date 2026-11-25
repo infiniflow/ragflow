@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ import (
 // TestHandleAndExecute_MemoryTaskIDInvokesRunner verifies memory deliveries
 // need only the task id because execution input lives in the database.
 func TestHandleAndExecute_MemoryTaskIDInvokesRunner(t *testing.T) {
-	ingestor := newUnitIngestor("test-mem-malformed", 1, nil)
+	ingestor := newUnitIngestor("test-mem-malformed", 1)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 
 	runnerCalled := false
@@ -50,7 +51,7 @@ func TestHandleAndExecute_MemoryTaskIDInvokesRunner(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if !runnerCalled {
 		t.Fatal("expected runMemoryTask to be called with task id only")
@@ -63,7 +64,7 @@ func TestHandleAndExecute_MemoryTaskIDInvokesRunner(t *testing.T) {
 // TestHandleAndExecute_MemoryExtractorDisabledAcks verifies that a memory task
 // received when memory extractor is disabled is ack-skipped.
 func TestHandleAndExecute_MemoryExtractorDisabledAcks(t *testing.T) {
-	ingestor := newUnitIngestor("test-mem-disabled", 1, nil)
+	ingestor := newUnitIngestor("test-mem-disabled", 1)
 	// memorySvc is nil
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
@@ -71,7 +72,7 @@ func TestHandleAndExecute_MemoryExtractorDisabledAcks(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -81,7 +82,7 @@ func TestHandleAndExecute_MemoryExtractorDisabledAcks(t *testing.T) {
 // TestHandleAndExecute_MemoryEmptyTaskIDAcks verifies that a memory task with
 // an empty task ID is ack-skipped.
 func TestHandleAndExecute_MemoryEmptyTaskIDAcks(t *testing.T) {
-	ingestor := newUnitIngestor("test-mem-empty-id", 1, nil)
+	ingestor := newUnitIngestor("test-mem-empty-id", 1)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
@@ -89,7 +90,7 @@ func TestHandleAndExecute_MemoryEmptyTaskIDAcks(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -99,14 +100,14 @@ func TestHandleAndExecute_MemoryEmptyTaskIDAcks(t *testing.T) {
 // TestHandleAndExecute_UnknownTaskTypeAcks verifies that a message with an
 // unknown task type is ack-skipped without touching the ingestion task service.
 func TestHandleAndExecute_UnknownTaskTypeAcks(t *testing.T) {
-	ingestor := newUnitIngestor("test-unknown-type", 1, nil)
+	ingestor := newUnitIngestor("test-unknown-type", 1)
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "unknown-task-1",
 		TaskType: "completely_unknown_type",
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack for unknown type, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -120,13 +121,13 @@ func TestHandleAndExecute_TaskNotFoundAcks(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := newUnitIngestor("test-task-not-found", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-task-not-found", 1)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "non-existent-task-id",
 		TaskType: common.TaskTypeIngestionTask,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack for not-found task, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -149,13 +150,13 @@ func TestHandleAndExecute_StartRunningTransientErrorNacks(t *testing.T) {
 		_ = sqlDB.Close()
 	}
 
-	ingestor := newUnitIngestor("test-start-running-err", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-start-running-err", 1)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   taskID,
 		TaskType: common.TaskTypeIngestionTask,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/1 Nack on transient StartRunning error, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -175,7 +176,7 @@ func TestHandleAndExecute_InvalidRunIdentityFailsAndAcks(t *testing.T) {
 		t.Fatalf("schedule task: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-invalid-run-identity", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-invalid-run-identity", 1)
 	pipelineRan := false
 	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
 		pipelineRan = true
@@ -183,7 +184,7 @@ func TestHandleAndExecute_InvalidRunIdentityFailsAndAcks(t *testing.T) {
 	}
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if pipelineRan {
 		t.Fatal("pipeline ran despite an invalid run identity")
@@ -215,14 +216,14 @@ func TestHandleAndExecute_InvalidRunIdentitySettlesBoundRun(t *testing.T) {
 		t.Fatalf("invalidate run count: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-invalid-run-settle", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-invalid-run-settle", 1)
 	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
 		t.Fatal("pipeline ran despite an invalid run identity")
 		return nil
 	}
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -270,9 +271,9 @@ func TestHandleAndExecute_InvalidRunIdentityDoesNotCloseForeignRun(t *testing.T)
 		t.Fatalf("corrupt task binding: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-foreign-run", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-foreign-run", 1)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -302,7 +303,7 @@ func TestHandleAndExecute_AlreadyTerminalTaskAcks(t *testing.T) {
 				t.Fatalf("set status %s: %v", status, err)
 			}
 
-			ingestor := newUnitIngestor("test-terminal-"+status, 1, []string{"pdf"})
+			ingestor := newUnitIngestor("test-terminal-"+status, 1)
 			pipelineRan := false
 			ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
 				pipelineRan = true
@@ -314,7 +315,7 @@ func TestHandleAndExecute_AlreadyTerminalTaskAcks(t *testing.T) {
 				TaskType: common.TaskTypeIngestionTask,
 			}}
 
-			ingestor.handleAndExecute(handle)
+			ingestor.handleAndExecute(nil, handle)
 
 			if pipelineRan {
 				t.Fatalf("pipeline should not run for already %s task", status)
@@ -339,13 +340,13 @@ func TestHandleAndExecute_StoppingTaskConvergedAndAcks(t *testing.T) {
 		t.Fatalf("set status STOPPING: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-stopping-converge", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-stopping-converge", 1)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   taskID,
 		TaskType: common.TaskTypeIngestionTask,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack for STOPPING task, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -374,7 +375,7 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 		t.Fatalf("set status RUNNING: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-doc-dup", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-doc-dup", 1)
 	// Simulate active claim by another worker
 	if !ingestor.claimTask(taskID) {
 		t.Fatal("first claim should succeed")
@@ -399,7 +400,7 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 		TaskType: common.TaskTypeIngestionTask,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if pipelineRan {
 		t.Fatal("duplicate delivery should not execute pipeline")
@@ -422,7 +423,7 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 // TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery
 // verifies DB lease admission controls settlement for duplicate or failed work.
 func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *testing.T) {
-	ingestor := newUnitIngestor("test-mem-dup", 1, nil)
+	ingestor := newUnitIngestor("test-mem-dup", 1)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
 		return servicepkg.MemoryTaskLeaveUnsettled, nil
@@ -433,7 +434,7 @@ func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *t
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -443,7 +444,7 @@ func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *t
 // TestHandleAndExecute_MemoryPersistedRetryAcks verifies an execution error is
 // still acknowledged after the service durably schedules its retry.
 func TestHandleAndExecute_MemoryPersistedRetryAcks(t *testing.T) {
-	ingestor := newUnitIngestor("test-mem-retry", 1, nil)
+	ingestor := newUnitIngestor("test-mem-retry", 1)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
 		return servicepkg.MemoryTaskAcknowledge, errors.New("retry scheduled")
@@ -454,7 +455,7 @@ func TestHandleAndExecute_MemoryPersistedRetryAcks(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -476,7 +477,7 @@ func TestHandleAndExecute_SlowAdmissionHeartbeatsUnderLeaseProtection(t *testing
 		t.Fatalf("set status RUNNING: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-slow-admission", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-slow-admission", 1)
 	ingestor.heartbeatInterval = 10 * time.Millisecond
 
 	// Delay document pipeline execution briefly so heartbeats fire during run
@@ -490,7 +491,7 @@ func TestHandleAndExecute_SlowAdmissionHeartbeatsUnderLeaseProtection(t *testing
 		TaskType: common.TaskTypeIngestionTask,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	ingestor.handleAndExecute(nil, handle)
 
 	if handle.inProgress.Load() == 0 {
 		t.Fatal("expected InProgress heartbeats during task execution, got 0")
@@ -503,7 +504,7 @@ func TestHandleAndExecute_SlowAdmissionHeartbeatsUnderLeaseProtection(t *testing
 // TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly verifies that waitAfterPullError
 // unblocks promptly when dispatch context is cancelled, without hanging on the sleep.
 func TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
-	ingestor := newUnitIngestor("test-pull-backoff-cancel", 1, nil)
+	ingestor := newUnitIngestor("test-pull-backoff-cancel", 1)
 
 	done := make(chan struct{})
 	go func() {
@@ -519,5 +520,88 @@ func TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
 		// unblocked promptly
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("waitAfterPullError did not cancel promptly on dispatchCtx.Done")
+	}
+}
+
+// runningEventRecorder captures emitted ingest logs for assertions about the
+// per-worker identity carried on the running event.
+type runningEventRecorder struct {
+	mu     sync.Mutex
+	events []common.IngestionLog
+}
+
+func (r *runningEventRecorder) EmitIngestLog(_ context.Context, log common.IngestionLog) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, log)
+}
+
+func (r *runningEventRecorder) findRunning() (common.IngestionLog, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, e := range r.events {
+		if e.Status == common.RUNNING {
+			return e, true
+		}
+	}
+	return common.IngestionLog{}, false
+}
+
+// waitForRunning blocks until a "running" lifecycle event is emitted or the
+// timeout elapses. emitLifecycleEvent is fire-and-forget, so the event arrives
+// on a background goroutine after handleAndExecute returns; assertions must wait
+// for it rather than reading the recorder synchronously, otherwise the check
+// races the emit and fails intermittently.
+func (r *runningEventRecorder) waitForRunning(timeout time.Duration) (common.IngestionLog, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ev, ok := r.findRunning(); ok {
+			return ev, true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return common.IngestionLog{}, false
+}
+
+// TestHandleAndExecute_RunningEventCarriesWorkerName pins that the running
+// lifecycle event emitted by PrepareValidatedRun names the worker that claimed
+// the task. The worker name is injected per-task onto the context, and it must
+// be present on the context passed to PrepareValidatedRun (which emits the
+// running event) — not only on the context used for terminal events. A prior
+// ordering bug passed the root context (without the worker) to
+// PrepareValidatedRun, so the running event arrived worker-less.
+func TestHandleAndExecute_RunningEventCarriesWorkerName(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+
+	rec := &runningEventRecorder{}
+	ingestor := newUnitIngestor("test-running-worker", 1)
+	ingestor.ingestionTaskSvc.SetEventEmitter(rec)
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		return nil
+	}
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeIngestionTask,
+	}}
+
+	ingestor.handleAndExecute(&worker{id: 3, inbox: make(chan common.TaskHandle)}, handle)
+
+	// emitLifecycleEvent is fire-and-forget: the running event lands on a
+	// background goroutine after handleAndExecute returns, so wait for it.
+	ev, ok := rec.waitForRunning(2 * time.Second)
+	if !ok {
+		t.Fatal("expected a running lifecycle event to be emitted")
+	}
+	if ev.Worker != "worker-3" {
+		t.Errorf("running event Worker = %q, want worker-3", ev.Worker)
 	}
 }

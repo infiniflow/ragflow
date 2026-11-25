@@ -28,6 +28,7 @@ import (
 var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
+	wordOptions        wordParserOptions
 	textOnly           bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
@@ -51,6 +52,7 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
+	p.wordOptions.configure(setup)
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
 	}
@@ -61,6 +63,9 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 
 // ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := checkWPSLicense(filename); err != nil {
+		return ParseResult{Err: err}
+	}
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
@@ -69,9 +74,13 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	text, _, err := extractDocText(irJSON, mdText, plainText)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
+	irJSON, irChanged := p.wordOptions.prepareIR(irJSON, nil)
+	var text string
+	if !irChanged {
+		text, _, err = extractDocText(irJSON, mdText, plainText)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
+		}
 	}
 
 	// Prefer the structured IR, which office_oxide recovers table
@@ -86,7 +95,8 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		if !p.textOnly {
 			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 		}
-		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
+		// Once the structured IR changes, use it as the only text source.
+		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 || irChanged {
 			if sink != nil && sink.err != nil {
 				return ParseResult{Err: sink.err}
 			}

@@ -111,9 +111,7 @@ func observeImageOCRWarnings(t *testing.T) *observer.ObservedLogs {
 	})
 	// Error logging also reads the shared AtomicLevel, which a zap observer
 	// alone does not initialize. Empty FileOutput keeps this fixture file-free.
-	if err := common.InitLogger("warn", common.FileOutput{}, ""); err != nil {
-		t.Fatalf("initialize OCR test logger: %v", err)
-	}
+	common.InitLogger("warn", common.FileOutput{}, "")
 	core, logs := observer.New(zap.WarnLevel)
 	common.Logger = zap.New(core)
 	common.Sugar = common.Logger.Sugar()

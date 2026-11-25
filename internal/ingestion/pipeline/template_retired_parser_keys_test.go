@@ -30,6 +30,7 @@ import (
 // ingestion template bakes the retired per-family keys:
 //
 //   - preprocess: no Go reader; chunk preprocessing is a chunker option.
+//   - suffix: no Go reader; file routing uses the document's own suffix.
 //   - vlm on any family except audio: the vision model is the Parser's
 //     top-level vlm block, and audio's family vlm is the ASR model.
 //
@@ -115,6 +116,9 @@ func assertNoRetiredFamilyKeys(t *testing.T, ref, cpnID, family string, setup ma
 	t.Helper()
 	if value, found := setup["preprocess"]; found {
 		t.Errorf("%s: Parser %s family %q declares preprocess = %v; no parser reads the key", ref, cpnID, family, value)
+	}
+	if value, found := setup["suffix"]; found {
+		t.Errorf("%s: Parser %s family %q declares suffix = %v; file routing uses the document's own suffix", ref, cpnID, family, value)
 	}
 	if family == "audio" {
 		return

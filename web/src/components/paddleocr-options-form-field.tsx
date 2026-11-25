@@ -16,20 +16,9 @@
 
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
-import { SelectWithSearch } from './originui/select-with-search';
 import { LLMFactory } from '@/constants/llm';
-import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-
-const algorithmOptions = buildOptions([
-  'PaddleOCR-VL-1.6',
-  'PaddleOCR-VL-1.5',
-  'PaddleOCR-VL',
-  'PP-OCRv6',
-  'PP-OCRv5',
-  'PP-StructureV3',
-]);
 
 export function PaddleOCROptionsFormField({
   namePrefix = 'parser_config',
@@ -96,28 +85,6 @@ export function PaddleOCROptionsFormField({
             placeholder={t(
               'knowledgeConfiguration.paddleocrAccessTokenPlaceholder',
             )}
-          />
-        )}
-      </RAGFlowFormItem>
-
-      <RAGFlowFormItem
-        name={buildName('paddleocr_algorithm')}
-        label={t(
-          'knowledgeConfiguration.paddleocrAlgorithm',
-          'PaddleOCR Algorithm',
-        )}
-        tooltip={t(
-          'knowledgeConfiguration.paddleocrAlgorithmTip',
-          'Algorithm to use for PaddleOCR parsing',
-        )}
-        horizontal={true}
-      >
-        {(field) => (
-          <SelectWithSearch
-            value={field.value || undefined}
-            onChange={field.onChange}
-            options={algorithmOptions}
-            placeholder={t('common.selectPlaceholder', 'Select value')}
           />
         )}
       </RAGFlowFormItem>

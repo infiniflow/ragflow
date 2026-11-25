@@ -406,7 +406,19 @@ function MarkdownContent({
                     fileExtension,
                     documentUrl,
                   )}
-                  className="text-ellipsis text-wrap"
+                  className={classNames('text-ellipsis text-wrap', {
+                    // Only show the link affordance (hover underline) when the
+                    // document is actually actionable: either it has an
+                    // external url, or the source can be located AND a handler
+                    // is provided to do so. Otherwise the underline misleads
+                    // users into thinking the citation can be previewed.
+                    'hover:no-underline cursor-default':
+                      !documentUrl &&
+                      !(
+                        supportsSourceLocate(fileExtension) &&
+                        clickDocumentButton
+                      ),
+                  })}
                 >
                   {document?.doc_name}
                 </Button>
@@ -416,7 +428,7 @@ function MarkdownContent({
         </div>
       );
     },
-    [getReferenceInfo, handleDocumentButtonClick],
+    [getReferenceInfo, handleDocumentButtonClick, clickDocumentButton],
   );
 
   const renderReference = useCallback(

@@ -99,6 +99,11 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
+  // Key the query on the provider name, not `instance.provider_id`: the
+  // add/remove/patch mutation hooks invalidate
+  // `LlmKeys.instanceModels(provider_name, ...)`, and `provider_id` is a
+  // UUID, so a UUID-keyed query would never match and the list would stay
+  // stale until a page reload.
   const {
     data: instanceModels,
     loading: instanceModelsLoading,
@@ -297,6 +302,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     instanceName,
     isModelAdded,
     isDraftInstance,
+    defaultToolsEnabled: isDraftInstance,
     updateCatalogModel,
     clearCatalogOverride,
     updateDraftModel,

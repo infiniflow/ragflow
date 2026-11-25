@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
@@ -97,6 +98,8 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 
 // Parse reparse the datasets' files
 func (h *ChunkHandler) Parse(c *gin.Context) {
+	common.StartOperationLog(c, "start_dataset_chunk_parsing")
+	defer common.FinishOperationLog(c)
 
 	datasetId := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetId == "" {
@@ -110,6 +113,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "document_ids", req.DocumentIDs)
 	ctx := c.Request.Context()
 	data, code, err := h.chunkService.Parse(ctx, datasetId, &req)
 	if code != common.CodeSuccess {
@@ -165,6 +169,14 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
+	permissionMask, permissionErr := documentOperatorPermission(ctx, documentID)
+	if permissionErr != nil {
+		respondPermissionError(c, permissionErr, false)
+		return
+	}
+	if resp.Doc != nil {
+		resp.Doc["operator_permission"] = permissionMask
+	}
 
 	common.RespondSuccess(c, resp, "success")
 }
@@ -203,6 +215,8 @@ func parseAvailableQuery(raw string) (int, bool, error) {
 }
 
 func (h *ChunkHandler) StopParsing(c *gin.Context) {
+	common.StartOperationLog(c, "stop_dataset_chunk_parsing")
+	defer common.FinishOperationLog(c)
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
@@ -220,6 +234,7 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "document_ids", req.DocumentIDs)
 	ctx := c.Request.Context()
 	resp, code, err := h.chunkService.StopParsing(ctx, datasetID, req)
 	if err != nil {
@@ -241,6 +256,8 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 
 // SwitchChunks enable or disable a chunk
 func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
+	common.StartOperationLog(c, "switch_dataset_chunks")
+	defer common.FinishOperationLog(c)
 
 	// Get required ID
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
@@ -267,6 +284,7 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "chunk_ids", chunkIDs)
 	if rawBody["available_int"] == nil && rawBody["available"] == nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "`available_int` or `available` is required.")
 		return
@@ -341,6 +359,22 @@ func parseAvailableBody(rawBody map[string]interface{}) (int, error) {
 	return 0, fmt.Errorf("`available_int` or `available` is required")
 }
 
+// optionalBodyVersion reads the optional optimistic-lock token. Absent means
+// "no lock"; anything that is not a non-negative integer is a bad request, so
+// a client cannot believe it sent a lock the server dropped.
+func optionalBodyVersion(rawBody map[string]interface{}) (*int, error) {
+	raw, ok := rawBody["expected_version"]
+	if !ok {
+		return nil, nil
+	}
+	number, ok := raw.(float64)
+	if !ok || number != math.Trunc(number) || number < 0 {
+		return nil, errors.New("`expected_version` must be a non-negative integer")
+	}
+	version := int(number)
+	return &version, nil
+}
+
 // optionalBodyString reads an optional string field. A present field of another
 // JSON type is rejected instead of being silently ignored, so a client cannot
 // believe it sent an image that the server dropped.
@@ -364,6 +398,8 @@ func optionalBodyString(rawBody map[string]interface{}, field, typeMessage strin
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [patch]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_chunk")
+	defer common.FinishOperationLog(c)
 
 	// Decode the update fields.
 	body, err := io.ReadAll(c.Request.Body)
@@ -411,10 +447,11 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"image_update_mode":  true,
 		"tag_kwd":            true,
 		"tag_feas":           true,
+		"expected_version":   true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.Respond(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas")
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas, expected_version")
 			return
 		}
 	}
@@ -469,6 +506,12 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	req.ImageBase64 = imageBase64
 	req.ImageUpdateMode = imageUpdateMode
+	expectedVersion, err := optionalBodyVersion(rawBody)
+	if err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.ExpectedVersion = expectedVersion
 
 	// Set path parameters
 	req.DatasetID = datasetID
@@ -489,6 +532,9 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 			case common.CodeArgumentError, common.CodeBadRequest, common.CodeDataError:
 				common.Respond(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
 				return
+			case common.CodeConflict:
+				common.Respond(c, http.StatusConflict, coded.Code(), nil, err.Error())
+				return
 			}
 		}
 
@@ -507,6 +553,8 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [delete]
 func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_chunks")
+	defer common.FinishOperationLog(c)
 
 	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
@@ -521,6 +569,8 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "chunk_ids", req.ChunkIDs)
+	common.SetOperationResource(c, "delete_all", req.DeleteAll)
 	req.DatasetID = datasetID
 	req.DocID = docID
 
@@ -584,15 +634,18 @@ func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMess
 	return result, nil
 }
 
+// addChunkResponseMessage retains the service message and logs server-class failures.
 func addChunkResponseMessage(code common.ErrorCode, err error) string {
 	if code == common.CodeServerError {
 		common.Warn("add chunk failed", zap.String("error", err.Error()))
-		return "Failed to add chunk"
 	}
 	return err.Error()
 }
 
 func (h *ChunkHandler) AddChunk(c *gin.Context) {
+	common.StartOperationLog(c, "add_dataset_chunk")
+	defer common.FinishOperationLog(c)
+
 	ctx := c.Request.Context()
 
 	datasetID, documentID := strings.TrimSpace(c.Param("dataset_id")), strings.TrimSpace(c.Param("document_id"))
@@ -657,5 +710,10 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		return
 	}
 
+	if resp != nil {
+		if id, ok := resp.Chunk["id"].(string); ok {
+			common.SetOperationResource(c, "chunk_id", id)
+		}
+	}
 	common.RespondSuccess(c, resp, "success")
 }

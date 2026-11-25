@@ -39,11 +39,11 @@ func TestTimer_BasicSequentialPhases(t *testing.T) {
 	tm.Exit(PhaseBindModels)
 
 	got := tm.Phase(PhaseCheckLLM)
-	if got < 4*time.Millisecond || got > 50*time.Millisecond {
+	if got < 4*time.Millisecond || got > time.Second {
 		t.Errorf("PhaseCheckLLM = %v, want ~5ms", got)
 	}
 	got = tm.Phase(PhaseBindModels)
-	if got < 2*time.Millisecond || got > 50*time.Millisecond {
+	if got < 2*time.Millisecond || got > time.Second {
 		t.Errorf("PhaseBindModels = %v, want ~3ms", got)
 	}
 

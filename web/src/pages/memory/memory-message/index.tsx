@@ -1,9 +1,13 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { t } from 'i18next';
-import { useFetchMemoryMessageList, useSelectFilters } from './hook';
+import { useFetchMemoryMessageList } from './hook';
 import { MemoryTable } from './message-table';
+import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
+import { useCanWriteMemoryRole } from '@/ee/pages/memories/memory-dropdown-guard';
 
 export default function MemoryMessage() {
+  const { data: memory } = useFetchMemoryBaseConfiguration();
+  const hasRoleWrite = useCanWriteMemoryRole(memory?.tenant_id ?? '');
   const {
     searchString,
     // documents,
@@ -11,25 +15,14 @@ export default function MemoryMessage() {
     pagination,
     handleInputChange,
     setPagination,
-    filterValue,
-    handleFilterSubmit,
     loading,
   } = useFetchMemoryMessageList();
-  const { filters } = useSelectFilters();
   return (
     <div className="flex flex-col gap-2">
       <ListFilterBar
         title={t('header.dataset')}
         onSearchChange={handleInputChange}
         searchString={searchString}
-        // showFilter={false}
-        // value={filterValue}
-        // onChange={handleFilterSubmit}
-        // onOpenChange={onOpenChange}
-        // filters={filters}
-        filters={filters}
-        onChange={handleFilterSubmit}
-        value={filterValue}
         leftPanel={
           <div className="items-start">
             <div className="pb-1">{t('memory.sideBar.messages')}</div>
@@ -44,6 +37,8 @@ export default function MemoryMessage() {
         pagination={pagination}
         setPagination={setPagination}
         total={data?.messages?.total_count ?? 0}
+        operatorPermission={memory?.operator_permission ?? 0}
+        hasRoleWrite={hasRoleWrite}
         // rowSelection={rowSelection}
         // setRowSelection={setRowSelection}
         // loading={loading}

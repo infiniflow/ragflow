@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -17,10 +18,27 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/parser/media"
+	"ragflow/internal/utility"
 )
 
-const soMarkPollTimeout = 30 * time.Minute
-const soMarkPollInterval = 2 * time.Second
+const (
+	// defaultSoMarkPollTimeout bounds how long soMarkPoll waits for an async
+	// task. SoMark parses on a remote service whose own task timeout
+	// (EXTRACT_MAX_TIMEOUT) defaults to 24h, so a short hard-coded client
+	// window would fail valid large PDFs while the service still considers
+	// them in flight. SOMARK_POLL_TIMEOUT (Go duration, e.g. "30m") overrides
+	// the default, and a tighter caller context deadline still wins over both.
+	defaultSoMarkPollTimeout = 30 * time.Minute
+	// maxSoMarkPollFailures caps consecutive transient poll failures. A single
+	// blip must not abort the parse — absorbing exactly that flakiness is why
+	// the poll loop exists — but a persistently broken endpoint should fail
+	// instead of retrying until the deadline.
+	maxSoMarkPollFailures = 5
+)
+
+// soMarkPollInterval is the delay between /parse/async_check polls. It is a
+// variable only so tests can shorten it; production code never mutates it.
+var soMarkPollInterval = 2 * time.Second
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
 // output. Explicit tenant configuration never borrows a global endpoint or key.
@@ -72,13 +90,13 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		return "", fmt.Errorf("parser: SoMark write file: %w", err)
 	}
 	_ = writer.WriteField("output_formats", "json")
-	elementFormats, _ := json.Marshal(map[string]any{
+	elementFormats := utility.MustJSON(map[string]any{
 		"image":   parser.envOrDefault(common.EnvSOMarkImageFormat, parser.SoMarkImageFormat, "url"),
 		"formula": parser.envOrDefault(common.EnvSOMarkFormulaFormat, parser.SoMarkFormulaFormat, "latex"),
 		"table":   parser.envOrDefault(common.EnvSOMarkTableFormat, parser.SoMarkTableFormat, "html"),
 		"cs":      parser.envOrDefault(common.EnvSOMarkCSFormat, parser.SoMarkCSFormat, "image"),
 	})
-	featureConfig, _ := json.Marshal(map[string]any{
+	featureConfig := utility.MustJSON(map[string]any{
 		"enable_text_cross_page":         parser.envOrBool(common.EnvSOMarkEnableTextCrossPage, parser.SoMarkEnableTextCrossPage),
 		"enable_table_cross_page":        parser.envOrBool(common.EnvSOMarkEnableTableCrossPage, parser.SoMarkEnableTableCrossPage),
 		"enable_title_level_recognition": parser.envOrBool(common.EnvSOMarkEnableTitleLevelRecognition, parser.SoMarkEnableTitleLevelRecognition),
@@ -87,8 +105,8 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		"enable_image_understanding":     parser.envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
 		"keep_header_footer":             parser.envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
 	})
-	_ = writer.WriteField("element_formats", string(elementFormats))
-	_ = writer.WriteField("feature_config", string(featureConfig))
+	_ = writer.WriteField("element_formats", elementFormats)
+	_ = writer.WriteField("feature_config", featureConfig)
 	if apiKey != "" {
 		_ = writer.WriteField("api_key", apiKey)
 	}
@@ -128,61 +146,203 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 	return payload.Data.TaskID, nil
 }
 
+// soMarkPollTimeout reads the poll budget. An unset or malformed
+// SOMARK_POLL_TIMEOUT degrades to the default: a typo must not disable the
+// timeout or silently turn it into zero.
+func soMarkPollTimeout() time.Duration {
+	raw := strings.TrimSpace(common.GetEnv(common.EnvSOMarkPollTimeout))
+	if raw == "" {
+		return defaultSoMarkPollTimeout
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return defaultSoMarkPollTimeout
+	}
+	return d
+}
+
+// soMarkStatus is the classified state of an async task under SoMark's
+// explicit status model.
+type soMarkStatus int
+
+const (
+	soMarkStatusInProgress soMarkStatus = iota
+	soMarkStatusSuccess
+	soMarkStatusFailed
+	soMarkStatusUnknown
+)
+
+// classifySoMarkStatus maps a raw status onto SoMark's explicit state model:
+// only the documented in-progress states keep polling, SUCCESS/FAILED are
+// terminal, and anything else is a protocol error rather than an implicit
+// "keep polling until the deadline". An empty status lands here too.
+//
+// PENDING and QUEUEING (double E) are kept as defensive aliases even though
+// the documented set is WAITING/QUEUING/CONVERTING/PROCESSING: PENDING is what
+// the implementation merged in #21710 reports, and QUEUEING is a plausible
+// spelling from a proxy that rewrites the payload. Treating either as unknown
+// would turn a live task into an immediate protocol error; the deadline still
+// bounds how long an alias can keep the loop running.
+func classifySoMarkStatus(status string) soMarkStatus {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "SUCCESS":
+		return soMarkStatusSuccess
+	case "WAITING", "QUEUING", "QUEUEING", "PENDING", "CONVERTING", "PROCESSING", "RUNNING":
+		return soMarkStatusInProgress
+	case "FAILED", "FAILURE", "CANCELED", "CANCELLED", "ERROR":
+		return soMarkStatusFailed
+	}
+	return soMarkStatusUnknown
+}
+
+// soMarkPollError marks whether a poll failure is worth retrying. Transport
+// errors, 429/5xx, non-JSON bodies (e.g. an HTML 502 from a proxy), and
+// business errors are transient. Business errors are deliberately retryable:
+// SoMark returns the same code (e.g. 1133) both for a task that is not visible
+// yet ("task not found") and for a genuinely bad request ("invalid PDF"), so
+// trusting them as terminal would abort the parse on a task that is still
+// being registered.
+type soMarkPollError struct {
+	err       error
+	transient bool
+}
+
+func (e *soMarkPollError) Error() string { return e.err.Error() }
+func (e *soMarkPollError) Unwrap() error { return e.err }
+
+func soMarkTransientError(err error) error { return &soMarkPollError{err: err, transient: true} }
+func soMarkTerminalError(err error) error  { return &soMarkPollError{err: err} }
+
+// soMarkPoll polls /parse/async_check until the task reaches a terminal state,
+// the deadline expires, or ctx is cancelled. SoMark submission is asynchronous
+// (POST /parse/async), so a single check almost never sees SUCCESS.
 func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string]any, error) {
-	pollCtx, cancel := context.WithTimeout(ctx, soMarkPollTimeout)
+	// context.WithTimeout yields the earlier of this budget and a caller
+	// deadline, so a tighter caller context is honoured as-is.
+	pollCtx, cancel := context.WithTimeout(ctx, soMarkPollTimeout())
 	defer cancel()
-	ticker := time.NewTicker(soMarkPollInterval)
-	defer ticker.Stop()
+
+	wait := func() error {
+		select {
+		case <-pollCtx.Done():
+			return pollCtx.Err()
+		case <-time.After(soMarkPollInterval):
+			return nil
+		}
+	}
+
+	// The task is queued by definition right after submit, so an immediate
+	// check would spend a request on a status that cannot have moved yet.
+	if err := wait(); err != nil {
+		return nil, soMarkPollDeadlineError(taskID, "", err)
+	}
+
+	failures := 0
+	lastStatus := ""
 	for {
-		form := url.Values{"task_id": {taskID}}
-		if apiKey != "" {
-			form.Set("api_key", apiKey)
-		}
-		req, err := http.NewRequestWithContext(pollCtx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+		result, status, err := soMarkPollOnce(pollCtx, baseURL, taskID, apiKey)
 		if err != nil {
-			return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		resp, err := common.GetSSRFHTTPClient().Do(req)
-		if err != nil {
-			if pollCtx.Err() != nil {
-				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s: %w", taskID, pollCtx.Err())
+			var pollErr *soMarkPollError
+			if !errors.As(err, &pollErr) || !pollErr.transient {
+				// When the deadline or a cancellation ended the in-flight
+				// request, report the standardized timeout/cancel error (with
+				// the last status) instead of the raw transport error, so
+				// callers see the same wording as the wait-path timeout.
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					return nil, soMarkPollDeadlineError(taskID, lastStatus, pollCtx.Err())
+				}
+				return nil, err
 			}
-			return nil, fmt.Errorf("parser: SoMark poll: %w", err)
-		}
-		raw, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("parser: SoMark read poll: %w", readErr)
-		}
-		var payload struct {
-			Code    int            `json:"code"`
-			Message string         `json:"message"`
-			Data    map[string]any `json:"data"`
-		}
-		if err = json.Unmarshal(raw, &payload); err != nil {
-			return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
-		}
-		if payload.Code != 0 {
-			return nil, fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
-		}
-		status, _ := payload.Data["status"].(string)
-		switch strings.ToUpper(status) {
-		case "SUCCESS":
-			result, _ := payload.Data["result"].(map[string]any)
-			if result == nil {
-				return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
+			failures++
+			if failures >= maxSoMarkPollFailures {
+				return nil, fmt.Errorf("parser: SoMark task %s: %w (after %d consecutive transient failures)", taskID, err, failures)
 			}
-			return result, nil
-		case "QUEUING", "PENDING", "RUNNING", "PROCESSING":
-			select {
-			case <-pollCtx.Done():
-				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s; last status=%s: %w", taskID, status, pollCtx.Err())
-			case <-ticker.C:
+		} else {
+			failures = 0
+			lastStatus = status
+			if result != nil {
+				return result, nil
 			}
-		default:
-			return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
 		}
+		if err := wait(); err != nil {
+			return nil, soMarkPollDeadlineError(taskID, lastStatus, err)
+		}
+	}
+}
+
+// soMarkPollDeadlineError distinguishes a cancelled poll from one that ran out
+// of budget, so the caller can tell "user went away" from "SoMark too slow".
+func soMarkPollDeadlineError(taskID, lastStatus string, err error) error {
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("parser: SoMark task %s cancelled (last status=%q): %w", taskID, lastStatus, err)
+	}
+	return fmt.Errorf("parser: SoMark task %s timed out (last status=%q): %w", taskID, lastStatus, err)
+}
+
+// soMarkPollOnce performs a single /parse/async_check. On success it returns
+// the result map; while the task is in progress it returns the raw status and
+// a nil result. Errors say whether they are transient (retry) or terminal.
+func soMarkPollOnce(ctx context.Context, baseURL, taskID, apiKey string) (result map[string]any, status string, err error) {
+	form := url.Values{"task_id": {taskID}}
+	if apiKey != "" {
+		form.Set("api_key", apiKey)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll request: %w", err))
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := common.GetSSRFHTTPClient().Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			// The caller's context, not the network, ended the request.
+			return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll: %w", err))
+		}
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll: %w", err))
+	}
+	defer resp.Body.Close()
+	// Classify the status before touching the body: a permanent 4xx must fail
+	// fast even when the server stalls or truncates the body, and a read error
+	// on a known 4xx must not be retried as a transport blip.
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll: HTTP %d", resp.StatusCode))
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll: HTTP %d", resp.StatusCode))
+	}
+	raw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		if ctx.Err() != nil {
+			return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark read poll: %w", readErr))
+		}
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark read poll: %w", readErr))
+	}
+	var payload struct {
+		Code    int            `json:"code"`
+		Message string         `json:"message"`
+		Data    map[string]any `json:"data"`
+	}
+	if err = json.Unmarshal(raw, &payload); err != nil {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark decode poll: %w", err))
+	}
+	if payload.Code != 0 {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message))
+	}
+	status, _ = payload.Data["status"].(string)
+	switch classifySoMarkStatus(status) {
+	case soMarkStatusSuccess:
+		result, _ = payload.Data["result"].(map[string]any)
+		if result == nil {
+			// A SUCCESS without result is a service hiccup worth another poll.
+			return nil, status, soMarkTransientError(fmt.Errorf("parser: SoMark SUCCESS without result"))
+		}
+		return result, status, nil
+	case soMarkStatusInProgress:
+		return nil, status, nil
+	case soMarkStatusFailed:
+		return nil, status, soMarkTerminalError(fmt.Errorf("parser: SoMark task %s failed status=%s", taskID, status))
+	default:
+		return nil, status, soMarkTerminalError(fmt.Errorf("parser: SoMark task %s returned unknown status %q", taskID, status))
 	}
 }
 
@@ -202,10 +362,6 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		pageCount = len(pageSizes)
 	}
 
-	// Pixel dimensions of each page, keyed by the same resolved page number
-	// positions use, so a block whose page_idx points at another page scales
-	// against THAT page's pixel space instead of the enclosing page's.
-	pixByPage := make(map[int][2]float64, len(pages))
 	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
@@ -217,22 +373,12 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		if n, ok := soMarkPageIndex(page["page_num"]); ok {
 			pageNumber = n + 1
 		}
-		if w, h := soMarkPagePixelSize(page["page_size"]); w > 0 && h > 0 {
-			pixByPage[pageNumber] = [2]float64{w, h}
+		srcW, srcH := soMarkPagePixelSize(page["page_size"])
+		var pointSize [2]float64
+		if pageNumber > 0 && pageNumber <= len(pageSizes) {
+			pointSize = pageSizes[pageNumber-1]
 		}
-	}
-
-	for pageIndex, pageRaw := range pages {
-		page, ok := pageRaw.(map[string]any)
-		if !ok {
-			continue
-		}
-		// SoMark pages carry a 0-based page_num; positions and page_number
-		// are 1-based.
-		pageNumber := pageIndex + 1
-		if n, ok := soMarkPageIndex(page["page_num"]); ok {
-			pageNumber = n + 1
-		}
+		warned := false
 		blocks, _ := page["blocks"].([]any)
 		for _, blockRaw := range blocks {
 			block, ok := blockRaw.(map[string]any)
@@ -241,32 +387,19 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			}
 			blockItems, blockWarnings := soMarkBlockToItems(ctx, block, keepHeaderFooter, state)
 			warnings = append(warnings, blockWarnings...)
+			if len(blockItems) == 0 {
+				continue
+			}
+			position, warning := soMarkBlockPosition(block, pageNumber, srcW, srcH, pointSize)
+			if warning != "" && !warned {
+				warnings = append(warnings, fmt.Sprintf("SoMark page %d: %s", pageNumber, warning))
+				warned = true
+			}
 			for _, item := range blockItems {
 				item["page_number"] = pageNumber
-				// A block may carry its own 0-based page_idx; it wins over the
-				// enclosing page value, which stays as the fallback. An index
-				// beyond the known page range (the source PDF's pages when
-				// readable, else the returned pages) falls back too: emitting
-				// it would point at a page that does not exist and inflate
-				// page_count downstream.
-				blockPage := pageNumber
-				pageBound := len(pages)
-				if len(pageSizes) > 0 {
-					pageBound = len(pageSizes)
-				}
-				if n, ok := soMarkPageIndex(block["page_idx"]); ok && n < pageBound {
-					blockPage = n + 1
-				}
-				if len(pageSizes) > 0 && blockPage > len(pageSizes) {
-					// The page is not in the source document; a position for
-					// it cannot be correct, so the item goes out without one.
-					items = append(items, item)
-					continue
-				}
-				src := pixByPage[blockPage]
-				if pos := soMarkBlockPosition(block, blockPage, src[0], src[1], pageSizes); pos != nil {
-					item["positions"] = [][]any{pos}
-					item["_pdf_positions"] = [][]any{pos}
+				if position != nil {
+					item["positions"] = [][]any{position}
+					item["_pdf_positions"] = [][]any{position}
 				}
 				items = append(items, item)
 			}
@@ -275,9 +408,6 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 	return items, pageCount, append(state.warnings(), warnings...)
 }
 
-// soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
-// its 1-based page number into the [page, left, right, top, bottom] position
-// row used by _pdf_positions.
 // soMarkPageIndex validates a SoMark page index before use: JSON numbers
 // arrive as float64, so reject fractional, negative, non-finite, and
 // out-of-int-range values instead of truncating them into a wrong page.
@@ -289,42 +419,44 @@ func soMarkPageIndex(raw any) (int, bool) {
 	return int(f), true
 }
 
-func soMarkBlockPosition(block map[string]any, pageNumber int, srcW, srcH float64, pageSizes [][2]float64) []any {
+// soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
+// its 1-based page number into the [page, left, right, top, bottom] position
+// row used by _pdf_positions.
+func soMarkBlockPosition(block map[string]any, pageNumber int, srcW, srcH float64, dst [2]float64) ([]any, string) {
 	bbox, _ := block["bbox"].([]any)
 	if len(bbox) != 4 {
-		return nil
+		return nil, ""
 	}
 	var v [4]float64
 	for i, raw := range bbox {
 		n, ok := numericAny(raw)
 		if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
-			return nil
+			return nil, ""
 		}
 		v[i] = n
 	}
-	x0, top, x1, bott := v[0], v[1], v[2], v[3]
+	x0, top, x1, bottom := v[0], v[1], v[2], v[3]
 	if x0 > x1 {
 		x0, x1 = x1, x0
 	}
-	if top > bott {
-		top, bott = bott, top
+	if top > bottom {
+		top, bottom = bottom, top
 	}
-	// SoMark reports bboxes in its own pixel space (page["page_size"]), while
-	// RAGFlow positions are PDF points. Rescale into the page's point size and
-	// clamp to the page, mirroring the Python converter's pdfplumber-at-72dpi
-	// mapping. When either side is unknown the raw box is kept, matching the
-	// Python fallback for pages it could not render.
-	idx := pageNumber - 1
-	if srcW > 0 && srcH > 0 && idx >= 0 && idx < len(pageSizes) {
-		dst := pageSizes[idx]
-		if dst[0] > 0 && dst[1] > 0 {
-			x0 = min(max(x0/srcW*dst[0], 0), dst[0])
-			x1 = min(max(x1/srcW*dst[0], 0), dst[0])
-			top = min(max(top/srcH*dst[1], 0), dst[1])
-			bott = min(max(bott/srcH*dst[1], 0), dst[1])
+	for _, dimension := range [...]float64{srcW, srcH, dst[0], dst[1]} {
+		if dimension <= 0 || math.IsNaN(dimension) || math.IsInf(dimension, 0) {
+			return nil, "positions omitted because the SoMark pixel size or PDF point size is unavailable"
 		}
 	}
-	return []any{float64(pageNumber), x0, x1, top, bott}
+	if pdfBoxExceedsBleed(x0, top, x1, bottom, srcW, srcH) {
+		return nil, "positions omitted for blocks outside the page bleed tolerance"
+	}
+	// Clip in pixel space before converting to PDF points.
+	x0, x1 = max(x0, 0)/srcW*dst[0], min(x1, srcW)/srcW*dst[0]
+	top, bottom = max(top, 0)/srcH*dst[1], min(bottom, srcH)/srcH*dst[1]
+	if x0 >= x1 || top >= bottom {
+		return nil, ""
+	}
+	return []any{float64(pageNumber), x0, x1, top, bottom}, ""
 }
 
 // soMarkPagePixelSize reads a page's SoMark pixel dimensions ({w, h}); a zero
@@ -336,11 +468,8 @@ func soMarkPagePixelSize(raw any) (float64, float64) {
 	return w, h
 }
 
-// soMarkPagePointSizes reads each page's [width, height] in PDF points from
-// the source document (CropBox, falling back to MediaBox), the space RAGFlow
-// positions and crops use. A nil result or a zero entry means the page size
-// is unknown and positions stay in the service's pixel space, matching the
-// Python converter's fallback when a page cannot be rendered.
+// soMarkPagePointSizes reads the visible [width, height] of each page in PDF points.
+// A nil result or a zero entry means positions for that page are omitted.
 func soMarkPagePointSizes(data []byte) [][2]float64 {
 	r, err := pdfreader.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -348,38 +477,65 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 	}
 	numPage := r.NumPage()
 	// A corrupt or malicious catalog /Count can be negative (panics make) or
-	// enormous (allocates/iterates without bound). Treat it as unreadable and
-	// fall back to the caller's pixel-space scaling, mirroring the
-	// maxPDFPageCount guard deepdoc/pdf/plaintext_nocgo.go applies to the
-	// same library.
+	// enormous (allocates/iterates without bound). Treat it as unreadable.
 	if numPage < 0 || numPage > maxSoMarkPageCount {
 		return nil
 	}
-	sizes := make([][2]float64, 0, numPage)
+	sizes := make([][2]float64, numPage)
 	for p := 1; p <= numPage; p++ {
-		box := soMarkInheritedPageValue(r.Page(p), "CropBox")
-		if box.IsNull() || box.Len() != 4 {
-			box = soMarkInheritedPageValue(r.Page(p), "MediaBox")
+		page := r.Page(p)
+		media, hasMedia := soMarkPageBox(page, "MediaBox")
+		crop, hasCrop := soMarkPageBox(page, "CropBox")
+		switch {
+		case !hasCrop:
+			crop = media
+		case hasMedia:
+			crop.Min.X = max(crop.Min.X, media.Min.X)
+			crop.Min.Y = max(crop.Min.Y, media.Min.Y)
+			crop.Max.X = min(crop.Max.X, media.Max.X)
+			crop.Max.Y = min(crop.Max.Y, media.Max.Y)
 		}
-		if box.IsNull() || box.Len() != 4 {
-			sizes = append(sizes, [2]float64{})
+		w, h := crop.Max.X-crop.Min.X, crop.Max.Y-crop.Min.Y
+		if w <= 0 || h <= 0 {
 			continue
 		}
-		x0, y0 := box.Index(0).Float64(), box.Index(1).Float64()
-		x1, y1 := box.Index(2).Float64(), box.Index(3).Float64()
-		w, h := math.Abs(x1-x0), math.Abs(y1-y0)
+		// Page boxes are in default user-space units (one point unless UserUnit is set).
+		if unit := page.V.Key("UserUnit"); !unit.IsNull() {
+			w, h = w*unit.Float64(), h*unit.Float64()
+		}
 		// A quarter-turn /Rotate (also inheritable) swaps the dimensions of
 		// the rendered page SoMark sees; scaling and clamping must use the
 		// rotated size.
-		if rot := soMarkInheritedPageValue(r.Page(p), "Rotate"); !rot.IsNull() {
+		if rot := soMarkInheritedPageValue(page, "Rotate"); !rot.IsNull() {
 			switch deg := ((int(rot.Float64()) % 360) + 360) % 360; deg {
 			case 90, 270:
 				w, h = h, w
 			}
 		}
-		sizes = append(sizes, [2]float64{w, h})
+		sizes[p-1] = [2]float64{w, h}
 	}
 	return sizes
+}
+
+// PDF rectangles may specify either pair of opposite corners in any order.
+func soMarkPageBox(page pdfreader.Page, key string) (pdfreader.Rect, bool) {
+	box := soMarkInheritedPageValue(page, key)
+	if box.Len() != 4 {
+		return pdfreader.Rect{}, false
+	}
+	var coords [4]float64
+	for i := range coords {
+		v := box.Index(i)
+		if v.Kind() != pdfreader.Integer && v.Kind() != pdfreader.Real {
+			return pdfreader.Rect{}, false
+		}
+		coords[i] = v.Float64()
+	}
+	x0, y0, x1, y1 := coords[0], coords[1], coords[2], coords[3]
+	return pdfreader.Rect{
+		Min: pdfreader.Point{X: min(x0, x1), Y: min(y0, y1)},
+		Max: pdfreader.Point{X: max(x0, x1), Y: max(y0, y1)},
+	}, true
 }
 
 // maxSoMarkPageCount mirrors deepdoc/pdf/plaintext_nocgo.go: one million

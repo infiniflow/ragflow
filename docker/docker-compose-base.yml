@@ -25,11 +25,14 @@ services:
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
     mem_limit: ${MEM_LIMIT}
     ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
       memlock:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$${ELASTIC_PASSWORD}\" http://localhost:9200/_cluster/health >/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -38,17 +41,17 @@ services:
     restart: unless-stopped
 
 
-  opensearch01:
+  opensearch39:
     profiles:
       - opensearch
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:3.9.0
     volumes:
-      - osdata01:/usr/share/opensearch/data
+      - osdata39:/usr/share/opensearch/data
     ports:
       - ${OS_PORT}:9201
     env_file: .env
     environment:
-      - node.name=opensearch01
+      - node.name=opensearch39
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
       - bootstrap.memory_lock=false
@@ -62,11 +65,14 @@ services:
       - http.port=9201
     mem_limit: ${MEM_LIMIT}
     ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
       memlock:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9201"]
+      test: ["CMD-SHELL", "curl -fsS -u \"admin:$${OPENSEARCH_PASSWORD}\" http://localhost:9201/_cluster/health >/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -115,6 +121,10 @@ services:
     volumes:
       - serenedb_data:/var/lib/serenedb
     mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     networks:
       - ragflow
     healthcheck:
@@ -174,6 +184,10 @@ services:
       - MEMORY_LIMIT=${SEEKDB_MEMORY_LIMIT:-2G}
       - REPORTER=ragflow-seekdb
     mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     healthcheck:
       test: ['CMD-SHELL', 'mysql -h127.0.0.1 -P2881 -uroot -p${SEEKDB_PASSWORD:-infini_rag_flow} -e "CREATE DATABASE IF NOT EXISTS ${SEEKDB_DOC_DBNAME:-ragflow_doc};"']
       interval: 5s
@@ -209,12 +223,16 @@ services:
     # network. Remote access is an explicit opt-in through VB_BIND_ADDR
     # (e.g. 0.0.0.0 or a specific interface IP) in docker/.env.
     ports:
-      - ${VB_BIND_ADDR:-127.0.0.1}:${EXPOSE_VB_PORT:-5432}:5432
+      - ${VB_BIND_ADDR:-127.0.0.1}:${VB_PORT:-5432}:5432
     volumes:
       - vastbase_data:/home/vastbase/data
       - ./vastbase/init:/docker-entrypoint-initdb.d
       - ./vastbase/license:/home/vastbase/vastbase/lic
     mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     networks:
       - ragflow
     restart: unless-stopped
@@ -235,6 +253,10 @@ services:
     ports:
       - 127.0.0.1:${SANDBOX_EXECUTOR_MANAGER_PORT:-9385}:9385
     env_file: .env
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -272,6 +294,10 @@ services:
     # mysql:5.7 linux/arm64 image is unavailable.
     image: mysql:8.0.40
     env_file: .env
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
     # Ingestion throughput tuning, OPT-IN. The ingestion sink commits per progress
@@ -312,7 +338,7 @@ services:
       - --innodb-io-capacity-max=4000
       - --innodb-redo-log-capacity=1G
     ports:
-      - ${EXPOSE_MYSQL_PORT}:3306
+      - ${MYSQL_PORT}:3306
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
@@ -329,6 +355,10 @@ services:
 
   minio:
     image: pgsty/silo:RELEASE.2026-08-06T00-00-00Z
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     command: ["server", "--console-address", ":9001", "/data"]
     ports:
       - ${MINIO_PORT}:9000
@@ -366,6 +396,10 @@ services:
     entrypoint: ["/bin/sh", "/etc/kvrocks/entrypoint.sh"]
     user: "0:0"
     env_file: .env
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # Publish the Kvrocks port so a host-run Go binary (e.g. ./bin/ragflow_server
     # --ingestor) can reach it. The host-facing port uses KVROCKS_PORT (default 6379
     # locally, so a local host binary connects to localhost:6379). In CI the port is
@@ -396,6 +430,10 @@ services:
     profiles:
       - jaeger
     image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
       - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
@@ -410,9 +448,13 @@ services:
 
   nats:
     image: nats:2.14.2
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
-      - ${EXPOSE_NATS_PORT:-4222}:4222
-      - ${EXPOSE_NATS_MONITORING_PORT:-8222}:8222
+      - ${NATS_PORT:-4222}:4222
+      - ${NATS_MONITORING_PORT:-8222}:8222
     volumes:
       - nats_data:/data
     command: -js -sd /data --http_port 8222
@@ -432,6 +474,10 @@ services:
       - tei-cpu
     image: ${TEI_IMAGE_CPU}
     hostname: tei
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - ${TEI_PORT-6380}:80
     env_file: .env
@@ -446,6 +492,10 @@ services:
       - tei-gpu
     image: ${TEI_IMAGE_GPU}
     hostname: tei
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - ${TEI_PORT-6380}:80
     env_file: .env
@@ -466,6 +516,10 @@ services:
     profiles:
       - kibana
     image: kibana:${STACK_VERSION}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - ${KIBANA_PORT-5601}:5601
     env_file: .env
@@ -492,7 +546,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - ${EXPOSE_CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
       - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
     env_file: .env
     environment:
@@ -518,7 +572,7 @@ services:
 volumes:
   esdata01:
     driver: local
-  osdata01:
+  osdata39:
     driver: local
   infinity_data:
     driver: local

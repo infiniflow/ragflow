@@ -27,18 +27,18 @@ import { SelectWithSearch } from './originui/select-with-search';
 type CompilationTemplateFormFieldProps = {
   horizontal?: boolean;
   name?: string;
-  ownerTenantId?: string;
+  accessUserId?: string;
 };
 
 export function CompilationTemplateFormField({
   horizontal,
   name = 'parser_config.compilation_template_group_id',
-  ownerTenantId,
+  accessUserId,
 }: CompilationTemplateFormFieldProps) {
   const { t } = useTranslation();
   const { getValues, setValue } = useFormContext();
   const { options, isFetched, isError } =
-    useCompilationTemplateGroupOptions(ownerTenantId);
+    useCompilationTemplateGroupOptions(accessUserId);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   // Zero-arg wrapper: labelLink.onClick is wired to a DOM click, whose event
@@ -59,9 +59,8 @@ export function CompilationTemplateFormField({
     [getValues, name, setValue],
   );
 
-  // No owner-scoped name lookup exists for template groups (strictly
-  // owner-tenant, no sharing mechanism) — the raw id is all the missing
-  // display can show. Styled like MissingModelLabel.
+  // A group outside the selected owner's list has no resolvable name here, so
+  // show its raw id. Styled like MissingModelLabel.
   const renderMissingGroup = useCallback(
     (missingValue: string) => (
       <span className="flex items-center gap-1.5 text-text-disabled">

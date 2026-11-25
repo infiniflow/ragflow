@@ -1,0 +1,232 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package opensearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
+
+	"go.uber.org/zap"
+)
+
+const (
+	osSQLRequestTimeout = 2 * time.Second
+	osSQLFetchSize      = 128
+	// osSQLMaxPages bounds cursor pagination so a misbehaving cluster cannot
+	// keep the caller in an endless fetch loop.
+	osSQLMaxPages = 1000
+)
+
+const osSQLRetryAttempts = 2
+const osSQLRetryDelay = 3 * time.Second
+
+// RunSQL posts SQL to `/_plugins/_sql`, translates the response into
+// chunk-shaped maps. Returns (nil, nil) on empty rows; (nil, error) when
+// retries exhausted.
+//
+// The caller's format is ignored: OpenSearch only decodes SQL responses in
+// JDBC format (`schema`/`datarows`) and only paginates cursors in that format,
+// while the shared caller passes ES's "json". Sending it through would make
+// the plugin reject the request with "unknown response format: json".
+func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[string]interface{}, error) {
+	if e == nil || e.client == nil {
+		return nil, fmt.Errorf("OpenSearch RunSQL: client not initialized")
+	}
+	if sqlText == "" {
+		return nil, fmt.Errorf("OpenSearch RunSQL: empty SQL")
+	}
+
+	common.Debug("OSConnection.sql get sql", zap.String("sql", sqlText))
+	sqlText = esoscommon.PreprocessSQL(sqlText)
+	common.Debug("OSConnection.sql to os", zap.String("sql", sqlText))
+
+	var lastErr error
+	for attempt := 0; attempt < osSQLRetryAttempts; attempt++ {
+		rows, err := e.runSQLOnce(ctx, sqlText)
+		if err == nil {
+			return rows, nil
+		}
+		lastErr = err
+		if !esoscommon.IsTimeoutError(err) {
+			common.Warn("OSConnection.sql got exception",
+				zap.String("sql", sqlText),
+				zap.Error(err))
+			return nil, fmt.Errorf("SQL error: %w\n\nSQL: %s", err, sqlText)
+		}
+		common.Warn("OS request timeout",
+			zap.String("sql", sqlText),
+			zap.Int("attempt", attempt+1),
+			zap.Error(err))
+		if attempt < osSQLRetryAttempts-1 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(osSQLRetryDelay):
+			}
+		}
+	}
+	common.Error(fmt.Sprintf("OSConnection.sql timeout after %d attempts. SQL: %s", osSQLRetryAttempts, sqlText), lastErr)
+	return nil, fmt.Errorf("OpenSearch RunSQL: timeout after %d attempts: %w", osSQLRetryAttempts, lastErr)
+}
+
+func (e *Engine) runSQLOnce(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
+	var (
+		out    []map[string]interface{}
+		cursor string
+	)
+	defer func() {
+		if cursor != "" {
+			_ = e.closeSQLCursor(ctx, cursor)
+		}
+	}()
+	for page := 0; page < osSQLMaxPages; page++ {
+		rows, next, err := e.runSQLPage(ctx, sqlText, cursor)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if next == "" {
+			cursor = ""
+			return out, nil
+		}
+		if next == cursor {
+			return nil, fmt.Errorf("opensearch sql cursor did not advance after %d pages; refusing to loop", page+1)
+		}
+		cursor = next
+	}
+	return nil, fmt.Errorf("opensearch sql pagination exceeded %d pages; refusing to return partial results", osSQLMaxPages)
+}
+
+// closeSQLCursor releases server-side resources held by an open SQL cursor
+// via OpenSearch's `/_plugins/_sql/close` endpoint.
+func (e *Engine) closeSQLCursor(ctx context.Context, cursor string) error {
+	if cursor == "" {
+		return nil
+	}
+	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	body, err := json.Marshal(map[string]string{"cursor": cursor})
+	if err != nil {
+		return fmt.Errorf("marshal close cursor body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(closeCtx, http.MethodPost, "/_plugins/_sql/close", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create close cursor request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := e.client.Perform(req)
+	if err != nil {
+		return fmt.Errorf("close cursor request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("close cursor status=%d body=%s", res.StatusCode, string(errBody))
+	}
+	return nil
+}
+
+// runSQLPage executes one `/_plugins/_sql` round trip. The first page sends the
+// query with fetch_size; later pages send the returned cursor. Each page gets
+// its own timeout so a slow page does not consume the whole query budget.
+// Requests always use the JDBC format, the only one the plugin decodes into
+// schema/datarows and the only one that supports cursor pagination.
+func (e *Engine) runSQLPage(ctx context.Context, sqlText string, cursor string) ([]map[string]interface{}, string, error) {
+	pageCtx, cancel := context.WithTimeout(ctx, osSQLRequestTimeout)
+	defer cancel()
+
+	body := map[string]interface{}{}
+	if cursor == "" {
+		body["query"] = sqlText
+		body["fetch_size"] = osSQLFetchSize
+	} else {
+		body["cursor"] = cursor
+	}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal body: %w", err)
+	}
+
+	// OpenSearch SQL endpoint (ES uses /_sql; OpenSearch uses /_plugins/_sql).
+	req, err := http.NewRequestWithContext(pageCtx, http.MethodPost, "/_plugins/_sql", bytes.NewReader(buf))
+	if err != nil {
+		return nil, "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	q := req.URL.Query()
+	q.Set("format", "jdbc")
+	req.URL.RawQuery = q.Encode()
+
+	res, err := e.client.Perform(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(res.Body)
+		return nil, "", fmt.Errorf("status=%d body=%s", res.StatusCode, string(errBody))
+	}
+
+	// Parse the OpenSearch SQL response: schema + datarows (ES uses columns +
+	// rows, a different shape). Cursor is present while more pages remain.
+	var resp struct {
+		Schema []struct {
+			Name  string `json:"name"`
+			Type  string `json:"type"`
+			Alias string `json:"alias"`
+		} `json:"schema"`
+		DataRows [][]interface{} `json:"datarows"`
+		Cursor   string          `json:"cursor"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+		return nil, "", fmt.Errorf("decode response: %w", err)
+	}
+
+	if len(resp.DataRows) == 0 {
+		return nil, resp.Cursor, nil
+	}
+
+	// Convert to chunk-shaped maps. Prefer alias over name if specified.
+	out := make([]map[string]interface{}, 0, len(resp.DataRows))
+	for _, row := range resp.DataRows {
+		cm := make(map[string]interface{}, len(resp.Schema))
+		for i, col := range resp.Schema {
+			if i < len(row) {
+				colName := col.Name
+				if col.Alias != "" {
+					colName = col.Alias
+				}
+				cm[colName] = row[i]
+			}
+		}
+		out = append(out, cm)
+	}
+	return out, resp.Cursor, nil
+}

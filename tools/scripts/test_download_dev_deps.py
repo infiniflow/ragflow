@@ -167,6 +167,114 @@ def test_prunes_foreign_platform_dir_on_short_circuit(tmp_path):
     assert expected.is_dir()
 
 
+# --- Variant-aware pruning: a pre-staged -full ORT archive must survive a
+# downloader run. The PR requires users to pre-stage it manually, so the
+# downloader must never treat that sibling variant dir as stale. ---
+
+
+def _seed_ort_dir(path, payload):
+    (path / "lib").mkdir(parents=True, exist_ok=True)
+    (path / "lib" / "libonnxruntime.a").write_bytes(payload)
+
+
+def _ort_static_lib(tmp_path):
+    return tmp_path / "onnxruntime" / "static_lib"
+
+
+def _prestaged_full_dir(static_lib):
+    """The exact dir the PR's build.sh hint tells GPU users to pre-stage."""
+    return static_lib / "onnxruntime-linux-x64-static_lib-1.29.0-full"
+
+
+def test_prune_keeps_prestaged_full_variant_dir(tmp_path):
+    """Core regression: the minimal and full dirs of the SAME pinned version
+    must coexist. The old prune deleted every dir whose name differed from
+    expected_dir, destroying the manually pre-staged -full archive on every
+    downloader run — exactly the state the PR introduces."""
+    static_lib = _ort_static_lib(tmp_path)
+    minimal = static_lib / native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    full = _prestaged_full_dir(static_lib)
+    _seed_ort_dir(minimal, b"minimal-ort")
+    _seed_ort_dir(full, b"PRESTAGED-FULL-ORT")
+
+    native.prune_stale_onnxruntime(str(static_lib), minimal.name)
+
+    assert (full / "lib" / "libonnxruntime.a").read_bytes() == b"PRESTAGED-FULL-ORT", "pre-staged -full archive was pruned as stale"
+    assert minimal.is_dir()
+
+
+def test_prune_still_removes_stale_version_and_foreign_platform(tmp_path):
+    """Guard against over-correction: variant-aware must NOT become a no-op.
+    Genuinely stale version/platform dirs still have to be removed so build.sh
+    cannot link two different ORT builds."""
+    static_lib = _ort_static_lib(tmp_path)
+    minimal = static_lib / native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    full = _prestaged_full_dir(static_lib)
+    stale_version = static_lib / "onnxruntime-linux-x64-static_lib-1.28.0-glibc2_28"
+    foreign_full = static_lib / "onnxruntime-osx-arm64-static_lib-1.29.0-full"
+    for path, payload in ((minimal, b"minimal"), (full, b"full"), (stale_version, b"old"), (foreign_full, b"mac")):
+        _seed_ort_dir(path, payload)
+
+    native.prune_stale_onnxruntime(str(static_lib), minimal.name)
+
+    assert not stale_version.exists(), "old-version dir must still be pruned"
+    assert not foreign_full.exists(), "foreign-platform dir must still be pruned"
+    assert full.exists() and minimal.exists(), "same-version variant dirs must survive"
+
+
+def test_prune_removes_suffixless_stray_dir(tmp_path):
+    """Adversarial: the sibling-variant exception must only apply to dirs with
+    a RECOGNIZED variant suffix. A stray same-version dir without a suffix would
+    match the default wildcard link glob and must still be pruned."""
+    static_lib = _ort_static_lib(tmp_path)
+    minimal = static_lib / native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    stray = static_lib / "onnxruntime-linux-x64-static_lib-1.29.0"
+    full = _prestaged_full_dir(static_lib)
+    for path, payload in ((minimal, b"minimal"), (stray, b"stray"), (full, b"full")):
+        _seed_ort_dir(path, payload)
+
+    native.prune_stale_onnxruntime(str(static_lib), minimal.name)
+
+    assert not stray.exists(), "suffixless stray dir must still be pruned"
+    assert minimal.exists() and full.exists()
+
+
+def test_extract_onnxruntime_preserves_prestaged_full(tmp_path):
+    """End-to-end through the real downloader call path: extracting the minimal
+    release zip must not delete a pre-staged -full archive."""
+    static_lib = _ort_static_lib(tmp_path)
+    full = _prestaged_full_dir(static_lib)
+    _seed_ort_dir(full, b"PRESTAGED-FULL-ORT")
+    archive, minimal_name = ort_archive(tmp_path)
+
+    assert native.extract_onnxruntime(str(static_lib), str(archive), minimal_name) is True
+
+    assert (full / "lib" / "libonnxruntime.a").read_bytes() == b"PRESTAGED-FULL-ORT"
+    assert native.has_static_archives(str(static_lib / minimal_name))
+
+
+def test_ort_normalized_dir_derives_requested_variant(monkeypatch):
+    """The requested variant (from DEEPDOC_ORT_VARIANT) must drive the dir name:
+    cpu keeps the legacy minimal dir, gpu/full resolve to the -full dir."""
+    monkeypatch.delenv("DEEPDOC_ORT_VARIANT", raising=False)
+    assert native.requested_ort_variant() == "cpu"
+    monkeypatch.setenv("DEEPDOC_ORT_VARIANT", "gpu")
+    assert native.requested_ort_variant() == "gpu"
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64", "gpu") == "onnxruntime-linux-x64-static_lib-1.29.0-full"
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64", "full") == "onnxruntime-linux-x64-static_lib-1.29.0-full"
+    # Explicit cpu keeps the byte-for-byte legacy name (additive guarantee).
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64", "cpu") == "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28"
+
+
+def test_requested_ort_variant_rejects_invalid_and_empty(monkeypatch):
+    """Mirror ort_variant.sh: an unknown OR explicitly-empty variant must fail
+    loudly, never silently fall back to the minimal/wildcard path."""
+    for bad in ("gpou", ""):
+        monkeypatch.setenv("DEEPDOC_ORT_VARIANT", bad)
+        with pytest.raises(ValueError, match="DEEPDOC_ORT_VARIANT"):
+            native.requested_ort_variant()
+
+
 def test_host_platform_normalizes_aliases(monkeypatch):
     # build.sh's detect_target_platform accepts Linux/Darwin + x86_64/amd64
     # aliases; host_platform must normalize the same way or it KeyErrors when
@@ -234,6 +342,27 @@ def test_pdf_oxide_url_reads_its_own_module_line(tmp_path):
     assert "/v0.4.1/" in pdf_url  # pdf_oxide's own version
     assert "/v0.1.12/" in office_url  # office_oxide's own version
     assert "/v0.1.12/" not in pdf_url  # not coupled to office_oxide's line
+
+
+def test_pdf_oxide_current_go_mod_version_is_0_3_78():
+    # TDD contract for the pdf_oxide upgrade: the real repo go.mod must pin
+    # v0.3.78 (not the prior 0.3.73). build.sh and the downloader both read
+    # this single source, so the native-lib cache path and release URL must
+    # track 0.3.78 after the bump. Adversarial: explicitly NOT 0.3.73, so a
+    # forgotten / partial bump (go.mod left at the old pin) fails loudly.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    assert version == "0.3.78"
+    assert version != "0.3.73"
+
+
+def test_pdf_oxide_url_targets_0_3_78_release():
+    # The downloader's release URL must reference v0.3.78 (derived from go.mod);
+    # it must NOT still point at the prior 0.3.73 asset. Adversarial: the old
+    # version string must be absent, otherwise the versioned native-lib cache
+    # would be populated from the wrong release.
+    url = native.pdf_oxide_url(native.REPO_ROOT, "linux", "amd64")
+    assert "/v0.3.78/" in url
+    assert "/v0.3.73/" not in url
 
 
 def test_url_builders_honor_gh_proxy(monkeypatch):
@@ -304,6 +433,116 @@ def test_incomplete_native_archive_preserves_existing_directory(tmp_path):
     with pytest.raises(RuntimeError, match="missing required native file"):
         native._extract_native_archive(archive, target, ["lib/library.a"])
     assert (target / "existing").read_bytes() == b"keep"
+
+
+def test_pdfium_required_files_by_platform():
+    """Verify PDFium required archive entries for Linux vs. macOS."""
+    assert native.pdfium_required_files("linux") == [
+        "lib/libpdfium.a",
+        "lib/libc++.a",
+        "lib/libc++abi.a",
+        "include/fpdfview.h",
+    ]
+    assert native.pdfium_required_files("darwin") == [
+        "lib/libpdfium.a",
+        "include/fpdfview.h",
+    ]
+
+
+def test_extracts_darwin_pdfium_archive_without_bundled_libcxx(tmp_path):
+    """Darwin PDFium archives without bundled libc++ extract on macOS and fail Linux checks."""
+    archive = tmp_path / "pdfium-mac-arm64-static.tgz"
+    with tarfile.open(archive, "w:gz") as tf:
+        for rel, payload in [
+            ("lib/libpdfium.a", b"!<arch>\npdfium"),
+            ("include/fpdfview.h", b"// header"),
+        ]:
+            info = tarfile.TarInfo(rel)
+            info.size = len(payload)
+            tf.addfile(info, io.BytesIO(payload))
+
+    darwin_target = tmp_path / "pdfium-darwin"
+    native._extract_native_archive(
+        str(archive),
+        str(darwin_target),
+        native.pdfium_required_files("darwin"),
+        platform=("darwin", "arm64"),
+    )
+    assert (darwin_target / "lib" / "libpdfium.a").is_file()
+    assert (darwin_target / "include" / "fpdfview.h").is_file()
+
+    linux_target = tmp_path / "pdfium-linux"
+    with pytest.raises(RuntimeError, match="missing required native file"):
+        native._extract_native_archive(str(archive), str(linux_target), native.pdfium_required_files("linux"))
+
+
+def test_extract_native_archive_replaces_cached_tree_when_platform_changes(tmp_path):
+    """Switching target platform/arch replaces a cached PDFium tree instead of reusing it."""
+
+    def write_pdfium_tar(path, payload):
+        """Create a minimal Darwin PDFium tar.gz with the given libpdfium.a payload."""
+        with tarfile.open(path, "w:gz") as tf:
+            for rel, data in [
+                ("lib/libpdfium.a", payload),
+                ("include/fpdfview.h", b"// header"),
+            ]:
+                info = tarfile.TarInfo(rel)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+
+    arm64_archive = tmp_path / "pdfium-mac-arm64-static.tgz"
+    amd64_archive = tmp_path / "pdfium-mac-x64-static.tgz"
+    write_pdfium_tar(arm64_archive, b"!<arch>\narm64-pdfium")
+    write_pdfium_tar(amd64_archive, b"!<arch>\namd64-pdfium")
+
+    target = tmp_path / "pdfium-static"
+    required = native.pdfium_required_files("darwin")
+    native._extract_native_archive(str(arm64_archive), str(target), required, platform=("darwin", "arm64"))
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\narm64-pdfium"
+
+    native._extract_native_archive(str(amd64_archive), str(target), required, platform=("darwin", "amd64"))
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\namd64-pdfium"
+
+
+def test_extract_native_lib_replaces_cached_pdfium_when_hash_changes(tmp_path, monkeypatch):
+    """A changed archive replaces PDFium cached under the same version and platform."""
+
+    def write_pdfium_tar(path, payload):
+        with tarfile.open(path, "w:gz") as tf:
+            for rel, data in [
+                ("lib/libpdfium.a", payload),
+                ("include/fpdfview.h", b"// header"),
+            ]:
+                info = tarfile.TarInfo(rel)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+
+    archive_v1 = tmp_path / "pdfium-v1.tgz"
+    archive_v2 = tmp_path / "pdfium-v2.tgz"
+    write_pdfium_tar(archive_v1, b"!<arch>\npdfium-v1")
+    write_pdfium_tar(archive_v2, b"!<arch>\npdfium-v2")
+
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    dir_version = f"v{native.PDFIUM_VERSION}"
+    target = tmp_path / "native-libs" / "pdfium-static" / dir_version
+    required = native.pdfium_required_files("darwin")
+    native.extract_native_lib(
+        str(archive_v1),
+        "pdfium-static",
+        dir_version,
+        required,
+        platform=("darwin", "arm64"),
+    )
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\npdfium-v1"
+
+    native.extract_native_lib(
+        str(archive_v2),
+        "pdfium-static",
+        dir_version,
+        required,
+        platform=("darwin", "arm64"),
+    )
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\npdfium-v2"
 
 
 @pytest.mark.parametrize("kind", ["traversal", "absolute", "symlink", "hardlink", "fifo", "device"])
@@ -436,6 +675,32 @@ def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
         )
 
 
+def test_valid_download_accepts_pdf_oxide_tarball_with_current_version(tmp_path):
+    # Regression for the stale-archive reuse bug: a pdf_oxide tarball whose
+    # embedded .a carries the version go.mod pins must be treated as a valid
+    # download, so main() skips re-downloading it (the "already present" fast
+    # path). _valid_download must read the SAME version go.mod pins, via the
+    # same go_module_version() the downloader URL builder uses.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {version}".encode(), "include/pdf_oxide.h")
+    assert native._valid_download(str(archive)) is True
+
+
+def test_valid_download_rejects_pdf_oxide_tarball_with_stale_version(tmp_path):
+    # The exact failure the user hit: a pdf_oxide tarball left over from a prior
+    # version sitting in deps/ must NOT be reused. Before this fix _valid_download
+    # accepted ANY non-empty tarball and the version mismatch only surfaced later
+    # as a RuntimeError at extraction ("missing required native files or version
+    # <current>"). Rejecting it here makes the downloader re-fetch the correct
+    # release and keeps the error close to the cause.
+    current = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    stale = "0.0.0" if current != "0.0.0" else "0.0.1"
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {stale}".encode(), "include/pdf_oxide.h")
+    assert native._valid_download(str(archive)) is False
+
+
 def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch):
     # Regression guard: office_oxide keeps its null-delimited stamp token; the
     # "text" vs "null" split must not break it.
@@ -452,6 +717,111 @@ def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch)
         "null",
     )
     assert (tmp_path / "native-libs" / "office_oxide" / f"v{version}" / "lib" / "liboffice_oxide.a").is_file()
+
+
+# ── Cache-aware download: the download pass must skip re-fetching a native lib
+# whose version-keyed cache dir (~/ragflow-native-libs/<lib>/v<ver>/) is already
+# provisioned (e.g. a CI builder's mounted pre-baked native-libs cache), not
+# just the transient deps/ archive. native_lib_provisioned is the shared check
+# _extract_native_archive.complete() also uses, lifted to module scope. ──────
+
+
+def test_native_lib_provisioned_true_when_files_present(tmp_path):
+    d = tmp_path / "pdfium-static" / "v7809"
+    for name in ["lib/libpdfium.a", "lib/libc++.a", "include/fpdfview.h"]:
+        p = d / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"pdfium-payload")
+    assert native.native_lib_provisioned(str(d), ["lib/libpdfium.a", "lib/libc++.a", "include/fpdfview.h"], None, "null") is True
+
+
+def test_native_lib_provisioned_false_when_required_file_missing(tmp_path):
+    d = tmp_path / "pdfium-static" / "v7809"
+    d.mkdir(parents=True)
+    (d / "lib").mkdir()
+    (d / "lib" / "libpdfium.a").write_bytes(b"x")
+    # libc++.a and the header are absent -> not provisioned.
+    assert native.native_lib_provisioned(str(d), ["lib/libpdfium.a", "lib/libc++.a", "include/fpdfview.h"], None, "null") is False
+
+
+def test_native_lib_provisioned_rejects_empty_file(tmp_path):
+    d = tmp_path / "pdfium-static" / "v7809"
+    d.mkdir(parents=True)
+    (d / "lib").mkdir()
+    (d / "lib" / "libpdfium.a").write_bytes(b"")  # zero bytes -> unusable
+    assert native.native_lib_provisioned(str(d), ["lib/libpdfium.a"], None, "null") is False
+
+
+def test_native_lib_provisioned_pdf_oxide_true_on_correct_stamp(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "pdf_oxide" / f"v{version}"
+    (d / "lib" / "linux_amd64").mkdir(parents=True)
+    (d / "lib" / "linux_amd64" / "libpdf_oxide.a").write_bytes(b"!<arch>\n" + f"pdf_oxide {version}".encode())
+    (d / "include").mkdir()
+    (d / "include" / "pdf_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], version, "text") is True
+
+
+def test_native_lib_provisioned_pdf_oxide_false_on_stamp_mismatch(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "pdf_oxide" / f"v{version}"
+    d.mkdir(parents=True)
+    (d / "lib" / "linux_amd64").mkdir(parents=True)
+    # Stamped with a different version -> must be rejected, else a wrong native
+    # build would be silently treated as provisioned.
+    (d / "lib" / "linux_amd64" / "libpdf_oxide.a").write_bytes(b"!<arch>\n" + b"pdf_oxide 0.9.9")
+    (d / "include").mkdir()
+    (d / "include" / "pdf_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], version, "text") is False
+
+
+def test_native_lib_provisioned_office_oxide_true_on_null_stamp(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/office_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "office_oxide" / f"v{version}"
+    (d / "lib").mkdir(parents=True)
+    (d / "lib" / "liboffice_oxide.a").write_bytes(b"!<arch>\n" + f"\x00{version}\x00".encode())
+    (d / "include" / "office_oxide_c").mkdir(parents=True)
+    (d / "include" / "office_oxide_c" / "office_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], version, "null") is True
+
+
+def test_native_lib_provisioned_office_oxide_false_on_null_stamp_mismatch(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/office_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "office_oxide" / f"v{version}"
+    d.mkdir(parents=True)
+    (d / "lib").mkdir()
+    (d / "lib" / "liboffice_oxide.a").write_bytes(b"!<arch>\n" + b"\x00" + b"0.0.0" + b"\x00")
+    (d / "include" / "office_oxide_c").mkdir(parents=True)
+    (d / "include" / "office_oxide_c" / "office_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], version, "null") is False
+
+
+def test_download_native_archives_skips_when_provisioned(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setattr(native, "native_lib_provisioned", lambda *a, **k: True)
+    spy = mock.MagicMock()
+    monkeypatch.setattr(native, "download_with_progress", spy)
+    native.download_native_archives("linux", "amd64")
+    assert spy.call_count == 0
+
+
+def test_download_native_archives_downloads_when_not_provisioned(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setattr(native, "native_lib_provisioned", lambda *a, **k: False)
+    # Treat any on-disk file as a valid (already-present) deps/ archive so the
+    # post-download validation passes without a real tarball.
+    monkeypatch.setattr(native, "_valid_download", lambda f: os.path.isfile(f) and os.path.getsize(f) > 0)
+
+    def _spy(url, filename):
+        with open(filename, "wb") as fh:
+            fh.write(b"archive")
+
+    spy = mock.MagicMock(side_effect=_spy)
+    monkeypatch.setattr(native, "download_with_progress", spy)
+    native.download_native_archives("linux", "amd64")
+    # pdfium, pdf_oxide, office_oxide — all fetched when the cache is empty.
+    assert spy.call_count == 3
 
 
 # ── Local-dev one-stop: the dev downloader must also fetch the runtime
@@ -530,6 +900,58 @@ def test_download_go_models_fails_loud(native_dirs, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         native.download_go_models()
     assert exc.value.code == 1
+
+
+def test_download_go_models_reuses_model_dir_when_missing(native_dirs, tmp_path, monkeypatch):
+    # CI bakes the DeepDoc weights into MODEL_DIR (the ragflow_deps image's
+    # /opt/ragflow-deepdoc-models). When the repo tree copy is absent, reuse
+    # from there instead of fetching ~100MB from Hugging Face.
+    _, root = native_dirs
+    baked = tmp_path / "baked"
+    baked.mkdir()
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        (baked / fname).write_bytes(b"baked weights")
+    monkeypatch.setenv("MODEL_DIR", str(baked))
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == 0  # no Hugging Face fetch
+    deepdoc_dir = root / "internal" / "rag" / "res" / "deepdoc"
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        assert (deepdoc_dir / fname).read_bytes() == b"baked weights"
+
+
+def test_download_go_models_falls_back_to_hf_when_model_dir_empty(native_dirs, tmp_path, monkeypatch):
+    _, _ = native_dirs
+    baked = tmp_path / "baked"  # set but contains no weights
+    baked.mkdir()
+    monkeypatch.setenv("MODEL_DIR", str(baked))
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == len(native.HF_DEEPDOC_MODEL_FILES)
+
+
+def test_download_go_models_falls_back_to_hf_when_model_dir_unset(native_dirs, tmp_path, monkeypatch):
+    _, _ = native_dirs
+    monkeypatch.delenv("MODEL_DIR", raising=False)
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == len(native.HF_DEEPDOC_MODEL_FILES)
+
+
+def test_download_go_models_falls_back_to_hf_when_model_dir_file_empty(native_dirs, tmp_path, monkeypatch):
+    _, _ = native_dirs
+    baked = tmp_path / "baked"
+    baked.mkdir()
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        (baked / fname).write_bytes(b"")  # zero bytes -> not a usable copy
+    monkeypatch.setenv("MODEL_DIR", str(baked))
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == len(native.HF_DEEPDOC_MODEL_FILES)
 
 
 def _seed_tokenizer_targets(deps, present):
@@ -736,6 +1158,51 @@ def test_pdfium_static_version_reads_single_source(tmp_path):
 def test_pdfium_static_version_against_real_repo():
     # Sanity: the shared const on the checked-out repo.
     assert native.pdfium_static_version(native.REPO_ROOT) == "7809"
+
+
+def test_pdfium_local_asset_name_carries_version_and_platform():
+    # The on-disk pdfium tarball name must encode the resolved chromium build
+    # number so two pdfium versions never share a deps/ path (the silent-reuse
+    # bug). It must NOT equal the version-agnostic upstream asset name, and must
+    # keep the platform token so the right arch is selected.
+    version = native.pdfium_static_version(native.REPO_ROOT)
+    name = native.pdfium_local_asset_name("linux", "amd64")
+    assert name == f"pdfium-linux-x64-static-{version}.tgz"
+    # Adversarial: if this were still the bare asset name, a stale tarball would
+    # be silently reused — the whole point is that the name differs.
+    assert name != native.PDFIUM_STATIC_ASSETS[("linux", "amd64")]
+    assert version in name
+    assert "linux-x64" in name
+
+
+def test_pdfium_local_asset_name_is_version_driven_not_hardcoded(monkeypatch):
+    # Guard against a wrong implementation that hardcodes "7809" or otherwise
+    # ignores PDFIUM_VERSION: when the bound version changes, the local name
+    # must change with it.
+    monkeypatch.setattr(native, "PDFIUM_VERSION", "9999")
+    assert native.pdfium_local_asset_name("linux", "amd64") == "pdfium-linux-x64-static-9999.tgz"
+    assert native.pdfium_local_asset_name("darwin", "arm64") == "pdfium-mac-arm64-static-9999.tgz"
+
+
+def test_pdfium_url_basename_stays_version_agnostic():
+    # The download URL must keep pointing at the upstream version-agnostic
+    # asset (.../chromium/7809/pdfium-linux-x64-static.tgz). Only the LOCAL name
+    # is versioned; versioning the URL instead would break the download, since
+    # the upstream release asset name does not contain the build number.
+    url = native.pdfium_url("linux", "amd64")
+    assert url.endswith("/" + native.PDFIUM_STATIC_ASSETS[("linux", "amd64")])
+    assert native.pdfium_local_asset_name("linux", "amd64") not in url
+
+
+def test_valid_download_accepts_versioned_pdfium_tarball(tmp_path):
+    # Regression: the renamed pdfium tarball is still a valid .tgz, so the
+    # downloader's "already present" fast path still fires for it (it is not in
+    # the OFFICE/PDF_OXIDE asset sets, so _valid_download returns True for any
+    # non-empty valid tarball).
+    version = native.pdfium_static_version(native.REPO_ROOT)
+    archive = tmp_path / f"pdfium-linux-x64-static-{version}.tgz"
+    _make_pdfium_archive(archive, ["lib/libpdfium.a"])
+    assert native._valid_download(str(archive)) is True
 
 
 # ── deepdoc_ort_version (bash) single source ───────────────────────────────
@@ -1111,3 +1578,20 @@ def test_extract_native_lib_honors_ragflow_native_libs_dir_env(tmp_path, monkeyp
     native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
     assert (tmp_path / "isolated" / "pdfium-static" / "v7809" / "lib" / "libpdfium.a").is_file()
     assert not os.path.exists("/attribute-path-ignored")
+
+
+def test_ee_native_download_hook_noop_and_delegates(monkeypatch):
+    import sys
+    import types
+
+    # When the optional extension module is absent, the hook is a safe no-op.
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", None)
+    assert native._run_ee_native_downloads("linux", "amd64") is None
+
+    # When provided, the hook delegates (goos, goarch) to download_ee_native_libs.
+    calls = []
+    fake = types.ModuleType("download_dev_deps_ee")
+    fake.download_ee_native_libs = lambda goos, goarch: calls.append((goos, goarch))
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", fake)
+    native._run_ee_native_downloads("linux", "amd64")
+    assert calls == [("linux", "amd64")]

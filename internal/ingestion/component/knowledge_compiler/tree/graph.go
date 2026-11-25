@@ -5,26 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
-
-// stringsContains reports whether s contains substring sub.
-func stringsContains(s, sub string) bool {
-	return strings.Contains(s, sub)
-}
-
-// strSliceContains reports whether s contains v.
-func strSliceContains(s []string, v string) bool {
-	for _, e := range s {
-		if e == v {
-			return true
-		}
-	}
-	return false
-}
 
 // stringsJoinNonEmpty joins the non-empty parts with sep.
 func stringsJoinNonEmpty(parts []string, sep string) string {
@@ -131,16 +117,16 @@ func collapseUnary(node *graphNode) *graphNode {
 		var descriptions []string
 		descriptions = append(descriptions, parentDesc)
 		if childTitle != "" && childTitle != parentTitle &&
-			!stringsContains(childDesc, childTitle) {
+			!strings.Contains(childDesc, childTitle) {
 			descriptions = append(descriptions, childTitle)
 		}
-		if childDesc != "" && !strSliceContains(descriptions, childDesc) {
+		if childDesc != "" && !slices.Contains(descriptions, childDesc) {
 			descriptions = append(descriptions, childDesc)
 		}
 
 		sourceChunkIDs := append([]string{}, collapsed.sourceChunkIDs...)
 		for _, id := range child.sourceChunkIDs {
-			if id != "" && !strSliceContains(sourceChunkIDs, id) {
+			if id != "" && !slices.Contains(sourceChunkIDs, id) {
 				sourceChunkIDs = append(sourceChunkIDs, id)
 			}
 		}
@@ -273,18 +259,6 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 	return out, nil
 }
 
-// sortedKeys returns the claim map's chunk ids in a stable order, so repeated
-// compilations produce the same product sequence (and therefore the same row
-// ids) even though Go map iteration is randomized.
-func sortedKeys(m map[string][]Claim) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // buildTreeClaimProducts turns extracted claims into their own searchable rows.
 //
 // Claims are deliberately NOT part of the structure graph: they carry no
@@ -312,7 +286,7 @@ func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string,
 
 	var payloads []map[string]any
 	var descs []string
-	for _, chunkID := range sortedKeys(claimsByChunk) {
+	for _, chunkID := range slices.Sorted(maps.Keys(claimsByChunk)) {
 		for _, c := range claimsByChunk[chunkID] {
 			name := strings.TrimSpace(c.Name)
 			if name == "" {

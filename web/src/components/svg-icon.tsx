@@ -18,6 +18,7 @@ import { IconMap, LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
 import Icon from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
+import { File as LucideFile } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { IconFontFill } from './icon-font';
 import { RAGFlowAvatar } from './ragflow-avatar';
@@ -49,6 +50,15 @@ interface IProps extends IconComponentProps {
 const SvgIcon = memo(
   ({ name, width, height, imgClass, ...restProps }: IProps) => {
     const ListItem = routeList.find((item) => item.name === name);
+    if (!ListItem) {
+      // A missing file-type icon (e.g. a CAD .dwg/.dxf document) must not fall
+      // through to an <img> without src, which the browser paints as a broken
+      // image. Fall back to a generic document glyph, and render nothing for
+      // any other unknown icon.
+      return name.startsWith('file-icon/') ? (
+        <LucideFile size={Number(width) || 16} className={imgClass} />
+      ) : null;
+    }
     return (
       <Icon
         component={() => (
@@ -130,7 +140,15 @@ const svgIcons = [
   LLMFactory.HostingerRouter,
   LLMFactory.Cheapaimodel,
   LLMFactory.Wally,
+  LLMFactory.Onomeo,
+  LLMFactory.Shengsuanyun,
   LLMFactory.Synap,
+  LLMFactory.Wiro,
+  LLMFactory.Crusoe,
+  LLMFactory.HopBase,
+  LLMFactory.GreenNode,
+  LLMFactory.Morse,
+  LLMFactory.TeamoRouter,
 ];
 
 export const LlmIcon = ({

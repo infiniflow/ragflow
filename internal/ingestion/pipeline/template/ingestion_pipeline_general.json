@@ -35,34 +35,12 @@
                         "vlm": {
                             "llm_id": ""
                         },
-                        "doc": {
-                            "suffix": [
-                                "doc"
-                            ]
-                        },
-                        "docx": {
-                            "suffix": [
-                                "docx"
-                            ]
-                        },
-                        "html": {
-                            "suffix": [
-                                "htm",
-                                "html"
-                            ]
-                        },
-                        "markdown": {
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ]
-                        },
+                        "doc": {},
+                        "docx": {},
+                        "html": {},
+                        "markdown": {},
                         "pdf": {
                             "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ],
                             "pages": [
                                 [
                                     1,
@@ -71,44 +49,11 @@
                             ]
                         },
                         "spreadsheet": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "suffix": [
-                                "txt",
-                                "py",
-                                "js",
-                                "java",
-                                "c",
-                                "cpp",
-                                "h",
-                                "php",
-                                "go",
-                                "ts",
-                                "sh",
-                                "cs",
-                                "kt",
-                                "sql"
-                            ]
-                        },
+                        "text&code": {},
                         "image": {
-                            "ocr_enabled": true,
-                            "suffix": [
-                                "bmp",
-                                "gif",
-                                "jpeg",
-                                "jpg",
-                                "png",
-                                "svg",
-                                "tif",
-                                "tiff",
-                                "webp"
-                            ]
+                            "ocr_enabled": true
                         },
                         "email": {
                             "fields": [
@@ -120,10 +65,6 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "suffix": [
-                                "eml",
-                                "msg"
                             ]
                         }
                     }

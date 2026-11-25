@@ -25,6 +25,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"ragflow/internal/engine/types"
 )
@@ -339,7 +341,7 @@ func (e *serenedbEngine) countRows(ctx context.Context, tableName, where string)
 	if len(rows) == 0 {
 		return 0, nil
 	}
-	return toInt64(rows[0]["c"]), nil
+	return common.ToInt64(rows[0]["c"]), nil
 }
 
 // parseMatchExprs extracts the text query, dense vector, and fusion weight from
@@ -470,34 +472,9 @@ func formatWeight(f float64) string {
 	return strconv.FormatFloat(math.Round(f*1e6)/1e6, 'f', -1, 64)
 }
 
-func toInt64(v interface{}) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	case float64:
-		return int64(n)
-	case string:
-		i, _ := strconv.ParseInt(n, 10, 64)
-		return i
-	}
-	return 0
-}
-
 func toFloat64(v interface{}) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case int64:
-		return float64(n)
-	case int:
-		return float64(n)
-	case string:
-		f, _ := strconv.ParseFloat(n, 64)
-		return f
-	}
-	return 0
+	f, _ := common.ToFloat(v)
+	return f
 }
 
 func sortByScore(chunks []map[string]interface{}) {
@@ -616,6 +593,38 @@ func (e *serenedbEngine) GetAggregation(chunks []map[string]interface{}, fieldNa
 
 var nonWordBoundary = regexp.MustCompile(`</em>\s*<em>`)
 
+// highlightRegexCache is keyed by keyword, which comes from user queries.
+// It must stay bounded: unlike the alias/keyword caches on the SQL path,
+// query tokens form an open set that would otherwise grow RSS for the life
+// of the process.
+const highlightRegexCacheLimit = 4096
+
+var (
+	highlightRegexCache    sync.Map
+	highlightRegexCount    atomic.Int64
+	highlightRegexRotateMu sync.Mutex
+)
+
+func cachedHighlightRegex(keyword string) *regexp.Regexp {
+	if cached, ok := highlightRegexCache.Load(keyword); ok {
+		return cached.(*regexp.Regexp)
+	}
+	if highlightRegexCount.Load() >= highlightRegexCacheLimit {
+		highlightRegexRotateMu.Lock()
+		if highlightRegexCount.Load() >= highlightRegexCacheLimit {
+			highlightRegexCache.Clear()
+			highlightRegexCount.Store(0)
+		}
+		highlightRegexRotateMu.Unlock()
+	}
+	compiled := regexp.MustCompile(`(?i)(^|\W)(` + regexp.QuoteMeta(keyword) + `)(\W|$)`)
+	actual, loaded := highlightRegexCache.LoadOrStore(keyword, compiled)
+	if !loaded {
+		highlightRegexCount.Add(1)
+	}
+	return actual.(*regexp.Regexp)
+}
+
 // GetHighlight emphasizes keyword hits in the stored text, client-side.
 func (e *serenedbEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	ans := map[string]string{}
@@ -627,7 +636,7 @@ func (e *serenedbEngine) GetHighlight(chunks []map[string]interface{}, keywords 
 		if k == "" {
 			continue
 		}
-		pats = append(pats, regexp.MustCompile(`(?i)(^|\W)(`+regexp.QuoteMeta(k)+`)(\W|$)`))
+		pats = append(pats, cachedHighlightRegex(k))
 	}
 	for _, c := range chunks {
 		id, ok := c["id"].(string)

@@ -55,20 +55,11 @@
                         },
                         "spreadsheet": {
                             "parse_method": "DeepDOC",
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ],
                             "column_mode": "auto",
                             "column_roles": {},
                             "column_names": []
                         },
-                        "text&code": {
-                            "suffix": [
-                                "txt"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [

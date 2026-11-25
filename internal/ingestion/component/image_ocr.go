@@ -28,14 +28,15 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// extractSelectedImageOCR accepts an enrolled tenant-model ID, not an engine
-// alias or catalog-only composite. An explicit selection never substitutes the
-// tenant default, another instance, local DeepDoc, or a global server URL.
+// extractSelectedImageOCR accepts an enrolled tenant-model ID or a gp- model
+// group reference, not an engine alias or catalog-only composite. An explicit
+// selection never substitutes the tenant default, another instance, local
+// DeepDoc, or a global server URL.
 func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID string, binary []byte) (string, error) {
 	if strings.TrimSpace(tenantID) == "" || db == nil {
 		return "", fmt.Errorf("selected image OCR requires a tenant and database")
 	}
-	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 	if err != nil {
 		return "", fmt.Errorf("selected image OCR model: %w", err)
 	}
@@ -72,9 +73,9 @@ func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID
 		return "", fmt.Errorf("selected image OCR instance has no base URL")
 	}
 	apiConfig.BaseURL = &baseURL
-	response, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig,
-		&modelModule.OCRConfig{Algorithm: modelName}, nil)
+	response, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, nil, nil)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return "", fmt.Errorf("selected image OCR: %w", err)
 	}
 	if response == nil || response.Text == nil {

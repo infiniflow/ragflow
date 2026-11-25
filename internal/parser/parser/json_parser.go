@@ -14,29 +14,18 @@
 //  limitations under the License.
 //
 
-// JSONParser handles .json, .jsonl, and .ldjson files. It detects
-// the payload shape:
-//
-//   - JSON array: each element becomes one item.
-//   - Single JSON object: emitted as one item.
-//   - JSONL (newline-delimited JSON): each non-empty line is
-//     independently parsed; lines that fail to parse are skipped
-//     with a warning — matching the Python JsonParser behaviour.
-//
-// For JSON objects, the parser serialises the full object into a
-// `text` field so the downstream chunker receives a readable
-// representation. Arrays of objects emit one item per element.
+// JSONParser handles JSON, JSON Lines, and Docling document exports.
 
 package parser
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/parser/charset"
@@ -53,39 +42,43 @@ func (p *JSONParser) String() string {
 	return "JSONParser"
 }
 
-// ParseWithResult implements ParseResultProducer. It detects the JSON
-// shape (array, single object, or line-delimited) and emits one JSON
-// item per logical record, with {text, doc_type_kwd:"text"}.
+// ParseWithResult reads JSON Lines one value per line, and detects the shape
+// of other JSON input before building text items.
 func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	decoded, encName := charset.DecodeToUTF8(data, "application/json")
+	file := map[string]any{
+		"name":     filename,
+		"size":     len(data),
+		"encoding": encName,
+	}
 	text := string(bytes.TrimSpace(decoded))
 	if text == "" {
 		return ParseResult{
-			File: map[string]any{
-				"name":     filename,
-				"size":     len(data),
-				"encoding": encName,
-			},
+			File: file,
 			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
-	items := parseJSONContent(text)
+	var items []map[string]any
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".jsonl", ".ldjson":
+		// A line can hold any JSON value, including an array or scalar.
+		items = parseJSONLines(text)
+	}
+	if items == nil {
+		items = parseJSONContent(text, file)
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		File: map[string]any{
-			"name":     filename,
-			"size":     len(data),
-			"encoding": encName,
-		},
+		File: file,
 		JSON: MapsToItems(items),
 	}
 }
 
 // parseJSONContent detects the JSON shape and dispatches.
-func parseJSONContent(text string) []map[string]any {
+func parseJSONContent(text string, file map[string]any) []map[string]any {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil
@@ -96,19 +89,34 @@ func parseJSONContent(text string) []map[string]any {
 		return parseJSONArray(trimmed)
 	}
 
-	// 2. Try single JSON object: {...}
+	// 2. Try single JSON object: {...}. Use a syntax-only framing check before
+	// building the map: a multi-object JSONL payload or trailing data is
+	// rejected here without allocating/decoding the trailing value (the old
+	// standard-library probe did this too, but by decoding twice).
 	if strings.HasPrefix(trimmed, "{") {
-		// Prefer parsing as a single JSON object first (matches
-		// Python's json.loads(txt) whole-document test). Only fall
-		// back to JSONL when that fails and the content still looks
-		// line-delimited.
-		if err := json.Unmarshal([]byte(trimmed), &map[string]any{}); err == nil {
-			return parseSingleJSONObject(trimmed)
+		if !json.Valid([]byte(trimmed)) {
+			if isJSONL(trimmed) {
+				return parseJSONLines(trimmed)
+			}
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
-		if isJSONL(trimmed) {
-			return parseJSONLines(trimmed)
+		// Scan raw tokens for out-of-range numbers BEFORE decoding into a map:
+		// decoding would overwrite an earlier overflowing number with a later
+		// duplicate key, hiding it from a post-decode check.
+		if !jsonNumbersInFloat64Range([]byte(trimmed)) {
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
-		return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		obj, ok := parseSingleJSONObjectValue(trimmed)
+		if !ok {
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		}
+		if items, ok := parseDoclingJSONItems(obj); ok {
+			if pageCount := doclingPageCount([]doclingDocument{{JSONContent: obj}}, 0); pageCount <= doclingMaxSourcePageCount {
+				file["page_count"] = pageCount
+			}
+			return items
+		}
+		return singleObjectItems(obj)
 	}
 
 	// 3. Fallback: treat as text.
@@ -118,9 +126,8 @@ func parseJSONContent(text string) []map[string]any {
 // isJSONL returns true when the content looks like newline-delimited
 // JSON (multiple lines each starting with '{').
 func isJSONL(text string) bool {
-	lines := strings.Split(text, "\n")
 	objCount := 0
-	for _, line := range lines {
+	for line := range strings.Lines(text) {
 		t := strings.TrimSpace(line)
 		if t == "" {
 			continue
@@ -171,12 +178,18 @@ func parseJSONArray(text string) []map[string]any {
 	return items
 }
 
-// parseSingleJSONObject unmarshals a single JSON object and emits one item.
-func parseSingleJSONObject(text string) []map[string]any {
+// parseSingleJSONObjectValue unmarshals one JSON object with the
+// number-preserving decoder, returning (value, true) on success.
+func parseSingleJSONObjectValue(text string) (map[string]any, bool) {
 	var obj map[string]any
 	if err := unmarshalJSON([]byte(text), &obj); err != nil {
-		return []map[string]any{{"text": text, "doc_type_kwd": "text"}}
+		return nil, false
 	}
+	return obj, true
+}
+
+// singleObjectItems renders a decoded object into the single text item.
+func singleObjectItems(obj map[string]any) []map[string]any {
 	b, err := marshalJSON(obj)
 	if err != nil {
 		return []map[string]any{{"text": fmt.Sprintf("%v", obj), "doc_type_kwd": "text"}}
@@ -188,10 +201,8 @@ func parseSingleJSONObject(text string) []map[string]any {
 // independently unmarshalled; lines that fail to parse are skipped.
 func parseJSONLines(text string) []map[string]any {
 	var items []map[string]any
-	scanner := bufio.NewScanner(strings.NewReader(text))
-	scanner.Buffer(nil, 10*1024*1024) // 10 MB max line
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for line := range strings.Lines(text) {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -231,6 +242,54 @@ func parseJSONLines(text string) []map[string]any {
 	return items
 }
 
+// jsonNumbersInFloat64Range scans every numeric literal in raw JSON, checking
+// it against the float64 range BEFORE map construction. The old float64 probe
+// rejected documents containing a number like 1e400; decoding first would let
+// a duplicate key overwrite that number, so the check must see the raw bytes.
+// A byte scan with a string-state machine avoids the per-token interface
+// allocations of json.Decoder.Token(); json.Valid already guarantees syntax.
+func jsonNumbersInFloat64Range(data []byte) bool {
+	inString, escaped := false, false
+	for i := 0; i < len(data); {
+		c := data[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inString = true
+			i++
+			continue
+		}
+		if c == '-' || (c >= '0' && c <= '9') {
+			start := i
+			i++ // sign or first digit
+			for i < len(data) {
+				ch := data[i]
+				if (ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-' {
+					i++
+				} else {
+					break
+				}
+			}
+			if _, err := strconv.ParseFloat(string(data[start:i]), 64); err != nil {
+				return false
+			}
+			continue
+		}
+		i++
+	}
+	return true
+}
+
 // unmarshalJSON is json.Unmarshal with each number kept as written, as a
 // json.Number. Decoded into a float64, an id above 2^53 changed digits
 // (12345678901234567890 became 12345678901234567000) and 1.50 became 1.5.
@@ -241,7 +300,10 @@ func unmarshalJSON(data []byte, v any) error {
 	if err := decoder.Decode(v); err != nil {
 		return err
 	}
-	if _, err := decoder.Token(); err != io.EOF {
+	// Reject trailing data at its opening byte without decoding/allocating the
+	// trailing value (Token() would decode it). InputOffset is the byte count
+	// consumed by Decode; anything but JSON whitespace after it is trailing data.
+	if len(bytes.TrimSpace(data[decoder.InputOffset():])) > 0 {
 		return errors.New("json: data after the top-level value")
 	}
 	return nil

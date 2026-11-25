@@ -96,6 +96,9 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
+        // Mirror the backend's stub.go / *_ee.go split: OSS resolves the
+        // logical seam to no-op stubs, while EE uses real src/ee files.
+        '@/ee': path.resolve(__dirname, './src/ee-stub'),
         '@': path.resolve(__dirname, './src'),
         '@parent': path.resolve(__dirname, '../'),
       },
@@ -218,7 +221,7 @@ export default defineConfig(({ mode }) => {
       },
       sourcemap: env.VITE_BUILD_SOURCEMAP !== 'false',
       cssCodeSplit: true,
-      target: 'es2015',
+      target: 'es2020',
     },
     esbuild: {
       tsconfigRaw: {

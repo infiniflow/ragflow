@@ -42,6 +42,7 @@ import (
 	"slices"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
 
 	"github.com/cloudwego/eino/compose"
@@ -372,7 +373,7 @@ func restoreLoopVariables(ctx context.Context, loopID string, data []byte) error
 		return err
 	}
 	var values map[string]any
-	if err := json.Unmarshal(data, &values); err != nil {
+	if err := runtime.UnmarshalCheckpointJSON(data, &values); err != nil {
 		return err
 	}
 	for name, value := range values {
@@ -665,6 +666,12 @@ func evaluateCondition(varVal any, op string, value any) (bool, error) {
 		return evalNumberOp(float64(v), op, value)
 	case float64:
 		return evalNumberOp(v, op, value)
+	case json.Number:
+		n, ok := common.ToFloat(v)
+		if !ok {
+			return false, fmt.Errorf("invalid loop condition number %q", v)
+		}
+		return evalNumberOp(n, op, value)
 	case map[string]any:
 		return evalDictOp(v, op, value)
 	case []any:
@@ -755,9 +762,9 @@ func evalDictOp(m map[string]any, op string, _ any) (bool, error) {
 func evalListOp(lst []any, op string, value any) (bool, error) {
 	switch op {
 	case "contains":
-		return slices.Contains(lst, value), nil
+		return slices.ContainsFunc(lst, func(item any) bool { return loopElementEqual(item, value) }), nil
 	case "not contains":
-		return !slices.Contains(lst, value), nil
+		return !slices.ContainsFunc(lst, func(item any) bool { return loopElementEqual(item, value) }), nil
 	case "is":
 		return listEqual(lst, value), nil
 	case "is not":
@@ -779,11 +786,24 @@ func listEqual(lst []any, value any) bool {
 		return false
 	}
 	for i := range lst {
-		if lst[i] != other[i] {
+		if !loopElementEqual(lst[i], other[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// loopElementEqual keeps ordinary element equality while recognizing the numeric
+// values newly preserved by checkpoint restore. Compare their exact ratios so
+// an adjacent ID cannot become equal by rounding through float64.
+func loopElementEqual(a, b any) bool {
+	_, aPreserved := a.(json.Number)
+	_, bPreserved := b.(json.Number)
+	if aPreserved || bPreserved {
+		ar, br := runtime.ExactNumberRatio(a), runtime.ExactNumberRatio(b)
+		return ar != nil && br != nil && ar.Cmp(br) == 0
+	}
+	return a == b
 }
 
 func isNilOp(op string) bool {

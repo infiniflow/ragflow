@@ -8,15 +8,15 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/elastic/go-elasticsearch/v8"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
+
+	"github.com/elastic/go-elasticsearch/v8"
 )
 
 func TestCompilationSearchReadsBothGenerationsInOneRequest(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "compilation_test"); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "compilation_test")
 	rows := []map[string]interface{}{
 		{"id": "new", "kb_id": "kb1", "compile_kwd": "wiki", "type_kwd": "wiki_page"},
 		{"id": "old", "kb_id": "kb1", "compile_kwd": "wiki_page"},
@@ -130,7 +130,7 @@ func matchesCompilationQuery(query, row map[string]interface{}) bool {
 	for _, operator := range []string{"term", "terms"} {
 		if clause, ok := query[operator].(map[string]interface{}); ok {
 			for field, expected := range clause {
-				if items, ok := conditionTermsList(expected); ok {
+				if items, ok := esoscommon.ConditionTermsList(expected); ok {
 					matched := false
 					for _, value := range items {
 						matched = matched || fmt.Sprint(row[field]) == fmt.Sprint(value)

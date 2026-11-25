@@ -22,6 +22,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+
 	"ragflow/internal/entity"
 )
 

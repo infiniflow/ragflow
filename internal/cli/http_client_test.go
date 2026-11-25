@@ -80,3 +80,44 @@ func TestRequestWithIterationsPreservesPlainTextSuccess(t *testing.T) {
 		t.Fatalf("successes = %d, failures = %d; want 3 successes and 0 failures", result.Success, result.Fail)
 	}
 }
+
+// TestBuildURLBracketsIPv6Host pins that an IPv6 Host produces a URL that
+// net/http accepts. The old "%s:%d" join emitted "http://::1:8080/...", which
+// http.NewRequest rejects; the host must be bracketed as "[::1]:8080".
+func TestBuildURLBracketsIPv6Host(t *testing.T) {
+	c := &HTTPClient{Host: "::1", Port: 8080, APIVersion: "v1"}
+
+	apiURL := c.BuildURL("/datasets", "api")
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest(%q) failed: %v", apiURL, err)
+	}
+	if req.URL.Host != "[::1]:8080" {
+		t.Errorf("API URL host = %q, want [::1]:8080", req.URL.Host)
+	}
+	if got, want := req.URL.Path, "/api/v1/datasets"; got != want {
+		t.Errorf("API URL path = %q, want %q", got, want)
+	}
+
+	adminURL := c.BuildURL("/ping", "none")
+	req, err = http.NewRequest(http.MethodGet, adminURL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest(%q) failed: %v", adminURL, err)
+	}
+	if req.URL.Host != "[::1]:8080" {
+		t.Errorf("admin URL host = %q, want [::1]:8080", req.URL.Host)
+	}
+}
+
+// TestBuildURLPreservesIPv4Host guards the non-IPv6 path: bracket joining must
+// not alter the familiar "127.0.0.1:8080" form.
+func TestBuildURLPreservesIPv4Host(t *testing.T) {
+	c := &HTTPClient{Host: "127.0.0.1", Port: 9382, APIVersion: "v1"}
+
+	if got, want := c.APIBase(), "127.0.0.1:9382/api/v1"; got != want {
+		t.Errorf("APIBase() = %q, want %q", got, want)
+	}
+	if got, want := c.NonAPIBase(), "127.0.0.1:9382"; got != want {
+		t.Errorf("NonAPIBase() = %q, want %q", got, want)
+	}
+}

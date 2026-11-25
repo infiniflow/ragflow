@@ -4,11 +4,19 @@ import { cn } from '@/lib/utils';
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement> & { rootClassName?: string }
->(({ className, rootClassName, ...props }, ref) => (
+  React.HTMLAttributes<HTMLTableElement> & {
+    rootClassName?: string;
+    // rootRef exposes the scroll container. The table itself is not the element
+    // that scrolls — the wrapper is — so a caller that has to know how far down
+    // the reader is (an infinite-scroll list) needs this ref rather than the
+    // forwarded one.
+    rootRef?: React.Ref<HTMLDivElement>;
+  }
+>(({ className, rootClassName, rootRef, ...props }, ref) => (
   <div
+    ref={rootRef}
     className={cn(
-      'relative w-full overflow-auto rounded-2xl bg-bg-card scrollbar-auto',
+      'relative w-full overflow-auto rounded-2xl scrollbar-auto',
       rootClassName,
     )}
   >
@@ -28,7 +36,7 @@ const TableHeader = React.forwardRef<
   <thead
     ref={ref}
     className={cn(
-      '[&_tr]:border-b-0.5 top-0 sticky bg-bg-title z-10',
+      '[&_tr]:border-b-0.5 top-0 sticky bg-bg-base z-10',
       className,
     )}
     {...props}
@@ -55,7 +63,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      'border-t-0.5 border-border-button bg-muted/50 font-medium [&>tr]:last:border-b-0',
+      'border-t-0.5 border-border-button font-medium [&>tr]:last:border-b-0',
       className,
     )}
     {...props}
@@ -70,7 +78,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      'border-b-0.5 border-border-button transition-colors hover:bg-bg-card data-[state=selected]:bg-bg-card',
+      'border-b-0.5 border-border-button transition-colors hover:bg-bg-card',
       className,
     )}
     {...props}

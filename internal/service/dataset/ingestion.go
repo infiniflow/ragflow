@@ -58,16 +58,16 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID stri
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("invalid Dataset ID '%s'", datasetID)
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	status, err := d.documentDAO.GetParsingStatusByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 	downloadStatus, err := d.getDownloadStatus(ctx, datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	return map[string]interface{}{
@@ -185,6 +185,10 @@ func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, l
 	}
 	if !isReadableIngestionLog(run) {
 		return nil, common.CodeDataError, errors.New("log not found")
+	}
+	if err := checkIngestionLogDocumentRead(ctx, run.DocumentID); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	response := &IngestionMessagesResponse{}
 	if run.RunCount != nil {
@@ -312,7 +316,12 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID string
 		err   error
 	)
 	if logType == "file" {
-		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, terms, keywords, documentID, operationStatus, createDateFrom, createDateTo)
+		readableDocuments, scopeErr := readableIngestionLogDocuments(ctx, datasetID)
+		if scopeErr != nil {
+			code, permissionErr := permissionresponse.Normalize(scopeErr)
+			return nil, code, permissionErr
+		}
+		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, terms, keywords, documentID, operationStatus, createDateFrom, createDateTo, readableDocuments)
 	} else {
 		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, keywords, documentID)
 	}
@@ -370,6 +379,10 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, logID s
 	}
 	if !isReadableIngestionLog(log) {
 		return nil, common.CodeDataError, errors.New("log not found")
+	}
+	if err := checkIngestionLogDocumentRead(ctx, log.DocumentID); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	latestEvents, err := dao.NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(ctx, dao.DB, []string{log.ID})

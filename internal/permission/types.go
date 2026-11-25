@@ -101,6 +101,8 @@ type ResourceRef struct {
 // Feature identifies a feature whose availability is edition-dependent.
 type Feature string
 
+const FeatureDataset Feature = "dataset"
+
 // Action identifies a feature-level action.
 type Action string
 
@@ -243,12 +245,15 @@ type Scope struct {
 type ScopeQuery struct {
 	// TenantID optionally selects a tenant boundary for the query. It does not
 	// change the authenticated identity carried by the context.
-	TenantID  string
-	Kind      ResourceKind
-	Parent    ResourceRef
-	Operation Operation
-	Entry     *ResourceRef
-	EntryOp   Operation
+	TenantID string
+	// OwnerUserID optionally intersects visibility with the resource owner's
+	// permissions. Policies may ignore it when owner-aware sharing is unsupported.
+	OwnerUserID string
+	Kind        ResourceKind
+	Parent      ResourceRef
+	Operation   Operation
+	Entry       *ResourceRef
+	EntryOp     Operation
 }
 
 // Source loads normalized permission facts. GetResources must return the
@@ -266,6 +271,7 @@ type policy interface {
 	CheckFeature(context.Context, Feature, Action) error
 	CheckTenant(context.Context, string, TenantRequirement) error
 	CheckResource(context.Context, ResourceRef, Operation) error
+	CheckResourcePermission(context.Context, ResourceRef, int32) error
 	CheckDependency(context.Context, ResourceRef, ResourceRef, Operation, Operation) error
 	ResolveAccess(context.Context, ResourceRef) (Access, error)
 	Scope(context.Context, ScopeQuery) (Scope, error)
@@ -335,12 +341,47 @@ func (c *Checker) CheckResource(ctx context.Context, resource ResourceRef, opera
 	return c.policy.CheckResource(ctx, resource, operation)
 }
 
+// CheckResourcePermission checks the resource grant independently of feature-role actions.
+// A resource owner grant satisfies every requested level; otherwise the levels are
+// hierarchical, so write implies read and manage implies write and read.
+func (c *Checker) CheckResourcePermission(ctx context.Context, resource ResourceRef, required int32) error {
+	if c == nil || c.policy == nil {
+		return ErrSourceUnavailable
+	}
+	return c.policy.CheckResourcePermission(ctx, resource, required)
+}
+
 // CheckDependency checks entry access and the caller's and entry owner's access to a dependency.
 func (c *Checker) CheckDependency(ctx context.Context, entry, dependency ResourceRef, entryOperation, dependencyOperation Operation) error {
 	if c == nil || c.policy == nil {
 		return ErrSourceUnavailable
 	}
 	return c.policy.CheckDependency(ctx, entry, dependency, entryOperation, dependencyOperation)
+}
+
+// dependencyBatchPolicy is implemented by policies that can authorize a whole
+// dependency set with a single resource load. Policies without it keep the
+// original per-dependency path through the optional-interface fallback below.
+type dependencyBatchPolicy interface {
+	CheckDependencies(context.Context, ResourceRef, []ResourceRef, Operation, Operation) error
+}
+
+// CheckDependencies checks entry access and the caller's and entry owner's
+// access to every dependency. It uses one batch load when the active policy
+// supports it and otherwise preserves the per-dependency check order.
+func (c *Checker) CheckDependencies(ctx context.Context, entry ResourceRef, dependencies []ResourceRef, entryOperation, dependencyOperation Operation) error {
+	if c == nil || c.policy == nil {
+		return ErrSourceUnavailable
+	}
+	if batch, ok := c.policy.(dependencyBatchPolicy); ok {
+		return batch.CheckDependencies(ctx, entry, dependencies, entryOperation, dependencyOperation)
+	}
+	for _, dependency := range dependencies {
+		if err := c.policy.CheckDependency(ctx, entry, dependency, entryOperation, dependencyOperation); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ResolveAccess resolves the effective access for the authenticated identity in ctx.

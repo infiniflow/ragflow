@@ -17,8 +17,10 @@
 package parser
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,7 +80,7 @@ func trimCells(row []string) []string {
 // at image anchor boundaries, interleaved with the anchored image items in
 // document order. Every segment repeats the header row (so segment 2+ never
 // loses column names) and carries a row-aligned position matrix — one tuple
-// per row in strict order, header included — so row-level consumers index
+// per row in worksheet order, including title rows before the header — so consumers index
 // positions by row number with no side channel. Each segment's TableData keeps
 // the sheet's merge geometry: an origin cell carries ColSpan/RowSpan and the
 // positions it engulfs are Covered markers. Consumers project those slots with
@@ -110,7 +112,6 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		headerRow = 1
 	}
 	rowByNum, rowNums := sheetRowIndex(records, headerRow, dataRows)
-	ranges = materializeDetachedMerges(rowByNum, headerRow, ranges)
 	header := append([]string(nil), rowByNum[headerRow]...)
 	headerColEnd := len(header)
 	if headerColEnd == 0 {
@@ -212,6 +213,8 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		for _, r := range body {
 			matrix = append(matrix, r.tuple)
 		}
+		// Keep positions aligned with the canonical grid's worksheet order.
+		slices.SortFunc(matrix, func(a, b []float64) int { return cmp.Compare(a[1], b[1]) })
 		td := buildCanonicalTable(headerRow, header, body, ranges, sheet)
 		ti := NewTableDataJSONItem(td, sheet, SpreadsheetPositions(matrix)).(TableItem)
 		ti.Extra = map[string]any{"sheet_index": sheetIndex}
@@ -299,81 +302,6 @@ func sheetRowIndex(records [][]string, headerRow int, dataRows []int) (map[int][
 	return byNum, nums
 }
 
-// materializeDetachedMerges handles a merge that starts above the detected
-// header and crosses it. Reordering the header to records[0] puts such a
-// merge's origin after the row it covers, which a grid cannot represent as a
-// span. The legacy parser filled the text into the header (and data rows) with
-// no span, so mirror that shape: write the master text into the rows the range
-// covers and drop the range from the geometry. All other merges stay canonical.
-func materializeDetachedMerges(rowByNum map[int][]string, headerRow int, ranges []mergeRange) []mergeRange {
-	if len(ranges) == 0 {
-		return ranges
-	}
-	kept := make([]mergeRange, 0, len(ranges))
-	for _, m := range ranges {
-		if m.sr >= headerRow || m.er < headerRow {
-			kept = append(kept, m)
-			continue
-		}
-		masterRow := rowByNum[m.sr]
-		if m.sc < 1 || m.sc > len(masterRow) {
-			continue
-		}
-		master := masterRow[m.sc-1]
-		if strings.TrimSpace(master) == "" {
-			continue
-		}
-		// readSpreadsheetRecords caps merge padding at maxMergeExtentCols so a
-		// pathological far merge cannot allocate one cell per worksheet column.
-		// A detached merge bypasses that padding, so apply the same cap here.
-		endCol := m.ec
-		if endCol > maxMergeExtentCols {
-			endCol = maxMergeExtentCols
-		}
-		if m.sc > endCol {
-			continue
-		}
-		for row := m.sr; row <= m.er; row++ {
-			cells, ok := rowByNum[row]
-			if !ok {
-				continue
-			}
-			if row == headerRow {
-				// The header row carried a merged title across the columns
-				// the range covers; the legacy header-inheritance path filled
-				// every one of them.
-				if endCol > len(cells) {
-					grown := make([]string, endCol)
-					copy(grown, cells)
-					cells = grown
-					rowByNum[row] = cells
-				}
-				for c := m.sc; c <= endCol; c++ {
-					if strings.TrimSpace(cells[c-1]) == "" {
-						cells[c-1] = master
-					}
-				}
-				continue
-			}
-			// Data rows only inherit a vertical merge's master. A horizontal
-			// data merge keeps its value on the origin column, matching the
-			// legacy data-inheritance rule.
-			if m.sc == m.ec || row == m.sr {
-				if m.sc > len(cells) {
-					grown := make([]string, m.sc)
-					copy(grown, cells)
-					cells = grown
-					rowByNum[row] = cells
-				}
-				if strings.TrimSpace(cells[m.sc-1]) == "" {
-					cells[m.sc-1] = master
-				}
-			}
-		}
-	}
-	return kept
-}
-
 // buildCanonicalTable assembles one segment's TableData from the segment's
 // source rows and the sheet's merge rectangles. The grid keeps merge geometry
 // instead of pre-expanding it: an origin cell carries ColSpan/RowSpan and the
@@ -391,6 +319,8 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 		sources = append(sources, sourceRow{num: r.rowNum, cells: r.cells})
 	}
 
+	// Header detection must not move titles or metadata below the column labels.
+	slices.SortFunc(sources, func(a, b sourceRow) int { return cmp.Compare(a.num, b.num) })
 	present := make(map[int]bool, len(sources))
 	for _, src := range sources {
 		present[src.num] = true
@@ -399,7 +329,7 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 
 	logical := make([][]tableutil.CellInput, 0, len(sources))
 	headerFlags := make([]bool, 0, len(sources))
-	for i, src := range sources {
+	for _, src := range sources {
 		cells := trimCells(src.cells)
 		// A merge origin past the row's truncation point still has to be
 		// emitted so the grid can place the span; GetRows truncates at the
@@ -428,18 +358,17 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 			row = append(row, in)
 		}
 		logical = append(logical, row)
-		headerFlags = append(headerFlags, i == 0)
+		headerFlags = append(headerFlags, src.num <= headerRow)
 	}
 
 	td := tableutil.BuildTableData(logical, headerFlags, sheet)
 	if td == nil || len(td.Grid) == 0 {
 		return td
 	}
-	// Preserve the legacy spreadsheet row width: data rows were padded to the
-	// header width so a short trailing column still renders under its <th>.
+	// Pad rows to the column-header width so short rows stay column-aligned.
 	// Only appending is done here, so every existing cell keeps its index.
-	width := len(td.Grid[0])
-	for r := 1; r < len(td.Grid); r++ {
+	width := len(header)
+	for r := 0; r < len(td.Grid); r++ {
 		for len(td.Grid[r]) < width {
 			td.Grid[r] = append(td.Grid[r], entity.TableCell{})
 		}
@@ -866,7 +795,9 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 	if st.Font != nil && st.Font.Bold {
 		return true
 	}
-	if st.Fill.Type != "" || len(st.Fill.Color) > 0 {
+	// excelize reports Fill.Type "pattern" even for the default no-fill style;
+	// only a non-zero pattern or an explicit color marks a real fill.
+	if st.Fill.Pattern > 0 || len(st.Fill.Color) > 0 {
 		return true
 	}
 	return false
@@ -885,7 +816,16 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //     candidate that looks like a data row (majority numeric) is skipped. The
 //     override only applies when the anchor is not already row 1, so the common
 //     header-on-row-1 sheet is left unchanged.
-func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table) int {
+//  3. Width-based recovery: when step 2 finds a styled/contrast row that is much
+//     narrower than the typical data row (likely a metadata label in a form-
+//     style sheet), remember it as a fallback and search a wider window for the
+//     first text-majority row whose width matches the data body. Recovery only
+//     fires when at least one more narrow row follows the deferred candidate —
+//     a lone narrow row is a narrow header (merged header cells count only
+//     their merge masters), not a metadata preamble. The scan never runs when
+//     no fallback candidate exists, so plain sheets without any styled
+//     metadata keep row 1 as the default.
+func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table, ranges []mergeRange) int {
 	n := len(records)
 	if n == 0 {
 		return 1
@@ -917,6 +857,36 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	if maxScan < 1 {
 		return 1
 	}
+
+	// Pre-compute the typical data-row width from sampled mid-sheet rows.
+	// A header candidate whose width is much narrower than the body is
+	// likely a title/metadata row in a form-style spreadsheet (e.g. Kros
+	// budget files where rows 1–5 are labels and the real column header
+	// starts at row 6).
+	medWidth := medianRowWidth(records)
+
+	// width counts the distinct columns a row covers: filled cells plus the
+	// columns spanned by merges starting on that row, so a merged header row
+	// is not mistaken for a narrow metadata row.
+	width := func(k int) int {
+		covered := make(map[int]struct{})
+		for c, v := range records[k] {
+			if v != "" {
+				covered[c] = struct{}{}
+			}
+		}
+		row1 := k + 1
+		for _, m := range ranges {
+			if m.sr == row1 {
+				for c := m.sc; c <= m.ec; c++ {
+					covered[c-1] = struct{}{}
+				}
+			}
+		}
+		return len(covered)
+	}
+
+	bestCandidate := 0
 	for k := 0; k < maxScan; k++ {
 		row := records[k]
 		nc := len(row)
@@ -968,6 +938,13 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 
 		if styled*2 >= nc || contrast >= 2 {
 			if k == 0 {
+				// Row 1 is subject to the same width validation as any other
+				// candidate: a narrow styled row at the top of a form sheet is
+				// a metadata label, not the column header.
+				if rowIsNarrow(width(k), medWidth) {
+					bestCandidate = 1
+					continue
+				}
 				return 1 // row 1 is already the header
 			}
 			below := records[k+1]
@@ -979,11 +956,164 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			// subtotal looks identical locally, but its label matches a
 			// subtotal keyword so it is still refused and row 1 is kept.
 			if rowHasTextCell(below) || (isPurelyNumeric(below) && !isSubtotalRow(row)) {
+				// Width validation: if this candidate has far fewer filled
+				// cells than the typical data row, it is probably a metadata
+				// title (e.g. "Stavba: DSP MILLHAUS") and not the real
+				// column header. Remember it as fallback and keep scanning.
+				if rowIsNarrow(width(k), medWidth) {
+					if bestCandidate == 0 {
+						bestCandidate = k + 1
+					}
+					continue
+				}
 				return k + 1
 			}
 		}
 	}
+
+	// 3) Title-stub fallback: when row 1 is a lone title cell and no styled or
+	// contrast anchor was found, prefer the first text-majority row below it.
+	// A title followed by an unstyled header has no other signal to pick from.
+	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 {
+		stubScan := 12
+		if stubScan > n-1 {
+			stubScan = n - 1
+		}
+		for k := 1; k < stubScan; k++ {
+			row := records[k]
+			ne := rowNonEmpty(row)
+			if ne < 2 {
+				continue
+			}
+			numCells := 0
+			for _, v := range row {
+				if isNumericCell(v) {
+					numCells++
+				}
+			}
+			if numCells*2 >= ne {
+				continue
+			}
+			return k + 1
+		}
+	}
+
+	// 4) Width-based scan: if the styled/contrast scan skipped a narrow
+	// candidate, search a wider window for the first text-majority row
+	// whose width is close to the data-row median. Only run when there is
+	// a fallback candidate; otherwise plain sheets with no styled metadata
+	// keep row 1 as the default.
+	if bestCandidate > 0 && medWidth >= 4 {
+		wideScan := 12
+		if wideScan > n-1 {
+			wideScan = n - 1
+		}
+		// bestCandidate is a 1-based row number, so index bestCandidate is the
+		// row directly after it. That row must stay narrow too: a lone narrow
+		// row in front of a wide body is a narrow header (merged header cells
+		// count only their merge masters), not a metadata preamble. Recovery
+		// therefore needs at least one more narrow row between the candidate
+		// and the recovered row — a metadata block is a run of narrow rows.
+		for k := bestCandidate + 1; k < wideScan; k++ {
+			row := records[k]
+			ne := width(k)
+			// Accept rows within ±2 of the median data width, but reject rows
+			// that are half as wide (or narrower) — they are still metadata
+			// labels, not the real column header.
+			if ne < medWidth-2 || ne > medWidth+2 || rowIsNarrow(ne, medWidth) {
+				continue
+			}
+			// The row directly below the deferred candidate is not enough
+			// to distinguish a header from the first data row, even with merges.
+			// Recovery requires another narrow metadata row before this row;
+			// otherwise the narrow candidate remains the real header.
+			// The recovered row must close a contiguous narrow metadata block:
+			// a blank or body-width row between the deferred candidate and
+			// here ends the run, making this row part of a later block (a
+			// repeated header or a section title mid-sheet), and the first
+			// candidate was the real header all along.
+			contiguous := true
+			for j := bestCandidate; j < k; j++ {
+				w := width(j)
+				if w == 0 || !rowIsNarrow(w, medWidth) {
+					contiguous = false
+					break
+				}
+			}
+			if !contiguous {
+				break
+			}
+			// Reject data rows the same way step 2 does: a row whose
+			// non-empty cells are majority numbers is data, not a header.
+			numCells := 0
+			for _, v := range row {
+				if isNumericCell(v) {
+					numCells++
+				}
+			}
+			if ne > 0 && numCells*2 >= ne {
+				continue
+			}
+			return k + 1
+		}
+	}
+
+	if bestCandidate > 0 {
+		return bestCandidate
+	}
 	return 1
+}
+
+// rowIsNarrow reports whether a row with ne non-empty cells is much narrower
+// than the typical data row (at most half the median width). Width checks only
+// run when a usable median exists (medWidth >= 4); below that a "narrow" row
+// cannot be told apart from a small header.
+func rowIsNarrow(ne, medWidth int) bool {
+	return medWidth >= 4 && ne*2 <= medWidth
+}
+
+// rowNonEmpty counts the non-empty cells in a row.
+func rowNonEmpty(row []string) int {
+	n := 0
+	for _, v := range row {
+		if strings.TrimSpace(v) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// medianRowWidth samples rows from the bottom half of the sheet and returns
+// the median of their non-empty cell counts. Sampling the bottom half keeps
+// top-of-sheet metadata/title blocks out of the estimate; a middle-half window
+// can land entirely inside a long metadata block on short form sheets.
+func medianRowWidth(records [][]string) int {
+	n := len(records)
+	if n < 4 {
+		return 0
+	}
+	start := n / 2
+	end := n
+	span := end - start
+	if span < 3 {
+		return 0
+	}
+	step := span / 5
+	if step < 1 {
+		step = 1
+	}
+	var widths []int
+	for i := start; i < end && len(widths) < 5; i += step {
+		w := rowNonEmpty(records[i])
+		if w > 0 {
+			widths = append(widths, w)
+		}
+	}
+	if len(widths) == 0 {
+		return 0
+	}
+	sort.Ints(widths)
+	return widths[len(widths)/2]
 }
 
 // rowHasTextCell reports whether a row contains at least one non-empty,
@@ -1052,7 +1182,7 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q table metadata: %v", sheet, err))
 	}
-	headerRow := detectHeaderRow(f, sheet, rows, tables)
+	headerRow := detectHeaderRow(f, sheet, rows, tables, ranges)
 
 	// Pad the header row to the furthest merged column when a merge touches
 	// the header. excelize's GetRows truncates each row at its last valued

@@ -303,6 +303,35 @@ func TestMarkdownParser_PreservesUnresolvedImageReferences(t *testing.T) {
 	}
 }
 
+func TestMarkdownParser_KeepsLinkDestinations(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "See the [product catalog](https://example.com/products).\n\n" +
+		"Read the [docs][d] or <https://example.com/home>.\n\n[d]: https://example.com/docs\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var textItems []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); text != "" {
+			textItems = append(textItems, text)
+		}
+	}
+	texts := strings.Join(textItems, "\n")
+	for _, want := range []string{
+		"[product catalog](https://example.com/products)",
+		"[docs](https://example.com/docs)",
+		"or https://example.com/home.",
+	} {
+		if !strings.Contains(texts, want) {
+			t.Errorf("%q missing from text items: %q", want, texts)
+		}
+	}
+}
+
 func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
 	p, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {
@@ -865,6 +894,75 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	}
 }
 
+// TestMarkdownParser_IndentedTables covers pipe tables that do not start in column 0. GFM
+// allows up to three spaces of indentation before each line of a table, so such a table at the
+// top level is still a table. Tables inside list items keep the parser's own handling, and four
+// spaces or a tab at the top level make an indented code block, which must stay code.
+func TestMarkdownParser_IndentedTables(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	for _, md := range []string{
+		" | a | b |\n |---|---|\n | one | two |\n",
+		"  | a | b |\n  |---|---|\n  | one | two |\n",
+		"   | a | b |\n   |---|---|\n   | one | two |\n",
+		" | a | b |\n   |---|---|\n  | one | two |\n",
+		"- item\n\n | a | b |\n   |---|---|\n  | one | two |\n",
+		"Intro\n | a | b |\n |---|---|\n | one | two |\n",
+		"- item\n\n  | a | b |\n  |---|---|\n  | one | two |\n",
+		"- item\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"- item\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+		"- outer\n  - inner\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"10. Step\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		tables := 0
+		for _, item := range ItemsToMaps(res.JSON) {
+			text, _ := item["text"].(string)
+			if strings.Contains(text, "|---|") {
+				t.Fatalf("ParseWithResult(%q): table rows left in the text: %q", md, text)
+			}
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				tables++
+				td, ok := item["table"].(*entity.TableData)
+				if !ok || td == nil || !tableRowsContain(td, "one") {
+					t.Fatalf("ParseWithResult(%q): table item without its rows: %#v", md, item)
+				}
+			}
+		}
+		if tables != 1 {
+			t.Fatalf("ParseWithResult(%q): table items = %d, want 1", md, tables)
+		}
+	}
+
+	// The text before a table in the same paragraph stays, and a table may have no body rows.
+	res := p.ParseWithResult(ctx, "test.md", []byte("Intro\n | a | b |\n |---|---|\n | one | two |\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 2 || items[0]["text"] != "Intro" {
+		t.Fatalf("intro before an indented table: %#v", items)
+	}
+	res = p.ParseWithResult(ctx, "test.md", []byte(" | a | b |\n |---|---\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 1 || items[0]["doc_type_kwd"] != "table" {
+		t.Fatalf("indented header-only table: %#v", items)
+	}
+
+	for _, md := range []string{
+		"Code:\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"Code:\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		for _, item := range ItemsToMaps(res.JSON) {
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				t.Fatalf("ParseWithResult(%q): an indented code block became a table item", md)
+			}
+		}
+	}
+}
+
 // TestMarkdownParser_RawHTMLTableHandled covers a user-written raw <table> HTML
 // block (not a GFM pipe table). The table hook only pads GFM
 // pipe tables, so the raw <table> passes through and is caught by isTableHTML
@@ -1036,4 +1134,46 @@ func tableRowsContain(td *entity.TableData, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestMarkdownParser_PreservesTableOfContents(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	foundHeading := false
+	foundEntry := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			foundHeading = true
+		}
+		if text == "* 第一章 概述" {
+			foundEntry = true
+		}
+	}
+	if !foundHeading {
+		t.Error("expected TOC heading to be preserved")
+	}
+	if !foundEntry {
+		t.Error("expected TOC entry to be preserved")
+	}
 }

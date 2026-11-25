@@ -22,9 +22,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -398,7 +400,8 @@ func buildFilterFromConditionRaw(condition map[string]interface{}, tableColumns 
 }) string {
 	var conditions []string
 
-	for k, v := range condition {
+	for _, k := range slices.Sorted(maps.Keys(condition)) {
+		v := condition[k]
 		if k == "and" || k == "or" {
 			var children []string
 			for _, child := range types.FilterClauses(v) {

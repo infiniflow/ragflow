@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
 )
 
@@ -48,7 +49,7 @@ var (
 	ddlLocks           sync.Map
 )
 
-var chunkColumns = []columnDefinition{
+var baseChunkColumns = []columnDefinition{
 	{"id", "VARCHAR(256) NOT NULL PRIMARY KEY"},
 	{"kb_id", "VARCHAR(256) NOT NULL"},
 	{"doc_id", "VARCHAR(256) NULL"},
@@ -94,6 +95,85 @@ var chunkColumns = []columnDefinition{
 	{"_order_id", "INTEGER NULL"},
 	{"group_id", "VARCHAR(256) NULL"},
 	{"mom_id", "VARCHAR(256) NULL"},
+}
+
+// additiveChunkColumns are declared for tables created from now on. Existing
+// tables are not altered to gain them, so a chunk operation resolves them
+// against the live schema and falls back to the extra JSON column.
+var additiveChunkColumns = []columnDefinition{
+	// Fields conf/infinity_mapping.json declares that this engine had no column
+	// for. Readers select them by name, and an unknown name is rejected before
+	// any SQL is sent, so the list must follow the mapping. Scalars keep their
+	// keyword form, list-valued JSON fields become arrays so ARRAY_CONTAINS
+	// filters work, and object payloads stay JSON.
+	{"mom", "VARCHAR(256) NULL"},
+	{"name", "VARCHAR(256) NULL"},
+	{"name_kwd", "VARCHAR(256) NULL"},
+	{"important_kwd_empty_count", "INTEGER NULL"},
+	{"mention_count_int", "INTEGER NULL"},
+	{"rank_int", "INTEGER NULL"},
+	{"mom_with_weight", "TEXT NULL"},
+	{"toc_kwd", "VARCHAR(256) NULL"},
+	{"deleted_doc_id", "VARCHAR(256) NULL"},
+	{"compile_kwd", "VARCHAR(256) NULL"},
+	{"compilation_template_kind_kwd", "VARCHAR(256) NULL"},
+	{"plan_kwd", "VARCHAR(256) NULL"},
+	{"scope_kwd", "VARCHAR(256) NULL"},
+	{"source_chunk_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"source_doc_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"compilation_template_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"chunk_hash_kwd", "VARCHAR(256) NULL"},
+	{"input_hash_kwd", "VARCHAR(256) NULL"},
+	{"wiki_slug_kwd", "VARCHAR(256) NULL"},
+	{"summary_with_weight", "TEXT NULL"},
+	{"skill_with_weight", "TEXT NULL"},
+	{"skill_kwd", "VARCHAR(256) NULL"},
+	{"children_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"doc_ids_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"slug_kwd", "VARCHAR(256) NULL"},
+	{"title_kwd", "VARCHAR(256) NULL"},
+	{"topic_kwd", "VARCHAR(256) NULL"},
+	{"plan_group_kwd", "VARCHAR(256) NULL"},
+	{"generation_kwd", "VARCHAR(256) NULL"},
+	{"page_type_kwd", "VARCHAR(256) NULL"},
+	{"entity_names_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"entity_names", "ARRAY(VARCHAR(256)) NULL"},
+	{"outlinks_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"related_kb_pages_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"page_version_int", "INTEGER NULL"},
+	{"synthesis_version_int", "INTEGER NULL"},
+	{"claims", "JSON NULL"},
+	{"page_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"page_id", "VARCHAR(256) NULL"},
+	{"source_chunk_hashes", "JSON NULL"},
+	{"map_checksum", "VARCHAR(256) NULL"},
+	{"from_kwd", "VARCHAR(256) NULL"},
+	{"to_kwd", "VARCHAR(256) NULL"},
+	{"rechunk_kwd", "VARCHAR(256) NULL"},
+	{"rechunked_from_template_id", "VARCHAR(256) NULL"},
+	{"rechunked_from_chunk_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"superseded_by_chunk_id", "VARCHAR(256) NULL"},
+	{"doc_count_int", "INTEGER NULL"},
+	{"depth_int", "INTEGER NULL"},
+	{"parent_kwd", "VARCHAR(256) NULL"},
+	{"outlinks_int", "INTEGER NULL"},
+	{"token_num", "INTEGER NULL"},
+	{"aliases", "ARRAY(VARCHAR(256)) NULL"},
+	{"aliases_flat_kwd", "VARCHAR(256) NULL"},
+}
+
+var chunkColumns = append(append([]columnDefinition{}, baseChunkColumns...), additiveChunkColumns...)
+
+var optionalChunkColumnTypes = func() map[string]string {
+	optional := make(map[string]string, len(additiveChunkColumns))
+	for _, column := range additiveChunkColumns {
+		optional[column.name] = column.typeSQL
+	}
+	return optional
+}()
+
+func isOptionalChunkColumn(column string) bool {
+	return optionalChunkColumnTypes[column] != ""
 }
 
 var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
@@ -231,15 +311,18 @@ func (e *Engine) ensureTableWithLock(ctx context.Context, tableName string, colu
 		for _, column := range columns {
 			definitions = append(definitions, quoteIdentifier(column.name)+" "+column.typeSQL)
 		}
-		collation := "utf8mb4_unicode_ci"
-		if e.engineType == "seekdb" {
-			collation = "utf8mb4_general_ci"
-		}
 		query := fmt.Sprintf("CREATE TABLE %s (%s) DEFAULT CHARSET=utf8mb4 COLLATE=%s ORGANIZATION=heap",
-			quoteIdentifier(tableName), strings.Join(definitions, ", "), collation)
+			quoteIdentifier(tableName), strings.Join(definitions, ", "), e.defaultTableCollation())
 		_, err := e.db.ExecContext(ctx, query)
 		return err
 	})
+}
+
+func (e *Engine) defaultTableCollation() string {
+	if e.engineType == "seekdb" {
+		return "utf8mb4_general_ci"
+	}
+	return "utf8mb4_unicode_ci"
 }
 
 func (e *Engine) ensureColumn(ctx context.Context, tableName string, column columnDefinition, prefix string) error {
@@ -288,7 +371,7 @@ func (e *Engine) ensureVectorColumnAndIndex(ctx context.Context, tableName strin
 	if vectorSize <= 0 {
 		return nil
 	}
-	columnName := fmt.Sprintf("q_%d_vec", vectorSize)
+	columnName := common.VectorColumnName(vectorSize)
 	if err := e.withDDLLock(ctx, prefix+"add_vector_column_"+tableName+"_"+columnName, func() (bool, error) {
 		return e.columnExists(ctx, tableName, columnName)
 	}, func() error {
@@ -404,6 +487,48 @@ func (e *Engine) columnExists(ctx context.Context, tableName, columnName string)
 		"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
 		e.dbName, tableName, columnName).Scan(&count)
 	return count > 0, err
+}
+
+type chunkTableSchema struct {
+	columns   map[string]bool
+	collation string
+}
+
+const chunkTableSchemaSQL = `SELECT c.COLUMN_NAME, t.TABLE_COLLATION
+FROM INFORMATION_SCHEMA.COLUMNS c
+JOIN INFORMATION_SCHEMA.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ?`
+
+// loadChunkTableSchema resolves optional fields and the collation for extra
+// text comparisons in one metadata query per operation or insert batch.
+func (e *Engine) loadChunkTableSchema(ctx context.Context, tableName string) (chunkTableSchema, error) {
+	rows, err := e.db.QueryContext(ctx, chunkTableSchemaSQL, e.dbName, tableName)
+	if err != nil {
+		return chunkTableSchema{}, err
+	}
+	defer rows.Close()
+	schema := chunkTableSchema{columns: make(map[string]bool)}
+	for rows.Next() {
+		var name, collation string
+		if err := rows.Scan(&name, &collation); err != nil {
+			return chunkTableSchema{}, err
+		}
+		if schema.collation == "" {
+			// The collation is interpolated into SQL as an identifier.
+			if !metadataKeyPattern.MatchString(collation) {
+				return chunkTableSchema{}, fmt.Errorf("invalid collation for chunk table %q: %q", tableName, collation)
+			}
+			schema.collation = collation
+		}
+		schema.columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return chunkTableSchema{}, err
+	}
+	if len(schema.columns) == 0 {
+		return chunkTableSchema{}, fmt.Errorf("no schema found for chunk table %q", tableName)
+	}
+	return schema, nil
 }
 
 func (e *Engine) indexExists(ctx context.Context, tableName, indexName string) (bool, error) {

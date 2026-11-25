@@ -16,6 +16,7 @@
 
 import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
+import { IngestionProgressResponse } from '@/interfaces/database/ingestion';
 import {
   IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
@@ -227,7 +228,14 @@ const chunkService = {
         page_size: params.page_size || params.size,
         keywords: params.keywords,
         available: getAvailableParam(params.available_int),
-        chunk_ids: params.chunk_ids,
+        // axios serialises an array as `chunk_ids[]=a&chunk_ids[]=b`, which the
+        // server never sees: it reads the bare `chunk_ids` name and splits the
+        // value on commas, so one string carries the whole id list. An empty
+        // list is left off entirely, because an empty value would read as "no
+        // filter" on the wire, which is a different thing.
+        chunk_ids: Array.isArray(params.chunk_ids)
+          ? params.chunk_ids.join(',') || undefined
+          : params.chunk_ids,
       },
     });
 
@@ -357,12 +365,17 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 // Used to echo back already-selected datasets whose names are not present
 // in the first page of the paginated list. `canvasID` limits results to
 // datasets usable by both the canvas owner and the current user.
-export const listDatasetByIds = (ids: string[], canvasID?: string) =>
+export const listDatasetByIds = (
+  ids: string[],
+  canvasID?: string,
+  accessUserID?: string,
+) =>
   request.get(api.kbList, {
     params: {
       ids: ids.join(','),
       page_size: ids.length,
       ...(canvasID ? { canvas_id: canvasID } : {}),
+      ...(accessUserID ? { access_user_id: accessUserID } : {}),
     },
   });
 
@@ -538,6 +551,13 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const getIngestionProgress = (
+  datasetId: string,
+  logId: string,
+): Promise<{
+  data: { code: number; message?: string; data: IngestionProgressResponse };
+}> => request.get(api.getIngestionProgress(datasetId, logId));
 
 export const listIngestionMessages = (
   datasetId: string,

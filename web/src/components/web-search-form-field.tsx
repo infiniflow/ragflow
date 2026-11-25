@@ -18,8 +18,10 @@ import anysearchLogo from '@/assets/anysearch.webp';
 import braveLogo from '@/assets/svg/brave.svg';
 import exaLogo from '@/assets/exa.png';
 import firecrawlLogo from '@/assets/firecrawl.png';
+import keirolabsLogo from '@/assets/keirolabs.png';
 import linkupLogo from '@/assets/linkup.png';
 import parallelLogo from '@/assets/svg/parallel.svg';
+import perplexityLogo from '@/assets/svg/perplexity.svg';
 import queritLogo from '@/assets/querit.png';
 import search1apiLogo from '@/assets/search1api.png';
 import searchapiLogo from '@/assets/searchapi.png';
@@ -63,6 +65,11 @@ const webSearchProviderCatalog = [
     value: WebSearchProvider.Firecrawl,
   },
   {
+    name: 'Keirolabs',
+    logo: keirolabsLogo,
+    value: WebSearchProvider.Keirolabs,
+  },
+  {
     name: 'Linkup',
     logo: linkupLogo,
     value: WebSearchProvider.Linkup,
@@ -71,6 +78,11 @@ const webSearchProviderCatalog = [
     name: 'Parallel',
     logo: parallelLogo,
     value: WebSearchProvider.Parallel,
+  },
+  {
+    name: 'Perplexity',
+    logo: perplexityLogo,
+    value: WebSearchProvider.Perplexity,
   },
   {
     name: 'Querit',
@@ -154,6 +166,12 @@ const providerKeyConfig = {
     placeholder: 'firecrawlApiKeyMessage',
     helpUrl: 'https://www.firecrawl.dev/app/api-keys',
   },
+  [WebSearchProvider.Keirolabs]: {
+    name: 'prompt_config.keirolabs_api_key',
+    tip: 'keirolabsApiKeyTip',
+    placeholder: 'keirolabsApiKeyMessage',
+    helpUrl: 'https://www.keirolabs.cloud',
+  },
   [WebSearchProvider.Linkup]: {
     name: 'prompt_config.linkup_api_key',
     tip: 'linkupApiKeyTip',
@@ -165,6 +183,12 @@ const providerKeyConfig = {
     tip: 'parallelApiKeyTip',
     placeholder: 'parallelApiKeyMessage',
     helpUrl: 'https://platform.parallel.ai',
+  },
+  [WebSearchProvider.Perplexity]: {
+    name: 'prompt_config.perplexity_api_key',
+    tip: 'perplexityApiKeyTip',
+    placeholder: 'perplexityApiKeyMessage',
+    helpUrl: 'https://www.perplexity.ai/account/api/keys',
   },
   [WebSearchProvider.Querit]: {
     name: 'prompt_config.querit_api_key',
@@ -232,6 +256,7 @@ export function WebSearchFormField({ prefix = '' }: IProps) {
           <SelectWithSearch
             value={field.value}
             onChange={field.onChange}
+            disabled={field.disabled}
             options={providerOptions}
             placeholder={t('webSearchProviderPlaceholder')}
             allowClear

@@ -28,9 +28,9 @@ import (
 // The naive pipeline earns its [ID:N] markers two probabilistic ways: a
 // prompt asking the model to emit them, and an embedding-similarity pass
 // (InsertCitations) guessing which sentence came from which chunk. The
-// agentic answer needs neither: EVERY factual line already cites
-// its provenance explicitly as `chunk_id: <id>`, exactly as the tool output
-// printed it. So the port
+// agentic deliverable needs neither: EVERY matrix/chain line already cites
+// its provenance explicitly as `chunk_id: <id>` — fields the answer auditor
+// verifies character-for-character against list_chunks output. So the port
 // is deterministic: extract the cited ids, and let the caller (chat
 // pipeline) fetch those chunks and number them; [ID:N] markers are then
 // appended mechanically, N being the chunk's position in the reference
@@ -66,68 +66,167 @@ func ExtractCitedChunkIDs(final string) []string {
 	return out
 }
 
-// InsertCitationMarkers appends the canonical ` [ID:N]` citation markers for
-// every `chunk_id: <id>` occurrence, N being the id's 0-based position in
-// chunkIDs. The caller MUST build the reference payload's chunks array in the
-// same chunkIDs order — the frontend resolves the marker as
-// reference.chunks[N].
+// RewriteProvenance rewrites each provenance tuple IN PLACE: the tuple (or a bare
+// `chunk_id: <id>` field) becomes the canonical `[ID:N]` marker at the same position, N
+// being the citation key's 0-based position in the reference payload. index maps a key — a
+// corpus chunk_id, or a web url — to that position, and the caller builds the payload in
+// the same order, so the client resolves the marker as reference.chunks[N].
 //
-// Placement is LINE-END, after the line's last backtick: the FOS format wraps
-// every matrix/chain line in backticks, and the frontend's citation pass
-// skips text inside <code> nodes — a marker inserted next to the chunk_id
-// field would render as literal text and never become a clickable citation
-// (observed on the 关羽 run: markers present in the SSE payload, invisible in
-// the UI). Lines without backticks take the marker right after the last id.
-// Ids absent from chunkIDs (e.g. a cited chunk that failed to load) stay
-// unmarked rather than pointing at a wrong index, and markers already present
-// for a chunk are not duplicated, making the rewrite idempotent.
-func InsertCitationMarkers(final string, chunkIDs []string) string {
-	if final == "" || len(chunkIDs) == 0 {
-		return final
+// Nothing of the machine-readable field reaches the user: the whole tuple goes, including
+// its doc/snippet columns. A tuple whose key is not in index keeps its text, so an
+// unverifiable citation stays visible rather than silently vanishing or pointing at a
+// wrong index; that also makes the pass idempotent (a rewritten line no longer holds a
+// tuple).
+func RewriteProvenance(answer string, index map[string]int) string {
+	if answer == "" || len(index) == 0 {
+		return answer
 	}
-	idx := make(map[string]int, len(chunkIDs))
-	for i, id := range chunkIDs {
-		if _, dup := idx[id]; dup {
-			continue
-		}
-		idx[id] = i
-	}
-	lines := strings.Split(final, "\n")
+	lines := strings.Split(answer, "\n")
 	for li, line := range lines {
-		if !strings.Contains(line, "chunk_id:") {
+		if !strings.Contains(line, "chunk_id:") && !strings.Contains(line, "source: web") {
 			continue
 		}
-		matches := citedChunkIDRe.FindAllStringSubmatchIndex(line, -1)
-		if len(matches) == 0 {
-			continue
-		}
-		var markers strings.Builder
-		seen := make(map[int]bool, len(matches))
-		lastEnd := 0
-		for _, m := range matches {
-			lastEnd = m[1]
-			n, ok := idx[line[m[2]:m[3]]]
-			if !ok || seen[n] || strings.Contains(line, fmt.Sprintf("[ID:%d]", n)) {
-				continue // unresolvable id: keep the text, no marker
-			}
-			seen[n] = true
-			markers.WriteString(" [ID:" + strconv.Itoa(n) + "]")
-		}
-		if markers.Len() == 0 {
-			continue
-		}
-		// Outside the code span when the line is backtick-wrapped; the
-		// marker annotates the whole line, which cites exactly this chunk.
-		insertAt := lastEnd
-		if bt := strings.LastIndex(line, "`"); bt >= lastEnd {
-			insertAt = bt + 1
-		}
-		lines[li] = line[:insertAt] + markers.String() + line[insertAt:]
+		lines[li] = replaceProvenance(line, index)
 	}
 	return strings.Join(lines, "\n")
 }
 
-// The [ID:n] handle path.
+// replaceProvenance rewrites one line's resolvable provenance fields in place. A
+// parenthesised tuple is replaced whole (so its doc/snippet columns disappear with it); a
+// bare `chunk_id: <id>` field is replaced on its own, so an answer that never followed the
+// tuple contract still gets markers.
+func replaceProvenance(line string, index map[string]int) string {
+	var b strings.Builder
+	b.Grow(len(line))
+	for i := 0; i < len(line); {
+		if line[i] == '(' {
+			if end, ok := tupleEnd(line, i); ok {
+				if n, ok := tupleMark(line[i:end+1], index); ok {
+					writeMarker(&b, n)
+				} else {
+					b.WriteString(line[i : end+1]) // not a provenance tuple, or unresolvable
+				}
+				i = end + 1
+				continue
+			}
+		}
+		if m := citedChunkIDRe.FindStringSubmatchIndex(line[i:]); m != nil && m[0] == 0 {
+			if n, ok := index[line[i+m[2]:i+m[3]]]; ok {
+				writeMarker(&b, n)
+				i += m[1]
+				continue
+			}
+		}
+		b.WriteByte(line[i])
+		i++
+	}
+	return b.String()
+}
+
+func writeMarker(b *strings.Builder, n int) {
+	b.WriteString("[ID:")
+	b.WriteString(strconv.Itoa(n))
+	b.WriteString("]")
+}
+
+// tupleMark returns the payload position a provenance tuple cites, when it resolves: a
+// corpus tuple by its chunk_id, a web tuple by its url.
+func tupleMark(group string, index map[string]int) (int, bool) {
+	if m := citedChunkIDRe.FindStringSubmatch(group); m != nil {
+		n, ok := index[m[1]]
+		return n, ok
+	}
+	if !strings.Contains(group, "source: web") {
+		return 0, false
+	}
+	m := citedWebURLRe.FindStringSubmatch(group)
+	if m == nil {
+		return 0, false
+	}
+	n, ok := index[m[1]]
+	return n, ok
+}
+
+// CitedWebSource is a web passage the answer cites, exactly as the model declared it. The
+// turn keeps no record of what a search served, so a web citation is the model's own
+// claim: its url, title and snippet all come from the answer's provenance tuple.
+type CitedWebSource struct {
+	URL     string
+	Title   string
+	Snippet string
+}
+
+var (
+	// citedWebURLRe matches the `url:` field of a web provenance tuple; the group is only
+	// treated as web when it also says `source: web` (see tupleMark / ExtractCitedWebSources).
+	citedWebURLRe = regexp.MustCompile(`url:\s*([^\s,)]+)`)
+	// citedWebTitleRe and citedWebSnippetRe carry the other two fields the client shows.
+	citedWebTitleRe   = regexp.MustCompile(`title:\s*([^,)]+)`)
+	citedWebSnippetRe = regexp.MustCompile(`snippet:\s*"([^"]*)"`)
+)
+
+// ExtractCitedWebSources returns the web passages the answer cites, in first-appearance
+// order, deduplicated by url.
+func ExtractCitedWebSources(final string) []CitedWebSource {
+	if final == "" || !strings.Contains(final, "source: web") {
+		return nil
+	}
+	var out []CitedWebSource
+	seen := make(map[string]bool)
+	for i := 0; i < len(final); {
+		if final[i] != '(' {
+			i++
+			continue
+		}
+		end, ok := tupleEnd(final, i)
+		if !ok {
+			i++
+			continue
+		}
+		group := final[i : end+1]
+		i = end + 1
+		if !strings.Contains(group, "source: web") {
+			continue
+		}
+		u := citedWebURLRe.FindStringSubmatch(group)
+		if u == nil || seen[u[1]] {
+			continue
+		}
+		seen[u[1]] = true
+		src := CitedWebSource{URL: u[1]}
+		if t := citedWebTitleRe.FindStringSubmatch(group); t != nil {
+			src.Title = strings.TrimSpace(t[1])
+		}
+		if s := citedWebSnippetRe.FindStringSubmatch(group); s != nil {
+			src.Snippet = s[1]
+		}
+		out = append(out, src)
+	}
+	return out
+}
+
+// tupleEnd returns the index of the ')' closing the '(' at start, ignoring parentheses
+// inside a double-quoted span (a snippet routinely contains them). ok is false when the
+// group is never closed, in which case the caller must not treat it as a tuple.
+func tupleEnd(s string, start int) (int, bool) {
+	inQuote := false
+	for i := start + 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			if inQuote {
+				i++ // an escaped char inside the snippet cannot close the quote
+			}
+		case '"':
+			inQuote = !inQuote
+		case ')':
+			if !inQuote {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
 //
 // The tool results the model reads carry a `ref="n"` attribute on every passage
 // (see EvidenceRegistry), and the prompt asks it to end each corpus-backed line
@@ -136,8 +235,11 @@ func InsertCitationMarkers(final string, chunkIDs []string) string {
 // id the model could invent. The two helpers below turn those handles into the
 // reference list the client resolves.
 
-// citedRefRE matches the `[ID:n]` handle the model writes.
-var citedRefRE = regexp.MustCompile(`\[ID:(\d+)\]`)
+// citedRefRE matches the canonical `[ID:n]` handle and the bare `[n]` form
+// accepted by the agentic citation contract. Bare numeric markers are bounded
+// by the evidence registry before they can resolve, so ordinary bracketed
+// numbers such as years remain untouched when they do not name a passage.
+var citedRefRE = regexp.MustCompile(`(?i)\[(?:id\s*:\s*)?(\d+)\]`)
 
 // commaCitationRE matches a handle group the model compressed into ONE marker
 // ("[ID:47, ID:115]") instead of writing one marker per passage.
@@ -230,11 +332,17 @@ func ResolveCitations(answer string, registry *EvidenceRegistry, publishable []s
 		sub := citedRefRE.FindStringSubmatch(m)
 		n, err := strconv.Atoi(sub[1])
 		if err != nil || n < 0 || n >= len(ids) {
-			return ""
+			if strings.Contains(strings.ToLower(m), "id") {
+				return ""
+			}
+			return m
 		}
 		k, ok := pos[ids[n]]
 		if !ok {
-			return ""
+			if strings.Contains(strings.ToLower(m), "id") {
+				return ""
+			}
+			return m
 		}
 		if _, dup := seen[k]; !dup {
 			seen[k] = struct{}{}

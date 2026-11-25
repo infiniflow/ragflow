@@ -1,0 +1,302 @@
+{
+  "name": "GreenNode",
+  "url": {
+    "default": "https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1"
+  },
+  "url_hint": "https://tokenplan.api.greennode.ai/v1",
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank"
+  },
+  "class": "greennode",
+  "models": [
+    {
+      "name": "qwen/qwen3.8-max",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-flash",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-27b",
+      "context_length": 262144,
+      "max_output": 262000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-plus",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-plus",
+      "context_length": 1000000,
+      "max_output": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-flash",
+      "context_length": 1000000,
+      "max_output": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3-flash",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3-flash-thirdparty",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3",
+      "context_length": 300000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.2",
+      "context_length": 300000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.2-thirdparty",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4.1-flash-thirdparty",
+      "context_length": 1000000,
+      "max_output": 384000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "context_length": 1000000,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "context_length": 1000000,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m3",
+      "context_length": 1000000,
+      "max_output": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.5",
+      "context_length": 192000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi/kimi-k2.7-code",
+      "context_length": 256000,
+      "max_output": 16000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi/kimi-k2.6",
+      "context_length": 256000,
+      "max_output": 16000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-4-8",
+      "context_length": 1024000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-nano",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemma-4-31b-it",
+      "context_length": 262144,
+      "max_output": 32000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "baai/bge-m3",
+      "context_length": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_dimension": 1024,
+      "dimensions": [
+        1024
+      ],
+      "max_batch_size": 32,
+      "tokenizer": "xlmr-spm"
+    },
+    {
+      "name": "qwen/qwen3-embedding-8b",
+      "context_length": 32768,
+      "model_types": [
+        "embedding"
+      ],
+      "max_dimension": 4096,
+      "dimensions": [
+        4096
+      ],
+      "max_batch_size": 32,
+      "tokenizer": "qwen-bpe"
+    },
+    {
+      "name": "baai/bge-reranker-v2-m3",
+      "context_length": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-reranker-8b",
+      "context_length": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}

@@ -3,22 +3,15 @@ package structure
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// Chain-shape validation for ``list`` / ``timeline`` kinds, mirroring the
-// Python structure.py block (CHAIN_KINDS, _chain_detect_violations,
-// validate_and_correct_chain). Both kinds model a strict linear chain of
-// entities (one predecessor, one successor, no cycles). The per-chunk
-// extractor is happy to emit branches / cycles when the source text supports
-// multiple readings, so the relation set is validated post-extraction and the
-// LLM is asked to pick the correct chain out of the offenders. Correction is
-// best-effort: any failure returns the input untouched (fail-open).
-
-// ChainKinds mirrors CHAIN_KINDS.
-var ChainKinds = map[Type]bool{TypeList: true, Type("timeline"): true}
+// Chain validation keeps at most one predecessor and successor per entity,
+// without cycles. LLM correction is best-effort: failures preserve the input.
 
 const (
 	chainCorrectionMaxChunkChars = 8196
@@ -55,7 +48,7 @@ commentary):
 }
 `
 
-// chainCorrectionSystem is the system prompt of the correction call (Python
+// chainCorrectionSystem is the system prompt of the correction call (
 // passes it inline to gen_json).
 const chainCorrectionSystem = "You correct extracted graph relations to satisfy a strict-chain constraint."
 
@@ -91,7 +84,7 @@ func chainExtractEdge(row common.Product) (chainEdge, bool) {
 // chainDetectViolations mirrors _chain_detect_violations: it returns
 // {edge: [issue strings]} for every edge involved in a self-loop, fan-out,
 // fan-in, or a directed cycle (SCC size >= 2). Cycle detection uses iterative
-// Kosaraju — no recursion, so the pathologically-deep case Python guards with
+// Kosaraju — no recursion, so the pathologically-deep case guards with
 // RecursionError cannot occur here.
 func chainDetectViolations(edges []chainEdge) map[chainEdge][]string {
 	issues := map[chainEdge][]string{}
@@ -142,7 +135,7 @@ func chainDetectViolations(edges []chainEdge) map[chainEdge][]string {
 	for _, comp := range chainSCCs(edges) {
 		for _, e := range edges {
 			if comp[e.From] && comp[e.To] {
-				add(e, fmt.Sprintf("cycle within %s", sortedKeys(comp)))
+				add(e, fmt.Sprintf("cycle within %s", slices.Sorted(maps.Keys(comp))))
 			}
 		}
 	}
@@ -313,7 +306,7 @@ func chainCorrectBatch(ctx context.Context, deps common.Deps, llmID string, kind
 // the input verbatim (fail-open), so a misbehaving model can never block the
 // pipeline.
 func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string, rows []common.Product, chunksByID map[string]string, kind Type) []common.Product {
-	if len(rows) == 0 || !ChainKinds[kind] {
+	if len(rows) == 0 || !isChainKind(kind) {
 		return rows
 	}
 
@@ -339,7 +332,7 @@ func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string
 	}
 
 	// Correct in capped batches (sequential: deterministic, and in-run
-	// violation counts are small — Python parallelises under a semaphore).
+	// violation counts are small — parallelises under a semaphore)
 	keepSet := map[chainEdge]bool{}
 	for i := 0; i < len(badEdges); i += chainCorrectionMaxRelations {
 		end := i + chainCorrectionMaxRelations
@@ -409,31 +402,6 @@ func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string
 	return corrected
 }
 
-// dropIsolatedTimelineEntities mirrors cleanup_timeline_isolated_entities:
-// for the timeline kind, entity rows not referenced by any relation endpoint
-// are dropped. The in-memory port runs it after all merges/rewrites (the
-// Python ES version schedules it after every flush for the same reason: a
-// later relation can still reference the entity).
-func dropIsolatedTimelineEntities(rows []common.Product) []common.Product {
-	connected := map[string]bool{}
-	for _, row := range rows {
-		if e, ok := chainExtractEdge(row); ok {
-			connected[strings.ToLower(e.From)] = true
-			connected[strings.ToLower(e.To)] = true
-		}
-	}
-	out := make([]common.Product, 0, len(rows))
-	for _, row := range rows {
-		if kind, _ := row.Meta["kind"].(string); kind == "entity" {
-			if !connected[strings.ToLower(entityNameValue(row))] {
-				continue
-			}
-		}
-		out = append(out, row)
-	}
-	return out
-}
-
 func sortedStrings(in []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -443,20 +411,8 @@ func sortedStrings(in []string) []string {
 			out = append(out, s)
 		}
 	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
-}
-
-func sortedKeys(m map[string]bool) []string {
-	var out []string
-	for k := range m {
-		out = append(out, k)
-	}
-	return sortedStrings(out)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func mustJSONList(items []map[string]any) string {

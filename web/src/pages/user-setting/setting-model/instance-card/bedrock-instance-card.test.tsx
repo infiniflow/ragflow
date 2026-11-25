@@ -179,7 +179,7 @@ describe('BedrockInstanceCard', () => {
     mockDiscoveredModels = [
       {
         model_name: 'amazon.nova-lite-v1:0',
-        model_type: ['chat', 'vision'],
+        model_type: ['chat', 'vlm'],
         max_tokens: 8192,
       },
     ];
