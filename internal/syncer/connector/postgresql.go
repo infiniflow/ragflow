@@ -27,7 +27,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -296,7 +295,7 @@ func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncR
 				name:     base.name,
 				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
 				ordered:  true,
-				fallback: c.wrapQuery(base.sql),
+				fallback: wrapRDBMSQuery(base.sql, "*"),
 			})
 		}
 	default:
@@ -324,7 +323,7 @@ func (c *PostgreSQLConnector) syncOrderColumn(request SyncRequest) string {
 // buildOrderedQuery wraps the base query and orders it by a stable column so
 // connector sync can resume from a checkpoint.
 func (c *PostgreSQLConnector) buildOrderedQuery(base, orderColumn string) string {
-	return c.wrapQuery(base) + " ORDER BY ragflow_src." + orderColumn + " ASC"
+	return wrapRDBMSQuery(base, "*") + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -336,7 +335,7 @@ func (c *PostgreSQLConnector) buildTimeFilteredQuery(base string, start, end *ti
 	if end != nil {
 		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
-	query := c.wrapQuery(base)
+	query := wrapRDBMSQuery(base, "*")
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -364,32 +363,13 @@ func (c *PostgreSQLConnector) buildSlimQuery(base string) string {
 		columns = c.contentColumns
 	}
 	if len(columns) == 0 {
-		return c.wrapQuery(base)
+		return wrapRDBMSQuery(base, "*")
 	}
 	selects := make([]string, 0, len(columns))
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", strings.Join(selects, ", "), c.stripOrderBy(base))
-}
-
-// wrapQuery wraps the base query as a derived table named ragflow_src.
-func (c *PostgreSQLConnector) wrapQuery(base string) string {
-	return fmt.Sprintf("SELECT * FROM (%s) AS ragflow_src", c.stripOrderBy(base))
-}
-
-// stripOrderBy removes a trailing top-level ORDER BY clause.
-func (c *PostgreSQLConnector) stripOrderBy(query string) string {
-	pattern := regexp.MustCompile(`(?i)\border\s+by\b`)
-	cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	matches := pattern.FindAllStringIndex(cleaned, -1)
-	for i := len(matches) - 1; i >= 0; i-- {
-		prefix := cleaned[:matches[i][0]]
-		if strings.Count(prefix, "(") == strings.Count(prefix, ")") {
-			return strings.TrimSpace(prefix)
-		}
-	}
-	return cleaned
+	return wrapRDBMSQuery(base, strings.Join(selects, ", "))
 }
 
 // formatDatetime renders a UTC time as an ISO-8601 PostgreSQL literal.

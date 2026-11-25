@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -114,6 +115,13 @@ type PruneBatch struct {
 type rdbmsQuery struct {
 	name string
 	sql  string
+}
+
+// Keep the source query's row selection (including ORDER BY, LIMIT and OFFSET)
+// inside the derived table. The newline terminates a trailing SQL line comment.
+func wrapRDBMSQuery(base, projection string) string {
+	base = strings.TrimSuffix(strings.TrimSpace(base), ";")
+	return fmt.Sprintf("SELECT %s FROM (%s\n) AS ragflow_src", projection, base)
 }
 
 // rdbmsSyncQuery is one prepared sync query with its resume metadata.

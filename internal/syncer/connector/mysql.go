@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -288,7 +287,7 @@ func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncReques
 				name:     base.name,
 				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
 				ordered:  true,
-				fallback: c.wrapQuery(base.sql),
+				fallback: wrapRDBMSQuery(base.sql, "*"),
 			})
 		}
 	default:
@@ -316,7 +315,7 @@ func (c *MySQLConnector) syncOrderColumn(request SyncRequest) string {
 // buildOrderedQuery wraps the base query and orders it by a stable column so
 // connector sync can resume from a checkpoint.
 func (c *MySQLConnector) buildOrderedQuery(base, orderColumn string) string {
-	return c.wrapQuery(base) + " ORDER BY ragflow_src." + orderColumn + " ASC"
+	return wrapRDBMSQuery(base, "*") + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -328,7 +327,7 @@ func (c *MySQLConnector) buildTimeFilteredQuery(base string, start, end *time.Ti
 	if end != nil {
 		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
-	query := c.wrapQuery(base)
+	query := wrapRDBMSQuery(base, "*")
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -356,32 +355,13 @@ func (c *MySQLConnector) buildSlimQuery(base string) string {
 		columns = c.contentColumns
 	}
 	if len(columns) == 0 {
-		return c.wrapQuery(base)
+		return wrapRDBMSQuery(base, "*")
 	}
 	selects := make([]string, 0, len(columns))
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", strings.Join(selects, ", "), c.stripOrderBy(base))
-}
-
-// wrapQuery wraps the base query as a derived table named ragflow_src.
-func (c *MySQLConnector) wrapQuery(base string) string {
-	return fmt.Sprintf("SELECT * FROM (%s) AS ragflow_src", c.stripOrderBy(base))
-}
-
-// stripOrderBy removes a trailing top-level ORDER BY clause.
-func (c *MySQLConnector) stripOrderBy(query string) string {
-	pattern := regexp.MustCompile(`(?i)\border\s+by\b`)
-	cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	matches := pattern.FindAllStringIndex(cleaned, -1)
-	for i := len(matches) - 1; i >= 0; i-- {
-		prefix := cleaned[:matches[i][0]]
-		if strings.Count(prefix, "(") == strings.Count(prefix, ")") {
-			return strings.TrimSpace(prefix)
-		}
-	}
-	return cleaned
+	return wrapRDBMSQuery(base, strings.Join(selects, ", "))
 }
 
 // formatDatetime renders a UTC time as a MySQL datetime literal.
