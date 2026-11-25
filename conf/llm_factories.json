@@ -3568,6 +3568,14 @@
             "url": "https://inference.trymorse.ai/v1"
         },
         {
+            "name": "Scaleway",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.scaleway.ai/v1"
+        },
+        {
             "name": "TeamoRouter",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT",

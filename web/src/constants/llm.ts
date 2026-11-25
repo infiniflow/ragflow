@@ -135,6 +135,7 @@ export enum LLMFactory {
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
   Morse = 'Morse',
+  Scaleway = 'Scaleway',
   TeamoRouter = 'TeamoRouter',
   Straitly = 'Straitly',
 }
@@ -253,6 +254,7 @@ export const IconMap = {
   [LLMFactory.HopBase]: 'hopbase',
   [LLMFactory.GreenNode]: 'greennode',
   [LLMFactory.Morse]: 'morse',
+  [LLMFactory.Scaleway]: 'scaleway',
   [LLMFactory.TeamoRouter]: 'teamorouter',
   [LLMFactory.Straitly]: 'straitly',
 };
@@ -320,6 +322,7 @@ export const APIMapUrl = {
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.Morse]: 'https://console.trymorse.ai',
+  [LLMFactory.Scaleway]: 'https://console.scaleway.com/iam/api-keys',
   [LLMFactory.TeamoRouter]: 'https://teamorouter.com/dashboard?tab=api-keys',
   [LLMFactory.Straitly]: 'https://straitly.ai/app/keys',
   [LLMFactory.MWS]:

@@ -204,6 +204,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **Qiniu** | Chinese cloud platform |
 | **Replicate** | Open-source model hosting |
 | **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
+| **Scaleway** | European cloud provider: serverless, OpenAI-compatible inference for open-weight models (Llama, Mistral, Qwen, DeepSeek, etc.), optionally scoped to a Scaleway Project |
 | **SiliconFlow** | Chinese aggregator |
 | **Straitly** | OpenAI-compatible AI gateway: one key for 150+ models including Claude, GPT, Gemini, Grok and DeepSeek |
 | **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
