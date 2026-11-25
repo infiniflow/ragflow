@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 // failingRetrievalService makes every search_chunks query fail the way a dead
 // embedding backend does (e.g. a drained SiliconFlow balance).
 type failingRetrievalService struct {
+	mu              sync.Mutex
 	calls           int
 	chunksPerOKCall []runtime.RetrievalChunk
 	failOnCall      map[int]bool // 1-based; nil = fail every call
@@ -44,8 +46,12 @@ type failingRetrievalService struct {
 }
 
 func (f *failingRetrievalService) Search(_ context.Context, _ *gorm.DB, _ runtime.RetrievalRequest) ([]runtime.RetrievalChunk, error) {
+	f.mu.Lock()
 	f.calls++
-	if f.failOnCall == nil || f.failOnCall[f.calls] {
+	call := f.calls
+	fail := f.failOnCall == nil || f.failOnCall[call]
+	f.mu.Unlock()
+	if fail {
 		return nil, errors.New("SILICONFLOW API error: 402 Payment Required")
 	}
 	return f.chunksPerOKCall, nil

@@ -2,8 +2,12 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { t } from 'i18next';
 import { useFetchMemoryMessageList } from './hook';
 import { MemoryTable } from './message-table';
+import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
+import { useCanWriteMemoryRole } from '@/ee/pages/memories/memory-dropdown-guard';
 
 export default function MemoryMessage() {
+  const { data: memory } = useFetchMemoryBaseConfiguration();
+  const hasRoleWrite = useCanWriteMemoryRole(memory?.tenant_id ?? '');
   const {
     searchString,
     // documents,
@@ -33,6 +37,8 @@ export default function MemoryMessage() {
         pagination={pagination}
         setPagination={setPagination}
         total={data?.messages?.total_count ?? 0}
+        operatorPermission={memory?.operator_permission ?? 0}
+        hasRoleWrite={hasRoleWrite}
         // rowSelection={rowSelection}
         // setRowSelection={setRowSelection}
         // loading={loading}

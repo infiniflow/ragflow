@@ -256,6 +256,7 @@ export function WebSearchFormField({ prefix = '' }: IProps) {
           <SelectWithSearch
             value={field.value}
             onChange={field.onChange}
+            disabled={field.disabled}
             options={providerOptions}
             placeholder={t('webSearchProviderPlaceholder')}
             allowClear
