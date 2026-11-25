@@ -12,7 +12,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -606,15 +608,6 @@ func excludedDocIDsOrEmpty(in map[string]bool) map[string]bool {
 	return in
 }
 
-func sortedKeys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // compilationTemplateKind normalizes a template kind (mirror Python
 // _compilation_template_kind).
 func compilationTemplateKind(kind string) string {
@@ -792,7 +785,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		}
 		meta, scope := resolveGraphBucket(row, templateMeta, in.DocumentID)
 		bid := graphStr(meta["template_id"])
-		if bid != "" && !containsStr(templateIDs, bid) {
+		if bid != "" && !slices.Contains(templateIDs, bid) {
 			templateIDs = append(templateIDs, bid)
 		}
 		if _, ok := bucketMetas[bid]; !ok {
@@ -821,12 +814,12 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	// Order: discovered templates first, then any buckets not seen in the scan.
 	orderedIDs := []string{}
 	for _, tid := range templateIDs {
-		if _, ok := grouped[tid]; ok && !containsStr(orderedIDs, tid) {
+		if _, ok := grouped[tid]; ok && !slices.Contains(orderedIDs, tid) {
 			orderedIDs = append(orderedIDs, tid)
 		}
 	}
 	for bid := range grouped {
-		if !containsStr(orderedIDs, bid) {
+		if !slices.Contains(orderedIDs, bid) {
 			orderedIDs = append(orderedIDs, bid)
 		}
 	}
@@ -837,15 +830,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		}
 	}
 	return resp, nil
-}
-
-func containsStr(list []string, v string) bool {
-	for _, e := range list {
-		if e == v {
-			return true
-		}
-	}
-	return false
 }
 
 func buildDocumentGraphTemplateShells(templateIDs []string, templateMeta map[string]map[string]interface{}) []DocumentStructureGraphTemplate {
@@ -1438,7 +1422,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			nextFrontier := map[string]bool{}
 			cond := copyFilter(scope)
 			cond["knowledge_graph_kwd"] = []string{"relation"}
-			cond["to_entity_kwd"] = sortedKeys(ancestorFrontier)
+			cond["to_entity_kwd"] = slices.Sorted(maps.Keys(ancestorFrontier))
 			relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap-len(relations), nil)
 			if err != nil {
 				return nil, nil, nil, err
@@ -1475,7 +1459,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 	if len(neighborNamesLower) > 0 {
 		cond := copyFilter(scope)
 		cond["knowledge_graph_kwd"] = []string{"entity"}
-		cond["name_kwd"] = sortedKeys(neighborNamesLower)
+		cond["name_kwd"] = slices.Sorted(maps.Keys(neighborNamesLower))
 		nbMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, 0, graphExpansionCap, nil)
 		if err != nil {
 			return nil, nil, nil, err

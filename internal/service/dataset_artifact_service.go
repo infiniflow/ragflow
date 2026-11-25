@@ -17,6 +17,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -925,8 +927,8 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 		NewlyUploaded:       len(newlyUploadedIDs),
 		RemovedDocIDs:       removedIDs,
 		NewlyUploadedDocIDs: newlyUploadedIDs,
-		InvolvedDocIDs:      sortedSetKeys(involved),
-		EligibleDocIDs:      sortedSetKeys(eligible),
+		InvolvedDocIDs:      append([]string{}, slices.Sorted(maps.Keys(involved))...),
+		EligibleDocIDs:      append([]string{}, slices.Sorted(maps.Keys(eligible))...),
 	}, nil
 }
 
@@ -1060,15 +1062,6 @@ func setDifference(left, right map[string]struct{}) []string {
 		if _, ok := right[id]; !ok {
 			ids = append(ids, id)
 		}
-	}
-	sort.Strings(ids)
-	return ids
-}
-
-func sortedSetKeys(set map[string]struct{}) []string {
-	ids := make([]string, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	return ids
@@ -1231,21 +1224,7 @@ func (s *DatasetArtifactService) DeleteSkills(ctx context.Context, tenantID, dat
 
 // firstStringValue returns the first string in a possibly-list ES field value.
 func firstStringValue(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []interface{}:
-		if len(t) > 0 {
-			if s, ok := t[0].(string); ok {
-				return s
-			}
-		}
-	case []string:
-		if len(t) > 0 {
-			return t[0]
-		}
-	}
-	return ""
+	return common.FirstEngineString(v)
 }
 
 // wikiEntityPayload decodes the canvas payload a wiki_entity row stores in

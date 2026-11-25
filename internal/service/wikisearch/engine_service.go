@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
@@ -179,23 +180,9 @@ func (s *engineWikiService) BackfillChunks(ctx context.Context, tenantID string,
 
 // firstString returns the first string of a possibly array-shaped engine field
 // value (the document engine surfaces keyword fields as arrays), matching the
-// firstStringValue helper used by the artifact service.
+// FirstEngineString helper used by the artifact service.
 func firstString(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []string:
-		if len(t) > 0 {
-			return t[0]
-		}
-	case []interface{}:
-		if len(t) > 0 {
-			if s, ok := t[0].(string); ok {
-				return s
-			}
-		}
-	}
-	return ""
+	return common.FirstEngineString(v)
 }
 
 func stringArray(v interface{}) []string {

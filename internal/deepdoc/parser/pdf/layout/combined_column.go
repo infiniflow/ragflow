@@ -305,8 +305,8 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 	effBin, nb := columnHistogramBins(width, binPt)
 	cov := make([]int, nb)
 	for _, b := range lines {
-		i0 := clampInt(int((b.X0-minX0)/effBin), 0, nb-1)
-		i1 := clampInt(int((b.X1-minX0)/effBin), 0, nb-1)
+		i0 := min(max(int((b.X0-minX0)/effBin), 0), nb-1)
+		i1 := min(max(int((b.X1-minX0)/effBin), 0), nb-1)
 		for i := i0; i <= i1; i++ {
 			cov[i]++
 		}
@@ -329,16 +329,6 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 		i = j
 	}
 	return widths
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 // gapColumnCount mirrors column_detectors.gap_column_counts: rasterize the
@@ -479,8 +469,8 @@ func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
 		if w <= 0 {
 			w = 1
 		}
-		i0 := clampInt(int((b.X0-minX0)/effBin), 0, nb-1)
-		i1 := clampInt(int((b.X1-minX0)/effBin), 0, nb-1)
+		i0 := min(max(int((b.X0-minX0)/effBin), 0), nb-1)
+		i1 := min(max(int((b.X1-minX0)/effBin), 0), nb-1)
 		for i := i0; i <= i1; i++ {
 			proj[i] += w
 		}

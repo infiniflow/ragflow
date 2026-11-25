@@ -33,6 +33,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 // realNumTokens / realTrimToTokenLimit are the production tokenizer functions.
@@ -96,17 +97,7 @@ func titleSentenceSplit(text string) []string {
 // runePrefix returns the first n runes of s (a rune-safe prefix; never splits
 // a multi-byte character). Used by the offline/hard-split fallback.
 func runePrefix(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	count := 0
-	for i := range s {
-		if count >= n {
-			return s[:i]
-		}
-		count++
-	}
-	return s
+	return utility.TruncateRunes(s, n)
 }
 
 // hardSplitByTokens hard-splits text into pieces whose token count is <= cap.

@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -1770,11 +1771,7 @@ func payloadJSONNav(v map[string]interface{}) string {
 
 // truncateString caps s to n runes (not bytes).
 func truncateString(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	return string(runes[:n])
+	return utility.TruncateRunes(s, n)
 }
 
 // shortHash8 is a stable 8-char hash suffix for readable nav names.
@@ -1795,21 +1792,7 @@ func contentHash8(s string) string {
 // firstStringValue returns the first string value of a (possibly list-wrapped)
 // engine field.
 func firstStringValue(v interface{}) string {
-	switch tv := v.(type) {
-	case string:
-		return tv
-	case []string:
-		if len(tv) > 0 {
-			return tv[0]
-		}
-	case []interface{}:
-		if len(tv) > 0 {
-			if s, ok := tv[0].(string); ok {
-				return s
-			}
-		}
-	}
-	return ""
+	return common.FirstEngineString(v)
 }
 
 // firstStringSlice returns v as a []string, unwrapping a []interface{} whose

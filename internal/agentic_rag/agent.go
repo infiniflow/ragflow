@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/entity/models"
 	"ragflow/internal/retrievalaccount"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 // Input carries everything Run needs to spin up a one-shot ReAct conversation
@@ -3397,13 +3398,13 @@ func truncateForLog(s string, max int) string {
 }
 
 // truncateRunes caps a string to max runes (not bytes) so CJK content is never
-// cut mid-rune into invalid UTF-8.
+// cut mid-rune into invalid UTF-8. The ellipsis is caller-visible and only
+// appears when truncation actually happened.
 func truncateRunes(s string, max int) string {
-	r := []rune(s)
-	if len(r) <= max {
-		return s
+	if truncated := utility.TruncateRunes(s, max); truncated != s {
+		return truncated + "..."
 	}
-	return string(r[:max]) + "..."
+	return s
 }
 
 // unknownToolResult answers a call to a tool this run never registered.

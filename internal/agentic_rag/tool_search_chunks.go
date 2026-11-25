@@ -173,7 +173,7 @@ func (k *SearchChunksTool) invokableRun(ctx context.Context, argumentsInJSON str
 	// use search_semantic_chunks for that (see locateSearchSpec.vectorOnly).
 	weight := searchChunksDefaultKeywordsSimilarityWeight
 	if args.KeywordsSimilarityWeight != nil {
-		weight = clampFloat01(*args.KeywordsSimilarityWeight)
+		weight = min(max(*args.KeywordsSimilarityWeight, 0.0), 1.0)
 	}
 	return runLocateSearch(ctx, locateSearchSpec{
 		tool:                searchChunksToolName,

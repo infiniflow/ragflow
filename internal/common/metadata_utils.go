@@ -667,7 +667,7 @@ func splitCombinedStringList(items []string) []string {
 		}
 		out = append(out, parts...)
 	}
-	return dedupeMetaStrings(out)
+	return Deduplicate(out)
 }
 
 // splitCombinedParts splits one value on the combined-value delimiters,
@@ -696,17 +696,4 @@ func toStringSlice(val []any) ([]string, bool) {
 		strs = append(strs, s)
 	}
 	return strs, true
-}
-
-// dedupeMetaStrings removes duplicates while preserving order.
-func dedupeMetaStrings(input []string) []string {
-	seen := make(map[string]struct{}, len(input))
-	out := make([]string, 0, len(input))
-	for _, s := range input {
-		if _, ok := seen[s]; !ok {
-			seen[s] = struct{}{}
-			out = append(out, s)
-		}
-	}
-	return out
 }
