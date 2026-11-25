@@ -177,15 +177,26 @@ func resourceJanitor(ctx context.Context, b ResourceBudget, interval time.Durati
 				}
 				PruneIdle(true)
 			} else {
-				if doctype.Backpressure() {
-					doctype.SetBackpressure(false)
-					common.Info("resource budget: below high water, backpressure OFF",
-						zap.String("resource", b.Name()),
-						zap.Int("used_mb", used), zap.Int("high_mb", highMB))
+				// Hysteresis: once high water engaged the gate, keep it engaged
+				// until usage falls below the low mark. The low-water check was
+				// dropped when mid-band TTL pruning was fixed, leaving the
+				// configured low mark unused. lowMB<=0 means "unset" and
+				// degrades to a single threshold so an under-configured janitor
+				// can never stall every acquire.
+				idleBudget.mu.Lock()
+				lowMB := idleBudget.cfg.lowWaterMB
+				idleBudget.mu.Unlock()
+				if lowMB <= 0 || used < lowMB {
+					if doctype.Backpressure() {
+						doctype.SetBackpressure(false)
+						common.Info("resource budget: below low water, backpressure OFF",
+							zap.String("resource", b.Name()),
+							zap.Int("used_mb", used), zap.Int("low_mb", lowMB))
+					}
 				}
 				// Always apply ordinary TTL pruning when not over high water —
-				// including between the watermarks. Restricting it to used<lowMB
-				// left idle sessions older than idleTTL stranded in the band.
+				// including inside the hysteresis band. The low mark governs
+				// only the gate, never pruning.
 				PruneIdle(false)
 			}
 		}
