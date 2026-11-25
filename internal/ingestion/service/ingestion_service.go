@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -593,6 +594,9 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 		return
 	}
 
+	// Carries the worker's attempt identity for RUNNING executions; other
+	// branches settle the message without starting a progress window.
+	runCtx := e.ctx
 	switch task.Status {
 	case common.COMPLETED, common.STOPPED, common.FAILED:
 		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
@@ -631,18 +635,23 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 		// the worker that claimed this task, so we carry the per-task worker
 		// identity on the context here (before the call) rather than only on the
 		// task-scheduling context used for terminal events below.
-		runCtx := e.ctx
+		runCtx = progressstore.WithAttempt(e.ctx, uuid.NewString())
 		if w != nil {
 			runCtx = observability.WithWorkerName(runCtx, fmt.Sprintf("worker-%d", w.id))
 		}
 		e.ingestionTaskSvc.PrepareValidatedRun(runCtx, task)
+		// Open a fresh progress window only after the claim succeeded and the
+		// document was reset; every later write is fenced by this attempt.
+		if e.deps != nil && e.deps.KV != nil {
+			e.beginProgressAttempt(runCtx, task, progressstore.New(e.deps.KV))
+		}
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
 		return
 	}
 
-	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
+	taskCtx := taskpkg.NewTaskContextForScheduling(runCtx, task)
 	taskCtx.Handle = handle
 	// Attribute the run to the user who created the task: the pipeline's model
 	// resolutions and usage records (embedder, knowledge compiler) run on this
@@ -1351,7 +1360,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	// Progress positions/phases are buffered in memory and drained by the sink's
 	// flusher, keeping KV I/O off the emitMu-guarded emit path. A nil/disabled
 	// client degrades to a no-op inside the store.
-	sink.installProgressWriter(progressstore.New(e.deps.KV), pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID)
+	sink.installProgressWriter(progressstore.New(e.deps.KV), pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID, progressstore.AttemptFromContext(ctx))
 	sink.detailEmitter = func(component, unit string, current, total uint32) {
 		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
 		common.LogIngest(&log)
