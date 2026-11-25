@@ -32,5 +32,5 @@ Run `docker compose -f docker-compose.yml config --services` from `docker/` to l
 [Explore the Docker Compose services and request flows on IceShore](https://app.iceshore.ai/en/design/d92456af3f788da5b99.38526979/).
 
 :::caution NOTE
-IceShore (Launchers Co., Ltd.) maintains the diagram independently. It shows [commit `9a81eddf`](https://github.com/infiniflow/ragflow/commit/9a81eddfd8ab9ad3a44f391e182c73dcd2936369), when RAGFlow started the Go services as separate processes. See the [current container entrypoint](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) for the default startup behavior.
+IceShore (Launchers Co., Ltd.) maintains the diagram independently. It shows [commit `9a81eddf`](https://github.com/infiniflow/ragflow/commit/9a81eddfd8ab9ad3a44f391e182c73dcd2936369), when RAGFlow started the Go services as separate processes. The diagram may lag behind current releases. See the [current container entrypoint](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) for the default startup behavior.
 :::
