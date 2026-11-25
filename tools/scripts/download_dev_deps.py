@@ -320,19 +320,63 @@ def ort_extracted_dir(version: str, target: str) -> str:
     return f"onnxruntime-v{version}-{target}"
 
 
-def ort_normalized_dir(version: str, goos: str, goarch: str) -> str:
+ORT_VARIANT_SUFFIXES = ("-glibc2_28", "-full")
+
+
+def requested_ort_variant() -> str:
+    """Read and validate DEEPDOC_ORT_VARIANT, mirroring tools/scripts/ort_variant.sh.
+
+    Unset means the legacy default (cpu). An explicitly empty or unknown value
+    must fail loudly instead of silently falling back to the minimal archive,
+    which would reintroduce the minimal/full selection ambiguity build.sh guards
+    against.
+    """
+    raw = os.environ.get("DEEPDOC_ORT_VARIANT")
+    if raw is None:
+        return "cpu"
+    if raw in ("cpu", "gpu", "full"):
+        return raw
+    raise ValueError(f"unknown DEEPDOC_ORT_VARIANT={raw!r} (expected cpu, gpu or full)")
+
+
+def ort_dir_variant_base(name: str) -> str | None:
+    """Strip a known ORT variant suffix from a normalized dir name.
+
+    Returns the shared version+platform base, or None when the name carries no
+    recognized suffix (e.g. the macOS minimal dir).
+    """
+    for suffix in ORT_VARIANT_SUFFIXES:
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return None
+
+
+def ort_normalized_dir(version: str, goos: str, goarch: str, variant: str | None = None) -> str:
     """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib.
 
     Not the zip's own top-level dir: build.sh matches the onnxruntime release
     layout (onnxruntime-<os>-<arch>-static_lib-<version>[-glibc2_28]), so
     extract_onnxruntime() renames the extracted dir to this. The glibc suffix
     exists on Linux only.
+
+    `variant` (cpu/gpu/full) selects the archive-dir suffix; None keeps the
+    legacy minimal name so existing 3-argument callers are unchanged. The zip
+    itself always holds the minimal archive, so extraction still targets the
+    minimal dir -- a requested full variant only changes which dir is expected
+    to be present (and therefore protected from pruning).
     """
+    if variant is None:
+        variant = "cpu"
+    if variant not in ("cpu", "gpu", "full"):
+        raise ValueError(f"unknown DEEPDOC_ORT_VARIANT={variant!r} (expected cpu, gpu or full)")
+    full_variant = variant in ("gpu", "full")
     if goos == "linux":
         arch_token = "x64" if goarch == "amd64" else "aarch64"
-        return f"onnxruntime-linux-{arch_token}-static_lib-{version}-glibc2_28"
+        suffix = "-full" if full_variant else "-glibc2_28"
+        return f"onnxruntime-linux-{arch_token}-static_lib-{version}{suffix}"
     arch_token = "universal" if goarch == "amd64" else "arm64"
-    return f"onnxruntime-osx-{arch_token}-static_lib-{version}"
+    suffix = "-full" if full_variant else ""
+    return f"onnxruntime-osx-{arch_token}-static_lib-{version}{suffix}"
 
 
 def _repo_root() -> str:
@@ -607,17 +651,37 @@ def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_
 
 
 def prune_stale_onnxruntime(static_lib_dir, expected_dir):
-    """Remove ONNX Runtime version dirs under static_lib that do NOT match
-    `expected_dir`. Without this, a version bump (or a foreign-arch run on a
-    shared cache) leaves a stale dir next to the new one and build.sh's
-    `find ... -name '*.a'` links BOTH (duplicate symbols / wrong version,
-    silently)."""
+    """Remove genuinely stale ONNX Runtime dirs under static_lib, but keep the
+    supported variants of the pinned version+platform.
+
+    A version bump or a foreign-arch run on a shared cache must not leave two
+    different ORT builds for build.sh's `find ... -name '*.a'` to link (duplicate
+    symbols / wrong version). However, the -glibc2_28 (minimal) and -full dirs
+    of the SAME pinned version are now both supported variants: the minimal one
+    is what the bundled zip produces, while the full one is pre-staged manually
+    for accelerated builds. Deleting the sibling variant would destroy that
+    manual, non-downloadable input on every downloader run.
+
+    The `DEEPDOC_ORT_VARIANT` the build requested is derived here so the variant
+    dir it depends on is explicitly in the keep set, independent of which dir
+    the zip extraction populates."""
     if not os.path.isdir(static_lib_dir):
         return
+    keep_base = ort_dir_variant_base(expected_dir) or expected_dir
+    requested_variant = requested_ort_variant()
+    keep = {expected_dir}
+    if requested_variant in ("gpu", "full"):
+        keep.add(f"{keep_base}-full")
     for name in os.listdir(static_lib_dir):
         if not name.startswith("onnxruntime-"):
             continue
-        if name == expected_dir:
+        if name in keep:
+            continue
+        name_base = ort_dir_variant_base(name)
+        if name_base is not None and name_base == keep_base:
+            # Another supported variant of the same pinned version/platform.
+            # A suffix-less stray dir is NOT a supported variant and must be
+            # pruned: the default wildcard link glob would otherwise link it.
             continue
         stale = os.path.join(static_lib_dir, name)
         print(f"  Removing stale ONNX Runtime dir: {stale}")
@@ -1031,8 +1095,15 @@ def main():
 
     goos, goarch = host_platform(args.target_os, args.target_arch)
     print(f"Target platform: {goos}/{goarch}")
+    # Validate the variant before any download/extraction so a misconfiguration
+    # fails immediately rather than after a pointless network round-trip.
+    requested_variant = requested_ort_variant()
     ort_zip = ort_asset_name(ORT_VERSION, ort_target(goos, goarch))
+    # The bundled zip always contains the minimal archive, so extraction still
+    # targets the minimal dir; `variant_dir` is the one an accelerated build
+    # links and therefore expects to find pre-staged in the cache.
     ort_dir = ort_normalized_dir(ORT_VERSION, goos, goarch)
+    variant_dir = ort_normalized_dir(ORT_VERSION, goos, goarch, requested_variant)
 
     # Anchor the downloaded archives to deps/ regardless of the
     # caller's working directory (build.sh invokes this from the repo root).
@@ -1079,7 +1150,8 @@ def main():
         print(
             f"  ERROR: ONNX Runtime static archives for {ort_dir} were not "
             f"extracted to {os.path.join(native_libs_dir(), 'onnxruntime', 'static_lib')}. "
-            f"Check the download above; build.sh will refuse to link without them.",
+            f"Check the download above; build.sh will refuse to link without them."
+            + (f" The {requested_variant} build also needs the full archive at {variant_dir}; the bundled installer does not produce it, so pre-stage it manually." if variant_dir != ort_dir else ""),
             file=sys.stderr,
         )
         sys.exit(1)
