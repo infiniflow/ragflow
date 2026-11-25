@@ -138,6 +138,7 @@ const svgIcons = [
   LLMFactory.HopBase,
   LLMFactory.GreenNode,
   LLMFactory.Morse,
+  LLMFactory.TeamoRouter,
 ];
 
 export const LlmIcon = ({
