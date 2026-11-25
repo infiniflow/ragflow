@@ -108,6 +108,22 @@ func TestParseArgsCommandModeUsesConfigDefaults(t *testing.T) {
 	}
 }
 
+// Once a command word starts the command, every later token belongs to the
+// command grammar, which has its own flags: "search -h" prints the search
+// options, so a flag-looking token there is not a connection flag to reject.
+func TestParseArgsCommandModeKeepsCommandFlags(t *testing.T) {
+	cfg, err := ParseArgs([]string{"search", "-h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Command == nil || *cfg.Command != "search -h" {
+		t.Fatalf("command = %v, want %q", cfg.Command, "search -h")
+	}
+	if _, err := NewParser(*cfg.Command).Parse(CommandMode); err != nil {
+		t.Fatalf("parse %q: %v", *cfg.Command, err)
+	}
+}
+
 // A reserved word is a valid unquoted one-word question: "retrieve find" must
 // ask "find", not fail, while ON keeps its grammar role before the dataset
 // clause.
