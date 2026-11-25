@@ -18,7 +18,7 @@ The Confluence data source is used to synchronize spaces, pages, and subpages ma
 **Configuration parameters**:
 
 - **Name**: Customize the name in RAGFlow to identify this Confluence connection.
-- **Confluence username**: Fill in the account used to access Confluence.
+- **Confluence username**: Required for Confluence Cloud. For Confluence Server/Data Center, leave it blank to use a personal access token (PAT) with Bearer authentication, or supply a username to use Basic authentication.
 - **Confluence access token**: Fill in the access token used to access Confluence.
 - **Wiki base URL**: Fill in the base address of the Confluence site.
 - **Is cloud version**: Select according to the Confluence deployment type.
