@@ -17,13 +17,13 @@
 package chatter
 
 import (
-	"context"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
 
 func TestRunRequiresSharedRuntimeCache(t *testing.T) {
-	err := Run(t.Context(), context.CancelFunc(func() {}), "chatter-test", nil)
+	err := Run(t.Context(), common.ServerTypeChatter, nil)
 	if err == nil || !strings.Contains(err.Error(), "requires Kvrocks") {
 		t.Fatalf("Run without Kvrocks = %v, want an explicit shared-status startup error", err)
 	}

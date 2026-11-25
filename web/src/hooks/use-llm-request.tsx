@@ -43,18 +43,18 @@ import {
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
-  buildModelValue,
   buildValidModelIds,
+  getDefaultModelIdByField,
   parseModelValue,
 } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const ModelResourceAccessUserIdContext = createContext<
-  string | undefined
+  string | undefined | null
 >(undefined);
 export const ModelResourceTenantIdContext = createContext<string | undefined>(
   undefined,
@@ -143,13 +143,19 @@ export const useFetchAddedProviders = () => {
 export const useFetchAllAddedModels = (
   modelType?: string,
   resourceTenantId?: string,
-  accessUserId?: string,
+  accessUserId?: string | null,
   ownerIDs?: string[],
 ) => {
   const contextTenantId = useContext(ModelResourceTenantIdContext);
   const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
   const modelResourceTenantId = resourceTenantId || contextTenantId;
-  const modelAccessUserId = accessUserId ?? contextAccessUserId;
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
+  const modelAccessUserId =
+    accessUserId === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserId ?? undefined);
   const {
     data,
     isFetching: loading,
@@ -165,11 +171,9 @@ export const useFetchAllAddedModels = (
     ),
     initialData: [],
     gcTime: 0,
+    enabled: !waitingForAccessUser,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
-      if (modelResourceTenantId) {
-        params.tenant_id = modelResourceTenantId;
-      }
       if (modelType) {
         params.type = modelType;
       }
@@ -204,10 +208,14 @@ export const useFetchAllAddedModels = (
 export const useModelValidIds = (
   modelTypes: string[],
   resourceTenantId?: string,
-  accessUserId?: string,
+  accessUserId?: string | null,
   includeAdditionalValidIds = true,
 ) => {
   const contextTenantId = useContext(ModelResourceTenantIdContext);
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
   const { data, isFetched, refetch } = useFetchAllAddedModels(
     undefined,
     resourceTenantId,
@@ -234,7 +242,10 @@ export const useModelValidIds = (
     [additionalValidIds, directValidIds],
   );
 
-  const resolveValidIds = useCallback(async () => {
+  const resolveValidIds = async () => {
+    if (waitingForAccessUser) {
+      throw new Error('Resource owner is not loaded');
+    }
     const result = await refetch();
     if (result.isError) throw result.error;
     const freshModels = result.data ?? [];
@@ -243,7 +254,7 @@ export const useModelValidIds = (
       ...buildValidModelIds(freshModels, modelTypes),
       ...freshAdditionalIds,
     ]);
-  }, [modelTypes, refetch, resolveAdditionalValidIds]);
+  };
 
   return {
     validIds,
@@ -256,7 +267,7 @@ export const useModelValidIds = (
 
 export function useFindLlmByUuid(
   resourceTenantId?: string,
-  accessUserId?: string,
+  accessUserId?: string | null,
 ) {
   const { data: models } = useFetchAllAddedModels(
     undefined,
@@ -787,19 +798,8 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
 
   const result = useMemo(() => {
     const dict: Record<string, string> = {};
-    Object.entries(ModelTypeToField).forEach(([key, field]) => {
-      const model = defaultModels.find((m) => m.model_type === key);
-      if (!model || !model.enable) {
-        dict[field] = '';
-        return;
-      }
-      dict[field] =
-        model.model_id ||
-        buildModelValue({
-          model_name: model.model_name,
-          model_instance: model.model_instance,
-          model_provider: model.model_provider,
-        });
+    Object.values(ModelTypeToField).forEach((field) => {
+      dict[field] = getDefaultModelIdByField(defaultModels, field);
     });
     return dict;
   }, [defaultModels]);

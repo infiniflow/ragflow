@@ -19,20 +19,31 @@ package common
 import (
 	"math"
 	"strconv"
+	"strings"
 )
 
 // PyFloat64 is a float64 that serializes to JSON using the same format as Python's json.dumps.
-// Python uses the "shortest unique representation" algorithm (dtoa) for float64,
-// which is equivalent to Go's strconv.FormatFloat with 'g' and precision -1.
-// This ensures deterministic and Python-compatible float serialization.
+// Python prints the shortest digits that round-trip (repr), in positional form with a
+// trailing ".0" for whole numbers, and in exponent form only when the decimal exponent
+// is below -4 or at least 16 (1e-05, 1e+16).
 type PyFloat64 float64
 
 // MarshalJSON implements the json.Marshaler interface for PyFloat64.
-// Uses strconv.FormatFloat with 'g' format and -1 precision to produce
-// the shortest decimal representation that uniquely identifies the float64,
-// matching Python's json.dumps behavior.
+// NaN and infinities have no JSON form and are returned as Go formats them,
+// so json.Marshal reports them as an error.
 func (f PyFloat64) MarshalJSON() ([]byte, error) {
-	return []byte(strconv.FormatFloat(float64(f), 'g', -1, 64)), nil
+	v := float64(f)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return []byte(strconv.FormatFloat(v, 'g', -1, 64)), nil
+	}
+	if abs := math.Abs(v); abs != 0 && (abs < 1e-4 || abs >= 1e16) {
+		return []byte(strconv.FormatFloat(v, 'e', -1, 64)), nil
+	}
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return []byte(s), nil
 }
 
 // ConvertFloatsToPyFormat recursively converts all float64 values in nested

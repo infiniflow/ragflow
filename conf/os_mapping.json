@@ -137,7 +137,8 @@
             "type": "keyword",
             "index": true,
             "store": true,
-            "ignore_above": 10000,
+            "ignore_above": 8191,
+            "doc_values": false,
             "similarity": "boolean"
           }
         }

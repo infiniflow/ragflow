@@ -25,10 +25,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -59,6 +61,8 @@ var modelTypeStringToBit = map[string]int{
 	"rerank":      16,
 	"tts":         32,
 	"ocr":         64,
+	"decision":    128,
+	"scoring":     256,
 }
 
 // ensureTenantModelTables creates the tenant model tables the base step backfills
@@ -346,7 +350,22 @@ func migrateTenantModelInstances(ctx context.Context, db *gorm.DB) error {
 	}
 
 	rows = filterExistingTenantModelInstances(rows, existing)
+	// The over-length filter runs before the dedup. Dedup compares canonical
+	// keys and a legacy {"api_key":K,"is_tools":true} wrapper canonicalizes to
+	// K, so an over-length wrapper and the bounded plain key of the same
+	// provider share one canonical key. The source query has no ORDER BY, so
+	// dedup could keep the over-length wrapper and drop the plain key; the
+	// filter would then drop the wrapper as well and the provider would end
+	// up with no instance at all. Filtering first keeps the bounded plain key.
+	rows, overlength := dropOverlengthTenantModelInstanceKeys(rows)
 	rows = dedupTenantModelInstances(rows)
+	for _, row := range overlength {
+		common.Warn("Skipping tenant_llm api key migration: the key exceeds the tenant_model_instance.api_key bound",
+			zap.String("tenant_id", row.TenantID),
+			zap.String("provider_id", row.ProviderID),
+			zap.Int("api_key_chars", utf8.RuneCountInString(row.APIKey.String)),
+			zap.Int("bound", tenantModelInstanceAPIKeyMaxLen))
+	}
 	if len(rows) == 0 {
 		return nil
 	}
@@ -430,6 +449,33 @@ func dedupTenantModelInstances(rows []tenantLLMSourceRecord) []tenantLLMSourceRe
 		}
 	}
 	return result
+}
+
+// tenantModelInstanceAPIKeyMaxLen is the character bound the
+// tenant_model_instance.api_key column declares (varchar(4096)). The
+// pre-backfill widening spec gives upgrades the same bound, but this backfill
+// copies whatever tenant_llm still holds — where api_key is TEXT and a legacy
+// provider key can exceed the bound — so over-length rows are filtered before
+// the INSERT: in strict mode one over-length key fails the whole backfill
+// transaction and, with the source row kept, fails every later startup the
+// same way, and a non-strict session would store the credential silently
+// truncated. The source row stays in tenant_llm untouched either way.
+const tenantModelInstanceAPIKeyMaxLen = 4096
+
+// dropOverlengthTenantModelInstanceKeys splits the backfill rows into the ones
+// that fit the tenant_model_instance.api_key bound and the ones that do not.
+// The key is measured in characters, matching how MySQL counts a varchar
+// length. Skipped rows are returned so the caller can log them: the credential
+// is neither dropped from the database nor stored truncated here.
+func dropOverlengthTenantModelInstanceKeys(rows []tenantLLMSourceRecord) (kept, overlength []tenantLLMSourceRecord) {
+	for _, row := range rows {
+		if utf8.RuneCountInString(row.APIKey.String) > tenantModelInstanceAPIKeyMaxLen {
+			overlength = append(overlength, row)
+			continue
+		}
+		kept = append(kept, row)
+	}
+	return kept, overlength
 }
 
 // migrateTenantModels ports TenantModelStage combined with ModelTypeMergeStage.
@@ -1113,7 +1159,8 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 // Model id normalization ports ModelIdConfigStage.
 
 var modelIDStringColumns = map[string][]string{
-	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id"},
+	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id", "scoring_id"},
+	"user_tenant":   {"scoring_id"},
 	"knowledgebase": {"embd_id"},
 	"dialog":        {"llm_id", "rerank_id", "decision_id"},
 	"memory":        {"embd_id", "llm_id"},
@@ -1141,6 +1188,7 @@ var modelIDFieldSet = map[string]bool{
 	"tts_id":          true,
 	"ocr_id":          true,
 	"decision_id":     true,
+	"scoring_id":      true,
 }
 
 var searchConfigModelIDFieldSet = map[string]bool{"chat_id": true}
@@ -1159,15 +1207,6 @@ func normalizeModelID(value string) (string, bool) {
 	return modelName + "@default@" + providerName, true
 }
 
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
 // normalizeModelIDConfig recursively normalizes model id fields inside a decoded
 // JSON document, mirroring ModelIdConfigStage.normalize_config.
 func normalizeModelIDConfig(value any, path []string) (any, bool) {
@@ -1177,7 +1216,7 @@ func normalizeModelIDConfig(value any, path []string) (any, bool) {
 		normalized := make(map[string]any, len(typed))
 		for key, item := range typed {
 			keyPath := append(append([]string{}, path...), key)
-			shouldNormalize := modelIDFieldSet[key] || (searchConfigModelIDFieldSet[key] && containsString(path, "search_config"))
+			shouldNormalize := modelIDFieldSet[key] || (searchConfigModelIDFieldSet[key] && slices.Contains(path, "search_config"))
 			if shouldNormalize {
 				if str, ok := item.(string); ok {
 					normalizedValue, itemChanged := normalizeModelID(str)

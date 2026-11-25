@@ -544,6 +544,9 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 }
 
 func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermission(t *testing.T) {
+	if !datasetTestResourcePermissionsAvailable() {
+		t.Skip("requires enterprise resource permissions")
+	}
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
@@ -553,7 +556,7 @@ func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermissio
 		t.Fatalf("update kb permission: %v", err)
 	}
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
-	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "write")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "manage")
 
 	name := "Renamed by team member"
 	permission := string(entity.TenantPermissionTeam)
@@ -584,6 +587,9 @@ func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermissio
 }
 
 func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.T) {
+	if !datasetTestResourcePermissionsAvailable() {
+		t.Skip("requires enterprise resource permissions")
+	}
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -598,9 +604,11 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 	ensureDatasetTestMembership(t, "caller-1", "tenant-1", "normal")
 	ensureDatasetTestMembership(t, "caller-1", "caller-tenant", "owner")
+	grantDatasetTestResource(t, "tenant-1", "kb", "kb-1", "caller-1", "manage")
+	enableDatasetTestModelAccess(t, "tenant-1", "caller-1", "instance-1")
 
 	permission := string(entity.TenantPermissionTeam)
-	ctx := withDatasetTestContext(t.Context(), "caller-1", "caller-tenant")
+	ctx := withDatasetTestContext(t.Context(), "caller-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
 		Permission:     &permission,
 		EmbeddingModel: &embeddingModelID,
@@ -1622,5 +1630,49 @@ func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
 	}
 	if persisted.Pagerank != 0 {
 		t.Fatalf("pagerank = %d, want the rejected update rolled back", persisted.Pagerank)
+	}
+}
+
+// TestUpdateDatasetUnchangedParserConfigIsNotRebuilt pins the guard on the
+// parser_config rebuild: a client that echoes the stored config back verbatim
+// (an SDK round trip, or a form that happens to match) must not get it rebuilt.
+// The rebuild re-serialises the config from the pipeline DSL — dropping params
+// the DSL no longer declares and filling in current defaults — so firing it on a
+// copy would be a change the caller never asked for.
+func TestUpdateDatasetUnchangedParserConfigIsNotRebuilt(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	// A param the DSL clean-up would drop: its presence afterwards is the proof
+	// that no rebuild ran.
+	stored := entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]interface{}{
+			"preprocess":       []interface{}{"main_content"},
+			"chunk_token_size": float64(256),
+		},
+	}
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", stored).Error; err != nil {
+		t.Fatalf("seed parser config: %v", err)
+	}
+
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"preprocess":       []interface{}{"main_content"},
+				"chunk_token_size": float64(256),
+			},
+		},
+	}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated dataset: %v", err)
+	}
+	if !datasetJSONEqual(persisted.ParserConfig, stored) {
+		t.Fatalf("parser_config = %#v, want the stored config untouched", persisted.ParserConfig)
 	}
 }

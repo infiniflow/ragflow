@@ -134,8 +134,13 @@ func parserComponentFamilies(root map[string]any) (map[string]bool, bool) {
 		params, _ := obj["params"].(map[string]any)
 		params = schema.FlattenLegacyParserSetups(params)
 		families := map[string]bool{}
-		for key := range params {
+		for key, rawSetup := range params {
 			if parserSetupParamsKeys[key] {
+				continue
+			}
+			// Every object-valued params key is a file family; global scalar
+			// options are not.
+			if _, ok := rawSetup.(map[string]any); !ok {
 				continue
 			}
 			families[key] = true

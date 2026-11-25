@@ -160,18 +160,6 @@ func intersectDocumentScope(ctx context.Context, ids []string) []string {
 	return out
 }
 
-// clampFloat01 clamps a float into [0, 1], used for similarity weights the model
-// may supply out of range.
-func clampFloat01(v float64) float64 {
-	if v < 0 {
-		return 0
-	}
-	if v > 1 {
-		return 1
-	}
-	return v
-}
-
 // grepChunksSelectFields is the ES _source fields the retrieval tools request.
 // doc_id, page_num_int and chunk_order_int are the mandated reading-order
 // identifiers; content_with_weight and the other fields feed the tool output.
@@ -708,16 +696,10 @@ func zeroHitNextStep(tool string) string {
 
 // dedupStrings returns s in first-occurrence order without duplicates.
 func dedupStrings(s []string) []string {
-	seen := make(map[string]struct{}, len(s))
-	out := make([]string, 0, len(s))
-	for _, v := range s {
-		if _, dup := seen[v]; dup {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+	if s == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(s)
 }
 
 // formatChunksXML serialises the ordered chunks of a single document into the

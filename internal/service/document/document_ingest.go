@@ -18,6 +18,31 @@ func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *str
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	if _, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, permission.ErrResourceNotFound
+		}
+		return nil, fmt.Errorf("failed to fetch dataset: %w", err)
+	}
+	for _, docID := range common.Deduplicate(docIDs) {
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to fetch document: %w", err)
+		}
+		if doc == nil {
+			continue
+		}
+		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
+	}
 	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, docIDs)
 	if err != nil {
 		return nil, err
@@ -27,8 +52,7 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string,
 }
 
 func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	userID := permission.UserIDFromContext(ctx)
-	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
+	return s.stopIngestionTasks(ctx, tasks)
 }
 
 func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
@@ -68,7 +92,7 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationRun); err != nil {
+		if err := service.CheckDocumentWrite(ctx, docID, doc.KbID, permission.OperationRun, ""); err != nil {
 			code, permissionErr := permissionresponse.Normalize(err)
 			return code, permissionErr
 		}
@@ -145,6 +169,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"progress": 0,
+				// The content this document holds is about to be replaced by the run,
+				// so the marker saying it was replayed from a dataset version no
+				// longer describes it.
+				"restored_version": nil,
 			}); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
 				return common.CodeExceptionError, err
@@ -160,6 +188,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 			unlock := lockDocumentParse(doc.ID)
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"progress": 0,
+				// The content this document holds is about to be replaced by the run,
+				// so the marker saying it was replayed from a dataset version no
+				// longer describes it.
+				"restored_version": nil,
 			}); err != nil {
 				unlock()
 				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
@@ -175,6 +207,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 			"progress": 0,
+			// The content this document holds is about to be replaced by the run,
+			// so the marker saying it was replayed from a dataset version no longer
+			// describes it.
+			"restored_version": nil,
 		}); err != nil {
 			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
 			return common.CodeExceptionError, err

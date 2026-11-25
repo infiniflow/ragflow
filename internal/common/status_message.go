@@ -31,6 +31,7 @@ const (
 type ServerType string
 
 const (
+	ServerTypeStandalone    ServerType = "standalone"     // Standalone server with all services
 	ServerTypeAdmin         ServerType = "admin"          // Admin server
 	ServerTypeAPI           ServerType = "api"            // API server
 	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server

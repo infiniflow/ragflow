@@ -869,3 +869,88 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 
 	return docIDs
 }
+
+// docMetaTypedFieldsBody pins numeric metadata fields on indices that predate
+// the template entry. An index template only applies to indices created after
+// it, so a tenant index created earlier would otherwise let dynamic mapping
+// choose a numeric field's type from whichever value arrives first. The same
+// declarations ride in conf/doc_meta_es_mapping.json for indices created from
+// it; keep the two in sync.
+const docMetaTypedFieldsBody = `{"properties":{"meta_fields":{"properties":{"work_experience_years":{"type":"double"},"highest_degree_level":{"type":"integer"}}}}}`
+
+// EnsureMetadataFieldMappings applies docMetaTypedFieldsBody to every existing
+// doc-meta index. One legacy index whose dynamic mapping already conflicts
+// rejects the family-wide request, so a failed batch falls back to per-index
+// puts that name the conflicting index for the operator; the type of an
+// existing field cannot be changed in place, so conflicts are logged and left
+// for a reindex.
+func (e *Engine) EnsureMetadataFieldMappings(ctx context.Context) {
+	putMapping := func(index string) (status, errMsg string, failed bool) {
+		req := esapi.IndicesPutMappingRequest{
+			Index:             []string{index},
+			Body:              strings.NewReader(docMetaTypedFieldsBody),
+			AllowNoIndices:    boolPtr(true),
+			IgnoreUnavailable: boolPtr(true),
+		}
+		res, err := req.Do(ctx, e.client)
+		if err != nil {
+			return "", err.Error(), true
+		}
+		defer res.Body.Close()
+		if res.IsError() {
+			resBody, _ := io.ReadAll(res.Body)
+			return res.Status(), string(resBody), true
+		}
+		return "", "", false
+	}
+
+	// Fast path: one request covers the whole index family.
+	status, errMsg, failed := putMapping("ragflow_doc_meta_*")
+	if !failed {
+		return
+	}
+	common.Warn("Family-wide doc_meta mapping update rejected; retrying per index",
+		zap.String("status", status), zap.String("error", errMsg))
+
+	for _, name := range e.listDocMetaIndices(ctx) {
+		if status, errMsg, failed := putMapping(name); failed {
+			common.Warn("doc_meta index keeps its dynamically mapped numeric fields; reindex it to enable numeric range filters",
+				zap.String("index", name), zap.String("status", status), zap.String("error", errMsg))
+		}
+	}
+}
+
+// listDocMetaIndices resolves the concrete doc-meta index names behind the
+// ragflow_doc_meta_* family; empty when the cluster cannot answer.
+func (e *Engine) listDocMetaIndices(ctx context.Context) []string {
+	req := esapi.CatIndicesRequest{
+		Index:  []string{"ragflow_doc_meta_*"},
+		Format: "json",
+		H:      []string{"index"},
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		common.Warn("Failed to list doc_meta indices", zap.Error(err))
+		return nil
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return nil
+	}
+	var rows []struct {
+		Index string `json:"index"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&rows); err != nil {
+		common.Warn("Failed to decode doc_meta index list", zap.Error(err))
+		return nil
+	}
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Index != "" {
+			names = append(names, r.Index)
+		}
+	}
+	return names
+}
+
+func boolPtr(v bool) *bool { return &v }

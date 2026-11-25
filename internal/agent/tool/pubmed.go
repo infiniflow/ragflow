@@ -26,12 +26,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -265,7 +265,7 @@ func buildPubMedReferences(envelope map[string]any) ([]map[string]any, []map[str
 			continue
 		}
 		content := pubmedDataImagePattern.ReplaceAllString(pubmedText(item["content"]), "")
-		content = truncatePubMedRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -316,13 +316,6 @@ func pubmedText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func truncatePubMedRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func formatPubMedResult(article pubmedXMLArticle) pubmedResult {

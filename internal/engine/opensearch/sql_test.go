@@ -423,6 +423,95 @@ func TestRunSQL_FollowsCursorPagination(t *testing.T) {
 	}
 }
 
+func TestRunSQL_UsesColumnAliasIfPresent(t *testing.T) {
+	aliasResponse := `{
+		"schema": [
+			{"name": "COUNT(1)", "type": "long", "alias": "total_count"},
+			{"name": "doc_id", "type": "text"}
+		],
+		"datarows": [
+			[42, "doc-1"]
+		],
+		"total": 1,
+		"size": 1
+	}`
+	srv, _ := newCapturingServer(t, http.StatusOK, aliasResponse)
+	e := newTestEngine(t, srv.URL)
+
+	rows, err := e.RunSQL(t.Context(), "SELECT COUNT(1) AS total_count, doc_id FROM ragflow_t1", "json")
+	if err != nil {
+		t.Fatalf("RunSQL: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if v, ok := rows[0]["total_count"]; !ok || v != float64(42) {
+		t.Errorf("expected row['total_count'] = 42, got %v", rows[0]["total_count"])
+	}
+	if v, ok := rows[0]["doc_id"]; !ok || v != "doc-1" {
+		t.Errorf("expected row['doc_id'] = 'doc-1', got %v", rows[0]["doc_id"])
+	}
+	if _, ok := rows[0]["COUNT(1)"]; ok {
+		t.Errorf("row['COUNT(1)'] should not be present when alias is defined")
+	}
+}
+
+func TestRunSQL_ClosesCursorOnPrematureExit(t *testing.T) {
+	var (
+		mu           sync.Mutex
+		closeCalled  bool
+		closedCursor string
+		requests     int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		requests++
+		if r.URL.Path == "/_plugins/_sql/close" {
+			closeCalled = true
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			closedCursor = body["cursor"]
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"succeeded": true}`))
+			return
+		}
+
+		if requests == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"schema": [{"name": "doc_id", "type": "text"}],
+				"datarows": [["d1"]],
+				"cursor": "cursor-exit-early"
+			}`))
+			return
+		}
+
+		// Second page fails
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error": "node failure"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	e := newTestEngine(t, srv.URL)
+	_, err := e.RunSQL(t.Context(), "SELECT doc_id FROM ragflow_t1", "json")
+	if err == nil {
+		t.Fatal("expected RunSQL to fail on 500 error")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !closeCalled {
+		t.Errorf("expected /_plugins/_sql/close to be called on error")
+	}
+	if closedCursor != "cursor-exit-early" {
+		t.Errorf("expected closed cursor 'cursor-exit-early', got %q", closedCursor)
+	}
+}
+
 // TestMain registers the engine as "infinity" so tokenizer.Tokenize and
 // tokenizer.FineGrainedTokenize short-circuit and return the input
 // as-is. This lets the rewrite tests assert on the SHAPE of the MATCH()
@@ -431,7 +520,7 @@ func TestMain(m *testing.M) {
 	// Suppress the client's background node-stats polling so the httptest
 	// servers only observe requests issued by the code under test.
 	_ = os.Setenv("OPENSEARCH_GO_DISCOVERY_CONFIG", "-node_stats")
-	_ = common.InitLogger("info", common.FileOutput{}, "opensearch_test")
+	common.InitLogger("info", common.FileOutput{}, "opensearch_test")
 	tokenizer.SetEngineType("infinity")
 	m.Run()
 }
@@ -439,9 +528,15 @@ func TestMain(m *testing.M) {
 // TestRunSQL_ErrorsOnStuckCursor ensures a server that keeps returning the
 // same cursor surfaces an error instead of silently burning the page budget.
 func TestRunSQL_ErrorsOnStuckCursor(t *testing.T) {
-	var requests int
+	var queryRequests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
+		if r.URL.Path == "/_plugins/_sql/close" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"succeeded": true}`))
+			return
+		}
+		queryRequests++
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
@@ -456,7 +551,7 @@ func TestRunSQL_ErrorsOnStuckCursor(t *testing.T) {
 	if _, err := e.RunSQL(t.Context(), "SELECT doc_id FROM ragflow_t1", "json"); err == nil {
 		t.Fatal("RunSQL: got nil error for a cursor that never advances")
 	}
-	if requests > 2 {
-		t.Errorf("requests: got %d, want at most 2 before aborting", requests)
+	if queryRequests > 2 {
+		t.Errorf("queryRequests: got %d, want at most 2 before aborting", queryRequests)
 	}
 }

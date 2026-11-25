@@ -57,7 +57,7 @@ func signedVec(str string, dim int) []float32 {
 func installSignedProseDeps(t *testing.T) {
 	t.Helper()
 	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
-		return common.Deps{Chat: proseChat{}, Embed: signedEmbedder{dim: 8}, TenantID: tenantID}, nil
+		return common.Deps{Chat: proseChat{}, Embed: signedEmbedder{dim: 8}, TenantID: tenantID, ModelContextLen: common.DefaultLLMContextLength}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 }

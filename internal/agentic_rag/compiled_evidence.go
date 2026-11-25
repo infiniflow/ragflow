@@ -161,10 +161,10 @@ func (r *compiledRun) claimsPresent(ctx context.Context) bool {
 		r.mu.Unlock()
 		return present
 	}
-	tenant, datasets := r.tenantID, r.datasetIDs
+	datasets := r.datasetIDs
 	r.mu.Unlock()
 
-	present := claimRowsPresent(ctx, tenant, datasets)
+	present := claimRowsPresent(ctx, datasets)
 
 	r.mu.Lock()
 	r.probed = true
@@ -295,7 +295,7 @@ func readCompiledClaimsByChunk(ctx context.Context, tenantID string, datasetIDs,
 		filter["doc_id"] = docScope
 	}
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames: []string{indexNameFor(tenantID, "")},
+		IndexNames: IndexNamesFor(ctx, datasetIDs),
 		KbIDs:      datasetIDs,
 		SelectFields: []string{
 			"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
@@ -483,22 +483,16 @@ func claimSearchEnabled() bool {
 // invisible however well its claim matches the question.
 //
 // Every degraded path returns nil, and nil means "the anchored page stands": no
-// engine, no nav service, no tenant embedder, an engine error. The leg is an
-// extra, never a replacement, so a deployment that cannot embed is byte-for-byte
-// the run it was before this existed.
+// engine, no nav service, no tenant embedder, a dataset whose tenant cannot be
+// resolved, an engine error. The leg is an extra, never a replacement, so a
+// deployment that cannot embed is byte-for-byte the run it was before this
+// existed.
 func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, docScope []string, question string, limit int) []claimHit {
 	if limit <= 0 || !claimSearchEnabled() || len(datasetIDs) == 0 || tenantID == "" {
 		return nil
 	}
 	question = strings.TrimSpace(question)
 	if question == "" {
-		return nil
-	}
-	// The tenant's default embedding model decides the column: the rows carry a
-	// vector per model dimension, and addressing a column the rows do not have is
-	// an empty result, not an error.
-	vec := claimQueryVector(ctx, tenantID, question)
-	if len(vec) == 0 {
 		return nil
 	}
 	filter := map[string]interface{}{
@@ -508,33 +502,50 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 	if len(docScope) > 0 {
 		filter["doc_id"] = docScope
 	}
-	rows, err := claimSearchRows(ctx, &enginetypes.SearchRequest{
-		IndexNames: []string{indexNameFor(tenantID, "")},
-		KbIDs:      datasetIDs,
-		SelectFields: []string{
-			"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
-		},
-		Filter:             filter,
-		Limit:              limit,
-		IncludeUnavailable: true,
-		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
-			VectorColumnName:  common.VectorColumnName(len(vec)),
-			EmbeddingData:     vec,
-			EmbeddingDataType: "float",
-			DistanceType:      "cosine",
-			TopN:              limit,
-		}},
-	})
-	if err != nil {
-		common.DebugCtx(ctx, "agentic_rag: claim text search failed",
-			zap.Strings("datasets", datasetIDs), zap.Error(err))
-		return nil
-	}
-	out := make([]claimHit, 0, len(rows))
-	for _, row := range rows {
-		if h, ok := parseClaimHit(row); ok {
-			out = append(out, h)
+	var out []claimHit
+	for _, group := range groupDatasetsByTenant(ctx, datasetIDs) {
+		indexNames := IndexNamesFor(ctx, group.KBIDs)
+		if len(indexNames) == 0 {
+			continue
 		}
+		// The tenant's embedding model decides the vector column.
+		vec := claimQueryVector(ctx, group.TenantID, question)
+		if len(vec) == 0 {
+			continue
+		}
+		rows, err := claimSearchRows(ctx, &enginetypes.SearchRequest{
+			IndexNames: indexNames,
+			KbIDs:      group.KBIDs,
+			SelectFields: []string{
+				"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
+			},
+			Filter:             filter,
+			Limit:              limit,
+			IncludeUnavailable: true,
+			MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
+				VectorColumnName:  common.VectorColumnName(len(vec)),
+				EmbeddingData:     vec,
+				EmbeddingDataType: "float",
+				DistanceType:      "cosine",
+				TopN:              limit,
+			}},
+		})
+		if err != nil {
+			common.DebugCtx(ctx, "agentic_rag: claim text search failed",
+				zap.Strings("datasets", group.KBIDs), zap.Error(err))
+			continue
+		}
+		for _, row := range rows {
+			if h, ok := parseClaimHit(row); ok {
+				out = append(out, h)
+			}
+		}
+	}
+	if len(out) > 1 {
+		sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+	}
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out
 }

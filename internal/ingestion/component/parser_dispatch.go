@@ -130,8 +130,12 @@ func dispatchParse(ctx context.Context, p parser.ParseResultProducer, fileType u
 }
 
 // pdfPageProgressSupported reports whether the configured parser setup produces
-// in-flight page progress events (via DeepDOC OnPageDone). Remote engines
-// (MinerU, PaddleOCR, Docling, etc.) and non-PDF families do not report page progress.
+// in-flight page progress events (via DeepDOC OnPageDone). The in-process
+// "deepdoc"/default method and externally registered DeepDoc analyzer backends
+// all run the per-page worker loop and fire the callback; whole-document engines
+// (MinerU, PaddleOCR, Docling, ...) and non-PDF families do not. The decision is
+// delegated to the parser package so the set of page-reporting backends has a
+// single source of truth and this shared file never hard-codes method names.
 func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schema.ParserSetup) bool {
 	if fileType != utility.FileTypePDF {
 		return false
@@ -139,15 +143,10 @@ func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schem
 	var method string
 	if setup, ok := setups[resolveParserFamily(fileType)]; ok {
 		if s, ok := setup["parse_method"].(string); ok {
-			method = strings.ToLower(strings.TrimSpace(s))
+			method = s
 		}
 	}
-	switch method {
-	case "", "deepdoc":
-		return true
-	default:
-		return false
-	}
+	return parser.ReportsPageProgress(method)
 }
 
 // attachPDFPageProgress wires the DeepDOC page callback so a long PDF
@@ -171,6 +170,9 @@ func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, wi
 			return
 		}
 		window.Report(ctx, float64(done)/float64(total))
+		// Report the discrete page position alongside the fraction so the
+		// ingestion log can answer "which page of how many" (finding ③).
+		agentruntime.ReportProgressDetail(ctx, "page:parse", uint32(done), uint32(total))
 	}
 }
 

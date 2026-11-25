@@ -36,6 +36,7 @@ import { Input, SearchInput } from '@/components/ui/input';
 
 import { Form, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { t } from 'i18next';
+import { cloneDeep } from 'lodash';
 import { FilterField } from './filter-field';
 import {
   FilterChange,
@@ -43,6 +44,33 @@ import {
   FilterType,
   FilterValue,
 } from './interface';
+
+// Collect every selected id from a filter field's value, regardless of whether
+// it is stored as a flat array (`type`, `run`) or a nested map
+// (`metadata -> field -> values`). Scoped per field so a value id that happens
+// to match an option in a different field (e.g. metadata "3" vs run-status "3")
+// does not expand an unrelated group.
+const collectSelectedIds = (value: unknown, ids: Set<string>) => {
+  if (typeof value === 'string') {
+    ids.add(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectSelectedIds(item, ids));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach((item) => collectSelectedIds(item, ids));
+  }
+};
+
+const toSelectedIdSet = (value: unknown): Set<string> => {
+  const ids = new Set<string>();
+  collectSelectedIds(value, ids);
+  return ids;
+};
+
+const EMPTY_ID_SET: Set<string> = new Set();
 
 export type CheckboxFormMultipleProps = {
   filters?: FilterCollection[];
@@ -148,14 +176,29 @@ function CheckboxFormMultiple({
     defaultValues: fieldsDict,
   });
 
+  // Derive each field's applied selections from the `value` prop (not the live
+  // form) so a group that already holds a selection starts expanded when the
+  // popover opens. Reading `value` avoids subscribing to every form change,
+  // which caused re-render churn while the user was picking options.
+  const selectedIdsByField = useMemo(() => {
+    const byField: Record<string, Set<string>> = {};
+    if (value) {
+      for (const field of Object.keys(value)) {
+        byField[field] = toSelectedIdSet(value[field]);
+      }
+    }
+    return byField;
+  }, [value]);
+
   function onSubmit() {
-    const formValues = form.getValues();
-    onChange?.({ ...formValues });
+    // Deep-clone before handing the value up so the parent's filter state never
+    // aliases react-hook-form's internal nested objects.
+    onChange?.(cloneDeep(form.getValues()));
     setOpen(false);
   }
 
   const onReset = useCallback(() => {
-    onChange?.(fieldsDict);
+    onChange?.(cloneDeep(fieldsDict));
     setOpen(false);
   }, [fieldsDict, onChange, setOpen]);
 
@@ -168,7 +211,9 @@ function CheckboxFormMultiple({
   fieldsDictRef.current = fieldsDict;
   useEffect(() => {
     if (filtersReady) {
-      form.reset(value || fieldsDictRef.current);
+      // Clone so the form never aliases the applied `value`; otherwise editing
+      // a nested field (metadata) would mutate the parent's filter state.
+      form.reset(cloneDeep(value || fieldsDictRef.current));
     }
   }, [form, value, filtersReady]);
 
@@ -250,6 +295,9 @@ function CheckboxFormMultiple({
                             id: x.field,
                             field: ``,
                           }}
+                          selectedIds={
+                            selectedIdsByField[x.field] ?? EMPTY_ID_SET
+                          }
                         />
                       </div>
                     ))}
@@ -283,6 +331,15 @@ function CheckboxFormMultiple({
                   <div className="space-y-4 max-h-[300px] overflow-auto scrollbar-auto">
                     {!!filteredItem.list?.length &&
                       filteredItem.list.map((item) => {
+                        // A nested collection (e.g. metadata) stores each
+                        // sub-field's selections under `value[field][item.id]`;
+                        // a flat collection keeps them directly in
+                        // `value[field]`.
+                        const fieldValue = value?.[x.field];
+                        const scopedIds =
+                          fieldValue && !Array.isArray(fieldValue)
+                            ? toSelectedIdSet(fieldValue[item.id])
+                            : toSelectedIdSet(fieldValue);
                         return (
                           <FilterField
                             key={item.id}
@@ -292,6 +349,8 @@ function CheckboxFormMultiple({
                               id: x.field,
                               // field: `${x.field}${item.field ? '.' + item.field : ''}`,
                             }}
+                            autoExpand={Boolean(searchTerms[x.field])}
+                            selectedIds={scopedIds}
                           />
                         );
                       })}

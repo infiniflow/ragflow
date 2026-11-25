@@ -338,12 +338,12 @@ func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars [
 	if err != nil || len(boxes) == 0 {
 		return nil
 	}
-	boxChars := matchCharsToBoxes(boxes, chars)
+	boxChars, uncovered := matchCharsToBoxes(boxes, chars)
 	result := p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
 
 	// Detection must not decide which native text survives: chars outside
 	// every detect box are emitted as native line boxes. Main dropped them.
-	if uncovered := charsOutsideDetectBoxes(chars, boxes); len(uncovered) > 0 {
+	if len(uncovered) > 0 {
 		result = append(result, lyt.CharsToBoxes(uncovered, pageNum, p.Config.SortByTop)...)
 	}
 
@@ -356,32 +356,6 @@ func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars [
 		return result[i].X0 < result[j].X0
 	})
 	return result
-}
-
-// charsOutsideDetectBoxes returns the usable glyphs no detect box overlaps.
-// These are the characters main's merge path silently dropped when detection
-// missed their region (figure labels, marginalia, rotated text).
-func charsOutsideDetectBoxes(chars []pdf.TextChar, boxes []ocrDetectBox) []pdf.TextChar {
-	var out []pdf.TextChar
-	for _, c := range chars {
-		if strings.TrimSpace(c.Text) == "" || !usableNativeChar(c) {
-			continue
-		}
-		covered := false
-		for i := range boxes {
-			// Match matchCharsToBoxes' assignment threshold: a glyph it would
-			// not assign (overlap < 1e-6) must not be treated as covered here,
-			// or it would be consumed by neither path.
-			if charBoxOverlapRatio(c, boxes[i].x0, boxes[i].x1, boxes[i].y0, boxes[i].y1) >= 1e-6 {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			out = append(out, c)
-		}
-	}
-	return out
 }
 
 // usableNativeChar reports whether a glyph can be emitted as native text:
@@ -469,8 +443,12 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 	return boxes, scale, nil
 }
 
-func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextChar {
+// matchCharsToBoxes assigns glyphs to detect boxes. It also returns the
+// usable, non-blank glyphs no box covers (bestIdx < 0), so callers do not need
+// a second full chars×boxes overlap pass to recover them.
+func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) ([][]pdf.TextChar, []pdf.TextChar) {
 	boxChars := make([][]pdf.TextChar, len(boxes))
+	var uncovered []pdf.TextChar
 	// deferred holds fully-contained small glyphs (candidates for inline text)
 	// until we know whether the box also carries any normal-height content. A
 	// box whose ONLY char-layer chars are small (ratio >= 0.7) must stay empty
@@ -504,7 +482,14 @@ func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextC
 				bestIdx = i
 			}
 		}
+		// A glyph no box covers is emitted as a native line box. Apply the
+		// same filter the old charsOutsideDetectBoxes pass used: only usable,
+		// non-blank glyphs qualify, else blank/PUA glyphs would leak out as
+		// native boxes (behavior change).
 		if bestIdx < 0 {
+			if strings.TrimSpace(c.Text) != "" && usableNativeChar(c) {
+				uncovered = append(uncovered, c)
+			}
 			continue
 		}
 		ch := c.Bottom - c.Top
@@ -548,7 +533,7 @@ func matchCharsToBoxes(boxes []ocrDetectBox, chars []pdf.TextChar) [][]pdf.TextC
 			boxChars[i] = append(boxChars[i], deferred[i]...)
 		}
 	}
-	return boxChars
+	return boxChars, uncovered
 }
 
 // boxIsCoveredLeftFragment reports whether detect box i is a spurious

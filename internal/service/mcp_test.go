@@ -29,9 +29,11 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/utility"
 )
 
@@ -535,7 +537,12 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 		}
 	}
 
-	ctx := serviceTestContext(t, "owner", "tenant-1")
+	ctx := serviceTestContext(t, "owner", "tenant-1", "target-user")
+	for _, serverID := range []string{"mcp-a", "mcp-b", "mcp-c", "mcp-target"} {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-1", "mcp", serverID, "target-user", "read"); err != nil {
+			t.Fatalf("grant selected MCP user access: %v", err)
+		}
+	}
 	listed, code, err := NewMCPService().ListMCPServers(ctx, "tenant-1", "", nil, "", 2, 1, "name", false)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListMCPServers() = (code %d, %v), want success", code, err)
@@ -553,6 +560,11 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 		t.Fatalf("create MCP member membership: %v", err)
 	}
 	memberCtx := serviceTestContext(t, "member", "tenant-1")
+	for _, serverID := range []string{"mcp-a", "mcp-b", "mcp-c", "mcp-target"} {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-1", "mcp", serverID, "member", "read"); err != nil {
+			t.Fatalf("grant MCP member access: %v", err)
+		}
+	}
 	listed, code, err = NewMCPService().ListMCPServers(memberCtx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
 	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
 		t.Fatalf("member ListMCPServers(access_user_id) = (code %d, %#v, %v), want tenant-visible MCP servers the member can use", code, listed, err)

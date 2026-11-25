@@ -235,11 +235,17 @@ describe('Chat layout navigation', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('uses the existing Embed into webpage dialog entry', () => {
+  it('uses the existing Embed into webpage dialog entry inside the page frame', () => {
     renderChat();
 
+    const embedButton = screen.getByTestId('chat-detail-embed-open');
+    const pageFrame = embedButton.closest('article');
+    expect(pageFrame).not.toBeNull();
+    expect(pageFrame).toContainElement(
+      screen.getByTestId('chat-detail-content-frame'),
+    );
     expect(screen.getByText('common.embedIntoSite')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('chat-detail-embed-open'));
+    fireEvent.click(embedButton);
 
     expect(mockShowEmbedModal).toHaveBeenCalledTimes(1);
   });

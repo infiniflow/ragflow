@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { cn } from '@/lib/utils';
 import {
   LucideToggleLeft,
@@ -18,10 +17,10 @@ type ICheckboxSetProps = {
   switchChunk: (available: number) => void;
   checked: boolean;
   selectedChunkIds: string[];
+  canEditDocument: boolean;
 };
 
 export default function CheckboxSets(props: ICheckboxSetProps) {
-  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
   const {
     className,
     selectAllChunk,
@@ -29,6 +28,7 @@ export default function CheckboxSets(props: ICheckboxSetProps) {
     switchChunk,
     checked,
     selectedChunkIds,
+    canEditDocument,
   } = props;
   const { t } = useTranslation();
   const handleSelectAllCheck = useCallback(
@@ -54,7 +54,7 @@ export default function CheckboxSets(props: ICheckboxSetProps) {
   const isSelected = useMemo(() => {
     return selectedChunkIds?.length > 0;
   }, [selectedChunkIds]);
-  if (datasetEditButtonDisabled) {
+  if (!canEditDocument) {
     return null;
   }
   return (
@@ -66,15 +66,19 @@ export default function CheckboxSets(props: ICheckboxSetProps) {
 
       {isSelected && (
         <>
-          <Button variant="outline" onClick={handleEnabledClick}>
-            <LucideToggleRight size={16} />
-            {t('chunk.enable')}
-          </Button>
+          {canEditDocument && (
+            <Button variant="outline" onClick={handleEnabledClick}>
+              <LucideToggleRight size={16} />
+              {t('chunk.enable')}
+            </Button>
+          )}
 
-          <Button variant="outline" onClick={handleDisabledClick}>
-            <LucideToggleLeft size={16} />
-            <span className="block ml-1">{t('chunk.disable')}</span>
-          </Button>
+          {canEditDocument && (
+            <Button variant="outline" onClick={handleDisabledClick}>
+              <LucideToggleLeft size={16} />
+              <span className="block ml-1">{t('chunk.disable')}</span>
+            </Button>
+          )}
 
           <Button variant="danger" onClick={handleDeleteClick}>
             <LucideTrash2 className="size-[1em]" />

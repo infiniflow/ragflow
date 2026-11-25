@@ -605,6 +605,8 @@ func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType)
 		return ptrStringValue(membership.OCRID), ptrStringValue(membership.TenantOCRID)
 	case entity.ModelTypeDecision:
 		return ptrStringValue(membership.DecisionID), ptrStringValue(membership.TenantDecisionID)
+	case entity.ModelTypeScoring:
+		return ptrStringValue(membership.ScoringID), ptrStringValue(membership.TenantScoringID)
 	default:
 		return "", ""
 	}
@@ -959,10 +961,65 @@ func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
 		entity.ModelTypeTTS,
 		entity.ModelTypeOCR,
 		entity.ModelTypeDecision,
+		entity.ModelTypeScoring,
 	} {
 		if modelType.Has(candidate) {
 			modelTypes = append(modelTypes, candidate)
 		}
 	}
 	return modelTypes
+}
+
+// ResolvedModelTarget exposes a resolved model's provider details — driver, model name,
+// base URL and credentials. Unlike ResolveInfo it deliberately DOES expose the driver and
+// credentials, so it is an internal escape hatch for paths that must hand the provider
+// endpoint and token to an external system (the mode 8 Codex agent) instead of building an
+// in-process model. Keep it out of public APIs.
+type ResolvedModelTarget struct {
+	ProviderName string
+	ModelName    string
+	// InstanceName is the provider instance the model is served by (e.g. "zyf"). Two
+	// candidates routinely share provider and model and differ only here — the endpoint and
+	// credentials come from the instance — so it is what distinguishes them to a human.
+	InstanceName string
+	Driver       modelModule.ModelDriver
+	BaseURL      string
+	APIKey       string
+}
+
+// ResolveChatTarget resolves a chat model reference to its provider details.
+// The caller's identity is read from ctx (permission.WithIdentity).
+func (f *ModelFactory) ResolveChatTarget(ctx context.Context, modelRef string) (*ResolvedModelTarget, error) {
+	target, err := f.resolveConfig(ctx, entity.ModelTypeChat, modelRef)
+	if err != nil {
+		return nil, err
+	}
+	return resolvedTargetFrom(target), nil
+}
+
+// ResolveDefaultChatTarget resolves the tenant's default chat model to its provider details.
+func (f *ModelFactory) ResolveDefaultChatTarget(ctx context.Context) (*ResolvedModelTarget, error) {
+	target, err := f.resolveDefaultConfig(ctx, entity.ModelTypeChat)
+	if err != nil {
+		return nil, err
+	}
+	return resolvedTargetFrom(target), nil
+}
+
+func resolvedTargetFrom(t *modelTarget) *ResolvedModelTarget {
+	r := &ResolvedModelTarget{
+		ProviderName: t.ProviderName,
+		ModelName:    t.ModelName,
+		InstanceName: t.InstanceName,
+		Driver:       t.Driver,
+	}
+	if t.APIConfig != nil {
+		if t.APIConfig.BaseURL != nil {
+			r.BaseURL = *t.APIConfig.BaseURL
+		}
+		if t.APIConfig.ApiKey != nil {
+			r.APIKey = *t.APIConfig.ApiKey
+		}
+	}
+	return r
 }

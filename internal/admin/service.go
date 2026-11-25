@@ -19,6 +19,7 @@ package admin
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -149,11 +150,12 @@ func generateRandomHex(n int) string {
 //   - username: email address of the user
 //   - password: encrypted password (base64 encoded RSA encrypted)
 //   - role: user role ("user" or "admin")
+//   - nickname: display name of the user (optional)
 //
 // Returns:
 //   - map[string]interface{}: user information without password
 //   - error: error message
-func (s *Service) CreateUser(ctx context.Context, username, password, role string) (map[string]interface{}, error) {
+func (s *Service) CreateUser(ctx context.Context, username, password, role, nickname string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
@@ -184,7 +186,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		ID:              userID,
 		AccessToken:     &accessToken,
 		Email:           username,
-		Nickname:        "",
+		Nickname:        nickname,
 		Password:        &hashedPassword,
 		Status:          &status,
 		IsActive:        "1",
@@ -373,12 +375,13 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*servicepkg.
 
 // ChangePassword change user password
 // Parameters:
+//   - actorID: ID of the administrator making the change
 //   - username: email address of the user
 //   - newPassword: new encrypted password (base64 encoded RSA encrypted)
 //
 // Returns:
 //   - error: error message
-func (s *Service) ChangePassword(ctx context.Context, username, newPassword string) error {
+func (s *Service) ChangePassword(ctx context.Context, actorID, username, newPassword string) error {
 	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil || len(userList) == 0 {
 		return fmt.Errorf("user '%s' not found", username)
@@ -389,6 +392,10 @@ func (s *Service) ChangePassword(ctx context.Context, username, newPassword stri
 	}
 
 	user := userList[0]
+
+	if err := checkAdminPasswordChangeTarget(actorID, user.ID); err != nil {
+		return err
+	}
 
 	decryptedPassword, err := common.DecryptPassword(newPassword)
 	if err != nil {
@@ -780,8 +787,9 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "not connected", startTime, err.Error())
 	}
 
-	// Execute SELECT 1 to check connectivity
-	err = sqlDB.PingContext(ctx)
+	// Execute SELECT 1 to check connectivity, with the same 3s cap as the
+	// non-MySQL database probe so an unreachable host cannot hold ListServices.
+	err = pingWithTimeout(ctx, sqlDB)
 	if err != nil {
 		mysqlConfig := server.GetConfig().GetMySQLConfig()
 		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "timeout", startTime, err.Error())
@@ -789,6 +797,15 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	mysqlConfig := server.GetConfig().GetMySQLConfig()
 	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
+}
+
+// pingWithTimeout caps a connectivity probe at 3s. The DSN allows a 30s
+// connect_timeout, so an unreachable host would otherwise stall the request.
+// A caller deadline shorter than 3s is preserved by context.WithTimeout.
+func pingWithTimeout(ctx context.Context, sqlDB *sql.DB) error {
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return sqlDB.PingContext(pingCtx)
 }
 
 // pingDatabaseStatus reports the SQL metadata database status for the
@@ -805,9 +822,7 @@ func (s *Service) pingDatabaseStatus(ctx context.Context, name, host string, por
 
 	// The DSN allows a 30s connect_timeout, so an unreachable host would
 	// otherwise hold ListServices for the full dial timeout.
-	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	if err = sqlDB.PingContext(pingCtx); err != nil {
+	if err = pingWithTimeout(ctx, sqlDB); err != nil {
 		return newServiceStatus(serviceType, name, host, port, "timeout", startTime, err.Error())
 	}
 
@@ -1045,6 +1060,11 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 }
 
 func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	if strings.EqualFold(varName, "api_key.max_count") {
+		if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+			return err
+		}
+	}
 	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err
@@ -1052,6 +1072,11 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
+		if strings.EqualFold(setting.Name, "api_key.max_count") {
+			if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+				return err
+			}
+		}
 		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}

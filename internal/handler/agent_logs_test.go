@@ -149,7 +149,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(miniredisDebugStore{rdb: rdb}).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		})
 
@@ -293,7 +293,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	}
 
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		})
 
@@ -346,7 +346,7 @@ func TestPersistAgentToolInvocations_UsesAgentNodeAndExistingLogShape(t *testing
 	store := &capturedStore{}
 	h := &AgentHandler{
 		redisStore: store,
-		redisGet: func(key string) (string, error) {
+		redisGet: func(_ context.Context, key string) (string, error) {
 			value, ok := store.Get(t.Context(), key)
 			if !ok {
 				return "", errors.New("missing")
@@ -674,7 +674,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	// production where both hit one Redis.
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(miniredisDebugStore{rdb: rdb}).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		}).
 		WithNewExecutor(func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {

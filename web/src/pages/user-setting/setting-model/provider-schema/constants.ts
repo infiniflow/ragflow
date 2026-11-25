@@ -52,7 +52,11 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.Synap,
   LLMFactory.Wiro,
   LLMFactory.Crusoe,
+  LLMFactory.Onomeo,
   LLMFactory.HopBase,
+  LLMFactory.GreenNode,
+  LLMFactory.Morse,
+  LLMFactory.TeamoRouter,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,

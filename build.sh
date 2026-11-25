@@ -28,6 +28,22 @@ source "${SCRIPT_DIR}/tools/scripts/ort_stamp.sh"
 # is already in the version+platform-keyed user cache (Fix: version/platform
 # aware presence gate).
 source "${SCRIPT_DIR}/tools/scripts/ort_present.sh"
+# ort_variant.sh: pure helper mapping DEEPDOC_ORT_VARIANT to an archive-dir glob
+# suffix so a variant build (e.g. CUDA/full) selects exactly one ORT archive
+# instead of letting `find` order pick between coexisting minimal/full dirs.
+source "${SCRIPT_DIR}/tools/scripts/ort_variant.sh"
+
+# Actionable diagnostic for a gpu/full build that cannot find the -full ORT
+# archive. The bundled downloader only produces the minimal (-glibc2_28)
+# archive, so a full/CUDA-capable build must have it pre-staged manually.
+# Called from BOTH the early presence gate and the post-download failure branch
+# so the user sees the real fix regardless of which path fails.
+ort_full_archive_hint() {
+    [ "${DEEPDOC_ORT_VARIANT:-cpu}" = "cpu" ] && return 0
+    echo "  A ${DEEPDOC_ORT_VARIANT} build needs the -full ONNX Runtime archive," >&2
+    echo "  which the bundled downloader does not produce. Pre-stage it manually at:" >&2
+    echo "    ${ONNXRUNTIME_STATIC_PREFIX}/onnxruntime-linux-*-static_lib-*-full/lib/libonnxruntime.a" >&2
+}
 
 # Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
 # CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
@@ -229,7 +245,15 @@ _native_libs_present() {
     local ort_version ort_dir_prefix
     ort_version="$(deepdoc_ort_version "$PROJECT_ROOT")" || return 1
     ort_dir_prefix="$(ort_static_lib_prefix)"
-    ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" || return 1
+    # Pass the variant suffix so a gpu/full build is not fooled into "present"
+    # by a minimal (-glibc2_28) archive in a shared cache. The 4th arg is
+    # optional; the OSS/CPU path (no variant) still uses the legacy wildcard.
+    # Resolve the suffix into its own guarded statement: an inlined `cmd "$(f)"`
+    # swallows f's non-zero exit, which would pass an empty 4th arg that
+    # ragflow_ort_present treats as the wildcard — defeating the fail-fast.
+    local ort_variant_suffix_value
+    ort_variant_suffix_value="$(ort_variant_suffix)" || return 1
+    ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" "$ort_variant_suffix_value" || return 1
     return 0
 }
 
@@ -239,6 +263,11 @@ _native_libs_present() {
 # when the cache is still incomplete afterwards (a locked-down host with no
 # network and no pre-placed libs).
 _ensure_native_libs_installed() {
+    # Validate the variant config BEFORE the presence gate. An invalid variant
+    # makes _native_libs_present return 1, which would otherwise be mistaken for
+    # "libs missing" and trigger a pointless full downloader run. Fail fast on
+    # the real cause instead.
+    ort_variant_suffix >/dev/null || return 1
     _native_libs_present && return 0
     echo "One or more native static libraries are missing from the user cache;"
     echo "  running downloader: uv run tools/scripts/download_dev_deps.py"
@@ -250,6 +279,7 @@ _ensure_native_libs_installed() {
         return 0
     fi
     echo -e "${RED}Error: native static libraries still missing after download.${NC}" >&2
+    ort_full_archive_hint
     echo "  Pre-place the version-keyed dirs manually on a locked-down host:" >&2
     echo "    ${OFFICE_OXIDE_PREFIX}" >&2
     echo "    ${PDFIUM_STATIC_PREFIX}" >&2
@@ -525,21 +555,26 @@ check_onnxruntime_deps() {
     # populates and CI mounts in). There is no /opt pre-bake to reseed from; an
     # incomplete cache is filled by the controlled auto-download in setup_cgo_env.
 
-    local ort_dir_prefix
+    local ort_dir_prefix ort_variant_suffix_value
     ort_dir_prefix="$(ort_static_lib_prefix)"
+    # Propagate the exit status: `local x="$(f)"` swallows f's non-zero exit,
+    # which would leave the suffix empty and silently fall back to the wildcard.
+    ort_variant_suffix_value="$(ort_variant_suffix)" || return 1
     while IFS= read -r f; do
         case "$(basename "$f")" in
             *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
         esac
         case "$f" in
-            # Only collect .a from the dir matching both the target
-            # platform and the required version: ${ort_dir_prefix} pins
-            # OS/arch (a shared cache can also hold ORT built for another
-            # platform), ${ort_version} pins DeepDocORTVersion (the Python
-            # side legitimately keeps another ORT version in the same
-            # prefix). Matching both is why coexisting version dirs no
-            # longer need a fail-fast guard here.
-            */${ort_dir_prefix}${ort_version}*/lib/*.a)
+            # Only collect .a from the dir matching the target platform, the
+            # required version, AND the requested variant suffix.
+            #   ${ort_dir_prefix} pins OS/arch (a shared cache can hold ORT for
+            #     another platform);
+            #   ${ort_version} pins DeepDocORTVersion;
+            #   ${ort_variant_suffix_value} is "*" by default (legacy: any dir)
+            #     or "-full" for a gpu/full build, so a cache holding both a
+            #     minimal (-glibc2_28) and full (-full) archive resolves to
+            #     exactly one dir instead of depending on `find` traversal order.
+            */${ort_dir_prefix}${ort_version}${ort_variant_suffix_value}/lib/*.a)
                 ORT_A_FILES="$ORT_A_FILES $f"
                 [ -z "$primary" ] && primary="$f"
                 case "$(basename "$f")" in
@@ -552,8 +587,12 @@ check_onnxruntime_deps() {
     if [ -z "$ORT_A_FILES" ]; then
         local avail
         avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
-            -name "${ort_dir_prefix}*" -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            -name "${ort_dir_prefix}${ort_version}*" -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
+        if [ "${DEEPDOC_ORT_VARIANT:-cpu}" != "cpu" ]; then
+            echo "  requested variant: ${DEEPDOC_ORT_VARIANT} (archive dir suffix '${ort_variant_suffix_value}')" >&2
+            ort_full_archive_hint
+        fi
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
         echo "    uv run tools/scripts/download_dev_deps.py" >&2
@@ -1252,6 +1291,11 @@ setup_cgo_env() {
     # -export_dynamic — which is what the binding's dlopen(NULL)+dlsym
     # lookup needs at runtime.
 
+    # Optional build extension hook (no-op unless defined by build_ee.sh).
+    if declare -F setup_ee_cgo_env >/dev/null 2>&1; then
+        setup_ee_cgo_env || return 1
+    fi
+
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
         Linux)
@@ -1412,30 +1456,8 @@ run() {
 
     cd "$PROJECT_ROOT"
 
-    # admin_server must be running before ragflow_server, otherwise ragflow_server's
-    # heartbeats to admin will error out (see internal/development.md).
-    print_section "Starting admin server (background)"
-    "$RAGFLOW_SERVER_BINARY" --admin &
-    ADMIN_PID=$!
-    # One trap for both background services: a second `trap ... EXIT INT TERM`
-    # would replace this one rather than add to it, leaving admin_server holding
-    # port 9381 after the foreground server exits. INGESTOR_PID is cleared first
-    # so a value inherited from the environment cannot be signalled during the
-    # window before the ingestor starts.
-    INGESTOR_PID=""
-    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
-
-    # Give admin_server a moment to bind its listening port (9381) before
-    # ragflow_server starts sending heartbeats to it.
-    sleep 1
-
-    print_section "Starting ingestor (background)"
-    "$RAGFLOW_SERVER_BINARY" --ingestor &
-    INGESTOR_PID=$!
-    sleep 1
-
-    print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY" --api
+    print_section "Starting RAGFlow server"
+    "$RAGFLOW_SERVER_BINARY" "$@"
 }
 
 # Show help
@@ -1624,7 +1646,7 @@ main() {
             check_go_deps
             build_cpp
             build_go
-            run
+            run "${args[@]:1}"
             ;;
         --help|-h)
             show_help

@@ -121,6 +121,10 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("model_provider::"+providerName), permission.ActionEnable); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return code, normalizedErr
+	}
 	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
@@ -717,17 +721,8 @@ func (m *ModelProviderService) findProviderByIDOrNameInCurrentTenant(ctx context
 		if provider.TenantID != tenantID {
 			return nil, gorm.ErrRecordNotFound
 		}
-		if provider.UserID != userID {
-			if !includeTenantOwner {
-				return nil, gorm.ErrRecordNotFound
-			}
-			owner, ownerErr := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
-			if ownerErr != nil {
-				return nil, ownerErr
-			}
-			if provider.UserID != owner.UserID {
-				return nil, gorm.ErrRecordNotFound
-			}
+		if provider.UserID != userID && !includeTenantOwner {
+			return nil, gorm.ErrRecordNotFound
 		}
 		return provider, nil
 	}
@@ -1007,7 +1002,7 @@ func (m *ModelProviderService) createModelRecord(ctx context.Context, db *gorm.D
 func (m *ModelProviderService) ListProviderInstances(ctx context.Context, providerIDOrName string) ([]map[string]interface{}, common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
-	provider, err := m.resolveProviderInTenant(ctx, providerIDOrName, permission.OperationRead)
+	providers, err := m.providersForInstanceList(ctx, providerIDOrName)
 	if err != nil {
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -1021,9 +1016,23 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		}
 		return nil, common.CodeServerError, err
 	}
-	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
-	if err != nil {
-		return nil, common.CodeServerError, err
+	providerByID := make(map[string]*entity.TenantModelProvider, len(providers))
+	ownerIDs := make([]string, 0, len(providers))
+	seenOwnerIDs := make(map[string]struct{}, len(providers))
+	instances := make([]*entity.TenantModelInstance, 0)
+	for _, provider := range providers {
+		providerByID[provider.ID] = provider
+		if provider.UserID != "" {
+			if _, exists := seenOwnerIDs[provider.UserID]; !exists {
+				seenOwnerIDs[provider.UserID] = struct{}{}
+				ownerIDs = append(ownerIDs, provider.UserID)
+			}
+		}
+		providerInstances, listErr := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
+		if listErr != nil {
+			return nil, common.CodeServerError, listErr
+		}
+		instances = append(instances, providerInstances...)
 	}
 	instanceRefs := make([]permission.ResourceRef, 0, len(instances))
 	for _, instance := range instances {
@@ -1035,6 +1044,10 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
+	ownerNicknames, err := dao.NewUserDAO().GetNicknamesByIDs(ctx, dao.DB, ownerIDs)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("resolve model instance owner nickname: %w", err)
+	}
 
 	// Always emit a non-nil slice so the JSON encoder serializes [] rather
 	// than null when the tenant has no instances on this provider. The
@@ -1043,6 +1056,10 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	// crash on a freshly created tenant.
 	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
+		provider := providerByID[instance.ProviderID]
+		if provider == nil {
+			continue
+		}
 		access, ok := instanceAccesses[permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}]
 		if !ok || !access.Allows(permission.OperationRead) {
 			continue
@@ -1063,6 +1080,8 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		// (provider_api_service.py:563).
 		result = append(result, map[string]interface{}{
 			"id":                  instance.ID,
+			"user_id":             provider.UserID,
+			"nickname":            ownerNicknames[provider.UserID],
 			"instance_name":       instance.InstanceName,
 			"provider_id":         instance.ProviderID,
 			"region":              extraFields["region"],
@@ -1131,13 +1150,11 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"status":        instance.Status,
 		"is_owner":      access.Source == permission.AccessSourceOwner,
 	}
-	if access.Source == permission.AccessSourceOwner || access.Allows(permission.OperationUpdate) {
-		configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
-		result["api_key_configured"] = configured
-		result["api_key_config"] = config
-		result["credential_status"] = credentialStatus
-		result["credential_masks"] = credentialMasks
-	}
+	configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
+	result["api_key_configured"] = configured
+	result["api_key_config"] = config
+	result["credential_status"] = credentialStatus
+	result["credential_masks"] = credentialMasks
 
 	return result, common.CodeSuccess, nil
 }
@@ -1557,6 +1574,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
 				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
+			case "scoring":
+				err = driver.CheckConnection(ctx, apiConfig)
 			case "doc_parse":
 				err = driver.CheckConnection(ctx, apiConfig)
 			case "decision":
@@ -2006,6 +2025,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 			"instance_id":     modelRecord.InstanceID,
 			"instance_name":   instInfo.InstanceName,
 			"rank":            rank,
+			"features":        featuresFromModelExtra(modelRecord.Extra),
 		})
 	}
 
@@ -2465,8 +2485,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
-	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
-	// Delete models that are no longer in the submitted model_info.
+	// Upsert models: add new ones, update existing ones, inactivate ones no longer selected.
+	// Models no longer in the submitted model_info are soft deleted, like the
+	// dedicated drop-models endpoint, so their rows and references survive.
 	var idsToRemove []string
 	for name, mdl := range existingModelMap {
 		if !submittedModelNames[name] {
@@ -2474,7 +2495,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 		}
 	}
 	if len(idsToRemove) > 0 {
-		if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
+		if _, err = m.modelDAO.UpdateStatusByIDsAndScope(ctx, dao.DB, idsToRemove, provider.ID, instance.ID, "inactive"); err != nil {
 			return common.CodeServerError, err
 		}
 	}
@@ -2512,6 +2533,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 				}
 				extraBytes, _ = json.Marshal(mergedExtra)
 				updates["extra"] = string(extraBytes)
+				if !strings.EqualFold(existingMdl.Status, "active") {
+					updates["status"] = "active"
+				}
 				if len(updates) > 0 {
 					if err = m.modelDAO.UpdateByID(ctx, dao.DB, existingMdl.ID, updates); err != nil {
 						return common.CodeServerError, err
@@ -2682,7 +2706,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 		}
 	}
 
-	if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToDelete); err != nil {
+	if _, err = m.modelDAO.UpdateStatusByIDsAndScope(ctx, dao.DB, idsToDelete, provider.ID, instance.ID, "inactive"); err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2736,6 +2760,9 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		if !ok || !access.Allows(permission.OperationRead) {
 			continue
 		}
+		if model.Status == "inactive" {
+			continue
+		}
 		modelExtra := make(map[string]interface{})
 		if model.Extra != "" {
 			_ = json.Unmarshal([]byte(model.Extra), &modelExtra)
@@ -2763,6 +2790,11 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		if v, ok := modelExtra["thinking"]; ok && isTruthy(v) {
 			features = append(features, "thinking")
 		}
+		for _, key := range scoringFeatureKeys {
+			if v, ok := modelExtra[key]; ok && isTruthy(v) {
+				features = append(features, key)
+			}
+		}
 
 		modelList = append(modelList, map[string]interface{}{
 			"id":         model.ID,
@@ -2782,6 +2814,37 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	})
 
 	return modelList, nil
+}
+
+var scoringFeatureKeys = []string{
+	"supports_image",
+	"supports_box",
+	"supports_noul",
+	"supports_score",
+	"supports_fields",
+	"supports_field_text",
+	"supports_field_number",
+	"supports_field_date",
+	"supports_field_time",
+	"supports_field_datetime",
+	"supports_field_duration",
+	"supports_field_list",
+	"supports_field_estimate",
+	"supports_field_forecast",
+}
+
+func featuresFromModelExtra(raw string) []string {
+	extra := map[string]interface{}{}
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &extra)
+	}
+	features := make([]string, 0)
+	for _, key := range scoringFeatureKeys {
+		if v, ok := extra[key]; ok && isTruthy(v) {
+			features = append(features, key)
+		}
+	}
+	return features
 }
 
 func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, instanceName, modelName, modelID string, updateDict map[string]interface{}) (common.ErrorCode, error) {
@@ -3058,13 +3121,18 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return code, normalizedErr
 	}
 
-	// Check for duplicate model.
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
-	if err == nil {
-		return common.CodeConflict, fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	// Check for duplicate model. An inactive row is reactivated below with the
+	// fields this request computes, instead of rejecting it as a duplicate.
+	var existing *entity.TenantModel
+	obj, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+	case err != nil:
 		return common.CodeServerError, err
+	case obj.Status == "active":
+		return common.CodeConflict, fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
+	default:
+		existing = obj
 	}
 
 	// Compute model type bitmask. Matches Python's calculate_model_type:
@@ -3111,6 +3179,17 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
+	}
+
+	if existing != nil {
+		if err = m.modelDAO.UpdateByID(ctx, dao.DB, existing.ID, map[string]interface{}{
+			"model_type": int(combinedType),
+			"extra":      string(extraBytes),
+			"status":     "active",
+		}); err != nil {
+			return common.CodeServerError, fmt.Errorf("fail to reactivate model '%s': %w", modelName, err)
+		}
+		return common.CodeSuccess, nil
 	}
 
 	modelID := common.GenerateToken()

@@ -60,9 +60,9 @@ const NextInnerLLMSelect = forwardRef<
       if (filter === LlmModelType.Chat) {
         return ['chat'];
       } else if (filter === LlmModelType.Image2text) {
-        return ['vision'];
+        return ['vlm'];
       } else {
-        return ['chat', 'vision'];
+        return ['chat', 'vlm'];
       }
     }, [filter]);
 

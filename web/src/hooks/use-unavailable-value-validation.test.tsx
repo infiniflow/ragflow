@@ -25,11 +25,6 @@ import {
 const mockUseModelValidIds = jest.fn();
 const mockUseCompilationTemplateGroupValidIds = jest.fn();
 
-jest.mock('react-i18next', () => ({
-  ...jest.requireActual('react-i18next'),
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
 jest.mock('@/hooks/use-llm-request', () => ({
   useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
 }));
@@ -93,7 +88,7 @@ describe('useUnavailableModelFormSchema', () => {
   it('flags a persisted model missing from the current user models', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
-      isFetched: true,
+      isSettled: true,
     });
     const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
 
@@ -109,7 +104,7 @@ describe('useUnavailableModelFormSchema', () => {
   it('accepts a usable model', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
-      isFetched: true,
+      isSettled: true,
     });
     const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
 
@@ -121,7 +116,7 @@ describe('useUnavailableModelFormSchema', () => {
   it('stays quiet while the model list is loading', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(),
-      isFetched: false,
+      isSettled: false,
     });
     const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
 
@@ -130,52 +125,18 @@ describe('useUnavailableModelFormSchema', () => {
     ).toBe(true);
   });
 
-  it('reports group pending without delaying direct model validation', () => {
-    const groupRef = 'gp-0123456789abcdef0123456789abcdef';
+  it('validates against the given owner user', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
-      isFetched: true,
-      isSettled: false,
-      getPendingMessage: (value: string) =>
-        value === groupRef ? 'setting.modelGroupSelector.pending' : undefined,
-    });
-    const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
-
-    const pending = result.current.formSchema.safeParse({ llm_id: groupRef });
-    const unavailable = result.current.formSchema.safeParse({ llm_id: 'gone' });
-
-    expect(pending.success).toBe(false);
-    if (!pending.success) {
-      expect(pending.error.issues[0].path).toEqual(['llm_id']);
-      expect(pending.error.issues[0].message).toBe(
-        'setting.modelGroupSelector.pending',
-      );
-    }
-    expect(unavailable.success).toBe(false);
-    if (!unavailable.success) {
-      expect(unavailable.error.issues[0].message).toBe(
-        'common.modelUnavailable',
-      );
-    }
-    expect(result.current.modelsFetched).toBe(false);
-  });
-
-  it('validates against the resource tenant and access user', () => {
-    mockUseModelValidIds.mockReturnValue({
-      validIds: new Set(['m1']),
-      isFetched: true,
+      isSettled: true,
     });
     renderHook(() =>
-      useUnavailableModelFormSchema(Schema, {
-        resourceTenantId: 'tenant-1',
-        accessUserId: 'user-1',
-      }),
+      useUnavailableModelFormSchema(Schema, { resourceTenantId: 'owner-1' }),
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
-      'tenant-1',
-      'user-1',
+      ['chat', 'vlm'],
+      'owner-1',
     );
   });
 });

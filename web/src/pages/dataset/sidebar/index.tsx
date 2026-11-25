@@ -11,6 +11,7 @@ import {
 
 import { SecondarySidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
+import { useDatasetSidebarExtraItems } from '@/ee/hooks/use-dataset-sidebar-extra-items';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -28,6 +29,7 @@ export function SideBar({ dataset: data, onCollapse, onMenuSelect }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
   const { t } = useTranslation();
+  const extraItems = useDatasetSidebarExtraItems();
 
   const items = useMemo(() => {
     const list = [
@@ -58,8 +60,8 @@ export function SideBar({ dataset: data, onCollapse, onMenuSelect }: PropType) {
       },
     ];
 
-    return list;
-  }, [t]);
+    return [...list, ...extraItems];
+  }, [t, extraItems]);
 
   return (
     <aside className="flex flex-col w-64 relative">

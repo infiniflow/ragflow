@@ -60,18 +60,11 @@ func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error
 		return fmt.Errorf("failed to read mapping file %q: %w", *mappingPath, err)
 	}
 
-	// OpenSearch does not support ES's "runtime" dynamic mapping mode; rewrite
-	// it to a plain dynamic mapping before creating the index (mirrors Python's
-	// opensearch_conn.create_doc_meta_idx).
 	var mapping map[string]interface{}
 	if err := json.Unmarshal(data, &mapping); err != nil {
 		return fmt.Errorf("failed to parse mapping file %q: %w", *mappingPath, err)
 	}
-	if mappings, ok := mapping["mappings"].(map[string]interface{}); ok {
-		if dyn, ok := mappings["dynamic"].(string); ok && dyn == "runtime" {
-			mappings["dynamic"] = true
-		}
-	}
+	normalizeDynamicMapping(mapping)
 	mappingBytes, err := json.Marshal(mapping)
 	if err != nil {
 		return fmt.Errorf("failed to marshal mapping: %w", err)
@@ -345,7 +338,7 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID
 		return fmt.Errorf("failed to marshal get request: %w", err)
 	}
 
-	getResult, err := e.doPlainSearch(ctx, []string{indexName}, bytes.NewReader(getBytes), nil)
+	getResult, err := e.doSearch(ctx, []string{indexName}, bytes.NewReader(getBytes), nil)
 	if err != nil {
 		return fmt.Errorf("failed to get current metadata: %w", err)
 	}
@@ -542,7 +535,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
+		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 		}
@@ -565,8 +558,8 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 
 	common.Info("OpenSearch SearchMetadata", zap.String("indexName", indexName), zap.Any("dsl", queryBody))
 
-	// Execute search (no hybrid search pipeline: this is a plain bool query)
-	searchResult, err := e.doPlainSearch(ctx, []string{indexName}, bytes.NewReader(buf.Bytes()), map[string]string{"track_total_hits": "true"})
+	// Execute search query against the metadata index
+	searchResult, err := e.doSearch(ctx, []string{indexName}, bytes.NewReader(buf.Bytes()), map[string]string{"track_total_hits": "true"})
 	if err != nil {
 		common.Warn("OpenSearch SearchMetadata query failed", zap.String("index", indexName), zap.Error(err))
 		return nil, fmt.Errorf("search failed: %w", err)
@@ -725,7 +718,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	// A partial answer would look like a definitive (possibly too small) ID
 	// set, so require every shard to respond (mirrors the Elasticsearch
 	// engine's AllowPartialSearchResults(false)).
-	res, err := e.doPlainSearch(ctx, indexNames, bytes.NewReader(buf.Bytes()), map[string]string{
+	res, err := e.doSearch(ctx, indexNames, bytes.NewReader(buf.Bytes()), map[string]string{
 		"allow_partial_search_results": "false",
 	})
 	if err != nil {
@@ -764,42 +757,84 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	return docIDs
 }
 
-// doPlainSearch runs a plain search request without the hybrid search
-// pipeline. Metadata queries are ordinary bool queries and must not be
-// routed through the BM25+KNN normalization pipeline.
-func (e *Engine) doPlainSearch(ctx context.Context, indices []string, body io.Reader, params map[string]string) (map[string]interface{}, error) {
-	path := "/" + strings.Join(indices, ",") + "/_search"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, path, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	q := req.URL.Query()
-	for k, v := range params {
-		q.Set(k, v)
-	}
-	req.URL.RawQuery = q.Encode()
+// docMetaTypedFieldsBody pins numeric metadata fields on indices that predate
+// the template entry (templates only apply to newly created indices). The
+// same declarations ride in conf/doc_meta_es_mapping.json for indices created
+// from it; keep the two in sync.
+const docMetaTypedFieldsBody = `{"properties":{"meta_fields":{"properties":{"work_experience_years":{"type":"double"},"highest_degree_level":{"type":"integer"}}}}}`
 
-	resp, err := e.client.Perform(req)
-	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
+// EnsureMetadataFieldMappings applies docMetaTypedFieldsBody to every existing
+// doc-meta index. One legacy index whose dynamic mapping already conflicts
+// rejects the family-wide request, so a failed batch falls back to per-index
+// puts that name the conflicting index for the operator; the type of an
+// existing field cannot be changed in place, so conflicts are logged and left
+// for a reindex.
+func (e *Engine) EnsureMetadataFieldMappings(ctx context.Context) {
+	putMapping := func(index string) (status int, errMsg string, failed bool) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+			"/"+index+"/_mapping?allow_no_indices=true&ignore_unavailable=true",
+			strings.NewReader(docMetaTypedFieldsBody))
+		if err != nil {
+			return 0, err.Error(), true
+		}
+		req.Header.Set("Content-Type", "application/json")
+		res, err := e.client.Perform(req)
+		if err != nil {
+			return 0, err.Error(), true
+		}
+		defer res.Body.Close()
+		if res.StatusCode >= 300 {
+			resBody, _ := io.ReadAll(res.Body)
+			return res.StatusCode, string(resBody), true
+		}
+		return 0, "", false
 	}
-	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read search response: %w", err)
+	// Fast path: one request covers the whole index family.
+	status, errMsg, failed := putMapping("ragflow_doc_meta_*")
+	if !failed {
+		return
 	}
-	if resp.StatusCode == http.StatusNotFound && isIndexNotFoundBody(respBody) {
-		return nil, &indexNotFoundError{index: strings.Join(indices, ",")}
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("search error (status %d): %s", resp.StatusCode, string(respBody))
-	}
+	common.Warn("Family-wide doc_meta mapping update rejected; retrying per index",
+		zap.Int("status", status), zap.String("error", errMsg))
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse search response: %w", err)
+	for _, name := range e.listDocMetaIndices(ctx) {
+		if status, errMsg, failed := putMapping(name); failed {
+			common.Warn("doc_meta index keeps its dynamically mapped numeric fields; reindex it to enable numeric range filters",
+				zap.String("index", name), zap.Int("status", status), zap.String("error", errMsg))
+		}
 	}
-	return result, nil
+}
+
+// listDocMetaIndices resolves the concrete doc-meta index names behind the
+// ragflow_doc_meta_* family; empty when the cluster cannot answer.
+func (e *Engine) listDocMetaIndices(ctx context.Context) []string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"/_cat/indices/ragflow_doc_meta_*?format=json&h=index", nil)
+	if err != nil {
+		return nil
+	}
+	res, err := e.client.Perform(req)
+	if err != nil {
+		common.Warn("Failed to list doc_meta indices", zap.Error(err))
+		return nil
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return nil
+	}
+	var rows []struct {
+		Index string `json:"index"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&rows); err != nil {
+		common.Warn("Failed to decode doc_meta index list", zap.Error(err))
+		return nil
+	}
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Index != "" {
+			names = append(names, r.Index)
+		}
+	}
+	return names
 }

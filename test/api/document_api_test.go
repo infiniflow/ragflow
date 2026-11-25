@@ -172,14 +172,19 @@ func TestRESTDocumentUploadValidation(t *testing.T) {
 	// Mixed uploads explicitly report the rejected file while retaining the valid file.
 	partial := multipartRESTDocuments(t, TestConfig, id, []documentUpload{{Name: "valid.txt", Content: []byte("valid content")}, {Name: "invalid.exe"}})
 	restCode(t, partial, 200, 500)
-	if data, exists := partial.JSON["data"]; exists {
-		t.Fatalf("data must be omitted, got %v", data)
+	uploaded := array(t, partial.JSON["data"])
+	if len(uploaded) != 1 {
+		t.Fatalf("expected one document in partial upload response, got %v", uploaded)
+	}
+	doc := object(t, uploaded[0])
+	if doc["name"] != "valid.txt" || doc["dataset_id"] != id {
+		t.Fatalf("unexpected document in partial upload response: %v", doc)
 	}
 	if !strings.Contains(fmt.Sprint(partial.JSON["message"]), "invalid.exe") {
 		t.Fatalf("partial upload=%v", partial.JSON)
 	}
 	data, docs := listRESTDocuments(t, id, nil)
-	if data["total"] != float64(1) || len(docs) != 1 || docs[0]["name"] != "valid.txt" {
+	if data["total"] != float64(1) || len(docs) != 1 || docs[0]["name"] != "valid.txt" || docs[0]["id"] != doc["id"] {
 		t.Fatalf("partial upload total=%v", data)
 	}
 }
@@ -318,7 +323,7 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 	for _, method := range methods {
 		// This document is text: registry membership alone does not mean a
 		// template supports its file family.
-		if !slices.Contains([]string{"naive", "general", "book", "laws", "one", "qa", "table"}, method) {
+		if !slices.Contains([]string{"naive", "general", "book", "laws", "one", "qa", "table", "resume"}, method) {
 			before := getRESTDocument(t, id, docID)
 			restCode(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method, "name": "must_not_persist.txt"}, nil), 200, 102)
 			after := getRESTDocument(t, id, docID)

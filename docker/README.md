@@ -2,38 +2,15 @@
 
 This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
 
-The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
+The OSS image runs all services in one `bin/ragflow_server` process. It migrates
+the database, starts Admin and initializes the superuser, starts API, then runs
+Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
+starts nginx, and forwards server options unchanged. No service selection flags
+are needed. Stop the container to stop all services.
 
-Chat channels run inside the API process by default. Add `--chatter` to the
-entrypoint to launch them in a separate process alongside the enabled services:
-
-```bash
-bash docker/entrypoint.sh
-bash docker/entrypoint.sh --chatter
-```
-
-The second command passes `--disable-chat-channels` to the API and starts one
-`bin/ragflow_server --chatter` child. Existing service-disable flags still apply;
-chatter can also run with `--disable-api-server`. Channel configuration, saved
-conversations, webhook listener addresses and authenticated runtime-status routes
-stay the same. Both processes need the same service configuration and shared
-database, Kvrocks, storage and model resources.
-
-In separate-process mode, WhatsApp status and QR changes (including logout)
-appear on the next status publication, normally within 10 seconds. Stopping or
-replacing a channel removes its cached status immediately; a crashed chatter
-process loses its cached status after 30 seconds without a refresh.
-
-For a manual deployment, run these commands in separate process supervisors:
-
-```bash
-bin/ragflow_server --api --disable-chat-channels
-bin/ragflow_server --chatter
-```
-
-The binary selects one mode; `--api --chatter` does not launch both processes.
-Run one channel owner per deployment: starting standalone chatter alongside an API
-with embedded channels enabled would connect each channel twice.
+DeepDoc inference runs in-process; the OSS server does not launch a standalone
+DeepDoc service. For inbound channel webhooks, publish the configured listener
+ports on the RAGFlow container.
 
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
@@ -82,7 +59,7 @@ sudo sysctl -w vm.max_map_count=262144
 
 This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
-The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
+The `v1.0.0-rc1` tag and later release tags use the Go implementation. The server runs migrations and initializes the superuser before starting its services. Open `http://localhost` after the HTTP health check succeeds.
 
 For local image builds, use the [Go image build guide](../docs/develop/build_docker_image.mdx).
 
@@ -133,9 +110,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 - `MYSQL_PASSWORD`
   The password for MySQL. Required only when `DB_TYPE=mysql` starts the in-cluster MySQL metadata database.
 - `MYSQL_PORT`
-  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
-- `EXPOSE_MYSQL_PORT`
-  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
+  The MySQL port published on the Docker host. Defaults to `3306`. RAGFlow containers connect to MySQL on port `3306`.
 - `MYSQL_MAX_PACKET`
   The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
 
@@ -168,9 +143,16 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 - `NATS_HOST`
   The NATS hostname used inside the Compose network. Defaults to `nats`.
 - `NATS_PORT`
-  The internal NATS client port. Defaults to `4222`.
-- `EXPOSE_NATS_PORT`
-  The port published on the Docker host. Change this value to avoid a host-side port conflict; Go containers continue to use `NATS_PORT` internally.
+  The NATS client port published on the Docker host. Defaults to `4222`. RAGFlow containers connect to NATS on port `4222`.
+- `NATS_MONITORING_PORT`
+  The NATS monitoring port published on the Docker host. Defaults to `8222`.
+
+### ClickHouse
+
+- `CLICKHOUSE_TCP_PORT`
+  The ClickHouse native TCP port published on the Docker host. Defaults to `9900`. RAGFlow containers connect to ClickHouse on port `9000`.
+- `CLICKHOUSE_HTTP_PORT`
+  The ClickHouse HTTP port published on the Docker host. Defaults to `8123`.
 
 ### RAGFlow
 
@@ -215,7 +197,12 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
 ## 🐋 Service configuration
 
-[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
+[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template by expanding `$NAME`, `${NAME}`, and `${NAME:-default}` placeholders. Other template text, including YAML quotes and comments, is copied verbatim.
+
+Service ports in the template are fixed connection ports. The port variables in
+`.env`, such as `OCEANBASE_PORT`, `SEEKDB_PORT`, and `VB_PORT`, control published
+host ports in Compose. For an external service on a different port, edit its
+port in `service_conf.yaml.template` directly.
 
 - `api`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.

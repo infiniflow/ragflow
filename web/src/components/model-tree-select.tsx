@@ -43,10 +43,11 @@ import { TreeSelect, TreeSelectNode } from './tree-select';
 
 /** Maps form field names to their supported model types */
 export const ModelTypeMap: Record<string, string[]> = {
-  llm_id: ['chat', 'vision'],
+  llm_id: ['chat', 'vlm'],
   decision_id: ['decision'],
   embd_id: ['embedding'],
-  img2txt_id: ['vision'],
+  scoring_id: ['scoring'],
+  img2txt_id: ['vlm'],
   asr_id: ['asr'],
   rerank_id: ['rerank'],
   tts_id: ['tts'],

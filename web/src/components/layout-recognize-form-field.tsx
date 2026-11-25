@@ -16,6 +16,7 @@
 
 import { useTranslate } from '@/hooks/common-hooks';
 import { LLMFactory } from '@/constants/llm';
+import { useExtraParserOptions } from '@/ee/hooks/use-extra-parser-options';
 import { cn } from '@/lib/utils';
 import { parseModelValue } from '@/utils/llm-util';
 import { camelCase } from 'lodash';
@@ -44,7 +45,7 @@ export const enum ParseDocumentType {
 }
 
 // Stable reference: useModelTree keys its memoized tree on its identity.
-const LayoutRecognizeModelTypes = ['image2text', 'ocr', 'vision'];
+const LayoutRecognizeModelTypes = ['ocr', 'vlm'];
 
 function renderExperimentalLeaf(node: TreeSelectNode) {
   return (
@@ -91,6 +92,8 @@ export function LayoutRecognizeFormField({
     resourceTenantId,
   });
 
+  const extraParserOptions = useExtraParserOptions();
+
   const treeData = useMemo(() => {
     const list = optionsWithoutLLM
       ? optionsWithoutLLM
@@ -106,13 +109,15 @@ export function LayoutRecognizeFormField({
           value: x,
         }));
 
-    const prependNodes: TreeSelectNode[] = list.map((x) => ({
-      id: x.value,
-      title: x.label,
-    }));
+    const prependNodes: TreeSelectNode[] = [...list, ...extraParserOptions].map(
+      (x) => ({
+        id: x.value,
+        title: x.label,
+      }),
+    );
 
     return [...prependNodes, ...modelTree];
-  }, [modelTree, optionsWithoutLLM, t]);
+  }, [modelTree, optionsWithoutLLM, t, extraParserOptions]);
 
   return (
     <FormField

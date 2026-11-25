@@ -104,11 +104,9 @@ export function LLMLabelCard({
   // importer the owner — anything else is flagged. Gated on isFetched so a
   // slow list never flashes a false error state. The display name likewise
   // resolves through the owner's list.
-  const accessUserId = useContext(ModelResourceAccessUserIdContext);
   const { validIds, isFetched, getPendingMessage } = useModelValidIds(
     modelTypes,
     resourceTenantId,
-    accessUserId,
   );
 
   const pendingMessage = llmId ? getPendingMessage?.(llmId) : undefined;

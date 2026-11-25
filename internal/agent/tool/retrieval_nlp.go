@@ -64,6 +64,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -193,9 +194,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if err != nil {
 		return nil, err
 	}
-	if len(datasets.tenantIDs) != 1 {
-		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
-	}
+	// The datasets may span tenants: a team-shared dataset stays in the sharing
+	// tenant's index while the conversation reading it lives in the caller's.
+	// Both legs below are already per-dataset (nlp searches one index per tenant,
+	// and the embedding-model validation requires a single base model), so the
+	// scope is the full tenant set, not one tenant.
 	// Dataset authorization must use the caller identity established by the
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
 	userID := permission.UserIDFromContext(ctx)
@@ -324,7 +327,7 @@ func resolveRankFeature(
 	// authoritative: nil means "said nothing, label it", an empty map means
 	// "there are none" and must not turn into a label lookup.
 	if requested != nil {
-		return cloneRankFeature(*requested)
+		return maps.Clone(*requested)
 	}
 	// Only the engine-side clause needs a text leg, so a dense-only request is not
 	// labelled. The features still reach the similarity - with no scored bool, the
@@ -334,18 +337,9 @@ func resolveRankFeature(
 		return map[string]float64{}
 	}
 	if labels := enhancer.LabelQuestion(ctx, query, kbs); labels != nil {
-		return cloneRankFeature(labels)
+		return maps.Clone(labels)
 	}
 	return map[string]float64{}
-}
-
-// cloneRankFeature detaches the request's map from the caller's.
-func cloneRankFeature(features map[string]float64) map[string]float64 {
-	clone := make(map[string]float64, len(features))
-	for field, weight := range features {
-		clone[field] = weight
-	}
-	return clone
 }
 
 func nlpRequestFromRetrieval(

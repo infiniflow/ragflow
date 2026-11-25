@@ -97,7 +97,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 	terms := orderTermsFromQuery(c, orderby, desc)
 
@@ -412,14 +412,14 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = writer.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
 			ok = writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true, delta.Message))
 		}
 		if !ok || ctx.Err() != nil {
 			cancel()

@@ -27,7 +27,7 @@ import (
 func TestCreateAPIKeyStoresUserAndTenantContext(t *testing.T) {
 	ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-1")
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.APIToken{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.APIToken{}, &entity.UserTenant{}, &entity.SystemSettings{}); err != nil {
 		t.Fatalf("failed to migrate api_token and user_tenant: %v", err)
 	}
 	if err := db.Create(&entity.User{ID: "user-1", Email: "user-1@example.com", Nickname: "user-1"}).Error; err != nil {

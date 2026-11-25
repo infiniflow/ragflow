@@ -68,7 +68,7 @@ export function useCanvasChecklist({
   canvasID,
 }: {
   resourceTenantId?: string;
-  ownerUserId?: string;
+  ownerUserId?: string | null;
   canvasID?: string;
 } = {}) {
   const nodes = useGraphStore((state) => state.nodes);
@@ -83,13 +83,13 @@ export function useCanvasChecklist({
   } = useFetchAllMemoryList(ownerUserId);
   // Model, template-group, and memory references use the canvas owner's
   // access scope. Dataset references are scoped separately by canvasID.
-  const { validIds: modelValidIds, isSettled: modelsFetched } =
+  const { validIds: modelValidIds, isFetched: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, ownerUserId);
   const {
     validIds: categorizeModelValidIds,
-    isSettled: categorizeModelsFetched,
+    isFetched: categorizeModelsFetched,
   } = useModelValidIds(
-    ['chat', 'vision', 'decision'],
+    ['chat', 'vlm', 'decision'],
     resourceTenantId,
     ownerUserId,
   );
@@ -102,6 +102,7 @@ export function useCanvasChecklist({
   const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
     datasetIds,
     canvasID,
+    ownerUserId,
   );
 
   const inputs: CanvasChecklistInputs = useMemo(

@@ -17,13 +17,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
-
 	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -269,16 +272,16 @@ func wikiPageItemFromChunk(c map[string]interface{}) WikiPageItem {
 	// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
 	// contract); expose the bare slug to the frontend so it can be placed in
 	// a single URL path segment (gin :slug does not match '/').
-	bareSlug := firstStringValue(c["slug_kwd"])
+	bareSlug := common.FirstEngineString(c["slug_kwd"])
 	if pageType != "" {
 		bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
 	}
 	return WikiPageItem{
 		Slug:     bareSlug,
-		Title:    firstStringValue(c["title_kwd"]),
+		Title:    common.FirstEngineString(c["title_kwd"]),
 		PageType: pageType,
-		Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
-		Summary:  firstStringValue(c["summary_with_weight"]),
+		Topic:    kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"])),
+		Summary:  common.FirstEngineString(c["summary_with_weight"]),
 	}
 }
 
@@ -346,17 +349,17 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
 	// "<page_type>/" prefix being doubled (matches ListWikiPages).
 	detailPageType := types.WikiPageCategory(c)
-	detailSlug := firstStringValue(c["slug_kwd"])
+	detailSlug := common.FirstEngineString(c["slug_kwd"])
 	if detailPageType != "" {
 		detailSlug = strings.TrimPrefix(detailSlug, detailPageType+"/")
 	}
 	detail := &WikiPageDetail{
 		Slug:           detailSlug,
-		Title:          firstStringValue(c["title_kwd"]),
+		Title:          common.FirstEngineString(c["title_kwd"]),
 		PageType:       detailPageType,
-		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
+		Topic:          kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"])),
 		ContentMd:      content,
-		Summary:        firstStringValue(c["summary_with_weight"]),
+		Summary:        common.FirstEngineString(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
 		RelatedKbPages: toStringSlice(c["related_kb_pages_kwd"]),
@@ -370,7 +373,7 @@ func loadWikiPageBody(ctx context.Context, docEngine engine.DocEngine, indexName
 	if content := types.WikiPageContent(row); content != "" {
 		return content, nil
 	}
-	raw, err := docEngine.GetChunk(ctx, indexName, firstStringValue(row["id"]), []string{datasetID})
+	raw, err := docEngine.GetChunk(ctx, indexName, common.FirstEngineString(row["id"]), []string{datasetID})
 	if err != nil {
 		return "", err
 	}
@@ -423,6 +426,89 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 		}
 	}
 	return s.GetWikiPage(ctx, tenantID, datasetID, pageType, slug)
+}
+
+// restorableWikiPageFields are the page fields a restore writes back. They are
+// the ones a snapshot carries and the engine indexes: taking the snapshot's own
+// keys would also write back ids and hashes, which describe that moment's
+// document rather than the page.
+var restorableWikiPageFields = []string{
+	"content_with_weight",
+	"title_kwd",
+	"summary_with_weight",
+	"topic_kwd",
+	"entity_names_kwd",
+	"entity_type_kwd",
+	"outlinks_kwd",
+	"related_kb_pages_kwd",
+	"source_chunk_ids",
+	"source_doc_ids",
+	"compile_kwd",
+	"plan_kwd",
+	"scope_kwd",
+}
+
+// RestoreWikiPage writes a page as a version recorded it: every field the
+// snapshot carries, not only the body. A page whose summary and links still
+// describe a later edit is not the page the version described, so the whole
+// document moves together.
+//
+// The page is found by its identity. When the engine no longer holds it the page
+// is rebuilt from the snapshot, because a restore has to put back the pages the
+// version had and not only fix the ones that survived - and the snapshot is the
+// only thing that remembers them.
+func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string, page map[string]any) (bool, error) {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return false, fmt.Errorf("document engine is not initialized")
+	}
+	if len(page) == 0 {
+		return false, nil
+	}
+	slugKwd := pageType + "/" + slug
+	filter := map[string]interface{}{
+		"type_kwd":      []string{CompileKwdWikiPage},
+		"page_type_kwd": []string{pageType},
+		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page only
+	}
+	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
+	if err != nil {
+		return false, err
+	}
+
+	fields := make(map[string]interface{}, len(restorableWikiPageFields)+2)
+	for _, key := range restorableWikiPageFields {
+		if value, ok := page[key]; ok {
+			fields[key] = value
+		}
+	}
+	// The identity travels with the content so a rebuilt page is addressable by
+	// the same slug the snapshot was written under.
+	fields["slug_kwd"] = slugKwd
+	fields["page_type_kwd"] = pageType
+	fields["available_int"] = 1
+
+	indexName := wikiIndexName(tenantID)
+	if len(chunks) > 0 {
+		id, _ := chunks[0]["id"].(string)
+		if id == "" {
+			return false, fmt.Errorf("wiki page chunk has no id")
+		}
+		cond := map[string]interface{}{"id": id, "kb_id": datasetID}
+		if err := docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	fields["id"] = common.GenerateUUID()
+	fields["kb_id"] = datasetID
+	fields["type_kwd"] = CompileKwdWikiPage
+	if _, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, ""); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // WikiTopicItem is a single topic entry returned by ListWikiTopics.
@@ -499,13 +585,13 @@ func (s *DatasetArtifactService) wikiTopicsWithKeywordPages(ctx context.Context,
 			break
 		}
 		for _, c := range batch {
-			topic := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+			topic := kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"]))
 			if topic == "" {
 				continue
 			}
-			if containsFold(firstStringValue(c["title_kwd"]), lowerKeyword) ||
-				containsFold(firstStringValue(c["slug_kwd"]), lowerKeyword) ||
-				containsFold(firstStringValue(c["summary_with_weight"]), lowerKeyword) {
+			if containsFold(common.FirstEngineString(c["title_kwd"]), lowerKeyword) ||
+				containsFold(common.FirstEngineString(c["slug_kwd"]), lowerKeyword) ||
+				containsFold(common.FirstEngineString(c["summary_with_weight"]), lowerKeyword) {
 				matching[topic] = true
 			}
 		}
@@ -542,7 +628,7 @@ func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
 	}
 	byKey := make(map[string]*aggregate)
 	for _, c := range chunks {
-		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+		t := kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"]))
 		if t == "" {
 			continue
 		}
@@ -678,9 +764,9 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
 		// "wiki_topic"); strip the prefix. slug_kwd stores the full
 		// "<page_type>/<slug>" form; preserve nested slug segments.
-		fullSlug := firstStringValue(c["slug_kwd"])
+		fullSlug := common.FirstEngineString(c["slug_kwd"])
 		bareSlug := fullSlug
-		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
+		pageType := strings.TrimPrefix(common.FirstEngineString(c["entity_type_kwd"]), "wiki_")
 		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
@@ -688,7 +774,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// name / aliases / description live in the content_with_weight payload
 		// (as Python writes them); the columns they replaced exist in no mapping.
 		payload := wikiEntityPayload(c)
-		name := firstStringValue(c["title_kwd"])
+		name := common.FirstEngineString(c["title_kwd"])
 		if v := payloadString(payload, "name"); v != "" {
 			name = v
 		}
@@ -719,8 +805,8 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			// form in ES; expose them as bare slugs so the frontend's
 			// nodesBySlug (keyed on the entity's bare slug) can resolve edges.
 			graph.Relations = append(graph.Relations, WikiGraphRelation{
-				From: bareWikiSlug(firstStringValue(c["from_kwd"])),
-				To:   bareWikiSlug(firstStringValue(c["to_kwd"])),
+				From: bareWikiSlug(common.FirstEngineString(c["from_kwd"])),
+				To:   bareWikiSlug(common.FirstEngineString(c["to_kwd"])),
 			})
 		}
 	}
@@ -737,7 +823,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 func wikiEntitySlugs(entityChunks []map[string]interface{}) []string {
 	slugs := make([]string, 0, len(entityChunks))
 	for _, c := range entityChunks {
-		if slug := firstStringValue(c["slug_kwd"]); slug != "" {
+		if slug := common.FirstEngineString(c["slug_kwd"]); slug != "" {
 			slugs = append(slugs, slug)
 		}
 	}
@@ -841,8 +927,8 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 		NewlyUploaded:       len(newlyUploadedIDs),
 		RemovedDocIDs:       removedIDs,
 		NewlyUploadedDocIDs: newlyUploadedIDs,
-		InvolvedDocIDs:      sortedSetKeys(involved),
-		EligibleDocIDs:      sortedSetKeys(eligible),
+		InvolvedDocIDs:      append([]string{}, slices.Sorted(maps.Keys(involved))...),
+		EligibleDocIDs:      append([]string{}, slices.Sorted(maps.Keys(eligible))...),
 	}, nil
 }
 
@@ -981,15 +1067,6 @@ func setDifference(left, right map[string]struct{}) []string {
 	return ids
 }
 
-func sortedSetKeys(set map[string]struct{}) []string {
-	ids := make([]string, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -1075,8 +1152,8 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 	for _, c := range chunks {
 		outlinks, inlinks := intValue(c["outlinks_int"]), intValue(c["inlinks_int"])
 		items = append(items, SkillTreeItem{
-			Kwd:      firstStringValue(c["kwd"]),
-			Title:    firstStringValue(c["title_kwd"]),
+			Kwd:      common.FirstEngineString(c["kwd"]),
+			Title:    common.FirstEngineString(c["title_kwd"]),
 			PageType: types.WikiPageCategory(c),
 			Outlinks: outlinks,
 			Inlinks:  inlinks,
@@ -1107,9 +1184,9 @@ func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, dat
 	}
 	c := chunks[0]
 	return &SkillPageDetail{
-		Kwd:       firstStringValue(c["kwd"]),
-		Title:     firstStringValue(c["title_kwd"]),
-		ContentMd: firstStringValue(c["content_with_weight"]),
+		Kwd:       common.FirstEngineString(c["kwd"]),
+		Title:     common.FirstEngineString(c["title_kwd"]),
+		ContentMd: common.FirstEngineString(c["content_with_weight"]),
 		Outlinks:  toStringSlice(c["outlinks_kwd"]),
 		Inlinks:   toStringSlice(c["inlinks_kwd"]),
 	}, nil
@@ -1145,30 +1222,11 @@ func (s *DatasetArtifactService) DeleteSkills(ctx context.Context, tenantID, dat
 	return len(ids), nil
 }
 
-// firstStringValue returns the first string in a possibly-list ES field value.
-func firstStringValue(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []interface{}:
-		if len(t) > 0 {
-			if s, ok := t[0].(string); ok {
-				return s
-			}
-		}
-	case []string:
-		if len(t) > 0 {
-			return t[0]
-		}
-	}
-	return ""
-}
-
 // wikiEntityPayload decodes the canvas payload a wiki_entity row stores in
 // content_with_weight (Python `_wiki_entity_payload`); the payload is
 // authoritative for name/aliases/description/type.
 func wikiEntityPayload(row map[string]interface{}) map[string]interface{} {
-	raw := firstStringValue(row["content_with_weight"])
+	raw := common.FirstEngineString(row["content_with_weight"])
 	if strings.TrimSpace(raw) == "" {
 		return nil
 	}

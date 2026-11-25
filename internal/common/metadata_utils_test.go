@@ -18,6 +18,7 @@ package common
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -107,6 +108,62 @@ func TestSplitCombinedMetadataValues_Noop(t *testing.T) {
 	}
 }
 
+// TestSplitCombinedMetadataValues_MixedList covers a list whose elements are not
+// all strings. Python's _split_combined_values walks the list element by
+// element: string elements are split on the delimiter, non-string elements are
+// kept as they are. The Go port skipped the whole list unless every element was
+// a string, so a combined value next to a number stayed combined ("关羽、孙权"
+// instead of 关羽 + 孙权) and a filter on 关羽 could no longer match the
+// document.
+func TestSplitCombinedMetadataValues_MixedList(t *testing.T) {
+	in := map[string]any{
+		"people": []any{"关羽、孙权", 3, "张辽", "关羽"},
+	}
+	out := SplitCombinedMetadataValues(in)
+
+	got, ok := out["people"].([]any)
+	if !ok {
+		t.Fatalf("people should be []any for a mixed list, got %T", out["people"])
+	}
+	want := []any{"关羽", "孙权", 3, "张辽"}
+	if len(got) != len(want) {
+		t.Fatalf("people=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("people[%d]=%v, want %v (full: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+// TestSplitCombinedMetadataValues_MixedListKeepsNonStrings pins that a
+// non-string element survives untouched and in position, and that a value with
+// no delimiter is kept as-is inside a mixed list (Python appends the original
+// item when the split yields nothing).
+func TestSplitCombinedMetadataValues_MixedListKeepsNonStrings(t *testing.T) {
+	in := map[string]any{
+		"fields": []any{7, "a|b", map[string]any{"k": "v"}, ""},
+	}
+	out := SplitCombinedMetadataValues(in)
+
+	got, ok := out["fields"].([]any)
+	if !ok {
+		t.Fatalf("fields should be []any, got %T", out["fields"])
+	}
+	if len(got) != 4 {
+		t.Fatalf("fields=%v, want 4 elements", got)
+	}
+	if got[0] != 7 {
+		t.Errorf("fields[0]=%v, want 7", got[0])
+	}
+	if got[1] != "a" || got[2] != "b" {
+		t.Errorf("string element must split in place, got %v", got[:3])
+	}
+	if _, ok := got[3].(map[string]any); !ok {
+		t.Errorf("map element must be preserved, got %#v", got[3])
+	}
+}
+
 func TestParseAndConvert_OperatorMapping(t *testing.T) {
 	input := map[string]interface{}{
 		"conditions": []interface{}{
@@ -171,6 +228,53 @@ func TestParseAndConvert_NoName(t *testing.T) {
 	result := ParseAndConvert(input)
 	if result != nil {
 		t.Errorf("expected nil for empty name, got %v", result)
+	}
+}
+
+// The API documents a metadata condition value as a string, so "in" / "not in"
+// arrive as a comma-separated string. ParseAndConvert feeds the metadata/update
+// selector and the OpenAI-compatible metadata_condition, and must split that
+// string the same way the retrieval filter does instead of matching nothing.
+func TestParseAndConvert_InStringValueFiltersDocuments(t *testing.T) {
+	metas := MetaData{"year": {"2023": {"d1"}, "2024": {"d2"}, "2025": {"d3"}}}
+	cases := []struct {
+		name  string
+		op    string
+		value interface{}
+		want  []string
+	}{
+		{"in comma list", "in", "2023,2024", []string{"d1", "d2"}},
+		{"in single value", "in", "2023", []string{"d1"}},
+		{"in trims spaces", "in", " 2023 , 2024 ", []string{"d1", "d2"}},
+		{"not in comma list", "not in", "2023,2024", []string{"d3"}},
+		{"not in single value", "not in", "2023", []string{"d2", "d3"}},
+		{"in JSON list unchanged", "in", []interface{}{"2023", "2024"}, []string{"d1", "d2"}},
+		{"not in JSON list unchanged", "not in", []interface{}{"2023", "2024"}, []string{"d3"}},
+		{"in non-string scalar still matches nothing", "in", float64(2023), []string{}},
+		// A blank value has no items. It must match nothing, as before,
+		// and must not turn "not in" into "every document".
+		{"in empty string matches nothing", "in", "", []string{}},
+		{"not in empty string matches nothing", "not in", "", []string{}},
+		{"not in whitespace matches nothing", "not in", "   ", []string{}},
+		{"not in comma only matches nothing", "not in", ",", []string{}},
+		{"not in spaced comma matches nothing", "not in", " , ", []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ParseAndConvert(map[string]interface{}{
+				"conditions": []interface{}{
+					map[string]interface{}{"name": "year", "comparison_operator": tc.op, "value": tc.value},
+				},
+			})
+			got := MetaFilter(metas, input)
+			sort.Strings(got)
+			if got == nil {
+				got = []string{}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("%s %v: got %v, want %v", tc.op, tc.value, got, tc.want)
+			}
+		})
 	}
 }
 

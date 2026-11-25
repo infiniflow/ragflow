@@ -16,6 +16,8 @@
 
 import { evictDocumentImage } from '@/components/image';
 import message from '@/components/ui/message';
+import { useChunkHistoryCache } from '@/ee/hooks/use-chunk-history-cache';
+import { useChunkIdQuery } from '@/ee/hooks/use-chunk-id-query';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
@@ -83,6 +85,7 @@ export const useDeleteChunk = () => {
 export const useCreateChunk = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { invalidateAfterEdit } = useChunkHistoryCache();
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const {
@@ -113,6 +116,9 @@ export const useCreateChunk = () => {
             payload.doc_id || payload.document_id,
           );
         }
+        // The write may have recorded a version; editions that keep one refresh
+        // their history here, editions that do not have nothing to invalidate.
+        invalidateAfterEdit();
         setTimeout(() => {
           queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
         }, 1000); // Delay to ensure the list is updated
@@ -157,12 +163,18 @@ export const useFetchNextChunkList = (
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds?.slice(0, 100);
+  const optionChunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const [available, setAvailable] = useState<number | undefined>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  // The enterprise build can read the box as a chunk id lookup; upstream's stub
+  // answers undefined here, which leaves this a text search.
+  const idQuery = useChunkIdQuery(debouncedSearchString);
+  // A search for ids replaces the ids a caller pinned: the box is the newer
+  // intent. Without one, the pinned set still narrows the list.
+  const chunkIds = idQuery ? idQuery.ids : optionChunkIds;
 
   const {
     data,
@@ -190,7 +202,9 @@ export const useFetchNextChunkList = (
         page: pagination.current,
         size: Math.min(pagination.pageSize, 100),
         available_int: available,
-        keywords: searchString,
+        // The id search and the text search are mutually exclusive: an id query
+        // must not also match prose, or the result set stops being explainable.
+        keywords: idQuery ? undefined : searchString,
         chunk_ids: chunkIds,
       });
       if (data.code === 0) {
@@ -244,6 +258,7 @@ export const useFetchNextChunkList = (
 export const useSwitchChunk = () => {
   const { t } = useTranslation();
   const { knowledgeId } = useGetKnowledgeSearchParams();
+  const { invalidateAfterSwitch } = useChunkHistoryCache();
   const {
     data,
     isPending: loading,
@@ -261,6 +276,9 @@ export const useSwitchChunk = () => {
       });
       if (data.code === 0) {
         message.success(t('message.modified'));
+        // A switch may open a version of its own, so an edition that keeps one
+        // refreshes the badge it shows; the community edition has neither.
+        invalidateAfterSwitch();
       }
       return data?.code;
     },

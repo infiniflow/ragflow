@@ -48,7 +48,7 @@ import {
 } from '../compilation/constants';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
@@ -358,7 +358,9 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       fileName: row.original.document_name,
       source: row.original.source_from,
       task: row.original?.task_type,
-      status: row.original.status as RunningStatus,
+      // The pipeline log reports the legacy "Scheduled" ("5") for an enqueued
+      // run; render it like the file list's queue state instead.
+      status: row.original.operation_status,
       startDate: formatDate(row.original.process_begin_at),
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
@@ -494,6 +496,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
           logInfo={modalLogInfo as ILogInfo}
+          datasetId={datasetId}
+          logId={selectedLogID}
         />
       )}
     </>

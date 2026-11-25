@@ -2,6 +2,7 @@ package esoscommon_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,16 +106,23 @@ func TestGetDefaultSkillMapping_OSVectorType(t *testing.T) {
 		t.Errorf("OpenSearch must set settings.index.knn=true, got %v", index["knn"])
 	}
 	props := m["mappings"].(map[string]interface{})["properties"].(map[string]interface{})
+	for _, dim := range []int{4096, 3584, 3072, 2560, 2048, 1536, 1024, 768, 512, 384, 256} {
+		fieldName := fmt.Sprintf("q_%d_vec", dim)
+		field, exists := props[fieldName].(map[string]interface{})
+		if !exists {
+			t.Fatalf("expected property %s in GetDefaultSkillMapping", fieldName)
+		}
+		if field["type"] != "knn_vector" {
+			t.Errorf("field %s: expected type knn_vector, got %v", fieldName, field["type"])
+		}
+		if field["dimension"] != dim {
+			t.Errorf("field %s: expected dimension %d, got %v", fieldName, dim, field["dimension"])
+		}
+		if field["space_type"] != "cosinesimil" {
+			t.Errorf("field %s: expected space_type cosinesimil, got %v", fieldName, field["space_type"])
+		}
+	}
 	q := props["q_3072_vec"].(map[string]interface{})
-	if q["type"] != "knn_vector" {
-		t.Errorf("type=%v", q["type"])
-	}
-	if q["dimension"] != 3072 {
-		t.Errorf("dimension=%v", q["dimension"])
-	}
-	if q["space_type"] != "cosinesimil" {
-		t.Errorf("space_type=%v", q["space_type"])
-	}
 	// Adversarial: OpenSearch must not emit the Elasticsearch keys.
 	if _, ok := q["dims"]; ok {
 		t.Error("OpenSearch must not emit 'dims'")

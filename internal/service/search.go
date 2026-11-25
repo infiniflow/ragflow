@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"gorm.io/gorm"
@@ -113,9 +114,12 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 
 // toSearchAppResponse converts search model to response format
 func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
-	nickname := search.UserID
-	if search.Nickname != nil && strings.TrimSpace(*search.Nickname) != "" {
+	nickname := ""
+	if search.Nickname != nil {
 		nickname = *search.Nickname
+	}
+	if nickname == "" {
+		nickname = search.UserID
 	}
 	result := map[string]interface{}{
 		"id":            search.ID,
@@ -286,6 +290,31 @@ type SearchCompletionPlan struct {
 	Options    AskStreamOptions
 }
 
+// newDatasetUseChecker is the seam used by completion-plan authorization.
+var newDatasetUseChecker = func(db *gorm.DB) permission.ResourceChecker {
+	return permission.NewDatabaseChecker(db)
+}
+
+// checkDatasetsUsable maps dataset IDs to resource refs and delegates the
+// batch load plus ordered fallback to the shared permission helper. Reusing
+// that helper keeps completion-plan authorization consistent with every other
+// caller that authorizes a set of datasets.
+func checkDatasetsUsable(ctx context.Context, checker permission.ResourceChecker, datasetIDs []string) error {
+	if len(datasetIDs) == 0 {
+		return nil
+	}
+	refs := make([]permission.ResourceRef, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	for _, id := range datasetIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	return permission.CheckResources(ctx, checker, refs, permission.OperationUse)
+}
+
 func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
 	searchID = strings.TrimSpace(searchID)
 	if searchID == "" {
@@ -321,14 +350,9 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 		return nil, common.CodeDataError, fmt.Errorf("`kb_ids` is required")
 	}
 
-	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-			Kind: permission.ResourceKindDataset,
-			ID:   datasetID,
-		}, permission.OperationUse); err != nil {
-			code, permissionErr := permissionresponse.Normalize(err)
-			return nil, code, permissionErr
-		}
+	if err := checkDatasetsUsable(ctx, newDatasetUseChecker(dao.DB), datasetIDs); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	tenantID, _ := searchDetail["tenant_id"].(string)
 	tenantID = strings.TrimSpace(tenantID)
@@ -471,33 +495,21 @@ func stringFromSearchConfig(value interface{}) (string, bool) {
 }
 
 func intFromSearchConfig(value interface{}) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case float32:
-		return int(typed), true
-	default:
-		return 0, false
-	}
+	return common.ToIntNum(value)
 }
 
 func floatFromSearchConfig(value interface{}) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case float32:
-		return float64(typed), true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	default:
-		return 0, false
+	// Keep the original narrow contract: common.ToFloat also parses strings
+	// (including "NaN" and "Inf"), which would let a persisted llm_setting
+	// value reach the LLM request body and break json.Marshal.
+	switch value.(type) {
+	case float64, float32, int, int64:
+		f, ok := common.ToFloat(value)
+		if ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return f, true
+		}
 	}
+	return 0, false
 }
 
 // BuildSearchConfigResponse returns the public search configuration without

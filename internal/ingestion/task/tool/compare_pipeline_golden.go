@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -207,11 +208,10 @@ func unionKeys(a map[string]any, b map[string]any) []string {
 }
 
 func cloneMap(in map[string]any) map[string]any {
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
+	if in == nil {
+		return map[string]any{}
 	}
-	return out
+	return maps.Clone(in)
 }
 
 func normalizeComparableMap(in map[string]any) map[string]any {
@@ -275,13 +275,6 @@ func readOptionalJSONMap(path string) (map[string]any, bool) {
 		exitErr(fmt.Errorf("unmarshal %s: %w", path, err))
 	}
 	return out, true
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func exitErr(err error) {

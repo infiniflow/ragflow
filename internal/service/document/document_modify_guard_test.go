@@ -30,19 +30,20 @@ import (
 // no task, COMPLETED, STOPPED, and FAILED may be edited.
 func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 	cases := []struct {
-		name       string
-		taskStatus *string
-		wantCode   common.ErrorCode
-		wantErr    bool
+		name            string
+		taskStatus      *string
+		wantCode        common.ErrorCode
+		wantErr         bool
+		wantStatusLabel string
 	}{
-		{"no task defaults to unstart", nil, common.CodeSuccess, false},
-		{"created rejected", sptr(common.CREATED), common.CodeDataError, true},
-		{"scheduled rejected", sptr(common.SCHEDULED), common.CodeDataError, true},
-		{"running rejected", sptr(common.RUNNING), common.CodeDataError, true},
-		{"stopping rejected", sptr(common.STOPPING), common.CodeDataError, true},
-		{"completed editable", sptr(common.COMPLETED), common.CodeSuccess, false},
-		{"stopped editable", sptr(common.STOPPED), common.CodeSuccess, false},
-		{"failed editable", sptr(common.FAILED), common.CodeSuccess, false},
+		{"no task defaults to unstart", nil, common.CodeSuccess, false, ""},
+		{"created rejected", sptr(common.CREATED), common.CodeDataError, true, "Queued"},
+		{"scheduled rejected", sptr(common.SCHEDULED), common.CodeDataError, true, "Queued"},
+		{"running rejected", sptr(common.RUNNING), common.CodeDataError, true, "Parsing"},
+		{"stopping rejected", sptr(common.STOPPING), common.CodeDataError, true, "Parsing"},
+		{"completed editable", sptr(common.COMPLETED), common.CodeSuccess, false, ""},
+		{"stopped editable", sptr(common.STOPPED), common.CodeSuccess, false, ""},
+		{"failed editable", sptr(common.FAILED), common.CodeSuccess, false, ""},
 	}
 
 	for _, tc := range cases {
@@ -67,6 +68,9 @@ func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 				}
 				if !strings.Contains(err.Error(), "cannot be modified") {
 					t.Fatalf("err = %q missing sentinel phrase", err.Error())
+				}
+				if tc.wantStatusLabel != "" && !strings.Contains(err.Error(), `currently "`+tc.wantStatusLabel+`"`) {
+					t.Fatalf("err = %q missing display status %q", err.Error(), tc.wantStatusLabel)
 				}
 				return
 			}

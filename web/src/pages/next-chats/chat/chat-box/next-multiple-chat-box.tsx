@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { VirtualMessageList } from '@/components/virtual-message-list';
-import { MessageType } from '@/constants/chat';
+import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
 import {
   useFetchChat,
@@ -139,10 +139,10 @@ const ChatCard = forwardRef(function ChatCard(
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
   const { data: userInfo } = useFetchUserInfo();
-  const { data: currentDialog } = useFetchChat();
+  const { data: currentDialog, loading: chatLoading } = useFetchChat();
   const findLlmByUuid = useFindLlmByUuid(
     currentDialog?.tenant_id,
-    currentDialog?.user_id,
+    chatLoading ? null : (currentDialog?.user_id ?? null),
   );
 
   // Each card must keep its own independently selected config after the initial
@@ -221,7 +221,9 @@ const ChatCard = forwardRef(function ChatCard(
                   value={currentDialog?.tenant_id}
                 >
                   <ModelResourceAccessUserIdContext.Provider
-                    value={currentDialog?.user_id}
+                    value={
+                      chatLoading ? null : (currentDialog?.user_id ?? null)
+                    }
                   >
                     <LargeModelFormFieldWithoutFilter
                       triggerTestId="chat-detail-multimodel-card-model-select"
@@ -322,6 +324,8 @@ export function MultipleChatBox({
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
+  const isChannelConversation =
+    conversation.source === ChatSessionSource.ChatChannel;
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -399,8 +403,8 @@ export function MultipleChatBox({
       </div>
       <div className="px-[20%]">
         <NextMessageInput
-          disabled={disabled}
-          sendDisabled={sendDisabled}
+          disabled={disabled || isChannelConversation}
+          sendDisabled={sendDisabled || isChannelConversation}
           sendLoading={isAnyBoxLoading}
           value={value}
           resize="vertical"

@@ -71,6 +71,7 @@ func Init(configPath string) error {
 	globalViper = v
 
 	globalConfig = &config.Config{}
+	globalConfig.ParseServerNames(v)
 	err := globalConfig.ParseGeneralConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse general config error: %w", err)
@@ -124,6 +125,11 @@ func Init(configPath string) error {
 	err = globalConfig.ParseSyncerConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse syncer config error: %w", err)
+	}
+
+	err = globalConfig.ParseDeepDocConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse deepdoc config error: %w", err)
 	}
 
 	err = globalConfig.ParseLogConfig(v)

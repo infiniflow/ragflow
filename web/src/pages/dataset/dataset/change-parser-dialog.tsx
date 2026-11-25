@@ -3,12 +3,14 @@ import { DocumentPipelineDialog } from '@/components/document-pipeline-dialog';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useTranslation } from 'react-i18next';
+import { isDocumentProcessing } from './utils';
 
 type ChangeParserDialogProps = {
   record: IDocumentInfo;
   onOk: (values: IChangeParserRequestBody) => Promise<void>;
   hideModal: () => void;
   loading: boolean;
+  readOnly?: boolean;
 };
 
 // The document parser-change dialog edits the pipeline-shaped parser config.
@@ -17,6 +19,7 @@ export function ChangeParserDialog({
   onOk,
   hideModal,
   loading,
+  readOnly = false,
 }: ChangeParserDialogProps) {
   return (
     <DocumentPipelineDialog
@@ -27,6 +30,8 @@ export function ChangeParserDialog({
       onOk={onOk}
       hideModal={hideModal}
       loading={loading}
+      saveDisabled={isDocumentProcessing(record)}
+      readOnly={readOnly}
     ></DocumentPipelineDialog>
   );
 }
