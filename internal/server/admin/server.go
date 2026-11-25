@@ -36,9 +36,9 @@ import (
 	"ragflow/internal/server/bootstrap"
 )
 
-// Run starts the RAGFlow admin HTTP server. It blocks until ctx is cancelled,
+// Run starts the RAGFlow admin HTTP server. It blocks until ctx is canceled,
 // then gracefully shuts the HTTP server down.
-func Run(ctx context.Context, arguments *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, serverType common.ServerType, arguments *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
 
 	adminService := adminapi.NewService()
@@ -91,7 +91,7 @@ func Run(ctx context.Context, arguments *bootstrap.ServerArgs) error {
 		return fmt.Errorf("listen admin server on %s: %w", addr, err)
 	}
 	defer listener.Close()
-	if common.GetRAGFlowType() == common.EnterpriseEdition {
+	if serverType == common.ServerTypeAdmin {
 		// Print RAGFlow Admin logo
 		common.Info("" +
 			"\n        ____  ___   ______________                 ___       __          _     \n" +

@@ -58,7 +58,7 @@ func logTokenizerCounters() {
 // Run starts the RAGFlow ingestion worker. It blocks until ctx is cancelled
 // (OS shutdown signal) or the ingestor receives a shutdown command from the
 // admin, then gracefully stops the ingestor.
-func Run(ctx context.Context, cancel context.CancelFunc, arguments *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func Run(ctx context.Context, serverType common.ServerType, cancel context.CancelFunc, arguments *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	globalConfig := server.GetConfig()
 	logTokenizerCounters()
 
@@ -115,7 +115,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, arguments *bootstrap.Se
 		return err
 	}
 
-	if common.GetRAGFlowType() == common.EnterpriseEdition {
+	if serverType == common.ServerTypeIngestion {
 		common.Info("\n    ____                      __  _\n" +
 			"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
 			"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +

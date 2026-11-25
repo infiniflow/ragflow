@@ -31,7 +31,7 @@ import (
 // Run starts the RAGFlow file syncer. It blocks until ctx is cancelled (OS
 // shutdown signal) or the syncer receives a shutdown command from the admin,
 // then gracefully stops the syncer.
-func Run(ctx context.Context, cancel context.CancelFunc, arguments *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, serverType common.ServerType, cancel context.CancelFunc, arguments *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
 	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
@@ -41,7 +41,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, arguments *bootstrap.Se
 		return err
 	}
 
-	if common.GetRAGFlowType() == common.EnterpriseEdition {
+	if serverType == common.ServerTypeFileSyncer {
 		common.Info("\n     _______ __        _____\n" +
 			"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
 			"   / /_  / / / _ \\    \\__ \\/ / / / __ \\/ ___/ _ \\/ ___/\n" +

@@ -443,15 +443,15 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	case common.ServerTypeStandalone:
 		return runServices(ctx, cancel, arguments, services)
 	case common.ServerTypeAdmin:
-		return admin.Run(ctx, arguments)
+		return admin.Run(ctx, serverType, arguments)
 	case common.ServerTypeAPI:
 		return apipkg.Run(ctx, *arguments.Name, arguments, services)
 	case common.ServerTypeIngestion:
-		return ingestorpkg.Run(ctx, cancel, arguments, services)
+		return ingestorpkg.Run(ctx, serverType, cancel, arguments, services)
 	case common.ServerTypeFileSyncer:
-		return syncerpkg.Run(ctx, cancel, arguments)
+		return syncerpkg.Run(ctx, serverType, cancel, arguments)
 	case common.ServerTypeChatter:
-		return chatterpkg.Run(ctx, arguments)
+		return chatterpkg.Run(ctx, serverType, arguments)
 	default:
 		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
 	}
@@ -514,18 +514,20 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 			workerReady = append(workerReady, ready)
 		}
 	}
-	startService("admin", admin.Run)
+	startService("admin", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return admin.Run(ctx, common.ServerTypeStandalone, args)
+	})
 	startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
 		return apipkg.Run(ctx, *args.Name, args, services)
 	})
 	startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return ingestorpkg.Run(ctx, cancel, args, services)
+		return ingestorpkg.Run(ctx, common.ServerTypeStandalone, cancel, args, services)
 	})
 	startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return syncerpkg.Run(ctx, cancel, args)
+		return syncerpkg.Run(ctx, common.ServerTypeStandalone, cancel, args)
 	})
 	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args)
+		return chatterpkg.Run(ctx, common.ServerTypeStandalone, args)
 	})
 	if startupErr == nil {
 		for _, ready := range workerReady {
