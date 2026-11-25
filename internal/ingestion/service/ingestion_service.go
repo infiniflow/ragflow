@@ -974,7 +974,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err), err)
 			e.markProgressTerminal(ctx, task, string(entity.TaskStatusFail))
 		}
 		return ok
@@ -1443,7 +1443,7 @@ func (e *Ingestor) publishPendingCompileEvent(ctx context.Context, task *entity.
 	}
 }
 
-func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {
+func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string, causes ...error) {
 	if ingestionTask == nil || status == "" {
 		return
 	}
@@ -1482,7 +1482,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 		return
 	}
-	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message); err != nil {
+	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message, causes...); err != nil {
 		common.Warn(fmt.Sprintf("record terminal event for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 	}
 }
