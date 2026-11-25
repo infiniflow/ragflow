@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	parserchunk "ragflow/internal/parser/chunk"
 	parserpkg "ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -622,7 +623,11 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 				// engine name that branch reads instead of failing the migration.
 				writes.setSetup(target.parserNode, "pdf", "parse_method", "paddleocr")
 				return nil
-			case "mistral ocr", "somark", "opendataloader":
+			case "mistral ocr":
+				if !models.IsMistralOCRModelReference(trimmed) {
+					return fmt.Errorf("layout_recognize %q is not a Mistral OCR model reference", trimmed)
+				}
+			case "somark", "opendataloader":
 				// These OCR selectors cannot be resolved by the Go ingestion
 				// dispatcher. Preserve them by stopping rather than sending them to
 				// generic VLM chat.
