@@ -129,6 +129,13 @@ func TestAnySearchCatalogLive(t *testing.T) {
 					}
 				}
 			}
+			if tc.Tag == "business.company" && tc.Params["type"] == "GlobalLEI" {
+				for _, result := range q.Results {
+					if anySearchText(result["url"]) != "https://search.gleif.org/#/record/HWUPKR0MPOU8FGXBT394" || !strings.Contains(anySearchText(result["content"]), "Apple") {
+						t.Fatal("exact LEI lookup did not return the requested legal entity")
+					}
+				}
+			}
 			if tc.Tag == "gaming.esports" && tc.Params["game_name"] == "Hide on bush#KR1" {
 				identified := false
 				for _, result := range q.Results {
@@ -235,8 +242,13 @@ func anySearchCatalogScenarios(now time.Time) []anySearchCatalogScenario {
 				params["location"] = map[string]string{"EUElectricity": "France", "AustralianElectricity": "New South Wales", "USEnergyData": "California", "GlobalElectricity": "China"}[value]
 			}
 			query := selector.query
+			if value == "GlobalLEI" {
+				query = "Apple Inc. LEI HWUPKR0MPOU8FGXBT394 legal entity"
+				params["keyword"] = "HWUPKR0MPOU8FGXBT394"
+			}
 			if value == "PeopleSearch" {
-				query = "software engineer"
+				query = "Patrick Collison Stripe CEO business contact professional profile"
+				params["keyword"], params["title"] = "Patrick Collison Stripe", "CEO"
 			}
 			add(strings.ReplaceAll(selector.tag, ".", "-")+"-"+selector.field+"-"+value, selector.tag, query, params)
 		}

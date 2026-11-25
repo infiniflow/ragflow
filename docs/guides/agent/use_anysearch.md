@@ -50,6 +50,10 @@ Use the selected tag's current parameter descriptions to distinguish source sele
 
 For financial news, inspect the declared `type` before setting `news_src`; a source option for one operation need not apply to another. For esports, player, match and leaderboard operations have different required identifiers. Keep required-but-unused empty strings only where the operation's description calls for them; omitting a key, sending `null` and sending `""` are different requests.
 
+Keep the query and parameters consistent with the requested operation. Social search's `keyword` takes precedence over `query`, so a broad keyword can replace an otherwise specific query. Use the intended search text in that field when supplying it. Chinese flash-news selections should use a suitable Chinese query and can use `zone: "cn"` and `language: "zh-CN"`.
+
+For identifier lookups, verify the identifier at its source before searching. Repository names, file languages, legal citations and match IDs can change or differ from examples. Check the returned identity and operation as well as the source: a company profile does not establish that a posts or jobs search succeeded.
+
 The tool forwards the supplied parameter object without interpreting provider-specific enums or formats. AnySearch may reject invalid parameters. Some fields can be ignored or summary-only, as the catalog describes. The tool reports returned HTTP and business errors to the Agent. Inspect the failed query's `_ERROR` and available `request_id`, correct the named parameter, and retry that query rather than treating a failure as empty search results. Do not infer that a source filter worked solely from an empty or successful response; inspect the returned source information.
 
 ### Run independent searches together
