@@ -3221,7 +3221,7 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentMissingDocumentReturnsDataError(t *testing.T) {
+func TestUpdateDatasetDocumentMissingDocumentReturnsNotFound(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -3231,11 +3231,11 @@ func TestUpdateDatasetDocumentMissingDocumentReturnsDataError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing-document error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	if code != common.CodeNotFound {
+		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)
 	}
-	if err.Error() != "the dataset doesn't own the document" {
-		t.Fatalf("error = %q, want missing-document response", err.Error())
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("error = %q, want hidden resource-not-found error", err.Error())
 	}
 }
 

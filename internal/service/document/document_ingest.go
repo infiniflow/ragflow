@@ -24,7 +24,7 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string,
 	for _, docID := range common.Deduplicate(docIDs) {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil || doc == nil {
-			return nil, fmt.Errorf("document %s not found in dataset", docID)
+			return nil, permission.ErrResourceNotFound
 		}
 		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)

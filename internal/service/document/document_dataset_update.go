@@ -168,7 +168,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("you don't own the dataset")
+			return nil, common.CodeNotFound, permission.ErrResourceNotFound
 		}
 		return nil, common.CodeDataError, errors.New("can't find this dataset")
 	}
@@ -176,7 +176,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
+			return nil, common.CodeNotFound, permission.ErrResourceNotFound
 		}
 		return nil, common.CodeServerError, err
 	}
