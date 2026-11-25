@@ -823,7 +823,8 @@ func collectAnySearchReferences(envelope map[string]any) ([]anySearchRenderQuery
 
 func isAnySearchHTTPURL(raw string) bool {
 	u, err := neturl.ParseRequestURI(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != ""
+	// An empty port can be parsed from a concatenated URL such as hosthttps://.
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && !strings.HasSuffix(u.Host, ":")
 }
 
 // renderAnySearchReferences renders each query as a header followed by its

@@ -1084,7 +1084,10 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	if err := dao.NewAPI4ConversationDAO().UpdateHistory(ctx, dao.DB, "session-1", "canvas-1", "user-1", nil, dao.ConversationHistoryUpdate{
 		Message: map[string]interface{}{"role": "assistant", "content": "answer", "reference": map[string]interface{}{
-			"chunks":   []interface{}{map[string]interface{}{"chunk_id": "chunk", "doc_id": "document", "content_with_weight": "evidence"}},
+			"chunks": []interface{}{
+				map[string]interface{}{"chunk_id": "chunk", "doc_id": "document", "content_with_weight": "evidence"},
+				map[string]interface{}{"id": "a81bbd7997f7c9f0", "chunk_id": "4230998055aafcb5", "doc_id": "4230998055aafcb5", "content": "web result"},
+			},
 			"doc_aggs": []interface{}{},
 		}},
 	}); err != nil {
@@ -1112,8 +1115,12 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 		t.Fatalf("answer reference is not an object: %v", messages[1])
 	}
 	chunks := reference["chunks"].([]interface{})
-	if len(chunks) != 1 || chunks[0].(map[string]interface{})["document_id"] != "document" || chunks[0].(map[string]interface{})["id"] != "chunk" {
+	if len(chunks) != 2 || chunks[0].(map[string]interface{})["document_id"] != "document" || chunks[0].(map[string]interface{})["id"] != "chunk" {
 		t.Fatalf("unexpected reference chunks: %v", chunks)
+	}
+	web := chunks[1].(map[string]interface{})
+	if web["id"] != "a81bbd7997f7c9f0" || web["chunk_id"] != "4230998055aafcb5" || web["document_id"] != "4230998055aafcb5" {
+		t.Fatalf("saved web reference lost a citation or document identifier: %v", web)
 	}
 	body, err := json.Marshal(session)
 	if err != nil {

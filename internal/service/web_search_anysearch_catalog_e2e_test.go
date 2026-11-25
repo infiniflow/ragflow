@@ -266,6 +266,7 @@ func assertAnySearchObservedResults(t *testing.T, wire map[string]any, delivered
 
 type anySearchSavedReferenceChunk struct {
 	ID           string `json:"id"`
+	ChunkID      string `json:"chunk_id"`
 	DocumentID   string `json:"document_id"`
 	DocumentName string `json:"document_name"`
 	Content      string `json:"content"`
@@ -287,7 +288,7 @@ func assertAnySearchSavedReferences(t *testing.T, results []map[string]any, ids 
 			content = text(result["snippet"])
 		}
 		content = strings.Join(strings.Fields(content), " ")
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || content == "" {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || strings.HasSuffix(u.Host, ":") || content == "" {
 			continue
 		}
 		eligible++
@@ -295,12 +296,10 @@ func assertAnySearchSavedReferences(t *testing.T, results []map[string]any, ids 
 		if !exists || pair[0] == "" || pair[1] == "" {
 			t.Fatal("an eligible HTTP result lost its document/display reference IDs")
 		}
-		expectedChunk := anySearchSavedReferenceChunk{ID: pair[0], DocumentID: pair[0], DocumentName: text(result["title"]), Content: content}
+		expectedChunk := anySearchSavedReferenceChunk{ID: pair[1], ChunkID: pair[0], DocumentID: pair[0], DocumentName: text(result["title"]), Content: content}
 		expectedChunks = append(expectedChunks, expectedChunk)
 		retained := false
 		for _, chunk := range chunks {
-			// The normal session API projects chunk_id into id and doc_id
-			// into document_id; it does not retain the URL or display ID.
 			if chunk == expectedChunk {
 				retained = true
 				break

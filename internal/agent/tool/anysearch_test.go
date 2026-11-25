@@ -914,6 +914,32 @@ func TestAnySearch_ReferencesAndOutputs(t *testing.T) {
 	}
 }
 
+func TestAnySearch_MalformedAuthorityIsNotCited(t *testing.T) {
+	const malformed = "https://www.reddit.comhttps://www.reddit.com/r/AskReddit/comments/1xf01af/"
+	const valid = "https://www.reddit.com:443/r/AskReddit/comments/1xf01af/"
+	helper, _ := anySearchTestServer(t, anySearchOK(`[
+		{"url":"`+malformed+`","content":"Unusable link"},
+		{"url":"`+valid+`","content":"Usable link"}
+	]`))
+	search := NewAnySearchToolWith(helper, "")
+	out, err := search.InvokableRun(t.Context(), `{"query":"Reddit comments"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := decodeAnySearchEnvelope(t, out).Queries[0]
+	if len(result.Results) != 2 || result.Results[0]["url"] != malformed {
+		t.Fatalf("raw result URL was lost: %v", result.Results)
+	}
+	if len(result.ReferenceIDs) != 1 || result.ReferenceIDs[1][0] == "" {
+		t.Fatalf("reference IDs = %v, want only the valid URL", result.ReferenceIDs)
+	}
+	envelope := decodeAnySearchBody(t, []byte(out))
+	chunks, docs := search.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 1 || len(docs) != 1 || chunks[0]["url"] != valid {
+		t.Fatalf("references = %v / %v, want only the valid URL", chunks, docs)
+	}
+}
+
 func TestAnySearch_RenderCountsTheWholeBlockBeforeAppending(t *testing.T) {
 	t.Parallel()
 	big := strings.Repeat("alpha ", 200)
