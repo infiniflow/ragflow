@@ -16,6 +16,11 @@
 
 import { useEffect, useState } from 'react';
 
+/**
+ * Show a pause indicator after nonempty loading content stays unchanged for
+ * delay milliseconds. New content hides it and restarts the delay; stopping
+ * loading, clearing content, or unmounting clears the pending timer.
+ */
 export function useLoadingPause(
   loading: boolean,
   content: string,
@@ -29,6 +34,7 @@ export function useLoadingPause(
       return;
     }
 
+    setShow(false);
     const timer = setTimeout(() => {
       setShow(true);
     }, delay);
