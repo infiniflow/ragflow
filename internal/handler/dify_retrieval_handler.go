@@ -58,7 +58,7 @@ type ModelCreator interface {
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
 type MetadataServiceIface interface {
 	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
-	SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	MetadataForDocIDs(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error)
 	LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
@@ -273,18 +273,20 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Metadata filter. An empty conditions list means no metadata filtering,
 	// the same as the dataset retrieval path. Only conditions that were
 	// actually supplied, and matched nothing, narrow the search to the
-	// no-match sentinel.
-	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
+	// no-match sentinel. The dataset's metadata is read in full only then.
 	var docIDs []string
-	if metaErr == nil && req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0 {
-		logic := req.MetadataCondition.Logic
-		if logic == "" {
-			logic = "and"
-		}
-		filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.toMetaFilterConditions(), logic)
-		docIDs = append(docIDs, filteredIDs...)
-		if len(docIDs) == 0 {
-			docIDs = []string{service.NoMatchDocIDSentinel}
+	if req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0 {
+		metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
+		if metaErr == nil {
+			logic := req.MetadataCondition.Logic
+			if logic == "" {
+				logic = "and"
+			}
+			filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.toMetaFilterConditions(), logic)
+			docIDs = append(docIDs, filteredIDs...)
+			if len(docIDs) == 0 {
+				docIDs = []string{service.NoMatchDocIDSentinel}
+			}
 		}
 	}
 	docIDs, err = service.ListReadableDocumentIDs(ctx, []string{req.KnowledgeID}, docIDs)
@@ -394,19 +396,11 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	}
 
-	metaMap := make(map[string]map[string]interface{})
-	metaResult, err := h.metadataSvc.SearchMetadataByKBs(ctx, []string{kb.ID}, 10000)
-	if err == nil {
-		for _, metadata := range metaResult.MetadataRecords {
-			docID, ok := service.ExtractDocumentID(metadata)
-			if !ok {
-				continue
-			}
-			metaFields, err := service.ExtractMetaFields(metadata)
-			if err == nil {
-				metaMap[docID] = metaFields
-			}
-		}
+	// Metadata of the returned documents only. A failed read leaves the
+	// records without their custom fields, as before.
+	var metaMap map[string]map[string]any
+	if len(allDocIDs) > 0 {
+		metaMap, _ = h.metadataSvc.MetadataForDocIDs(ctx, []string{kb.ID}, allDocIDs)
 	}
 
 	// Build response

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -81,9 +82,9 @@ func (mockModelFactory) NewDefaultChatModel(context.Context) (*modelModule.ChatM
 
 type mockMetadataService struct {
 	MetadataServiceIface
-	getFlattedMetaFn    func(ctx context.Context, kbIDs []string) (common.MetaData, error)
-	searchMetadataByKBs func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error)
-	labelQuestionFn     func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
+	getFlattedMetaFn  func(ctx context.Context, kbIDs []string) (common.MetaData, error)
+	metadataForDocIDs func(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error)
+	labelQuestionFn   func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
 func (m *mockMetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {
@@ -93,15 +94,11 @@ func (m *mockMetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []s
 	return common.MetaData{}, nil
 }
 
-func (m *mockMetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
-	if m.searchMetadataByKBs != nil {
-		return m.searchMetadataByKBs(ctx, kbIDs, size)
+func (m *mockMetadataService) MetadataForDocIDs(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+	if m.metadataForDocIDs != nil {
+		return m.metadataForDocIDs(ctx, kbIDs, docIDs)
 	}
-	return &service.SearchMetadataResponse{
-		MetadataRecords: []map[string]interface{}{
-			{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
-		},
-	}, nil
+	return map[string]map[string]any{"doc1": {"author": "Zhang San"}}, nil
 }
 
 func (m *mockMetadataService) LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
@@ -279,12 +276,8 @@ func TestDifyRetrieval_Basic(t *testing.T) {
 func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
 	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
-		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
-			return &service.SearchMetadataResponse{
-				MetadataRecords: []map[string]interface{}{
-					{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
-				},
-			}, nil
+		metadataForDocIDs: func(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+			return map[string]map[string]any{"doc1": {"author": "Zhang San"}}, nil
 		},
 	}
 	body := `{"knowledge_id": "kb1", "query": "test question"}`
@@ -309,20 +302,45 @@ func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
 	}
 }
 
+// The response metadata is read for the returned documents only, and the
+// dataset's full metadata only when the request filters on it.
+func TestDifyRetrieval_ReadsMetadataOfReturnedDocumentsOnly(t *testing.T) {
+	h, r := setupDifyTest(t, "user1")
+	var gotKBs, gotDocs []string
+	h.metadataSvc = &mockMetadataService{
+		getFlattedMetaFn: func(ctx context.Context, kbIDs []string) (common.MetaData, error) {
+			t.Error("full metadata read without a metadata condition")
+			return common.MetaData{}, nil
+		},
+		metadataForDocIDs: func(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+			gotKBs, gotDocs = kbIDs, docIDs
+			return nil, nil
+		},
+	}
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !reflect.DeepEqual(gotKBs, []string{"kb1"}) || !reflect.DeepEqual(gotDocs, []string{"doc1"}) {
+		t.Errorf("MetadataForDocIDs(kbIDs=%v, docIDs=%v), want ([kb1], [doc1])", gotKBs, gotDocs)
+	}
+}
+
 // A custom metadata key named doc_id or document_id must not replace the
 // identifiers the handler sets.
 func TestDifyRetrieval_DocumentIDsOverrideCustomMetadata(t *testing.T) {
 	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
-		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
-			return &service.SearchMetadataResponse{
-				MetadataRecords: []map[string]interface{}{
-					{"id": "doc1", "meta_fields": map[string]interface{}{
-						"doc_id":      "spoofed",
-						"document_id": "spoofed",
-					}},
-				},
-			}, nil
+		metadataForDocIDs: func(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+			return map[string]map[string]any{"doc1": {
+				"doc_id":      "spoofed",
+				"document_id": "spoofed",
+			}}, nil
 		},
 	}
 	body := `{"knowledge_id": "kb1", "query": "test question"}`
