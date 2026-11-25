@@ -108,9 +108,13 @@ func TestNLPRetrievalAdapterBatchesDatasetAuthorization(t *testing.T) {
 	}
 	ctx := permission.WithIdentity(t.Context(), "owner", "owner")
 
-	// Distinct embedding models stop Search at validation after authorization;
-	// only the queries issued up to that point matter.
-	_, _ = adapter.Search(ctx, captureDB, RetrievalRequest{Query: "q", DatasetIDs: ids})
+	// Distinct embedding models stop Search at validation after authorization.
+	// Asserting that error proves authorization completed before the count is
+	// checked; a discarded error would let an early denial pass this test.
+	_, err := adapter.Search(ctx, captureDB, RetrievalRequest{Query: "q", DatasetIDs: ids})
+	if err == nil || !strings.Contains(err.Error(), "different embedding models") {
+		t.Fatalf("Search error = %v, want the embedding-model mismatch (authorization must have completed)", err)
+	}
 
 	// One dataset load for resolveDatasets and one batch authorization.
 	if n := capture.knowledgebaseSelects(); n > 2 {

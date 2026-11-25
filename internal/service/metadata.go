@@ -383,10 +383,12 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 	return metaByDoc
 }
 
-// FetchDocMetaByKB fetches document metadata for every KB in one engine
-// request. The per-KB document lists are combined into a single filter keyed by
-// all KB IDs and all document IDs, so the metadata store is queried once
-// instead of once per KB while returning metadata for the same documents.
+// FetchDocMetaByKB fetches document metadata for every KB while keeping each
+// engine request within the result window. The per-KB document lists are
+// combined into bounded batches keyed by all KB IDs and a slice of document
+// IDs; the store is queried once per window instead of once per KB. A failed
+// batch contributes nothing but does not discard metadata from other batches,
+// matching the old per-KB best-effort behavior.
 func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
 	kbIDs := make([]string, 0, len(docIDsByKB))
@@ -402,19 +404,25 @@ func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDoc
 		return metaByDoc
 	}
 
-	searchReq := &types.SearchMetadataRequest{
-		TenantID: tenantID,
-		Limit:    len(docIDs),
-		Filter: map[string]interface{}{
-			"kb_id": kbIDs,
-			"id":    docIDs,
-		},
+	for start := 0; start < len(docIDs); start += common.MAX_RESULT_WINDOW {
+		end := min(start+common.MAX_RESULT_WINDOW, len(docIDs))
+		searchReq := &types.SearchMetadataRequest{
+			TenantID: tenantID,
+			Limit:    end - start,
+			Filter: map[string]interface{}{
+				"kb_id": kbIDs,
+				"id":    docIDs[start:end],
+			},
+		}
+		searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
+		if err != nil {
+			continue
+		}
+		for docID, meta := range ConvertSearchResultToDocMeta(searchResult.MetadataRecords) {
+			metaByDoc[docID] = meta
+		}
 	}
-	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
-	if err != nil {
-		return metaByDoc
-	}
-	return ConvertSearchResultToDocMeta(searchResult.MetadataRecords)
+	return metaByDoc
 }
 
 // AttachDocMetaToChunks attaches document metadata to matching chunks in-place.

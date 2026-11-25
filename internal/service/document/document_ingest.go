@@ -84,7 +84,9 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 	for _, docID := range req.DocIDs {
 		doc := docsByID[docID]
 		if doc == nil {
-			return common.CodeDataError, fmt.Errorf("document not found")
+			// Existence is reported by the ordered validation loop below so a
+			// missing dataset on an earlier document still wins.
+			continue
 		}
 		if _, seen := seenKB[doc.KbID]; seen {
 			continue
@@ -130,6 +132,9 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 	validatedIDs := make([]string, 0, len(req.DocIDs))
 	for _, docID := range req.DocIDs {
 		doc := docsByID[docID]
+		if doc == nil {
+			return common.CodeDataError, fmt.Errorf("document not found")
+		}
 		kb := kbByID[doc.KbID]
 		if kb == nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")

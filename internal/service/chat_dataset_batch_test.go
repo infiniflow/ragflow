@@ -194,6 +194,108 @@ func TestValidateCreateDatasetIDsPreservesFirstDeniedError(t *testing.T) {
 	}
 }
 
+// Adversarial (inverse of the denied-first case): an owned but unparsed
+// dataset earlier in the request must report its own error before a later
+// denied dataset. Batch authorization must not jump ahead to the denial.
+func TestValidateCreateDatasetIDsUnparsedBeforeDenied(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ctx := serviceTestContext(t, "u-batch", "u-batch")
+	ids := seedChatBatchKBs(t, db, "u-batch", 3)
+	foreign := insertForeignChatBatchKB(t, db)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", ids[0]).Update("chunk_num", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewChatService().validateCreateDatasetIDs(ctx, toDatasetAnySlice([]string{ids[0], foreign, ids[1]}))
+	if err == nil {
+		t.Fatal("expected error for the earlier unparsed dataset")
+	}
+	want := fmt.Sprintf("the dataset %s doesn't own parsed file", ids[0])
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q (earlier parsed-file error, not a later denial)", err.Error(), want)
+	}
+}
+
+// Adversarial: the REST validator must also honor request order between an
+// unparsed dataset and a later denial.
+func TestValidateRESTDatasetIDsUnparsedBeforeDenied(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ctx := serviceTestContext(t, "u-batch", "u-batch")
+	ids := seedChatBatchKBs(t, db, "u-batch", 3)
+	foreign := insertForeignChatBatchKB(t, db)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", ids[0]).Update("chunk_num", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewChatService().validateRESTDatasetIDs(ctx, toDatasetAnySlice([]string{ids[0], foreign, ids[1]}))
+	if err == nil {
+		t.Fatal("expected error for the earlier unparsed dataset")
+	}
+	want := fmt.Sprintf("the dataset %s doesn't own parsed file", ids[0])
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q (earlier parsed-file error, not a later denial)", err.Error(), want)
+	}
+}
+
+// Adversarial: a batch resource-load failure on a later tenant must not mask
+// an earlier dataset's own validation error. The ordered pass must still reach
+// the first dataset before surfacing the later resource failure.
+func TestValidateCreateDatasetIDsUnparsedBeforeBatchLoadError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ctx := serviceTestContext(t, "u-batch", "u-batch")
+	ids := seedChatBatchKBs(t, db, "u-batch", 2)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", ids[0]).Update("chunk_num", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	// A dataset in a tenant with no active owner makes the batch resource load
+	// fail as a whole; the earlier unparsed dataset must still be reported.
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "orphan-owner-kb", TenantID: "orphan-tenant", CreatedBy: "nobody",
+		Name: "orphan", ChunkNum: 1, Permission: string(entity.TenantPermissionMe),
+		Status: &status,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewChatService().validateCreateDatasetIDs(ctx, toDatasetAnySlice([]string{ids[0], "orphan-owner-kb"}))
+	if err == nil {
+		t.Fatal("expected error for the earlier unparsed dataset")
+	}
+	want := fmt.Sprintf("the dataset %s doesn't own parsed file", ids[0])
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q (earlier dataset error, not a later batch-load failure)", err.Error(), want)
+	}
+}
+
+// insertForeignChatBatchKB seeds a dataset in a tenant the test caller cannot
+// access, so batch authorization must omit it and surface a denial.
+func insertForeignChatBatchKB(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	const foreign = "foreign-batch-kb"
+	status := string(entity.StatusValid)
+	// The foreign tenant has its own owner; the test caller simply lacks
+	// access. Without an owner the batch resource load fails wholesale instead
+	// of omitting this one ref, which would not model a plain denial.
+	if err := db.Create(&entity.UserTenant{
+		ID: "foreign-owner-membership", UserID: "foreign-owner", TenantID: "other-tenant",
+		Role: string(permission.RoleOwner), Status: &status,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID: foreign, TenantID: "other-tenant", CreatedBy: "other-tenant",
+		Name: foreign, ChunkNum: 1, Permission: string(entity.TenantPermissionMe),
+		Status: &status,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	return foreign
+}
+
 // BenchmarkValidateCreateDatasetIDsBatches guards the hot authorization path:
 // ns/op should stay flat as the dataset count grows, because the batch loads
 // datasets once regardless of how many are requested.

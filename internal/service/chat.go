@@ -411,13 +411,21 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 		normalizedIDs = append(normalizedIDs, stringFromValue(item))
 	}
 
-	loaded, err := LoadAuthorizedKBs(ctx, dao.DB, permission.NewDatabaseChecker(dao.DB), s.kbDAO, normalizedIDs, permission.OperationUse)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	loaded, allowed, err := filterAndLoadKBs(ctx, dao.DB, checker, s.kbDAO, normalizedIDs, permission.OperationUse)
 	if err != nil {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return nil, permissionErr
 	}
 	kbs := make([]*entity.Knowledgebase, 0, len(loaded))
 	for i, kb := range loaded {
+		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: normalizedIDs[i]}
+		if !allowed[ref] {
+			if err := checker.CheckResource(ctx, ref, permission.OperationUse); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return nil, permissionErr
+			}
+		}
 		if kb == nil {
 			return nil, fmt.Errorf("you don't own the dataset %s", normalizedIDs[i])
 		}
@@ -1167,13 +1175,21 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 		kbIDs = append(kbIDs, datasetID)
 	}
 
-	loaded, err := LoadAuthorizedKBs(ctx, dao.DB, permission.NewDatabaseChecker(dao.DB), s.kbDAO, datasetIDs, permission.OperationUse)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	loaded, allowed, err := filterAndLoadKBs(ctx, dao.DB, checker, s.kbDAO, datasetIDs, permission.OperationUse)
 	if err != nil {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return nil, permissionErr
 	}
 	kbs := make([]*entity.Knowledgebase, 0, len(loaded))
 	for i, kb := range loaded {
+		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetIDs[i]}
+		if !allowed[ref] {
+			if err := checker.CheckResource(ctx, ref, permission.OperationUse); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return nil, permissionErr
+			}
+		}
 		if kb == nil {
 			return nil, fmt.Errorf("you don't own the dataset %s", kbIDs[i])
 		}

@@ -92,11 +92,15 @@ func TestSearchDatasetsBatchesDatasetQueries(t *testing.T) {
 	capture := &datasetBatchSQLCapture{}
 	dao.DB = db.Session(&gorm.Session{Logger: capture})
 
-	// Distinct embedding models force an error after authorization; the error
-	// itself is irrelevant, only the queries issued before it matter.
-	_, _ = NewDatasetService().SearchDatasets(ctx, &service.SearchDatasetsRequest{
+	// Distinct embedding models force an error after authorization. Asserting
+	// that error proves the batched authorization actually completed before the
+	// query count is checked — a discarded error would let an early denial pass.
+	_, err := NewDatasetService().SearchDatasets(ctx, &service.SearchDatasetsRequest{
 		Question: "q", DatasetIDs: ids,
 	})
+	if err == nil || !strings.Contains(err.Error(), "different embedding models") {
+		t.Fatalf("SearchDatasets error = %v, want the embedding-model mismatch (authorization must have completed)", err)
+	}
 
 	if n := capture.knowledgebaseSelects(); n > 2 {
 		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)

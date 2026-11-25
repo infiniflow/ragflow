@@ -90,8 +90,6 @@ func TestIngestBatchesDatasetLookups(t *testing.T) {
 	}
 }
 
-// Adversarial: a missing document still fails the whole batch with the exact
-// error, and a dataset shared by many documents is not repeatedly authorized.
 // Adversarial: validation errors follow document order. A document whose
 // dataset no longer exists must report "dataset not found" before a later
 // document's permission denial, even though datasets are loaded in a batch.
@@ -119,6 +117,24 @@ func TestIngestPreservesFirstValidationErrorInDocOrder(t *testing.T) {
 	})
 	if err == nil || err.Error() != "dataset not found" {
 		t.Fatalf("error = %v, want the first (dataset not found) error; SQL: %v", err, capture.sqls)
+	}
+}
+
+// Adversarial (inverse of the missing-document case): a document whose dataset
+// is missing comes first, a nonexistent document comes later. The first
+// document's "dataset not found" must win, not the later "document not found".
+func TestIngestPreservesMissingDatasetBeforeMissingDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestDoc(t, "order-doc-0", "missing-kb", 0, 0)
+	ctx := documentTestContext(t.Context())
+
+	_, err := testDocumentService(t).Ingest(ctx, &IngestDocumentRequest{
+		DocIDs: []string{"order-doc-0", "order-missing-doc"},
+	})
+	if err == nil || err.Error() != "dataset not found" {
+		t.Fatalf("error = %v, want the first (dataset not found) error", err)
 	}
 }
 

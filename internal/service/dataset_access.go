@@ -45,6 +45,40 @@ func LoadAuthorizedKBs(ctx context.Context, db *gorm.DB, checker permission.Reso
 	return LoadKBsInOrder(ctx, db, kbDAO, ids)
 }
 
+// filterAndLoadKBs authorizes and loads datasets with one batch request each,
+// returning the KB slice in request order together with the set of refs the
+// batch authorized. Callers that must interleave permission, existence and
+// per-dataset validation errors can walk the ordered slice and use the set to
+// report the first error in request order; a denied ref still gets a real
+// single-resource check so the exact legacy error is preserved, while the
+// allowed path pays no per-item round-trip.
+func filterAndLoadKBs(ctx context.Context, db *gorm.DB, checker permission.ResourceChecker, kbDAO *dao.KnowledgebaseDAO, ids []string, op permission.Operation) ([]*entity.Knowledgebase, map[permission.ResourceRef]bool, error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	refs := make([]permission.ResourceRef, 0, len(ids))
+	for _, id := range ids {
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	// A batch-load failure (bad ref, unreachable source, tenant without an
+	// owner) must not short-circuit validation of earlier datasets. Leave the
+	// allowed set empty: the caller's ordered pass then asks CheckResource for
+	// each ref and reports the first failure in request order. Allowed refs
+	// cost one single-resource check only on this error path.
+	accessible, err := checker.FilterResources(ctx, refs, op)
+	allowed := make(map[permission.ResourceRef]bool, len(accessible))
+	if err == nil {
+		for _, ref := range accessible {
+			allowed[ref] = true
+		}
+	}
+	kbs, err := LoadKBsInOrder(ctx, db, kbDAO, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	return kbs, allowed, nil
+}
+
 // LoadKBsInOrder fetches the given datasets in one query and returns them in
 // the same order as ids, with a nil entry for each missing dataset.
 func LoadKBsInOrder(ctx context.Context, db *gorm.DB, kbDAO *dao.KnowledgebaseDAO, ids []string) ([]*entity.Knowledgebase, error) {
