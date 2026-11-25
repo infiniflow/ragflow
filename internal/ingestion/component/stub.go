@@ -18,11 +18,21 @@
 
 package component
 
-import "context"
+import (
+	"context"
+
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
 
 // This build registers no extraction mode, so construction attaches nothing
 // and Invoke's extra phase stays inert.
 func attachResumeHook(*ExtractorComponent, map[string]any) {}
+
+func PrepareDocumentPreview(ctx context.Context, _ *gorm.DB, _ entity.Document) (context.Context, func(context.Context)) {
+	return ctx, nil
+}
 
 func bindDocumentPreview(ctx context.Context, _ string, _ *string) context.Context {
 	return ctx
