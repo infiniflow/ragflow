@@ -297,6 +297,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     instanceName,
     isModelAdded,
     isDraftInstance,
+    defaultToolsEnabled: isDraftInstance,
     updateCatalogModel,
     clearCatalogOverride,
     updateDraftModel,
