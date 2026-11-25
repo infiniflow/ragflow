@@ -2061,3 +2061,19 @@ func TestRetryWithFreshRunIdentityRejectsDriftedStatus(t *testing.T) {
 		t.Fatalf("pipeline log count = %d, want 0 (no run created on conflict)", n)
 	}
 }
+
+func TestSettleTaskRunWithoutMessageArgument(t *testing.T) {
+	svc := &IngestionTaskService{}
+	if err := svc.settleTaskRun(t.Context(), nil, entity.TaskStatusFail); err != nil {
+		t.Fatalf("settleTaskRun with nil task = %v, want no-op", err)
+	}
+}
+
+func TestTerminalRunSettlementDropsUnusedMessage(t *testing.T) {
+	// terminalRunSettlement now returns only the run status; the terminal
+	// message was dead plumbing after settleTaskRun lost its message argument.
+	status, ok := terminalRunSettlement(common.COMPLETED)
+	if !ok || status != entity.TaskStatusDone {
+		t.Fatalf("terminalRunSettlement(COMPLETED) = %q/%v, want DONE/true", status, ok)
+	}
+}

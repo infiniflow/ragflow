@@ -22,10 +22,8 @@ import (
 )
 
 const (
-	taskStateCleanupTimeout     = 5 * time.Second
-	taskStateCleanupCapacity    = 1024
-	taskTerminalMessageComplete = "Task completed."
-	taskTerminalMessageFailed   = "Task failed."
+	taskStateCleanupTimeout  = 5 * time.Second
+	taskStateCleanupCapacity = 1024
 )
 
 type taskStatePurgeRequest struct {
@@ -419,7 +417,6 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		// finalizes without a worker, so no terminal pipeline-log writer will
 		// close the open row. Close it here or it stays RUNNING forever.
 		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
-		s.recordRunTerminal(ctx, task, "Task stopped by user.")
 		s.emitLifecycleEvent(ctx, task, common.STOPPED, "Task stopped by user.")
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
@@ -445,7 +442,6 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 		common.Warn(fmt.Sprintf("prepare validated run: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
 	}
 	s.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning))
-	s.recordRunMessage(ctx, task, "Task is running...")
 	// Emit the running lifecycle event only after the document's worker-claim
 	// time has been stamped, so the event's BeginTime (and wait_duration_s)
 	// reflect this run rather than a zero or previous-run value. Emitting here
@@ -485,7 +481,6 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 		// terminal pipeline-log writer will run). Advance the open row to
 		// CANCEL here, otherwise the detail page keeps a queued entry.
 		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel))
-		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
 		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
@@ -553,7 +548,7 @@ func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskI
 		if err != nil {
 			return nil, err
 		}
-		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel, terminalMessage); err != nil {
+		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel); err != nil {
 			return nil, err
 		}
 		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, terminalMessage)
@@ -584,17 +579,17 @@ func (s *IngestionTaskService) PrepareDocumentTaskForCleanup(ctx context.Context
 	// Terminal cleanup can proceed when its ledger has already been deleted.
 	// Queued tasks above must still settle successfully before becoming removable.
 	case common.STOPPED:
-		if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, terminalMessage); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return task, nil
 	case common.COMPLETED:
-		if err := s.settleTaskRun(ctx, task, entity.TaskStatusDone, taskTerminalMessageComplete); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusDone); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return task, nil
 	case common.FAILED:
-		if err := s.settleTaskRun(ctx, task, entity.TaskStatusFail, taskTerminalMessageFailed); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusFail); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return task, nil
@@ -694,13 +689,13 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	// best-effort: when it was lost the ledger stays open with no worker left to
 	// settle it. Settlement is idempotent, so finish it before deleting the row
 	// — the same rule PrepareDocumentTaskForCleanup applies to document cleanup.
-	if runStatus, message, ok := terminalRunSettlement(task.Status); ok && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+	if runStatus, ok := terminalRunSettlement(task.Status); ok && task.PipelineLogID != nil && *task.PipelineLogID != "" {
 		run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
 		if runErr != nil && !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, runErr
 		}
 		if run != nil && run.RunCount != nil && *run.RunCount > 0 {
-			if err := s.settleTaskRun(ctx, task, runStatus, message); err != nil {
+			if err := s.settleTaskRun(ctx, task, runStatus); err != nil {
 				return nil, err
 			}
 		}
@@ -729,18 +724,19 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	return info, nil
 }
 
-// terminalRunSettlement maps a terminal task to the run status and terminal
-// message its ledger should carry.
-func terminalRunSettlement(taskStatus string) (entity.TaskStatus, string, bool) {
+// terminalRunSettlement maps a terminal task to the run status its ledger
+// should carry. The terminal explanation is persisted separately on the
+// document's progress_msg, so no message is returned here.
+func terminalRunSettlement(taskStatus string) (entity.TaskStatus, bool) {
 	switch taskStatus {
 	case common.STOPPED:
-		return entity.TaskStatusCancel, "Task superseded by a new parse request.", true
+		return entity.TaskStatusCancel, true
 	case common.COMPLETED:
-		return entity.TaskStatusDone, taskTerminalMessageComplete, true
+		return entity.TaskStatusDone, true
 	case common.FAILED:
-		return entity.TaskStatusFail, taskTerminalMessageFailed, true
+		return entity.TaskStatusFail, true
 	default:
-		return "", "", false
+		return "", false
 	}
 }
 
@@ -1035,7 +1031,6 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 			return nil, err
 		}
 		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
-		s.recordRunMessage(ctx, task, "Task is queued...")
 		s.emitLifecycleEvent(ctx, task, common.SCHEDULED, "")
 		return task, nil
 	}
@@ -1099,7 +1094,6 @@ func (s *IngestionTaskService) settlePublishFailure(ctx context.Context, task *e
 	}
 	task.Status = common.FAILED
 	s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusFail))
-	s.recordRunTerminal(ctx, task, "Task publish failed.")
 }
 
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that
@@ -1267,26 +1261,16 @@ func (s *IngestionTaskService) advanceOpenLogIfOpen(ctx context.Context, task *e
 	return advanced, err
 }
 
-// settleTaskRun closes a terminal task's run ledger and ensures its terminal
-// event exists. The event write is retried even when a previous attempt already
-// advanced the operation row, so a partial settlement never becomes permanent.
-func (s *IngestionTaskService) settleTaskRun(ctx context.Context, task *entity.IngestionTask, operationStatus entity.TaskStatus, _ string) error {
+// settleTaskRun closes a terminal task's run ledger. The run row's CAS is the
+// sole authority for terminal settlement: a late writer whose row already left
+// the open states is a no-op, which is the idempotency guarantee the removed
+// terminal event row used to carry.
+func (s *IngestionTaskService) settleTaskRun(ctx context.Context, task *entity.IngestionTask, operationStatus entity.TaskStatus) error {
 	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
 		return nil
 	}
-	// The run row's CAS is the sole authority for terminal settlement. A late
-	// writer whose row already left the open states is a no-op, which is the
-	// idempotency guarantee that the removed terminal event row used to carry.
 	_, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(operationStatus))
 	return err
-}
-
-func (s *IngestionTaskService) recordRunMessage(_ context.Context, _ *entity.IngestionTask, _ string) {
-	// Run text is no longer persisted as event rows.
-}
-
-func (s *IngestionTaskService) recordRunTerminal(_ context.Context, _ *entity.IngestionTask, _ string) {
-	// Terminal state lives on the run row; no event row to write.
 }
 
 // buildOpenLogInput resolves immutable run metadata from the document and its

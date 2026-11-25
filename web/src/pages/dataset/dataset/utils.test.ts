@@ -98,6 +98,12 @@ describe('getDocumentProgressMessage', () => {
     ).toBe('Indexing 4/10');
   });
 
+  it('falls back to the stored progress_msg when the snapshot is gone', () => {
+    expect(
+      getDocumentProgressMessage({ progress_msg: 'seeded progress' }),
+    ).toBe('seeded progress');
+  });
+
   it('returns a placeholder when the selected source has no message', () => {
     expect(getDocumentProgressMessage({})).toBe('-');
   });

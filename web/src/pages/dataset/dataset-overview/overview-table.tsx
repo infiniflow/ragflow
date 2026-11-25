@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
-import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
+import { formatDate } from '@/utils/date';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -51,6 +51,7 @@ import ProcessLogModal, { ILogInfo } from '../process-log-modal';
 import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
+import { buildFileLogInfo, resolveModalLogInfo } from './utils';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
@@ -346,32 +347,16 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const datasetId = knowledgeId || routeId;
   const showLog = useCallback((row: Row<IFileLogItem & DocumentLog>) => {
-    const logDetail = {
-      taskId: row.original?.dsl?.task_id,
-      fileName: row.original.document_name,
-      source: row.original.source_from,
-      task: row.original?.task_type,
-      // The pipeline log reports the legacy "Scheduled" ("5") for an enqueued
-      // run; render it like the file list's queue state instead.
-      status: row.original.operation_status,
-      startDate: formatDate(row.original.process_begin_at),
-      duration: formatSecondsToHumanReadable(
-        row.original.process_duration || 0,
-      ),
-      details: row.original.progress_msg ?? '',
-    } as ILogInfo;
-    setLogInfo(logDetail);
+    setLogInfo(buildFileLogInfo(row.original));
     setSelectedLogID(row.original.id);
     setIsModalVisible(true);
   }, []);
-  const modalLogInfo = useMemo<ILogInfo | undefined>(() => {
-    if (!logInfo) {
-      return undefined;
-    }
-    return {
-      ...logInfo,
-    };
-  }, [logInfo]);
+  // The file-log query keeps polling while a run is active. Rebuild the open
+  // modal from the latest polled row so its status/details never lag behind.
+  const modalLogInfo = useMemo<ILogInfo | undefined>(
+    () => resolveModalLogInfo(data, selectedLogID, logInfo),
+    [data, selectedLogID, logInfo],
+  );
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS

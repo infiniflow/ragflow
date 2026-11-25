@@ -997,8 +997,8 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 }
 
 // markTerminalProgress preserves the numeric document state used by existing
-// status projections without rewriting the legacy progress_msg column. The
-// human-readable explanation is written as a run-scoped terminal event.
+// status projections. The human-readable terminal explanation is written to
+// the document's progress_msg by recordTerminalPipelineLog.
 func (e *Ingestor) markTerminalProgress(task *entity.IngestionTask) {
 	if task == nil || task.DocumentID == "" {
 		return
@@ -1481,6 +1481,11 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	if err := taskpkg.RecordPipelineLog(ctx, e.deps.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 		return
+	}
+	// The progress snapshot expires; persist the terminal explanation on the
+	// document so a failed run keeps its reason after the snapshot is gone.
+	if err := documentpkg.NewDocumentService().UpdateProgressMsg(ctx, ingestionTask.DocumentID, message); err != nil {
+		common.Warn(fmt.Sprintf("persist terminal message for document %s: %v", ingestionTask.DocumentID, err))
 	}
 }
 

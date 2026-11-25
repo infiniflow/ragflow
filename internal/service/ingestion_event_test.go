@@ -98,3 +98,41 @@ func TestIngestionEventItemFromSnapshotMissingActivePosition(t *testing.T) {
 		t.Fatalf("message = %q, want empty for missing active position", item.Message)
 	}
 }
+
+func TestIngestionEventItemFromSnapshotPrefersLatestFailedStage(t *testing.T) {
+	// Adversarial: Parser finished and Extractor then failed, both retaining an
+	// active unit. A forward scan would freeze on Parser and hide the failure.
+	// The newest (failed) stage must win so the user sees where it stopped.
+	snap := testSnapshot(
+		progressstore.Stage{Name: "Parser", Phase: progressstore.PhaseDone, Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 10},
+		}},
+		progressstore.Stage{Name: "Extractor", Phase: progressstore.PhaseFailed, Active: "chunk:tags", Units: map[string]progressstore.UnitProgress{
+			"chunk:tags": {Current: 3, Total: 10},
+		}},
+	)
+	item := IngestionEventItemFromSnapshot(snap)
+	if want := "Extractor · 标签提取 3/10"; item.Message != want {
+		t.Fatalf("message = %q, want %q", item.Message, want)
+	}
+	if item.Component != "Extractor" {
+		t.Fatalf("component = %q, want Extractor (the failed stage)", item.Component)
+	}
+}
+
+func TestIngestionEventItemFromSnapshotPrefersLatestRunningStage(t *testing.T) {
+	// Adversarial: two running stages both retain active units; the newest must
+	// win, matching latestActiveStage in dataset/progress.go.
+	snap := testSnapshot(
+		progressstore.Stage{Name: "Extractor", Phase: progressstore.PhaseRunning, Active: "chunk:tags", Units: map[string]progressstore.UnitProgress{
+			"chunk:tags": {Current: 5, Total: 10},
+		}},
+		progressstore.Stage{Name: "Tokenizer", Phase: progressstore.PhaseRunning, Active: "chunk:embed", Units: map[string]progressstore.UnitProgress{
+			"chunk:embed": {Current: 7, Total: 10},
+		}},
+	)
+	item := IngestionEventItemFromSnapshot(snap)
+	if want := "Tokenizer · 向量化 7/10"; item.Message != want {
+		t.Fatalf("message = %q, want %q", item.Message, want)
+	}
+}

@@ -6,7 +6,7 @@ import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useQuery } from '@tanstack/react-query';
 import { RunningStatus } from '@/constants/knowledge';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import { ILogInfo } from '../process-log-modal';
@@ -62,28 +62,39 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   // A document can have several historical runs. The list endpoint's exact
   // document filter returns the current log identity, which scopes all event
   // reads to the intended run.
-  const { data: documentLog } = useQuery<IFileLogList>({
-    queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
-    enabled: visible && !!datasetId && !!sourceDoc?.id,
-    refetchInterval: isTerminal(sourceDoc) ? false : PollIntervalMs,
-    queryFn: async () => {
-      const { data: res = {} } = await listDataPipelineLogDocument(
-        datasetId || '',
-        {
-          page: 1,
-          // Exact match on the document: a name search is fuzzy and can push
-          // this document's row off the first page when several documents
-          // share a name.
-          document_id: sourceDoc?.id,
-          log_type: 'file',
-          orderby: 'create_time',
-          desc: true,
-          page_size: 1,
-        },
-      );
-      return (res.data || { logs: [], total: 0 }) as IFileLogList;
-    },
-  });
+  const { data: documentLog, refetch: refetchDocumentLog } =
+    useQuery<IFileLogList>({
+      queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
+      enabled: visible && !!datasetId && !!sourceDoc?.id,
+      refetchInterval: isTerminal(sourceDoc) ? false : PollIntervalMs,
+      queryFn: async () => {
+        const { data: res = {} } = await listDataPipelineLogDocument(
+          datasetId || '',
+          {
+            page: 1,
+            // Exact match on the document: a name search is fuzzy and can push
+            // this document's row off the first page when several documents
+            // share a name.
+            document_id: sourceDoc?.id,
+            log_type: 'file',
+            orderby: 'create_time',
+            desc: true,
+            page_size: 1,
+          },
+        );
+        return (res.data || { logs: [], total: 0 }) as IFileLogList;
+      },
+    });
+  const terminal = isTerminal(sourceDoc);
+  // Polling stops at terminal status; guarantee one final fetch so the modal
+  // shows the settled run's message rather than the last in-progress poll.
+  useEffect(() => {
+    if (terminal && sourceDoc?.id) {
+      void refetchDocumentLog();
+    }
+    // refetchDocumentLog is stable; only the terminal transition should refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminal, sourceDoc?.id]);
   const logID = documentLog?.logs[0]?.id;
   const selectedLog = documentLog?.logs[0];
   const logInfo = useMemo(() => {

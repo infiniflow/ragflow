@@ -46,8 +46,14 @@ func IngestionEventItemFromSnapshot(snap *progressstore.Snapshot) IngestionEvent
 	if snap == nil {
 		return IngestionEventItem{}
 	}
+	// Scan newest-first. A completed stage retains its Active unit, so a
+	// forward scan would freeze on the first stage and hide the one actually
+	// in flight — or the stage that failed. A running stage still wins over a
+	// newer terminal one; otherwise the newest stage with a valid position
+	// (including a failed one) is shown. This mirrors mergeProgressSnapshot's
+	// selection in dataset/progress.go.
 	var active, fallback *progressstore.Stage
-	for i := range snap.Stages {
+	for i := len(snap.Stages) - 1; i >= 0; i-- {
 		stage := &snap.Stages[i]
 		if stage.Active == "" {
 			continue
@@ -58,7 +64,7 @@ func IngestionEventItemFromSnapshot(snap *progressstore.Snapshot) IngestionEvent
 		if fallback == nil {
 			fallback = stage
 		}
-		if stage.Phase == "running" {
+		if stage.Phase == progressstore.PhaseRunning {
 			active = stage
 			break
 		}

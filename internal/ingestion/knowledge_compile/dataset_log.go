@@ -223,23 +223,23 @@ func (c *Consumer) startDatasetCompileLog(ctx context.Context, tenantID, dataset
 	})
 }
 
-func (c *Consumer) updateDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, progress float64, message string) error {
+func (c *Consumer) updateDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, progress float64) error {
 	if c.db == nil || claimToken == "" {
 		return nil
 	}
 	for _, taskType := range taskTypes {
-		if err := c.updateDatasetCompileLogForType(ctx, datasetCompileLogID(claimToken, taskType), progress, message); err != nil {
+		if err := c.updateDatasetCompileLogForType(ctx, datasetCompileLogID(claimToken, taskType), progress); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *Consumer) updateDatasetCompileLogForType(ctx context.Context, logID string, progress float64, message string) error {
+func (c *Consumer) updateDatasetCompileLogForType(ctx context.Context, logID string, progress float64) error {
 	return c.recordDatasetCompileLogEvent(ctx, logID, progress, common.RUNNING)
 }
 
-func (c *Consumer) finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, operationStatus, message string, progress float64) error {
+func (c *Consumer) finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, operationStatus string, progress float64) error {
 	if c.db == nil || claimToken == "" {
 		return nil
 	}

@@ -33,10 +33,10 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 	if err := consumer.startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
 		t.Fatalf("restart dataset log: %v", err)
 	}
-	if err := consumer.updateDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, 0.5, "Comparing knowledge contributions: 2 affected page(s)"); err != nil {
+	if err := consumer.updateDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, 0.5); err != nil {
 		t.Fatalf("update dataset log: %v", err)
 	}
-	if err := consumer.finishDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
+	if err := consumer.finishDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, common.COMPLETED, 1); err != nil {
 		t.Fatalf("finish dataset log: %v", err)
 	}
 

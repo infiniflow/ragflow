@@ -83,8 +83,10 @@ export const getDocumentRunningStatus = (
 
 /** Returns the message shown for a document's current run. */
 export const getDocumentProgressMessage = (
-  document: Pick<IDocumentInfo, 'latest_ingestion_event'>,
-) => document.latest_ingestion_event?.message || '-';
+  document: Pick<IDocumentInfo, 'latest_ingestion_event'> & {
+    progress_msg?: string;
+  },
+) => document.latest_ingestion_event?.message || document.progress_msg || '-';
 
 /**
  * Parser label for a document. A built-in pipeline uses an edition-provided

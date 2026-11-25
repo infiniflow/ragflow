@@ -85,4 +85,49 @@ describe('useShowLog with event stream removed', () => {
       ),
     );
   });
+
+  it('scopes the file-log query to the document id', async () => {
+    mockList.mockResolvedValue({
+      data: { data: { logs: [], total: 0 } },
+    } as any);
+
+    const { result } = renderLogs([makeDoc()]);
+    act(() => result.current.showLog(makeDoc()));
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    expect(mockList.mock.calls[0][1]).toMatchObject({
+      document_id: 'doc-1',
+    });
+    expect(result.current.logId).toBeUndefined();
+  });
+
+  it('fetches the final file-log row once when the document turns terminal', async () => {
+    mockList.mockResolvedValue({
+      data: {
+        data: {
+          logs: [
+            {
+              id: 'run-1',
+              document_id: 'doc-1',
+              progress_msg: 'Indexing 5/10',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as any);
+
+    const running = makeDoc({ ingestion_status: 'RUNNING' });
+    const done = makeDoc({ ingestion_status: 'COMPLETED' });
+    const { result, rerender } = renderHook(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ docs }: { docs: Doc[] }) => useShowLog(docs as any),
+      { initialProps: { docs: [running] }, wrapper: Wrapper },
+    );
+    act(() => result.current.showLog(running as any));
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.logId).toBe('run-1'));
+
+    rerender({ docs: [done] });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+  });
 });
