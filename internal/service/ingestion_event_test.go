@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,31 +15,31 @@ func TestTerminalErrorCodeSurvivesRetentionAndIsRunScoped(t *testing.T) {
 	pushServiceDB(t, db)
 	svc := NewIngestionTaskService()
 	svc.logSettings.MaxRowsPerRun = 4
-	insertFoldPipelineLog(t, db, "license-run", entity.TaskStatusFail, 1)
+	insertFoldPipelineLog(t, db, "failed-run", entity.TaskStatusFail, 1)
 	for range 8 {
-		insertFoldEvent(t, db, "license-run", "task-1", dao.EventTypeMessage, 0, "", "detail")
+		insertFoldEvent(t, db, "failed-run", "task-1", dao.EventTypeMessage, 0, "", "detail")
 	}
-	if err := svc.RecordTerminal(t.Context(), "license-run", "task-1", "license detail", "license_required"); err != nil {
+	if err := svc.ensureTerminalEvent(t.Context(), "failed-run", "task-1", "parse detail", "parse_error"); err != nil {
 		t.Fatal(err)
 	}
 	// Settlement retries preserve the original failure metadata.
-	if err := svc.RecordTerminal(t.Context(), "license-run", "task-1", "generic failure", ""); err != nil {
+	if err := svc.RecordTerminal(t.Context(), "failed-run", "task-1", "generic failure"); err != nil {
 		t.Fatal(err)
 	}
 	insertFoldPipelineLog(t, db, "retry-run", entity.TaskStatusFail, 2)
-	if err := svc.RecordTerminal(t.Context(), "retry-run", "task-1", "ordinary failure", ""); err != nil {
+	if err := svc.RecordTerminal(t.Context(), "retry-run", "task-1", "ordinary failure", errors.New("invalid file")); err != nil {
 		t.Fatal(err)
 	}
-	logs, err := dao.NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(t.Context(), db, []string{"license-run", "retry-run"})
+	logs, err := dao.NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(t.Context(), db, []string{"failed-run", "retry-run"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for runID, wantCode := range map[string]string{"license-run": "license_required", "retry-run": ""} {
+	for runID, wantCode := range map[string]string{"failed-run": "parse_error", "retry-run": ""} {
 		event := IngestionEventItemFromLog(logs[runID])
 		if event.ErrorCode != wantCode {
 			t.Errorf("%s code = %q, want %q", runID, event.ErrorCode, wantCode)
 		}
-		if runID == "license-run" && (event.EventType != dao.EventTypeTerminal || event.Message != "license detail") {
+		if runID == "failed-run" && (event.EventType != dao.EventTypeTerminal || event.Message != "parse detail") {
 			t.Errorf("retention lost terminal detail: %+v", event)
 		}
 	}

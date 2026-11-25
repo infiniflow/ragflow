@@ -1291,7 +1291,7 @@ func (s *IngestionTaskService) settleTaskRun(ctx context.Context, task *entity.I
 	if _, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(operationStatus)); err != nil {
 		return err
 	}
-	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, terminalMessage, ""); err != nil {
+	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, terminalMessage); err != nil {
 		return fmt.Errorf("record terminal event for task %s run %s: %w", task.ID, *task.PipelineLogID, err)
 	}
 	return nil
@@ -1310,7 +1310,7 @@ func (s *IngestionTaskService) recordRunTerminal(ctx context.Context, task *enti
 	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
 		return
 	}
-	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, message, ""); err != nil {
+	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, message); err != nil {
 		common.Warn(fmt.Sprintf("record run terminal event for task %s: %v", task.ID, err))
 	}
 }
@@ -1402,8 +1402,9 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
-// RecordTerminal writes the terminal explanation associated with a run.
-func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message, errorCode string) error {
+// RecordTerminal writes a run's terminal explanation and classifies any supplied causes.
+func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string, causes ...error) error {
+	errorCode := ingestionErrorCode(errors.Join(causes...))
 	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message, errorCode); err != nil {
 		return err
 	}

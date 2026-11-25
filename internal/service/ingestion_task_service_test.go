@@ -2559,7 +2559,7 @@ func TestIngestionTaskServiceCleanupMissingRun(t *testing.T) {
 			} else if err == nil {
 				t.Fatal("removed nonterminal task with missing run identity")
 			}
-			if err := svc.RecordTerminal(t.Context(), "deleted-run", "task-1", "runtime write", ""); !errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := svc.RecordTerminal(t.Context(), "deleted-run", "task-1", "runtime write"); !errors.Is(err, gorm.ErrRecordNotFound) {
 				t.Fatalf("runtime event error = %v, want missing run failure", err)
 			}
 			var events int64
