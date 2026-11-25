@@ -331,9 +331,13 @@ func (d *DatasetService) validateEmbeddingSwitch(ctx context.Context, kb *entity
 	)
 }
 
-// storedVectorDimension returns the dimension of the vector one stored chunk of
+// storedVectorDimension returns the dimension of the vector a stored chunk of
 // the dataset carries, together with the column it lives in. A dimension of 0
-// means no chunk of the dataset holds a vector.
+// means none of the sampled chunks holds a vector.
+//
+// The sample covers several rows because not every chunk carries a vector: a
+// chunk the pipeline skipped embedding for would otherwise let the check pass
+// while its neighbours still hold vectors in the old space.
 //
 // A dataset that somehow carries several vector columns answers with whichever
 // column the engine enumerates first: the columns can only disagree after a
@@ -341,11 +345,13 @@ func (d *DatasetService) validateEmbeddingSwitch(ctx context.Context, kb *entity
 // candidate lands in the space the dataset is indexed in.
 func (d *DatasetService) storedVectorDimension(ctx context.Context, tenantID, datasetID string) (int, string, error) {
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	// Bounded so one switch costs a handful of reads at most.
+	const sampleRows = 8
 	found, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
 		IndexNames: []string{indexName},
 		KbIDs:      []string{datasetID},
 		Offset:     0,
-		Limit:      1,
+		Limit:      sampleRows,
 		Filter: map[string]interface{}{
 			"kb_id":         datasetID,
 			"available_int": 1,
@@ -357,27 +363,28 @@ func (d *DatasetService) storedVectorDimension(ctx context.Context, tenantID, da
 	if found == nil || len(found.Chunks) == 0 {
 		return 0, "", nil
 	}
-	chunkID := datasetChunkID(found.Chunks[0])
-	if chunkID == "" {
-		return 0, "", nil
-	}
 
 	// The search returns the projected fields only, so the vector column is
 	// read from the chunk itself.
-	raw, err := d.docEngine.GetChunk(ctx, indexName, chunkID, []string{datasetID})
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to load chunk %s: %w", chunkID, err)
+	for _, row := range found.Chunks {
+		chunkID := datasetChunkID(row)
+		if chunkID == "" {
+			continue
+		}
+		raw, err := d.docEngine.GetChunk(ctx, indexName, chunkID, []string{datasetID})
+		if err != nil {
+			return 0, "", fmt.Errorf("failed to load chunk %s: %w", chunkID, err)
+		}
+		chunk := datasetMap(raw)
+		field := datasetGuessVecField(chunk)
+		if field == "" {
+			continue
+		}
+		if vector := datasetAsFloatVec(chunk[field]); len(vector) > 0 {
+			return len(vector), field, nil
+		}
 	}
-	chunk := datasetMap(raw)
-	field := datasetGuessVecField(chunk)
-	if field == "" {
-		return 0, "", nil
-	}
-	vector := datasetAsFloatVec(chunk[field])
-	if len(vector) == 0 {
-		return 0, "", nil
-	}
-	return len(vector), field, nil
+	return 0, "", nil
 }
 
 func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tenantID, datasetID string, n int) ([]embeddingCheckSample, error) {

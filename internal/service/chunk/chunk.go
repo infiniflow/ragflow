@@ -1914,38 +1914,63 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 // disconnected, and Elasticsearch forwards the request context to the delete,
 // which would leave the old-model row behind for a caller that never retries.
 //
-// The row is removed only when it still carries this add's create timestamp.
-// Two adds of the same content share the chunk id, so a concurrent add with the
+// A transient engine error must not strand the rejected row either, so the
+// removal is retried a bounded number of times. Every attempt re-reads the row
+// and removes it only while it still carries this add's create timestamp: two
+// adds of the same content share the chunk id, so a concurrent add with the
 // dataset's current model can have replaced the row and committed its counters
-// already; deleting by id alone would strand that write.
+// already, and deleting by id alone would strand that write.
 func (s *ChunkService) removeChunkAfterEmbeddingChange(ctx context.Context, indexName, chunkID, docID, datasetID string, writeStamp interface{}) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
-	raw, err := s.docEngine.GetChunk(cleanupCtx, indexName, chunkID, []string{datasetID})
+	const attempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		err := s.removeChunkWhileStampMatches(cleanupCtx, indexName, chunkID, docID, datasetID, writeStamp)
+		if err == nil {
+			return
+		}
+		lastErr = err
+	}
+	common.Warn("chunk add: could not remove the chunk inserted just before the embedding model switched",
+		zap.String("dataset_id", datasetID), zap.String("document_id", docID),
+		zap.String("chunk_id", chunkID), zap.Error(lastErr))
+}
+
+// removeChunkWhileStampMatches removes the row only while it still carries the
+// create timestamp this add wrote. A nil error means nothing this add owns
+// remains, whether the row was deleted now or was already gone or replaced.
+func (s *ChunkService) removeChunkWhileStampMatches(ctx context.Context, indexName, chunkID, docID, datasetID string, writeStamp interface{}) error {
+	raw, err := s.docEngine.GetChunk(ctx, indexName, chunkID, []string{datasetID})
 	if err != nil {
-		common.Warn("chunk add: could not read back the chunk to remove after the embedding model switched",
-			zap.String("dataset_id", datasetID), zap.String("chunk_id", chunkID), zap.Error(err))
-		return
+		return fmt.Errorf("read back the chunk: %w", err)
 	}
 	stored, ok := raw.(map[string]interface{})
 	if !ok || stored == nil {
-		return
+		return nil
 	}
 	storedStamp, storedOK := stored["create_timestamp_flt"].(float64)
 	writtenStamp, writtenOK := writeStamp.(float64)
 	if !storedOK || !writtenOK || storedStamp != writtenStamp {
 		common.Warn("chunk add: kept the chunk at this id because a concurrent write replaced the one this request inserted",
 			zap.String("dataset_id", datasetID), zap.String("chunk_id", chunkID))
-		return
+		return nil
 	}
-	if _, err := s.docEngine.DeleteChunks(cleanupCtx, map[string]interface{}{
+	if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{
 		"id":     []interface{}{chunkID},
 		"doc_id": docID,
 	}, indexName, datasetID); err != nil {
-		common.Warn("chunk add: failed to remove the chunk inserted just before the embedding model switched",
-			zap.String("dataset_id", datasetID), zap.String("chunk_id", chunkID), zap.Error(err))
+		return fmt.Errorf("delete the chunk: %w", err)
 	}
+	return nil
 }
 
 func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, documentID string, chunkIDs []string) {

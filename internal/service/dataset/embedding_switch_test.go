@@ -31,11 +31,12 @@ import (
 	"ragflow/internal/engine/types"
 )
 
-// switchProbeEngine answers the two calls the dimension check makes: a one-hit
-// search and the chunk read that follows it.
+// switchProbeEngine answers the two calls the dimension check makes: the
+// sampled search and the chunk reads that follow it.
 type switchProbeEngine struct {
 	fakeChatDocEngine
 	chunk      map[string]interface{}
+	chunks     []map[string]interface{}
 	searchErr  error
 	searchHits int
 	// onGetChunk runs after the stored chunk was read, inside the preflight
@@ -48,24 +49,34 @@ func (e *switchProbeEngine) Search(context.Context, *types.SearchRequest) (*type
 	if e.searchErr != nil {
 		return nil, e.searchErr
 	}
-	if e.chunk == nil {
+	rows := e.chunks
+	if rows == nil && e.chunk != nil {
+		rows = []map[string]interface{}{e.chunk}
+	}
+	if len(rows) == 0 {
 		return &types.SearchResult{}, nil
 	}
-	id, _ := e.chunk["id"].(string)
-	return &types.SearchResult{
-		Chunks: []map[string]interface{}{{"id": id, "chunk_id": id}},
-		Total:  1,
-	}, nil
+	hits := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		id, _ := row["id"].(string)
+		hits = append(hits, map[string]interface{}{"id": id, "chunk_id": id})
+	}
+	return &types.SearchResult{Chunks: hits, Total: int64(len(hits))}, nil
 }
 
-func (e *switchProbeEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+func (e *switchProbeEngine) GetChunk(_ context.Context, _ string, chunkID string, _ []string) (interface{}, error) {
 	if e.onGetChunk != nil {
 		e.onGetChunk()
 	}
-	if e.chunk == nil {
-		return nil, nil
+	if e.chunk != nil && e.chunk["id"] == chunkID {
+		return e.chunk, nil
 	}
-	return e.chunk, nil
+	for _, row := range e.chunks {
+		if row["id"] == chunkID {
+			return row, nil
+		}
+	}
+	return nil, nil
 }
 
 // chunkWithVector builds a stored chunk carrying a vector of the given size.
@@ -177,6 +188,28 @@ func TestValidateEmbeddingSwitchAllowsWhenNoStoredVector(t *testing.T) {
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("expected CodeSuccess, got %v", code)
+	}
+}
+
+func TestValidateEmbeddingSwitchFindsVectorBeyondAVectorlessSample(t *testing.T) {
+	// The first sampled row carries no vector; the dataset still stores one in
+	// its neighbour, so the switch into another dimension must be rejected.
+	vectorless := map[string]interface{}{"id": "chunk-1", "content_with_weight": "no vector"}
+	withVector := chunkWithVector(384)
+	withVector["id"] = "chunk-2"
+	engine := &switchProbeEngine{chunks: []map[string]interface{}{vectorless, withVector}}
+	stubDimensionProbe(t, 1024, nil)
+
+	svc := &DatasetService{docEngine: engine}
+	code, err := svc.validateEmbeddingSwitch(context.Background(), switchTestKB(5), "big-1024@Builtin")
+	if err == nil {
+		t.Fatal("expected the dimension change to be rejected once a stored vector is found")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected CodeDataError, got %v", code)
+	}
+	if !strings.Contains(err.Error(), "q_384_vec") {
+		t.Fatalf("expected the error to name the stored vector column, got %q", err.Error())
 	}
 }
 

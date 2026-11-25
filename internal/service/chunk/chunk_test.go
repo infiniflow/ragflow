@@ -1853,6 +1853,46 @@ func TestRemoveChunkAfterEmbeddingChangeUsesDetachedContext(t *testing.T) {
 	}
 }
 
+func TestRemoveChunkAfterEmbeddingChangeRetriesTransientDeleteFailure(t *testing.T) {
+	engine := &addChunkTestEngine{
+		storedChunk:    map[string]interface{}{"id": "chunk-1", "create_timestamp_flt": 42.0},
+		deleteFailures: 1,
+	}
+	svc := &ChunkService{docEngine: engine}
+
+	svc.removeChunkAfterEmbeddingChange(t.Context(), "ragflow_tenant", "chunk-1", "doc-1", "kb-1", 42.0)
+
+	if engine.deleteAttempts != 2 {
+		t.Fatalf("delete attempts = %d, want one failed attempt and one retry", engine.deleteAttempts)
+	}
+	if engine.deleteChunksCalls != 1 {
+		t.Fatalf("successful delete calls = %d, want the stale chunk removed on retry", engine.deleteChunksCalls)
+	}
+}
+
+func TestRemoveChunkAfterEmbeddingChangeDoesNotDeleteReplacementWrittenBetweenAttempts(t *testing.T) {
+	engine := &addChunkTestEngine{
+		storedChunk:    map[string]interface{}{"id": "chunk-1", "create_timestamp_flt": 42.0},
+		deleteFailures: 1,
+	}
+	engine.onDelete = func(attempt int) {
+		if attempt == 1 {
+			// The other add replaces the row after this attempt's failed delete.
+			engine.storedChunk = map[string]interface{}{"id": "chunk-1", "create_timestamp_flt": 43.0}
+		}
+	}
+	svc := &ChunkService{docEngine: engine}
+
+	svc.removeChunkAfterEmbeddingChange(t.Context(), "ragflow_tenant", "chunk-1", "doc-1", "kb-1", 42.0)
+
+	if engine.deleteAttempts != 1 {
+		t.Fatalf("delete attempts = %d, want the retry to stop once a replacement appeared", engine.deleteAttempts)
+	}
+	if engine.deleteChunksCalls != 0 {
+		t.Fatalf("cleanup deleted the replacement written by the other add: %#v", engine.deleteChunksCondition)
+	}
+}
+
 func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
 	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
@@ -2545,8 +2585,14 @@ type addChunkTestEngine struct {
 	storedChunk  map[string]interface{}
 	getChunkErr  error
 	deleteCtxErr error
-	searchReq    *types.SearchRequest
-	searchResp   *types.SearchResult
+	// deleteFailures fails that many DeleteChunks calls before one succeeds.
+	deleteFailures int
+	deleteAttempts int
+	// onDelete runs at the start of every DeleteChunks call, after the attempt
+	// counter moved.
+	onDelete   func(attempt int)
+	searchReq  *types.SearchRequest
+	searchResp *types.SearchResult
 }
 
 func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
@@ -2585,6 +2631,14 @@ func (e *addChunkTestEngine) GetChunk(_ context.Context, _ string, chunkID strin
 
 func (e *addChunkTestEngine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName, datasetID string) (int64, error) {
 	e.deleteCtxErr = ctx.Err()
+	e.deleteAttempts++
+	if e.onDelete != nil {
+		e.onDelete(e.deleteAttempts)
+	}
+	if e.deleteFailures > 0 {
+		e.deleteFailures--
+		return 0, errors.New("engine unavailable")
+	}
 	return e.parseTestDocEngine.DeleteChunks(ctx, condition, indexName, datasetID)
 }
 
