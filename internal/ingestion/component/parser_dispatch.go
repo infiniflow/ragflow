@@ -172,7 +172,7 @@ func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, wi
 		window.Report(ctx, float64(done)/float64(total))
 		// Report the discrete page position alongside the fraction so the
 		// ingestion log can answer "which page of how many" (finding ③).
-		agentruntime.ReportProgressDetail(ctx, "page", uint32(done), uint32(total))
+		agentruntime.ReportProgressDetail(ctx, "page:parse", uint32(done), uint32(total))
 	}
 }
 

@@ -87,7 +87,8 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { showLog, logInfo, logVisible, hideLog, datasetId, logId } =
+    useShowLog(documents);
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
@@ -226,6 +227,8 @@ export function DatasetTable({
           visible={logVisible}
           onCancel={() => hideLog()}
           logInfo={logInfo}
+          datasetId={datasetId}
+          logId={logId}
         />
       )}
     </>
