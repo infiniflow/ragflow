@@ -32,7 +32,7 @@ type idleBudgetConfig struct {
 	enabled     bool
 	totalCap    int           // max idle sessions across all pools (0 = no cap)
 	highWaterMB int           // device-used above this => aggressive eviction
-	lowWaterMB  int           // evict until device-used <= this
+	lowWaterMB  int           // backpressure lifts only below this mark (0 = use high water)
 	idleTTL     time.Duration // prune idle sessions idle longer than this
 	minIdleKeep int           // per pool: never prune below this many idle sessions
 }
