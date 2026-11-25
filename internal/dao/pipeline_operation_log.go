@@ -131,7 +131,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 // resolve a queued document's early row: matching by document_name is a fuzzy
 // LIKE search that can push the row out of the first page when several
 // documents share a name.
-func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
+func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string, readableDocuments *gorm.DB) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ? AND (run_count > 0 OR run_count IS NULL)", kbID)
 
@@ -142,6 +142,9 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 		query = query.Where("document_id = ?", documentID)
 	}
 	query = query.Where("document_id <> ?", entity.DatasetLogDocumentID)
+	if readableDocuments != nil {
+		query = query.Where("document_id IN (?)", readableDocuments)
+	}
 
 	if len(operationStatus) > 0 {
 		query = query.Where("operation_status IN ?", expandPipelineOperationStatuses(operationStatus))

@@ -155,7 +155,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		if accessErr := permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
 			permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
-			permission.OperationUpdate,
+			permission.OperationShare,
 		); accessErr != nil {
 			code, permissionErr := permissionresponse.NormalizeHidden(accessErr)
 			return nil, code, permissionErr
@@ -725,7 +725,7 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
 		ctx,
 		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
-		permission.OperationUpdate,
+		permission.OperationShare,
 	)
 	if err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)

@@ -17,7 +17,18 @@
 import { DynamicFormRef, FormFieldConfig } from '@/components/dynamic-form';
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
+import { hasResourcePermission, Permission } from '@/ee/constants/team';
 import { RefObject } from 'react';
+
+export function canManageProviderInstance(instance: IProviderInstance) {
+  if (instance.is_owner !== false) return true;
+  const permission = instance.operator_permission ?? 0;
+  return (
+    hasResourcePermission(permission, Permission.Write) ||
+    hasResourcePermission(permission, Permission.Manage) ||
+    hasResourcePermission(permission, Permission.Owner)
+  );
+}
 
 /**
  * Provider-specific transform that maps form values onto the verify
@@ -169,6 +180,7 @@ export interface SavedModeCardProps {
   /** Commit a rename: updates the card's edited-name state. */
   onRename: (name: string) => void;
   instance: IProviderInstance;
+  canManage: boolean;
   instanceDetailsLoaded: boolean;
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
   onInstanceModelsStatusChange: (ready: boolean) => void;

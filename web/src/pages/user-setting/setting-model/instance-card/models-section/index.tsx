@@ -103,7 +103,10 @@ export function ModelsSection(props: ModelsSectionProps) {
     data: instanceModels,
     loading: instanceModelsLoading,
     isSuccess: instanceModelsSucceeded,
-  } = useFetchInstanceModels(providerName, instanceName);
+  } = useFetchInstanceModels(
+    instance?.provider_id || providerName,
+    instanceName,
+  );
 
   useLayoutEffect(() => {
     if (
