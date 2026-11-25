@@ -87,8 +87,8 @@ export function requestChatCompletionStream(
 
 /**
  * Yields each parsed SSE payload's `data` field. Terminates on stream end and
- * on any reader error; an AbortError is rethrown so the caller can distinguish
- * user cancellation from a genuine failure.
+ * propagates reader errors so the caller can distinguish user cancellation
+ * from a genuine transport failure.
  */
 export async function* parseCompletionEventStream(
   response: Response,
@@ -102,17 +102,7 @@ export async function* parseCompletionEventStream(
 
   // oxlint-disable-next-line no-constant-condition
   while (true) {
-    let chunk: Awaited<ReturnType<typeof reader.read>>;
-    try {
-      chunk = await reader.read();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        throw error;
-      }
-      // Any other reader failure means the stream is unusable. Unlike the
-      // legacy loop in logic-hooks.ts, break out instead of spinning forever.
-      break;
-    }
+    const chunk = await reader.read();
 
     if (chunk.done) break;
 
