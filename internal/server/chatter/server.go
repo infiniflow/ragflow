@@ -29,7 +29,7 @@ import (
 )
 
 // Run owns the channel runtime until cancellation, including adapter shutdown.
-func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, arguments *bootstrap.ServerArgs) error {
 	if !kvrocks.IsEnabled() {
 		return fmt.Errorf("chatter requires Kvrocks for shared channel runtime status")
 	}
@@ -57,8 +57,8 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 		defer hb.Stop()
 	}
 	common.Info("Chat-channel service started")
-	if args.Ready != nil {
-		if err := args.Ready(); err != nil {
+	if arguments.Ready != nil {
+		if err = arguments.Ready(); err != nil {
 			return err
 		}
 	}
