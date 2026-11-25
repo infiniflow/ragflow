@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 )
 
 func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string) ([]map[string]interface{}, common.ErrorCode, error) {
@@ -64,25 +65,22 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string)
 
 	// Authorize and load every dataset before reading any document config, so
 	// nothing belonging to an inaccessible dataset is fetched.
+	loadedKBs, loadErr := service.LoadAuthorizedKBs(ctx, dao.DB, permission.NewDatabaseChecker(dao.DB), d.kbDAO, orderedIDs, permission.OperationRead)
+	if loadErr != nil {
+		code, permissionErr := permissionresponse.Normalize(loadErr)
+		return nil, code, permissionErr
+	}
 	type authorizedDataset struct {
 		id     string
 		tenant string
 	}
-	authorized := make([]authorizedDataset, 0, len(orderedIDs))
-	for _, datasetID := range orderedIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
-			code, permissionErr := permissionresponse.Normalize(err)
-			return nil, code, permissionErr
-		}
-		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
-		if err != nil {
-			if dao.IsNotFoundErr(err) {
-				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
-			}
-			return nil, common.CodeServerError, fmt.Errorf("Database operation failed: %w", err)
+	authorized := make([]authorizedDataset, 0, len(loadedKBs))
+	for i, kb := range loadedKBs {
+		if kb == nil {
+			return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", orderedIDs[i])
 		}
 		authorized = append(authorized, authorizedDataset{
-			id:     datasetID,
+			id:     orderedIDs[i],
 			tenant: kb.TenantID,
 		})
 	}

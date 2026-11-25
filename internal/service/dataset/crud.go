@@ -451,19 +451,30 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 		accessibleIDs[ref.ID] = struct{}{}
 	}
 
-	kbs := make([]*entity.Knowledgebase, 0, len(normalizedIDs))
-	unauthorizedIDs := make([]string, 0)
+	accessibleIDsInOrder := make([]string, 0, len(accessibleIDs))
 	for _, id := range normalizedIDs {
-		if _, ok := accessibleIDs[id]; !ok {
-			unauthorizedIDs = append(unauthorizedIDs, id)
-			continue
+		if _, ok := accessibleIDs[id]; ok {
+			accessibleIDsInOrder = append(accessibleIDsInOrder, id)
 		}
-		kb, err := d.kbDAO.GetByID(ctx, dao.DB, id)
-		if err != nil || kb == nil {
-			unauthorizedIDs = append(unauthorizedIDs, id)
+	}
+	loaded, loadErr := service.LoadKBsInOrder(ctx, dao.DB, d.kbDAO, accessibleIDsInOrder)
+	if loadErr != nil {
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", loadErr)
+	}
+
+	kbs := make([]*entity.Knowledgebase, 0, len(accessibleIDsInOrder))
+	unauthorizedIDs := make([]string, 0)
+	for i, kb := range loaded {
+		if kb == nil {
+			unauthorizedIDs = append(unauthorizedIDs, accessibleIDsInOrder[i])
 			continue
 		}
 		kbs = append(kbs, kb)
+	}
+	for _, id := range normalizedIDs {
+		if _, ok := accessibleIDs[id]; !ok {
+			unauthorizedIDs = append(unauthorizedIDs, id)
+		}
 	}
 	if len(unauthorizedIDs) > 0 {
 		_, permissionErr := permissionresponse.Normalize(permission.ErrPermissionDenied)
