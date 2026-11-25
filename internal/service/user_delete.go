@@ -255,6 +255,16 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, dataset := range data.datasets {
 		datasetNameID := namedID(dataset.Name, dataset.ID)
+		// Some backends refuse to remove a logical bucket outright. Skip the
+		// call when the physical bucket is already gone, as the caller did
+		// before bucket removal was made unconditional.
+		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
+		if err != nil {
+			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
+		}
+		if !exists {
+			continue
+		}
 		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
 			return fmt.Errorf("remove dataset bucket %s: %w", datasetNameID, err)
 		}
@@ -262,10 +272,18 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	if data.ownedTenantID != "" {
 		downloadBucket := fmt.Sprintf("%s-downloads", data.ownedTenantID)
-		if err := store.RemoveBucket(ctx, downloadBucket); err != nil {
-			return fmt.Errorf("remove downloads bucket %s: %w", downloadBucket, err)
+		exists, err := store.BucketExistsWithError(ctx, downloadBucket)
+		if err != nil {
+			return fmt.Errorf("check downloads bucket %s: %w", downloadBucket, err)
 		}
-		common.Info("Removed downloads bucket", zap.String("bucket", downloadBucket))
+		if !exists {
+			common.Warn("Downloads bucket already missing", zap.String("bucket", downloadBucket))
+		} else {
+			if err := store.RemoveBucket(ctx, downloadBucket); err != nil {
+				return fmt.Errorf("remove downloads bucket %s: %w", downloadBucket, err)
+			}
+			common.Info("Removed downloads bucket", zap.String("bucket", downloadBucket))
+		}
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {

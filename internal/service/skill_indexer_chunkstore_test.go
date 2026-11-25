@@ -64,7 +64,7 @@ func (e *chunkStoreCountingEngine) CreateChunkStore(_ context.Context, _, _ stri
 func TestCreateIndexWithDimensionSkipsRedundantExistenceCheck(t *testing.T) {
 	e := &chunkStoreCountingEngine{exists: false}
 	svc := &SkillIndexerService{}
-	if err := svc.createIndexWithDimension(t.Context(), "tenant-1", "space-1", e, "embd-1", 128, false); err != nil {
+	if err := svc.createIndexWithDimension(t.Context(), "tenant-1", "space-1", e, "embd-1", 128); err != nil {
 		t.Fatalf("createIndexWithDimension: %v", err)
 	}
 	if e.existsCalls != 0 {
@@ -78,32 +78,12 @@ func TestCreateIndexWithDimensionSkipsRedundantExistenceCheck(t *testing.T) {
 	}
 }
 
-// TestCreateIndexWithDimensionUsesPrecheckedExistence is the adversarial case
-// for the drop path: when the caller says the index still exists, the existing
-// table must be dropped exactly once without re-probing the engine.
-func TestCreateIndexWithDimensionUsesPrecheckedExistence(t *testing.T) {
-	e := &chunkStoreCountingEngine{exists: true}
-	svc := &SkillIndexerService{}
-	if err := svc.createIndexWithDimension(t.Context(), "tenant-1", "space-1", e, "embd-1", 256, true); err != nil {
-		t.Fatalf("createIndexWithDimension: %v", err)
-	}
-	if e.existsCalls != 0 {
-		t.Fatalf("ChunkStoreExists called %d times, want 0", e.existsCalls)
-	}
-	if e.dropCalls != 1 || e.createCalls != 1 {
-		t.Fatalf("drop/create calls = %d/%d, want 1/1", e.dropCalls, e.createCalls)
-	}
-	if len(e.createdDims) != 1 || e.createdDims[0] != 256 {
-		t.Fatalf("created dimensions = %v, want [256]", e.createdDims)
-	}
-}
-
 // TestCreateIndexWithDimensionNonInfinityNeverProbes pins that the existence
 // question is irrelevant on engines without the dimension-recreate path.
 func TestCreateIndexWithDimensionNonInfinityNeverProbes(t *testing.T) {
 	e := &chunkStoreCountingEngine{engineType: "elasticsearch", exists: true}
 	svc := &SkillIndexerService{}
-	if err := svc.createIndexWithDimension(t.Context(), "tenant-1", "space-1", e, "embd-1", 128, true); err != nil {
+	if err := svc.createIndexWithDimension(t.Context(), "tenant-1", "space-1", e, "embd-1", 128); err != nil {
 		t.Fatalf("createIndexWithDimension: %v", err)
 	}
 	if e.existsCalls != 0 || e.dropCalls != 0 || e.createCalls != 1 {

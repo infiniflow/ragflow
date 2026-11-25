@@ -40,6 +40,7 @@ type countingDeletionStorage struct {
 	objectErr      error
 	bucketErr      error
 	emptyBucketErr error
+	bucketMissing  bool
 }
 
 func (s *countingDeletionStorage) ObjectExists(context.Context, string, string) (bool, error) {
@@ -49,7 +50,7 @@ func (s *countingDeletionStorage) ObjectExists(context.Context, string, string) 
 
 func (s *countingDeletionStorage) BucketExistsWithError(context.Context, string) (bool, error) {
 	s.bucketCalls++
-	return true, nil
+	return !s.bucketMissing, nil
 }
 
 func (s *countingDeletionStorage) Remove(_ context.Context, bucket, name string, _ ...string) error {
@@ -104,8 +105,10 @@ func TestDeleteExternalDataSkipsExistenceProbes(t *testing.T) {
 	if err := deletionFixture().deleteExternalData(t.Context(), &deletionEngine{}, store); err != nil {
 		t.Fatalf("deleteExternalData: %v", err)
 	}
-	if store.existsCalls != 0 || store.bucketCalls != 0 {
-		t.Fatalf("existence probes = ObjectExists:%d BucketExists:%d, want 0/0", store.existsCalls, store.bucketCalls)
+	// Object-level probes are gone; the two bucket-level guards remain for
+	// backends that refuse logical-bucket removal.
+	if store.existsCalls != 0 || store.bucketCalls != 2 {
+		t.Fatalf("existence probes = ObjectExists:%d BucketExists:%d, want 0/2", store.existsCalls, store.bucketCalls)
 	}
 	if want := []string{"dataset-1/doc.pdf", "dataset-1/file.pdf"}; !reflect.DeepEqual(store.removed, want) {
 		t.Fatalf("removed objects = %v, want %v", store.removed, want)
@@ -118,24 +121,45 @@ func TestDeleteExternalDataSkipsExistenceProbes(t *testing.T) {
 	}
 }
 
+// TestDeleteExternalDataSkipsUnremovableMissingBucket is the adversarial
+// backend case: some backends refuse logical-bucket removal outright. When
+// the physical bucket is already absent, the caller must skip the removal
+// instead of failing user deletion — the baseline did exactly that.
+func TestDeleteExternalDataSkipsUnremovableMissingBucket(t *testing.T) {
+	store := &countingDeletionStorage{
+		bucketMissing: true,
+		bucketErr:     errors.New("cannot remove logical bucket"),
+	}
+	if err := deletionFixture().deleteExternalData(t.Context(), &deletionEngine{}, store); err != nil {
+		t.Fatalf("deleteExternalData with a missing unremovable bucket: %v", err)
+	}
+	if len(store.removedBuckets) != 0 {
+		t.Fatalf("RemoveBucket called for missing buckets: %v", store.removedBuckets)
+	}
+	if store.bucketCalls == 0 {
+		t.Fatal("expected existence checks before bucket removal")
+	}
+}
+
 // TestDeleteExternalDataKeepsRemovalErrors pins that removing the probes does
 // not swallow a real storage failure (the user row must stay for retry).
 func TestDeleteExternalDataKeepsRemovalErrors(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		store *countingDeletionStorage
-		want  string
+		name            string
+		store           *countingDeletionStorage
+		want            string
+		wantBucketCalls int
 	}{
-		{"object", &countingDeletionStorage{objectErr: errors.New("storage unavailable")}, "storage unavailable"},
-		{"bucket", &countingDeletionStorage{bucketErr: errors.New("storage unavailable")}, "storage unavailable"},
+		{"object", &countingDeletionStorage{objectErr: errors.New("storage unavailable")}, "storage unavailable", 0},
+		{"bucket", &countingDeletionStorage{bucketErr: errors.New("storage unavailable")}, "storage unavailable", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := deletionFixture().deleteExternalData(t.Context(), &deletionEngine{}, tc.store)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("deleteExternalData error = %v, want %q", err, tc.want)
 			}
-			if tc.store.existsCalls != 0 || tc.store.bucketCalls != 0 {
-				t.Fatalf("existence probes = %d/%d, want 0/0", tc.store.existsCalls, tc.store.bucketCalls)
+			if tc.store.existsCalls != 0 || tc.store.bucketCalls != tc.wantBucketCalls {
+				t.Fatalf("existence probes = %d/%d, want 0/%d", tc.store.existsCalls, tc.store.bucketCalls, tc.wantBucketCalls)
 			}
 		})
 	}

@@ -79,6 +79,9 @@ type deletionStorage struct {
 	bucketErr    error
 }
 
+func (s *deletionStorage) BucketExistsWithError(context.Context, string) (bool, error) {
+	return true, nil
+}
 func (s *deletionStorage) RemoveBucket(_ context.Context, bucket string) error {
 	if s.bucketErr != nil {
 		return s.bucketErr

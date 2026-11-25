@@ -188,7 +188,7 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 		exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 		if !exists {
 			common.Info(fmt.Sprintf("Creating Infinity table with dimension %d", dimension))
-			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension, false); err != nil {
+			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension); err != nil {
 				return fmt.Errorf("failed to create index with dimension %d: %w", dimension, err)
 			}
 		}
@@ -283,7 +283,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 		if !exists {
 			// Only create if table doesn't exist
 			common.Info(fmt.Sprintf("Creating index with actual dimension %d", dimension))
-			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension, false); err != nil {
+			if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension); err != nil {
 				return fmt.Errorf("failed to create index with dimension %d: %w", dimension, err)
 			}
 			common.Info("Index created successfully")
@@ -479,7 +479,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, spaceID string, do
 	// Create new index with correct dimension
 	common.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, newDimension))
 	// The old index was just dropped above, so creation must not drop again.
-	if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, newDimension, false); err != nil {
+	if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, newDimension); err != nil {
 		return nil, fmt.Errorf("failed to create index with dimension %d: %w", newDimension, err)
 	}
 
@@ -895,7 +895,8 @@ func (s *SkillIndexerService) initializeIndex(ctx context.Context, tenantID, spa
 
 	if !exists {
 		common.Info("Skill index does not exist, creating...", zap.String("indexName", indexName))
-		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID, exists)
+		// The index is known absent here, so the create path needs no check.
+		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID)
 	}
 
 	common.Info("Skill search index already exists, ensuring vector mappings", zap.String("indexName", indexName))
@@ -908,19 +909,19 @@ func (s *SkillIndexerService) initializeIndex(ctx context.Context, tenantID, spa
 }
 
 // createIndex creates the skill index using mapping files
-func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, indexExists bool) error {
+func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string) error {
 	// Get embedding dimension by calling embedding API with test text
 	dimension, err := s.getEmbeddingDimension(ctx, tenantID, embdID)
 	if err != nil {
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
-	return s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension, indexExists)
+	return s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension)
 }
 
 // createIndexWithDimension creates the skill index with a specific vector dimension.
-// indexExists is the caller's already-fetched existence result; re-probing the
-// engine here would add a second metadata round trip on the create path.
-func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, dimension int, indexExists bool) error {
+// Callers establish absence before reaching this path, so it never re-probes
+// the engine or drops an index here.
+func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, dimension int) error {
 	indexName := SkillIndexName(tenantID, spaceID)
 
 	common.Info(fmt.Sprintf("Creating skill index with dimension %d", dimension),
@@ -928,16 +929,6 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 		zap.String("spaceID", spaceID),
 		zap.Int("dimension", dimension),
 		zap.String("engineType", docEngine.GetType()))
-
-	// For Infinity: drop a still-existing table so it is recreated with the
-	// requested dimension. The caller already answered the existence question.
-	if docEngine.GetType() == "infinity" && indexExists {
-		common.Info(fmt.Sprintf("Index exists, deleting for recreation with dimension %d", dimension),
-			zap.String("indexName", indexName))
-		if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
-			common.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
-		}
-	}
 
 	// Use the doc engine's CreateChunkStore method with skill-specific mapping
 	// The mapping file is loaded from conf/skill_es_mapping.json or conf/skill_infinity_mapping.json

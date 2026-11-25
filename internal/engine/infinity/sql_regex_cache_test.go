@@ -26,19 +26,35 @@ var d5Aliases = map[string]string{
 	"d5_alias_c": "actual_c",
 }
 
-// TestRewriteFieldAliasesDoesNotCompileRegexPerCall pins the hot-path fix:
-// every alias regex and the reused keyword regex must be compiled once and
-// cached, not rebuilt for each of the four rewritten clauses. AllocsPerRun is
-// the observable here — compiling a regex allocates, a cache hit does not.
-func TestRewriteFieldAliasesDoesNotCompileRegexPerCall(t *testing.T) {
+// TestCachedSQLRegexesAreReused is a deterministic guard against reintroducing
+// per-call compilation: each cache lookup must return the same compiled object,
+// while distinct aliases/keywords must not share an entry.
+func TestCachedSQLRegexesAreReused(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		first, again, other interface{}
+	}{
+		{"boundary alias", cachedAliasBoundaryRegex("d5_alias_a"), cachedAliasBoundaryRegex("d5_alias_a"), cachedAliasBoundaryRegex("d5_alias_b")},
+		{"word alias", cachedAliasWordRegex("d5_alias_a"), cachedAliasWordRegex("d5_alias_a"), cachedAliasWordRegex("d5_alias_b")},
+		{"keyword", cachedKeywordRegex("where"), cachedKeywordRegex("where"), cachedKeywordRegex("having")},
+	} {
+		if tc.first != tc.again {
+			t.Errorf("%s regex was rebuilt across calls", tc.name)
+		}
+		if tc.first == tc.other {
+			t.Errorf("%s regex cache did not separate distinct keys", tc.name)
+		}
+	}
+}
+
+// TestRewriteFieldAliasesStableAcrossCalls pins that repeated rewrites with
+// cached regexes stay byte-for-byte identical.
+func TestRewriteFieldAliasesStableAcrossCalls(t *testing.T) {
 	want := rewriteFieldAliases(d5SQL, d5Aliases)
-	allocs := testing.AllocsPerRun(100, func() {
+	for range 5 {
 		if got := rewriteFieldAliases(d5SQL, d5Aliases); got != want {
 			t.Fatalf("rewrite changed across calls: %q vs %q", got, want)
 		}
-	})
-	if allocs > 100 {
-		t.Fatalf("rewriteFieldAliases allocations = %v/op, want <= 100 (regexes are recompiled)", allocs)
 	}
 }
 

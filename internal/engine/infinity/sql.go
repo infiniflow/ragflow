@@ -91,9 +91,13 @@ type fieldMappingEntry struct {
 }
 
 // fieldMappingCacheEntry is the parsed result reused across RunSQL calls.
+// The file fingerprint keeps the runtime-reload behavior the baseline had:
+// a replaced or edited mapping file must be picked up on the next query.
 type fieldMappingCacheEntry struct {
 	aliasToActual      map[string]string
 	actualToFirstAlias map[string]string
+	modTime            time.Time
+	size               int64
 }
 
 // fieldMappingCache is keyed by the resolved mapping file path, so two
@@ -123,9 +127,18 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 		return nil, nil, err
 	}
 
-	if cached, ok := fieldMappingCache.Load(*filePath); ok {
-		entry := cached.(fieldMappingCacheEntry)
-		return entry.aliasToActual, entry.actualToFirstAlias, nil
+	// Stat is cheap compared with ReadFile + Unmarshal. Skip the fast path if
+	// stat itself fails and let ReadFile below report the real problem.
+	var cachedEntry fieldMappingCacheEntry
+	haveCached := false
+	if info, statErr := os.Stat(*filePath); statErr == nil {
+		if cached, ok := fieldMappingCache.Load(*filePath); ok {
+			cachedEntry = cached.(fieldMappingCacheEntry)
+			haveCached = cachedEntry.modTime.Equal(info.ModTime()) && cachedEntry.size == info.Size()
+		}
+	}
+	if haveCached {
+		return cachedEntry.aliasToActual, cachedEntry.actualToFirstAlias, nil
 	}
 
 	data, err := os.ReadFile(*filePath)
@@ -162,9 +175,15 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 			actualToFirstAlias[actual] = firstAlias
 		}
 	}
+	info, statErr := os.Stat(*filePath)
+	if statErr != nil {
+		return nil, nil, fmt.Errorf("stat field mapping %q: %w", *filePath, statErr)
+	}
 	fieldMappingCache.Store(*filePath, fieldMappingCacheEntry{
 		aliasToActual:      aliasToActual,
 		actualToFirstAlias: actualToFirstAlias,
+		modTime:            info.ModTime(),
+		size:               info.Size(),
 	})
 	return aliasToActual, actualToFirstAlias, nil
 }

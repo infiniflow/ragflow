@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 )
 
 // writeCachedMappingFixture creates <base>/conf/<name> and points the project
@@ -42,11 +43,11 @@ func writeCachedMappingFixture(t *testing.T, name, contents string) string {
 }
 
 // TestLoadFieldMappingCachesAcrossCalls pins the hot-path fix: RunSQL calls
-// loadFieldMapping on every invocation, so the file read and JSON parse must
-// happen once per mapping file. The fixture is rewritten between calls — a
-// re-reading implementation returns the new alias and fails this test.
+// loadFieldMapping on every invocation, so an unchanged file must be served
+// from the cache rather than read and parsed again. Making the file unreadable
+// after the first load turns any re-read into a hard failure.
 func TestLoadFieldMappingCachesAcrossCalls(t *testing.T) {
-	writeCachedMappingFixture(t, "cached-mapping.json", `{
+	path := writeCachedMappingFixture(t, "cached-mapping.json", `{
 		"actual": {"type": "varchar", "comment": "first_alias"}
 	}`)
 
@@ -58,21 +59,100 @@ func TestLoadFieldMappingCachesAcrossCalls(t *testing.T) {
 		t.Fatalf("first load = %v, want %v", gotFirst, want)
 	}
 
-	// Overwrite the file in place: the resolved path is unchanged, so the
-	// second call must be served by the cache with the original mapping.
-	path := filepath.Join(os.Getenv("RAG_PROJECT_BASE"), "conf", "cached-mapping.json")
+	// Stat still succeeds on a 000-mode file; ReadFile does not. A valid
+	// cache hit therefore succeeds while any re-read fails.
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o644) })
+
+	gotSecond, _, err := loadFieldMapping("cached-mapping.json")
+	if err != nil {
+		t.Fatalf("second load should be served from cache, got: %v", err)
+	}
+	if !reflect.DeepEqual(gotSecond, gotFirst) {
+		t.Fatalf("second load = %v, want cached %v", gotSecond, gotFirst)
+	}
+}
+
+// TestLoadFieldMappingReloadsOnFileChange pins the restored hot-reload
+// semantics: the baseline re-read the file on every query, so replacing the
+// mapping file at runtime used to take effect on the next call. A pure path
+// cache silently froze the old mapping — this test fails on that regression.
+func TestLoadFieldMappingReloadsOnFileChange(t *testing.T) {
+	path := writeCachedMappingFixture(t, "hot-reload-mapping.json", `{
+		"actual": {"type": "varchar", "comment": "before_alias"}
+	}`)
+
+	before, _, err := loadFieldMapping("hot-reload-mapping.json")
+	if err != nil {
+		t.Fatalf("first load: %v", err)
+	}
+	if want := map[string]string{"before_alias": "actual"}; !reflect.DeepEqual(before, want) {
+		t.Fatalf("first load = %v, want %v", before, want)
+	}
+
+	// Change both content and size so the file fingerprint cannot match.
 	if err := os.WriteFile(path, []byte(`{
-		"actual": {"type": "varchar", "comment": "second_alias"}
+		"actual": {"type": "varchar", "comment": "after_alias_with_a_longer_name"}
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	gotSecond, _, err := loadFieldMapping("cached-mapping.json")
+	got, _, err := loadFieldMapping("hot-reload-mapping.json")
 	if err != nil {
 		t.Fatalf("second load: %v", err)
 	}
-	if !reflect.DeepEqual(gotSecond, gotFirst) {
-		t.Fatalf("second load = %v, want cached %v (mapping file was re-read)", gotSecond, gotFirst)
+	want := map[string]string{"after_alias_with_a_longer_name": "actual"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("second load = %v, want %v (stale cache survived a file change)", got, want)
+	}
+}
+
+// TestLoadFieldMappingReloadsOnSameSizeChange is the adversarial fingerprint
+// case: content changed with identical length, so only the modification time
+// can detect the replacement.
+func TestLoadFieldMappingReloadsOnSameSizeChange(t *testing.T) {
+	path := writeCachedMappingFixture(t, "same-size-mapping.json", `{
+		"actual": {"type": "varchar", "comment": "aaaa_alias"}
+	}`)
+
+	first, _, err := loadFieldMapping("same-size-mapping.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"aaaa_alias": "actual"}; !reflect.DeepEqual(first, want) {
+		t.Fatalf("first load = %v, want %v", first, want)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same byte length, different alias. Force a different mtime so a
+	// fingerprint check (but not a size-only check) sees the change.
+	newContents := `{
+		"actual": {"type": "varchar", "comment": "bbbb_alias"}
+	}`
+	if len(newContents) != len(`{
+		"actual": {"type": "varchar", "comment": "aaaa_alias"}
+	}`) {
+		t.Fatal("fixture lengths must match")
+	}
+	if err := os.WriteFile(path, []byte(newContents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := info.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _, err := loadFieldMapping("same-size-mapping.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"bbbb_alias": "actual"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("same-size reload = %v, want %v", got, want)
 	}
 }
 
