@@ -74,7 +74,7 @@ export CC="$LLVM_PREFIX/bin/clang"
 export CXX="$LLVM_PREFIX/bin/clang++"
 ```
 
-Known limitation: `bash build.sh --all` fails to configure on Intel Macs because the build passes Go's `amd64` to CMake as `CMAKE_OSX_ARCHITECTURES`, while the PCRE2 architecture check expects `x86_64`. A matching PCRE2 archive does not avoid this error. See [#22759](https://github.com/infiniflow/ragflow/issues/22759); until it is fixed, override the architecture with `RAGFLOW_CMAKE_ARGS=-DCMAKE_OSX_ARCHITECTURES=x86_64 bash build.sh --all`. Apple Silicon is unaffected.
+Known limitation: `bash build.sh --all` fails to configure on Intel Macs because the build passes Go's `amd64` to CMake as `CMAKE_OSX_ARCHITECTURES`, while the PCRE2 architecture check expects `x86_64`. A matching PCRE2 archive does not avoid this error. See [#22759](https://github.com/infiniflow/ragflow/issues/22759); until it is fixed, apply the architecture override in the build step below. Apple Silicon is unaffected.
 
 macOS builds are not covered by project CI and are not independently verified by the maintainers; report build problems as issues.
 
@@ -91,6 +91,13 @@ Skip either script if you have prepared the same resources by other means.
 Build the C++ bindings and Go binaries:
 
 ```bash
+bash build.sh --all
+```
+
+On Intel Macs, export the architecture override before running the build so the PCRE2 architecture check passes (see [#22759](https://github.com/infiniflow/ragflow/issues/22759)); Apple Silicon does not need it:
+
+```bash
+export RAGFLOW_CMAKE_ARGS=-DCMAKE_OSX_ARCHITECTURES=x86_64
 bash build.sh --all
 ```
 
