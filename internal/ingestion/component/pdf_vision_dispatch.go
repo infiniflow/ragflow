@@ -38,6 +38,32 @@ import (
 	"gorm.io/gorm"
 )
 
+// Failover sentinels for the PDF vision OCR dispatches: failures that say
+// nothing about the selected model member's health must not flip a gp-
+// reference's current member inactive.
+var (
+	// errOCRTaskPollTimeout: the backend accepted the task but the result did
+	// not arrive within the polling window - the member may simply be slow,
+	// and resubmitting the task on another member would duplicate work.
+	errOCRTaskPollTimeout = errors.New("OCR task result polling timed out")
+	// errMonkeyOCRNoTextualLayouts: the returned ZIP legitimately carries no
+	// text layer (a pure-image input) - a property of the document, not of
+	// the member.
+	errMonkeyOCRNoTextualLayouts = errors.New("MonkeyOCRv2 ZIP contains no textual layouts")
+)
+
+// ocrFailoverCanRetry excludes context cancellation, accepted-task polling
+// timeouts, and document-property failures from the flip-and-retry decision.
+func ocrFailoverCanRetry(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	return !errors.Is(err, errOCRTaskPollTimeout) && !errors.Is(err, errMonkeyOCRNoTextualLayouts)
+}
+
 // minerUDefaultLanguage is MinerU's own OCR language default, applied when
 // neither mineru_lang nor the family setup names one. It deliberately does not
 // consult the knowledge base: it is an engine input, not a caption setting.
@@ -419,7 +445,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 			res.Warnings = append(res.Warnings, budget.Warnings()...)
 			result = res
 			return nil
-		}, nil)
+		}, ocrFailoverCanRetry)
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
@@ -481,8 +507,6 @@ func dispatchUnlimitedOCR2PDF(
 	if environmentURL == "" {
 		environmentURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
 	}
-	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
-
 	// Group failover: resolution and driver/config setup run once per attempt
 	// and their errors are terminal; only the submit/poll invocation failure
 	// flips a gp- reference's current member inactive and replays once.
@@ -493,6 +517,11 @@ func dispatchUnlimitedOCR2PDF(
 		timeout     time.Duration
 	}
 	resolveTarget := func(ctx context.Context) (*unlimitedOCRTarget, error) {
+		// Recomputed per attempt: a group-failover retry re-runs resolveTarget
+		// after member A's URL was already applied, and the fallback paths
+		// below must derive member B's endpoint from the original
+		// environment/setup value, not from the failed member's URL.
+		baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
 		var resolvedDriver *modelModule.UnlimitedOCRModel
 		var resolvedAPIConfig *modelModule.APIConfig
 		if tenantID != "" {
@@ -627,7 +656,7 @@ func dispatchUnlimitedOCR2PDF(
 
 			result = normalizePDFMarkdown(ctx, filename, taskResult.Markdown)
 			return nil
-		}, nil)
+		}, ocrFailoverCanRetry)
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
@@ -651,10 +680,13 @@ func pollUnlimitedOCRTaskResult(ctx context.Context, driver *modelModule.Unlimit
 			lastErr = err
 		}
 		if time.Now().After(deadline) {
+			// Mark as a polling timeout: the backend accepted the task and may
+			// simply be slow, so failover must not flip the member or
+			// resubmit the task on another member.
 			if lastErr != nil {
-				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
+				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w (%w)", taskID, lastErr, errOCRTaskPollTimeout)
 			}
-			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
+			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s (%w)", taskID, errOCRTaskPollTimeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -1087,7 +1119,7 @@ func monkeyOCRv2ParseArchive(ctx context.Context, filename string, zipBytes []by
 				return res, res.Err
 			}
 		}
-		return parser.ParseResult{}, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
+		return parser.ParseResult{}, errMonkeyOCRNoTextualLayouts
 	}
 	return monkeyOCRv2LayoutResult(ctx, filename, fileMeta, sections)
 }
@@ -1532,7 +1564,7 @@ func dispatchMinerUPDF(
 			res.Warnings = append(res.Warnings, mediaWarnings...)
 			result = res
 			return nil
-		}, nil)
+		}, ocrFailoverCanRetry)
 	if err != nil {
 		return parser.ParseResult{}, err
 	}

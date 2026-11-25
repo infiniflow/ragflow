@@ -37,6 +37,11 @@ type embeddingCheckSample struct {
 	QuestionKeywords  []string
 }
 
+// errEmbeddingCheckEngineSide marks a failure of the document engine or the
+// sampled chunk data during CheckEmbedding: it says nothing about the
+// embedding model's health, so the gp- failover must not flip a member for it.
+var errEmbeddingCheckEngineSide = errors.New("embedding check: engine-side failure")
+
 // CheckEmbedding verifies that a candidate embedding model is compatible with a
 // dataset's existing vectors (the standard "switch embedding model" validation).
 // It is independent of the retired RunIndex/graph_rag_queue scheduling path.
@@ -105,11 +110,11 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 
 			rawChunk, err := d.docEngine.GetChunk(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), sample.ChunkID, []string{datasetID})
 			if err != nil {
-				return run, common.CodeServerError, fmt.Errorf("failed to get sampled chunk %s: %w", sample.ChunkID, err)
+				return run, common.CodeServerError, fmt.Errorf("failed to get sampled chunk %s: %w (%w)", sample.ChunkID, err, errEmbeddingCheckEngineSide)
 			}
 			chunkMap := datasetMap(rawChunk)
 			if len(chunkMap) == 0 {
-				return run, common.CodeServerError, fmt.Errorf("sampled chunk %s was not found", sample.ChunkID)
+				return run, common.CodeServerError, fmt.Errorf("sampled chunk %s was not found (%w)", sample.ChunkID, errEmbeddingCheckEngineSide)
 			}
 
 			title := datasetString(chunkMap["title_tks"])
@@ -192,7 +197,12 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 			run = r
 			return nil
 		},
-		func(error) bool { return lastCode == common.CodeServerError })
+		func(err error) bool {
+			// Flip only on embedding-provider failures: engine-side failures
+			// (document engine outage, missing sampled chunk) say nothing
+			// about the model member's health.
+			return lastCode == common.CodeServerError && !errors.Is(err, errEmbeddingCheckEngineSide)
+		})
 	if err != nil {
 		if lastCode == 0 {
 			// Resolution failed — same mapping as before failover existed.

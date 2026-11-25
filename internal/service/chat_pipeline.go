@@ -50,6 +50,25 @@ import (
 	"go.uber.org/zap"
 )
 
+// rebindToolcallSession re-attaches the toolcall session from kwargs onto a
+// freshly resolved chat model. Phase 4 binds tools only to the originally
+// resolved instance, so without this a gp- group-failover retry would run a
+// new model without ToolConfig and silently lose the tool-call capability.
+func rebindToolcallSession(model *modelModule.ChatModel, kwargs map[string]interface{}) {
+	if model == nil {
+		return
+	}
+	session, hasSession := kwargs["toolcall_session"]
+	tools, hasTools := kwargs["tools"]
+	if !hasSession || session == nil || !hasTools || tools == nil {
+		return
+	}
+	if ts, ok := session.(modelModule.ToolCallSession); ok {
+		common.Info("Bind ToolCall after failover re-resolve")
+		model.BindTools(ts, tools)
+	}
+}
+
 // Fields defined by the chat-completions message schema. Stored messages also
 // carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
 // which strict providers reject.
@@ -1474,7 +1493,11 @@ func (s *ChatPipelineService) AsyncChat(
 			driverErr = dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
 				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
 				func(ctx context.Context) (*modelModule.ChatModel, error) {
-					return s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					fresh, rerr := s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					if rerr == nil {
+						rebindToolcallSession(fresh, kwargs)
+					}
+					return fresh, rerr
 				},
 				func(ctx context.Context, model *modelModule.ChatModel) error {
 					fullAnswer = ""
@@ -1562,7 +1585,11 @@ func (s *ChatPipelineService) AsyncChat(
 			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
 				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
 				func(ctx context.Context) (*modelModule.ChatModel, error) {
-					return s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					fresh, rerr := s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					if rerr == nil {
+						rebindToolcallSession(fresh, kwargs)
+					}
+					return fresh, rerr
 				},
 				func(ctx context.Context, model *modelModule.ChatModel) error {
 					if model.ToolConfig != nil {

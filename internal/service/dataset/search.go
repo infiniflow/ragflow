@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ragflow/internal/dao"
@@ -409,6 +410,18 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 		return &retrievalModels{embedding: embeddingModel, rerank: rerankModel}, nil
 	}
+	// Only flip when the failing side is the model behind the group: document
+	// engine outages and request errors say nothing about the member's health,
+	// so they must not deactivate a healthy member.
+	failoverCanRetry := func(err error) bool {
+		switch failoverType {
+		case entity.ModelTypeEmbedding:
+			return errors.Is(err, nlp.ErrEmbeddingModelSide)
+		case entity.ModelTypeRerank:
+			return errors.Is(err, nlp.ErrRerankModelSide)
+		}
+		return false
+	}
 	var result *service.SearchDatasetsResponse
 	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantIDs[0], failoverType, failoverRef,
 		resolveModels, nil,
@@ -419,7 +432,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			}
 			result = resp
 			return nil
-		}, nil)
+		}, failoverCanRetry)
 	if err != nil {
 		return nil, err
 	}

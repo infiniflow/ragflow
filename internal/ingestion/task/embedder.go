@@ -302,6 +302,12 @@ func (e *embedder) embedWithFailover(ctx context.Context, texts []string) ([]mod
 	if err == nil || ctx.Err() != nil {
 		return embeds, usage, err
 	}
+	if isOverLimitErr(err) {
+		// Over-limit is a property of the input batch, not of the member:
+		// Encode's shrinking ladder owns it and will call back with a smaller
+		// batch, so hand it back instead of flipping a healthy group member.
+		return embeds, usage, err
+	}
 	groupID, ok := common.ParseGroupModelRef(e.modelRef)
 	if !ok || e.resolve == nil || e.db == nil || strings.TrimSpace(e.tenantID) == "" {
 		return embeds, usage, err
