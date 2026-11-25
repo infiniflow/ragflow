@@ -583,15 +583,6 @@ func killProcessGroup(pid int, sig syscall.Signal) error {
 	return syscall.Kill(-pid, sig)
 }
 
-// statusFromExitCode matches the Python side's metadata.status
-// string ("ok" or "error").
-func statusFromExitCode(code int) string {
-	if code == 0 {
-		return "ok"
-	}
-	return "error"
-}
-
 // envOr returns the value of the env var, or fallback if unset.
 func envOr(key, fallback string) string {
 	if v := common.GetEnv(key); v != "" {
