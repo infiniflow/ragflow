@@ -138,10 +138,10 @@ func InitResourceBudget(ctx context.Context, b ResourceBudget, defaultOn bool) {
 	if pollSec < 1 {
 		pollSec = 1
 	}
-	go resourceJanitor(ctx, b, time.Duration(pollSec)*time.Second, highWaterMB)
+	go resourceJanitor(ctx, b, time.Duration(pollSec)*time.Second)
 }
 
-func resourceJanitor(ctx context.Context, b ResourceBudget, interval time.Duration, highMB int) {
+func resourceJanitor(ctx context.Context, b ResourceBudget, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -164,10 +164,15 @@ func resourceJanitor(ctx context.Context, b ResourceBudget, interval time.Durati
 				continue
 			}
 			SetDeviceUsedMB(used)
-			enabled, _, _, _ := IdleBudgetStatus()
-			if !enabled {
+			// Both water marks come from the installed config under one lock so
+			// the high and low thresholds can never diverge into a stale band.
+			idleBudget.mu.Lock()
+			cfg := idleBudget.cfg
+			idleBudget.mu.Unlock()
+			if !cfg.enabled {
 				continue
 			}
+			highMB, lowMB := cfg.highWaterMB, cfg.lowWaterMB
 			if used > highMB {
 				if !doctype.Backpressure() {
 					doctype.SetBackpressure(true)
@@ -183,9 +188,6 @@ func resourceJanitor(ctx context.Context, b ResourceBudget, interval time.Durati
 				// configured low mark unused. lowMB<=0 means "unset" and
 				// degrades to a single threshold so an under-configured janitor
 				// can never stall every acquire.
-				idleBudget.mu.Lock()
-				lowMB := idleBudget.cfg.lowWaterMB
-				idleBudget.mu.Unlock()
 				if lowMB <= 0 || used < lowMB {
 					if doctype.Backpressure() {
 						doctype.SetBackpressure(false)

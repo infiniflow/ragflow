@@ -72,7 +72,7 @@ func TestJanitorClearsBackpressureOnFailedSample(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "backpressure to engage", func() bool { return doctype.Backpressure() })
 
@@ -103,7 +103,7 @@ func TestJanitorPrunesIdleBetweenWatermarks(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "idle prune between watermarks", func() bool {
 		return pruned.Load() > 0
@@ -128,7 +128,7 @@ func TestJanitorKeepsBackpressureInHysteresisBand(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "backpressure to engage above high water", func() bool {
 		return doctype.Backpressure()
@@ -163,7 +163,7 @@ func TestJanitorLiftsBackpressureBelowLowWater(t *testing.T) {
 	r.set(9000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "backpressure to engage", func() bool { return doctype.Backpressure() })
 
@@ -187,13 +187,36 @@ func TestJanitorWithLowWaterUnsetDoesNotStall(t *testing.T) {
 	r.set(9000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "backpressure to engage", func() bool { return doctype.Backpressure() })
 
 	r.set(7000) // below high, low mark unset
 	waitUntil(t, 2*time.Second, "backpressure to lift with low mark unset", func() bool {
 		return !doctype.Backpressure()
+	})
+}
+
+// TestJanitorEngagesAtConfiguredHighWater pins the single-source-of-truth
+// contract for the water marks: the janitor must take its high threshold from
+// the installed budget config. The adversarial fixture sets cfg high to 6000
+// and feeds a sample of 7000 — a janitor reading any separate/stale threshold
+// above 7000 would stay open and fail this.
+func TestJanitorEngagesAtConfiguredHighWater(t *testing.T) {
+	doctype.SetInferenceLimit(4)
+	ConfigureIdleBudget(idleBudgetConfig{enabled: true, highWaterMB: 6000, lowWaterMB: 5000})
+	defer ConfigureIdleBudget(idleBudgetConfig{})
+	defer doctype.SetBackpressure(false)
+
+	r := &sampleResource{}
+	r.set(7000) // above cfg high (6000)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
+
+	waitUntil(t, 2*time.Second, "backpressure to engage at configured high water", func() bool {
+		return doctype.Backpressure()
 	})
 }
 
