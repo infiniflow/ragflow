@@ -36,8 +36,7 @@ func setupKBTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	// Migrate knowledgebase table
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Tenant{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {

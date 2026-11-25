@@ -260,6 +260,18 @@ func (dao *KnowledgebaseDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB,
 	return dao.ListByQuery(ctx, query, ownerIDs, pageNumber, itemsPerPage, terms, keywords, parserID, name)
 }
 
+// Owner filters use user_id. A dataset card can additionally show the workspace
+// name, which varies independently of the user's identity.
+const datasetOwnerLabelSQL = `COALESCE(NULLIF(TRIM(owner.nickname), ''),
+	CASE WHEN INSTR(owner.email, '@') > 1 THEN SUBSTR(owner.email, 1, INSTR(owner.email, '@') - 1) END, '')`
+
+const datasetLabelSQL = `COALESCE(
+	CASE WHEN owner.id IS NULL OR SUBSTR(TRIM(team.name), -10) <> '''s Kingdom'
+		THEN NULLIF(NULLIF(TRIM(team.name), ''), '''s Kingdom') END,
+	NULLIF(` + datasetOwnerLabelSQL + `, ''),
+	NULLIF(NULLIF(TRIM(team.name), ''), '''s Kingdom'),
+	'')`
+
 // ListByQuery lists knowledge bases using an already-scoped base query. The
 // caller can apply a permission.QueryScope before calling this method, keeping
 // authorization filtering in the same SQL query as count and pagination.
@@ -278,9 +290,10 @@ func (dao *KnowledgebaseDAO) ListByQuery(ctx context.Context, query *gorm.DB, ow
 		knowledgebase.vector_similarity_weight, knowledgebase.parser_id, knowledgebase.parser_config,
 		knowledgebase.pagerank, knowledgebase.embd_id,
 		knowledgebase.tenant_embd_id, knowledgebase.pipeline_id, knowledgebase.pipeline_version_id,
-		owner.nickname, tenant.avatar as tenant_avatar, knowledgebase.update_time`).
+		`+datasetLabelSQL+` AS nickname, tenant.avatar AS tenant_avatar, knowledgebase.update_time`).
 		Joins("LEFT JOIN user AS owner ON knowledgebase.user_id = owner.id").
 		Joins("LEFT JOIN user AS tenant ON knowledgebase.tenant_id = tenant.id").
+		Joins("LEFT JOIN tenant AS team ON knowledgebase.tenant_id = team.id").
 		Where("knowledgebase.status = ?", string(entity.StatusValid))
 
 	if len(ownerIDs) > 0 {
@@ -332,10 +345,10 @@ func (dao *KnowledgebaseDAO) GetOwnerFilterByResourceIDs(ctx context.Context, db
 	}
 
 	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Select("knowledgebase.user_id as id, owner.nickname as label, COUNT(knowledgebase.id) as count").
+		Select("knowledgebase.user_id as id, "+datasetOwnerLabelSQL+" as label, COUNT(knowledgebase.id) as count").
 		Joins("LEFT JOIN user AS owner ON knowledgebase.user_id = owner.id").
 		Where("knowledgebase.id IN ? AND knowledgebase.status = ?", resourceIDs, string(entity.StatusValid)).
-		Group("knowledgebase.user_id, owner.nickname").
+		Group("knowledgebase.user_id, owner.nickname, owner.email").
 		Scan(&owners).Error
 
 	return owners, err
