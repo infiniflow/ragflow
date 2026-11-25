@@ -228,7 +228,14 @@ const chunkService = {
         page_size: params.page_size || params.size,
         keywords: params.keywords,
         available: getAvailableParam(params.available_int),
-        chunk_ids: params.chunk_ids,
+        // axios serialises an array as `chunk_ids[]=a&chunk_ids[]=b`, which the
+        // server never sees: it reads the bare `chunk_ids` name and splits the
+        // value on commas, so one string carries the whole id list. An empty
+        // list is left off entirely, because an empty value would read as "no
+        // filter" on the wire, which is a different thing.
+        chunk_ids: Array.isArray(params.chunk_ids)
+          ? params.chunk_ids.join(',') || undefined
+          : params.chunk_ids,
       },
     });
 
