@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -90,14 +91,27 @@ func LoadKBsInOrder(ctx context.Context, db *gorm.DB, kbDAO *dao.KnowledgebaseDA
 		return nil, err
 	}
 	byID := make(map[string]*entity.Knowledgebase, len(kbs))
+	byFoldedID := make(map[string]*entity.Knowledgebase, len(kbs))
 	for _, kb := range kbs {
-		if kb != nil {
-			byID[kb.ID] = kb
+		if kb == nil {
+			continue
+		}
+		byID[kb.ID] = kb
+		// A database with a case-insensitive collation can return the stored
+		// row even when the request used a different case. Keep a folded index
+		// so the requested id still resolves to that row.
+		folded := strings.ToLower(kb.ID)
+		if _, exists := byFoldedID[folded]; !exists {
+			byFoldedID[folded] = kb
 		}
 	}
 	out := make([]*entity.Knowledgebase, len(ids))
 	for i, id := range ids {
-		out[i] = byID[id]
+		kb := byID[id]
+		if kb == nil {
+			kb = byFoldedID[strings.ToLower(id)]
+		}
+		out[i] = kb
 	}
 	return out, nil
 }

@@ -77,8 +77,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 
 	// First pass: validate every document exists before mutating any state, so
 	// a single invalid doc rejects the whole request. Collect the distinct
-	// datasets once: a batch often contains many documents from the same KB,
-	// and authorizing/loading that KB per document is pure overhead.
+	// datasets once so their rows are fetched in one query; a batch often
+	// contains many documents from the same KB. Authorization stays on the
+	// per-document seam in the ordered loop below — dataset rows are batched,
+	// but the write check is not.
 	kbIDs := make([]string, 0, len(req.DocIDs))
 	seenKB := make(map[string]struct{}, len(req.DocIDs))
 	for _, docID := range req.DocIDs {
@@ -93,25 +95,6 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		}
 		seenKB[doc.KbID] = struct{}{}
 		kbIDs = append(kbIDs, doc.KbID)
-	}
-	// Authorize every distinct dataset with one resource load and fetch them
-	// with one query. The per-document loop below still decides which error
-	// wins, in document order: a missing dataset and a denied dataset are
-	// reported exactly as before when the old code checked each document in
-	// turn (GetByID first, then the dataset write check).
-	checker := permission.NewDatabaseChecker(dao.DB)
-	refs := make([]permission.ResourceRef, 0, len(kbIDs))
-	for _, kbID := range kbIDs {
-		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kbID})
-	}
-	accessible, filterErr := checker.FilterResources(ctx, refs, permission.OperationRun)
-	if filterErr != nil {
-		code, permissionErr := permissionresponse.Normalize(filterErr)
-		return code, permissionErr
-	}
-	allowed := make(map[permission.ResourceRef]bool, len(accessible))
-	for _, ref := range accessible {
-		allowed[ref] = true
 	}
 	loadedKBs, loadErr := service.LoadKBsInOrder(ctx, dao.DB, s.kbDAO, kbIDs)
 	if loadErr != nil {
@@ -139,12 +122,9 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		if kb == nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: doc.KbID}
-		if !allowed[ref] {
-			if err := checker.CheckResource(ctx, ref, permission.OperationRun); err != nil {
-				code, permissionErr := permissionresponse.Normalize(err)
-				return code, permissionErr
-			}
+		if err := service.CheckDocumentWrite(ctx, docID, doc.KbID, permission.OperationRun, ""); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return code, permissionErr
 		}
 		validated = append(validated, validatedDoc{doc, kb})
 		validatedIDs = append(validatedIDs, docID)
