@@ -1,7 +1,7 @@
 import { Routes as AppRoutes } from '@/routes';
 import { act, renderHook } from '@testing-library/react';
 import { PropsWithChildren } from 'react';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, useLocation, useSearchParams } from 'react-router';
 import { useNavigatePage } from './navigate-hooks';
 
 function createWrapper(initialPath: string) {
@@ -17,6 +17,7 @@ function renderNavigatePage(initialPath: string) {
     () => ({
       navigation: useNavigatePage(),
       location: useLocation(),
+      search: useSearchParams(),
     }),
     { wrapper: createWrapper(initialPath) },
   );
@@ -215,4 +216,36 @@ describe('useNavigatePage', () => {
 
     expect(result.current.location.pathname).toBe('/');
   });
+});
+
+it('restores the file list page and page size after paginating chunks', () => {
+  const { result } = renderNavigatePage('/dataset/files/kb-1?page=2&size=100');
+
+  act(result.current.navigation.navigateToChunkParsedResult('doc-1', 'kb-1'));
+  expect(result.current.location.pathname).toBe('/chunk/parsed/chunks');
+  expect(result.current.search[0].get('doc_id')).toBe('doc-1');
+  expect(result.current.search[0].has('page')).toBe(false);
+
+  act(() => {
+    result.current.search[1]((previous) => {
+      const params = new URLSearchParams(previous);
+      params.set('page', '3');
+      params.set('size', '20');
+      return params;
+    });
+  });
+
+  act(result.current.navigation.navigateToDataFile('kb-1'));
+  expect(result.current.location.pathname).toBe('/dataset/files/kb-1');
+  expect(result.current.location.search).toBe('?page=2&size=100');
+});
+
+it('opens the default file list when viewing a direct document link', () => {
+  const { result } = renderNavigatePage(
+    '/chunk/parsed/chunks?id=kb-1&doc_id=doc-1',
+  );
+
+  act(result.current.navigation.navigateToDataFile('kb-1'));
+  expect(result.current.location.pathname).toBe('/dataset/files/kb-1');
+  expect(result.current.location.search).toBe('');
 });

@@ -26,6 +26,12 @@ export enum QueryStringMap {
   id = 'id',
 }
 
+// Chunk pagination must stay independent of the file list's return page.
+const fileListPaginationParams = [
+  ['page', 'file_page'],
+  ['size', 'file_size'],
+] as const;
+
 type UserSettingLocationState = {
   returnTo?: string;
 };
@@ -95,9 +101,17 @@ export const useNavigatePage = () => {
 
   const navigateToDataFile = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.DatasetBase}${Routes.Files}/${id}`);
+      const pagination = new URLSearchParams();
+      for (const [param, returnParam] of fileListPaginationParams) {
+        const value = searchParams.get(returnParam);
+        if (value) pagination.set(param, value);
+      }
+      navigate({
+        pathname: `${Routes.DatasetBase}${Routes.Files}/${id}`,
+        search: pagination.toString(),
+      });
     },
-    [navigate],
+    [navigate, searchParams],
   );
 
   const navigateToDatasetSetting = useCallback(
@@ -290,13 +304,18 @@ export const useNavigatePage = () => {
   );
 
   const navigateToChunkParsedResult = useCallback(
-    (id: string, knowledgeId?: string) => () => {
-      navigate(
-        `${Routes.ParsedResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
-        // `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
-      );
+    (id: string, knowledgeId: string) => () => {
+      const params = new URLSearchParams({ id: knowledgeId, doc_id: id });
+      for (const [param, returnParam] of fileListPaginationParams) {
+        const value = searchParams.get(param);
+        if (value) params.set(returnParam, value);
+      }
+      navigate({
+        pathname: `${Routes.ParsedResult}/chunks`,
+        search: params.toString(),
+      });
     },
-    [navigate],
+    [navigate, searchParams],
   );
 
   const getQueryString = useCallback(
