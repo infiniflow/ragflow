@@ -57,18 +57,18 @@ Make `clang++` resolve to Clang 20 and `ld.lld` to LLD 20 before building. Insta
 On macOS, contributors provide the toolchain with Homebrew:
 
 ```bash
-brew install llvm cmake simde pcre2
+brew install llvm@20 cmake simde pcre2
 ```
 
-- Put Homebrew LLVM first on `PATH` and point `CC` / `CXX` at its Clang.
+- Put Homebrew LLVM 20 first on `PATH` and point `CC` / `CXX` at its Clang.
 - CMake must be 4.0 or later; install it separately if Homebrew provides an older version.
 - `simde` supplies the x86 SSE/AVX headers used in ARM builds.
 - LLD is only required on Linux.
 
-Export before running `build.sh`, deriving the paths from the installed Homebrew prefix (`/opt/homebrew/opt/llvm` on Apple Silicon, `/usr/local/opt/llvm` on Intel):
+Export before running `build.sh`, deriving the paths from the installed Homebrew prefix (`/opt/homebrew/opt/llvm@20` on Apple Silicon, `/usr/local/opt/llvm@20` on Intel):
 
 ```bash
-LLVM_PREFIX="$(brew --prefix llvm)"
+LLVM_PREFIX="$(brew --prefix llvm@20)"
 export PATH="$LLVM_PREFIX/bin:$PATH"
 export CC="$LLVM_PREFIX/bin/clang"
 export CXX="$LLVM_PREFIX/bin/clang++"
