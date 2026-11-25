@@ -135,6 +135,7 @@ export enum LLMFactory {
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
   Morse = 'Morse',
+  AIGROW = 'AIGROW',
 }
 
 // Please lowercase the file name
@@ -251,6 +252,7 @@ export const IconMap = {
   [LLMFactory.HopBase]: 'hopbase',
   [LLMFactory.GreenNode]: 'greennode',
   [LLMFactory.Morse]: 'morse',
+  [LLMFactory.AIGROW]: 'aigrow',
 };
 
 /**
@@ -316,6 +318,7 @@ export const APIMapUrl = {
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.Morse]: 'https://console.trymorse.ai',
+  [LLMFactory.AIGROW]: 'https://aigrow.gg/dashboard/api',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

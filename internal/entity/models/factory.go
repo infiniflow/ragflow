@@ -242,6 +242,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGreenNodeModel(baseURL, urlSuffix), nil
 	case "morse":
 		return NewMorseModel(baseURL, urlSuffix), nil
+	case "aigrow":
+		return NewAIGROWModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
