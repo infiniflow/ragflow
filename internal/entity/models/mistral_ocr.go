@@ -67,6 +67,14 @@ var mistralOCRLinkPattern = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)\)`)
 
 var mistralOCRBlankLines = regexp.MustCompile(`\n{3,}`)
 
+// IsMistralOCRModelReference reports whether a composite refers to a dedicated
+// OCR model under the Mistral provider or its stored Mistral OCR alias.
+func IsMistralOCRModelReference(ref string) bool {
+	name, _, provider, err := common.ParseCompositeModelName(ref)
+	return err == nil && strings.EqualFold(CatalogProviderName(provider), "Mistral") &&
+		strings.HasPrefix(strings.ToLower(name), "mistral-ocr-")
+}
+
 // mistralOCRPageIndexes converts 1-indexed inclusive page ranges into the
 // zero-based page selector /v1/ocr expects. The selector is bounded by the
 // API's page limit; a selection lying entirely past it is an error rather

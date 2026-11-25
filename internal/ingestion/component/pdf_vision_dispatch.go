@@ -1789,10 +1789,7 @@ func dispatchNaceOCRPDF(ctx context.Context, db *gorm.DB, filename string, binar
 
 func isMistralOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
 	if strings.Contains(selector, "@") {
-		name, _, provider, err := common.ParseCompositeModelName(selector)
-		// Mistral serves vision chat models as well as its dedicated OCR models.
-		return err == nil && strings.EqualFold(modelModule.CatalogProviderName(provider), "Mistral") &&
-			strings.HasPrefix(strings.ToLower(name), "mistral-ocr-")
+		return modelModule.IsMistralOCRModelReference(selector)
 	}
 	return isOCRModelSelector(ctx, db, tenantID, selector, "Mistral", "mistral")
 }
