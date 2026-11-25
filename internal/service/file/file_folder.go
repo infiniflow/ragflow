@@ -736,28 +736,22 @@ func (s *FileService) renameLinkedDocuments(ctx context.Context, fileID, newName
 	return nil
 }
 
-// uniqueStorageLocation returns an object name free in the destination bucket.
-// The conflict-free path is unchanged: one probe and the original name. Once
-// the name is taken, a unique token replaces the old name_, name__, ... walk,
-// so K occupied names no longer cost K+1 sequential storage calls. A fresh,
-// unpredictable suffix also narrows the check-then-move window in which another
-// writer could claim the probed name. A token collision falls back to the
-// original deterministic naming so correctness never depends on the clock.
+// uniqueStorageLocation prefers the display name, then a timestamp to avoid
+// probing a long sequence of occupied names. Each suffix shares the same byte
+// budget as the filename, including on retries after a timestamp collision.
 func uniqueStorageLocation(ctx context.Context, store storage.Storage, bucket, name string) string {
-	if !store.ObjExist(ctx, bucket, name) {
-		return name
+	const limit = utility.StorageKeyMaxBytes
+	key := utility.StorageObjectName(name, 0, limit)
+	if !store.ObjExist(ctx, bucket, key) {
+		return key
 	}
-	candidate := name + "_" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	// The location column is capped; an over-long candidate would let the
-	// storage move succeed while the DB update fails, orphaning the file.
-	if len(candidate) <= common.NameLimit255 && !store.ObjExist(ctx, bucket, candidate) {
-		return candidate
+
+	suffix := "_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	key = utility.StorageObjectName(name, 0, limit-len(suffix)) + suffix
+	for attempt := 1; store.ObjExist(ctx, bucket, key); attempt++ {
+		key = utility.StorageObjectName(name, attempt, limit)
 	}
-	candidate = name + "_"
-	for store.ObjExist(ctx, bucket, candidate) {
-		candidate += "_"
-	}
-	return candidate
+	return key
 }
 
 // moveEntryRecursive recursively moves a file or folder entry
