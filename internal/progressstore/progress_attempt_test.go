@@ -18,6 +18,7 @@ package progressstore
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -25,12 +26,12 @@ import (
 func TestBeginAttemptResetsStalePositions(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	if !s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 250, 500) {
+	if !s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 250, 500) {
 		t.Fatal("seed update failed")
 	}
-	started := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	started := time.Now().UTC()
 	if !s.BeginAttempt(ctx, "run1", "doc1", "ds1", "attempt-2", started) {
 		t.Fatal("BeginAttempt failed")
 	}
@@ -55,9 +56,9 @@ func TestBeginAttemptPreservesTerminal(t *testing.T) {
 	// though it arrives with a brand-new attempt id.
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 10, 100)
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 10, 100)
 	if !s.MarkTerminal(ctx, "run1", "doc1", "ds1", StatusCompleted) {
 		t.Fatal("MarkTerminal failed")
 	}
@@ -69,8 +70,8 @@ func TestBeginAttemptPreservesTerminal(t *testing.T) {
 	if snap.Status != StatusCompleted {
 		t.Fatalf("status = %q, want COMPLETED (terminal must survive a new attempt)", snap.Status)
 	}
-	if snap.AttemptID != "" {
-		t.Errorf("attempt id = %q, want unchanged empty id on a terminal snapshot", snap.AttemptID)
+	if snap.AttemptID != testAttemptID {
+		t.Errorf("attempt id = %q, want unchanged %q on a terminal snapshot", snap.AttemptID, testAttemptID)
 	}
 }
 
@@ -163,7 +164,7 @@ func TestBeginAttemptRejectsFailedRead(t *testing.T) {
 	// Adversarial: a transient KV read failure must not be treated as an
 	// absent key — otherwise a new attempt would overwrite a known snapshot.
 	kv := &readFailKV{fakeKV: newFakeKV()}
-	newTestStore(kv.fakeKV).Update(context.Background(), "run1", "doc1", "ds1", "Parser", "page:parse", 250, 500)
+	newTestStore(kv.fakeKV).UpdateAttempt(testCtx(), "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 250, 500)
 	s := newTestStore(kv)
 	kv.fail.Store(true)
 
@@ -198,6 +199,18 @@ func TestStaleUpdateCannotClobberAttemptOpenedDuringSave(t *testing.T) {
 	}
 	if len(snap.Stages) != 0 {
 		t.Fatalf("stages = %+v, want empty after the new attempt opened", snap.Stages)
+	}
+}
+
+func TestStoreDoesNotExposeLegacyWriteMethods(t *testing.T) {
+	// Writes must go through a fenced API. An untagged write against an
+	// attempted snapshot is silently rejected, so leaving the old surface
+	// reachable is a trap for future callers.
+	typ := reflect.TypeOf(&Store{})
+	for _, name := range []string{"Update", "SetPhase"} {
+		if _, ok := typ.MethodByName(name); ok {
+			t.Errorf("Store still exposes legacy %s", name)
+		}
 	}
 }
 

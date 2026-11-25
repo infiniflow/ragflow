@@ -158,6 +158,11 @@ type Ingestor struct {
 	// normalized to an empty Deps; a nil sub-value disables the matching
 	// capability (e.g. a nil DB skips startup task scheduling).
 	deps *ingestion.Deps
+
+	// progressAttemptStarter opens the KV progress window for a claimed task.
+	// Production uses the store backed by deps.KV; tests inject an observer to
+	// verify that each delivery opens a fresh attempt and propagates its token.
+	progressAttemptStarter progressBeginner
 }
 
 type worker struct {
@@ -642,8 +647,12 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 		e.ingestionTaskSvc.PrepareValidatedRun(runCtx, task)
 		// Open a fresh progress window only after the claim succeeded and the
 		// document was reset; every later write is fenced by this attempt.
-		if e.deps != nil && e.deps.KV != nil {
-			e.beginProgressAttempt(runCtx, task, progressstore.New(e.deps.KV))
+		starter := e.progressAttemptStarter
+		if starter == nil && e.deps != nil && e.deps.KV != nil {
+			starter = progressstore.New(e.deps.KV)
+		}
+		if starter != nil {
+			e.beginProgressAttempt(runCtx, task, starter)
 		}
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))

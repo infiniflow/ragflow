@@ -257,14 +257,6 @@ func isTerminal(status string) bool {
 	}
 }
 
-// Update records a component's discrete position. It is monotonic per
-// (component, unit): out-of-order callbacks from parallel futures settle in
-// arbitrary order, and a stale lower value must never pull the snapshot back.
-// Equal positions are skipped so repeated callbacks do not rewrite the key.
-func (s *Store) Update(ctx context.Context, id, docID, datasetID, component, unit string, current, total uint32) bool {
-	return s.update(ctx, id, docID, datasetID, "", component, unit, current, total)
-}
-
 // UpdateAttempt records a position for one specific worker execution. Writes
 // from an earlier execution are fenced out by the attempt id.
 func (s *Store) UpdateAttempt(ctx context.Context, id, docID, datasetID, attemptID, component, unit string, current, total uint32) bool {
@@ -282,10 +274,8 @@ func (s *Store) update(ctx context.Context, id, docID, datasetID, attemptID, com
 	switch state {
 	case loadMissing:
 		snap = newSnapshot(id, docID, datasetID)
-		if attemptID != "" {
-			snap.AttemptID = attemptID
-			snap.AttemptStartedAt = time.Now().UTC()
-		}
+		snap.AttemptID = attemptID
+		snap.AttemptStartedAt = time.Now().UTC()
 	case loadFailed:
 		return false // a failed read must not create a fresh, lossy snapshot
 	case loadFound:
@@ -305,11 +295,6 @@ func (s *Store) update(ctx context.Context, id, docID, datasetID, attemptID, com
 	return s.save(ctx, snap)
 }
 
-// SetPhase records a component lifecycle phase (running/done/failed).
-func (s *Store) SetPhase(ctx context.Context, id, docID, datasetID, component, phase string) bool {
-	return s.setPhase(ctx, id, docID, datasetID, "", component, phase)
-}
-
 // SetPhaseAttempt records a lifecycle phase for one specific worker execution.
 func (s *Store) SetPhaseAttempt(ctx context.Context, id, docID, datasetID, attemptID, component, phase string) bool {
 	if attemptID == "" {
@@ -326,10 +311,8 @@ func (s *Store) setPhase(ctx context.Context, id, docID, datasetID, attemptID, c
 	switch state {
 	case loadMissing:
 		snap = newSnapshot(id, docID, datasetID)
-		if attemptID != "" {
-			snap.AttemptID = attemptID
-			snap.AttemptStartedAt = time.Now().UTC()
-		}
+		snap.AttemptID = attemptID
+		snap.AttemptStartedAt = time.Now().UTC()
 	case loadFailed:
 		return false
 	case loadFound:

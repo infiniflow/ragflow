@@ -89,7 +89,7 @@ func (n *nilErrKV) Get(ctx context.Context, key string) (string, error) {
 func TestLoadTreatsRedisNilAsMissing(t *testing.T) {
 	kv := &nilErrKV{fakeKV: newFakeKV()}
 	s := newTestStore(kv)
-	if !s.Update(context.Background(), "run1", "doc1", "ds1", "Parser", "page:parse", 1, 10) {
+	if !s.UpdateAttempt(testCtx(), "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 1, 10) {
 		t.Fatal("first update on a redis.Nil key failed")
 	}
 }
@@ -137,6 +137,10 @@ func (c *ctxCaptureKV) SetObj(ctx context.Context, key string, obj any, exp time
 	return c.fakeKV.SetObj(ctx, key, obj, exp)
 }
 
+const testAttemptID = "test-attempt"
+
+func testCtx() context.Context { return WithAttempt(context.Background(), testAttemptID) }
+
 func newTestStore(kv kvClient) *Store { return &Store{kv: kv} }
 
 func loadSnapshot(t *testing.T, kv *fakeKV, id string) *Snapshot {
@@ -160,16 +164,16 @@ func findStage(snap *Snapshot, name string) *Stage {
 func TestUpdateIsMonotonicWithinUnit(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	if !s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 100, 500) {
+	if !s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 100, 500) {
 		t.Fatal("first update failed")
 	}
-	if !s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 250, 500) {
+	if !s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 250, 500) {
 		t.Fatal("forward update failed")
 	}
 	// Out-of-order settle: a late callback reports a smaller position.
-	if s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 120, 500) {
+	if s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 120, 500) {
 		t.Fatal("stale update should be rejected")
 	}
 
@@ -190,11 +194,11 @@ func TestUpdateIsMonotonicWithinUnit(t *testing.T) {
 func TestUpdateKeepsUnitsIndependent(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	s.Update(ctx, "run1", "doc1", "ds1", "Extractor", "chunk:keywords", 5047, 5047)
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Extractor", "chunk:keywords", 5047, 5047)
 	// A different phase restarts from 1; it must not overwrite the first unit.
-	s.Update(ctx, "run1", "doc1", "ds1", "Extractor", "chunk:tags", 1, 5047)
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Extractor", "chunk:tags", 1, 5047)
 
 	snap := loadSnapshot(t, kv, "run1")
 	stage := findStage(snap, "Extractor")
@@ -215,12 +219,12 @@ func TestUpdateKeepsUnitsIndependent(t *testing.T) {
 func TestUpdateSkipsWriteWhenUnchanged(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	s.Update(ctx, "run1", "doc1", "ds1", "Tokenizer", "chunk:embed", 10, 100)
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Tokenizer", "chunk:embed", 10, 100)
 	before := kv.writes
-	s.Update(ctx, "run1", "doc1", "ds1", "Tokenizer", "chunk:embed", 10, 100)
-	s.Update(ctx, "run1", "doc1", "ds1", "Tokenizer", "chunk:embed", 9, 100)
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Tokenizer", "chunk:embed", 10, 100)
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Tokenizer", "chunk:embed", 9, 100)
 	if kv.writes != before {
 		t.Fatalf("writes = %d, want unchanged %d for stale/equal update", kv.writes, before)
 	}
@@ -229,10 +233,10 @@ func TestUpdateSkipsWriteWhenUnchanged(t *testing.T) {
 func TestSetPhaseAndMarkTerminal(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 10, 100)
-	if !s.SetPhase(ctx, "run1", "doc1", "ds1", "Parser", "done") {
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 10, 100)
+	if !s.SetPhaseAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "done") {
 		t.Fatal("SetPhase failed")
 	}
 	snap := loadSnapshot(t, kv, "run1")
@@ -254,7 +258,7 @@ func TestSetPhaseAndMarkTerminal(t *testing.T) {
 func TestMarkTerminalCreatesSnapshotWhenAbsent(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	if !s.MarkTerminal(context.Background(), "run1", "doc1", "ds1", "FAILED") {
+	if !s.MarkTerminal(testCtx(), "run1", "doc1", "ds1", "FAILED") {
 		t.Fatal("MarkTerminal failed on absent key")
 	}
 	snap := loadSnapshot(t, kv, "run1")
@@ -268,7 +272,7 @@ func TestUpdateCreatesSnapshotOnFirstWrite(t *testing.T) {
 	// callback must still create and persist a fresh snapshot.
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	if !s.Update(context.Background(), "run1", "doc1", "ds1", "Parser", "page:parse", 1, 10) {
+	if !s.UpdateAttempt(testCtx(), "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 1, 10) {
 		t.Fatal("first update on an absent key failed")
 	}
 	snap := loadSnapshot(t, kv, "run1")
@@ -289,8 +293,8 @@ func TestLoadMissingKey(t *testing.T) {
 func TestUnitTagSurvivesRoundTrip(t *testing.T) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
-	s.Update(ctx, "run1", "doc1", "ds1", "Compiler", "page:refine", 31, 31)
+	ctx := testCtx()
+	s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Compiler", "page:refine", 31, 31)
 	snap := loadSnapshot(t, kv, "run1")
 	stage := findStage(snap, "Compiler")
 	if stage == nil || stage.Units["page:refine"].Total != 31 {
@@ -301,29 +305,29 @@ func TestUnitTagSurvivesRoundTrip(t *testing.T) {
 func BenchmarkStoreUpdate(b *testing.B) {
 	kv := newFakeKV()
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 	b.ReportAllocs()
 	// Every timed iteration must advance the position and stay within the
 	// total, otherwise Update rejects it before reaching the write path.
 	total := uint32(b.N + 1)
 	for i := 0; i < b.N; i++ {
-		s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", uint32(i+1), total)
+		s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", uint32(i+1), total)
 	}
 }
 
 func TestUpdateSkipsWriteWhenSnapshotReadFails(t *testing.T) {
 	kv := &readFailKV{fakeKV: newFakeKV()}
 	s := newTestStore(kv)
-	ctx := context.Background()
+	ctx := testCtx()
 
-	if !s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 250, 500) {
+	if !s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 250, 500) {
 		t.Fatal("seed update failed")
 	}
 	before := kv.writes
 	kv.fail.Store(true)
 	// Adversarial: a transient read failure must not be treated as a missing
 	// key and overwrite the known 250/500 position with a stale 120/500.
-	if s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 120, 500) {
+	if s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 120, 500) {
 		t.Fatal("update succeeded despite a failed snapshot read")
 	}
 	if kv.writes != before {
@@ -339,7 +343,7 @@ func TestUpdateSkipsWriteWhenSnapshotReadFails(t *testing.T) {
 func TestMarkTerminalUsesLiveContext(t *testing.T) {
 	kv := &ctxCaptureKV{fakeKV: newFakeKV()}
 	s := newTestStore(kv)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(testCtx())
 	cancel() // caller context is already cancelled (cancel/timeout branch)
 
 	if !s.MarkTerminal(ctx, "run1", "doc1", "ds1", StatusCompleted) {
@@ -383,19 +387,19 @@ func (r *racingKV) Get(ctx context.Context, key string) (string, error) {
 }
 
 func TestLateUpdateCannotRevertTerminal(t *testing.T) {
-	ctx := context.Background()
+	ctx := testCtx()
 	kv := &racingKV{fakeKV: newFakeKV(), firesOn: 2}
 	s := newTestStore(kv)
 	// Seed the RUNNING snapshot through the raw client so the counter only
 	// tracks reads made by the store under test.
-	newTestStore(kv.fakeKV).Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 10, 100)
+	newTestStore(kv.fakeKV).UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 10, 100)
 	kv.hook = func() {
 		s.MarkTerminal(ctx, "run1", "doc1", "ds1", StatusCompleted)
 	}
 
 	// The update must be applied and reach save with a stale snapshot; the
 	// save re-read then preserves the terminal status written by the hook.
-	if !s.Update(ctx, "run1", "doc1", "ds1", "Parser", "page:parse", 20, 100) {
+	if !s.UpdateAttempt(ctx, "run1", "doc1", "ds1", testAttemptID, "Parser", "page:parse", 20, 100) {
 		t.Fatal("update should be applied and reach the commit attempt")
 	}
 	snap, ok := s.Load(ctx, "run1")
