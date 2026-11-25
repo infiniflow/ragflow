@@ -19,7 +19,9 @@ package source
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -73,17 +75,20 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 
 	// Collect all files
 	files := make(map[string][]byte)
+	ignoreDirs := []string{".git", ".svn", ".hg", "node_modules", "__MACOSX", ".vscode", ".idea"}
 	ignorePatterns := []string{
-		".git/", ".svn/", ".hg/", "node_modules/", "__MACOSX/",
 		".DS_Store", "._*", "*.log", "*.tmp", "*.temp", "*.swp", "*.swo", "*~",
-		".env", ".env.*", ".vscode/", ".idea/", "Thumbs.db", "desktop.ini",
+		".env", ".env.*", "Thumbs.db", "desktop.ini",
 	}
 
-	err = filepath.Walk(identifier, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(identifier, func(filename string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if info.IsDir() {
+			if filename != identifier && slices.Contains(ignoreDirs, info.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -92,7 +97,7 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 			return nil
 		}
 
-		relPath, err := filepath.Rel(identifier, path)
+		relPath, err := filepath.Rel(identifier, filename)
 		if err != nil {
 			return err
 		}
@@ -101,20 +106,17 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 
 		// Check ignore patterns
 		for _, pattern := range ignorePatterns {
-			if matched, _ := filepath.Match(pattern, relPath); matched {
-				return nil
-			}
-			if strings.Contains(relPath, pattern) {
+			if matched, _ := path.Match(pattern, relPath); matched || strings.Contains(relPath, pattern) {
 				return nil
 			}
 		}
 
 		// Only include text files based on extension
-		if !isTextFile(path) {
+		if !isTextFile(filename) {
 			return nil
 		}
 
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(filename)
 		if err != nil {
 			return err
 		}

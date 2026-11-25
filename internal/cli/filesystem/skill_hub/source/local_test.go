@@ -19,12 +19,12 @@ package source
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 )
 
 func TestLocalSourceFetchSkipsIgnoredDirectoriesAndUsesSlashPaths(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "node_modules")
 	files := map[string]string{
 		"SKILL.md":                     "---\nname: demo\n---\nbody\n",
 		"scripts/run.sh":               "echo ok\n",
@@ -33,6 +33,10 @@ func TestLocalSourceFetchSkipsIgnoredDirectoriesAndUsesSlashPaths(t *testing.T) 
 		".idea/workspace.xml":          "<project/>\n",
 		".git/info/exclude.txt":        "x\n",
 		"nested/node_modules/dep/a.js": "1\n",
+		"nested/my_node_modules/a.js":  "1\n",
+		"._docs/readme.md":             "keep\n",
+		"._metadata.md":                "ignore\n",
+		"nested/settings.env.json":     "{}\n",
 	}
 	for name, content := range files {
 		path := filepath.Join(root, filepath.FromSlash(name))
@@ -53,9 +57,9 @@ func TestLocalSourceFetchSkipsIgnoredDirectoriesAndUsesSlashPaths(t *testing.T) 
 	for name := range bundle.Files {
 		got = append(got, name)
 	}
-	sort.Strings(got)
-	want := []string{"SKILL.md", "scripts/run.sh"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	slices.Sort(got)
+	want := []string{"._docs/readme.md", "SKILL.md", "nested/my_node_modules/a.js", "scripts/run.sh"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("bundle files = %q, want %q", got, want)
 	}
 }
