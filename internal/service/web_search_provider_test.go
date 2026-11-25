@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/service/youcom"
 )
 
@@ -615,10 +616,7 @@ func TestRetrieveYouComWebSearchRejectsErrorStatuses(t *testing.T) {
 	}
 }
 
-// TestResolveWebSearchProviderSelectsKeyedProviders asserts that Brave, Exa, Firecrawl,
-// Linkup and Parallel all authenticate with a key and ship no keyless path, so
-// selecting one without a key must leave web search unconfigured rather than silently
-// degrade. (Exa has a free tier, but the key is still mandatory — see its own test.)
+// Providers that require a key stay unconfigured when selected without one.
 func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 	cases := []struct {
 		provider   string
@@ -629,7 +627,6 @@ func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 		{provider: "exa", apiKeyName: "exa_api_key", apiKey: "exa-test"},
 		{provider: "firecrawl", apiKeyName: "firecrawl_api_key", apiKey: "firecrawl-test"},
 		{provider: "linkup", apiKeyName: "linkup_api_key", apiKey: "linkup-test"},
-		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
 		{provider: "perplexity", apiKeyName: "perplexity_api_key", apiKey: "pplx-test"},
 		{provider: "search1api", apiKeyName: "search1api_api_key", apiKey: "search1api-test"},
 		{provider: "searchapi", apiKeyName: "searchapi_api_key", apiKey: "searchapi-test"},
@@ -691,6 +688,34 @@ func assertWebSearchChunk(t *testing.T, result map[string]interface{}, wantID, w
 	if !ok || len(aggs) != 1 {
 		t.Fatalf("doc_aggs = %#v, want one aggregate", result["doc_aggs"])
 	}
+}
+
+func TestRetrieveParallelWebSearchCallsAnonymousMCP(t *testing.T) {
+	const query = "What is RAGFlow?"
+	previous := parallelWebSearchMCPCall
+	t.Cleanup(func() { parallelWebSearchMCPCall = previous })
+	parallelWebSearchMCPCall = func(_ context.Context, opts mcpclient.CallOptions) (*mcpclient.CallResult, error) {
+		if opts.URL != "https://mcp.parallel.ai/mcp" || opts.ToolName != "web_search" || opts.ServerType != mcpclient.TransportStreamableHTTP {
+			t.Fatalf("unexpected MCP route: %s %s %s", opts.URL, opts.ToolName, opts.ServerType)
+		}
+		if len(opts.Headers) != 1 || opts.Headers["User-Agent"] != "ragflow" {
+			t.Fatalf("unexpected headers: %v", opts.Headers)
+		}
+		var args struct {
+			Objective string   `json:"objective"`
+			Queries   []string `json:"search_queries"`
+		}
+		if err := json.Unmarshal(opts.Arguments, &args); err != nil || args.Objective != query || len(args.Queries) != 1 || args.Queries[0] != query {
+			t.Fatalf("unexpected tool arguments: %+v (%v)", args, err)
+		}
+		return &mcpclient.CallResult{Text: `{"results":[{"url":"https://example.com/ragflow","title":"RAGFlow","excerpts":["An open-source","RAG engine."]}]}`}, nil
+	}
+	provider := resolveWebSearchProvider(map[string]interface{}{"web_search_provider": "parallel", "parallel_api_key": "  "})
+	result, err := (&ChatPipelineService{}).retrieveWebSearch(t.Context(), provider, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWebSearchChunk(t, result, "parallel-https://example.com/ragflow", "RAGFlow", "An open-source\nRAG engine.")
 }
 
 func TestRetrieveParallelWebSearchSendsKeyAndJoinsExcerpts(t *testing.T) {

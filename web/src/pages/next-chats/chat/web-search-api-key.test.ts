@@ -273,10 +273,7 @@ describe('You.com key selection', () => {
   });
 });
 
-// Brave, Exa, Firecrawl, Linkup and Parallel all authenticate with a key and
-// have no keyless path, so none of them may show up as "usable" without one.
-// Exa has a free tier of 1,000 requests/month, but it is not keyless.
-describe('keyed providers added in 2026-09', () => {
+describe('providers that require an API key', () => {
   const cases = [
     {
       provider: WebSearchProvider.Brave,
@@ -297,11 +294,6 @@ describe('keyed providers added in 2026-09', () => {
       provider: WebSearchProvider.Linkup,
       keyName: 'linkup_api_key',
       key: 'linkup-test',
-    },
-    {
-      provider: WebSearchProvider.Parallel,
-      keyName: 'parallel_api_key',
-      key: 'parallel-test',
     },
   ] as const;
 
@@ -445,13 +437,14 @@ describe('missingWebSearchApiKeyField', () => {
     ).toBe('linkup_api_key');
   });
 
-  it('accepts a keyed provider once its key is set', () => {
-    expect(
-      missingWebSearchApiKeyField({
-        web_search_provider: WebSearchProvider.Parallel,
-        parallel_api_key: 'parallel-test',
-      } as PromptConfig),
-    ).toBeUndefined();
+  it('accepts Parallel with or without its optional key', () => {
+    const promptConfig = { web_search_provider: WebSearchProvider.Parallel };
+    expect(hasWebSearchProvider(promptConfig)).toBe(true);
+    expect(missingWebSearchApiKeyField(promptConfig)).toBeUndefined();
+
+    const withKey = { ...promptConfig, parallel_api_key: '  parallel-test  ' };
+    expect(getWebSearchApiKey(withKey)).toBe('parallel-test');
+    expect(missingWebSearchApiKeyField(withKey)).toBeUndefined();
   });
 
   it('exempts the keyless provider', () => {

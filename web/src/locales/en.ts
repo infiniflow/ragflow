@@ -1354,8 +1354,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'When Linkup is selected, its web results supplement dataset retrieval.',
       linkupApiKeyMessage: 'Please enter your Linkup API Key',
       parallelApiKeyTip:
-        'When Parallel is selected, its search excerpts supplement dataset retrieval.',
-      parallelApiKeyMessage: 'Please enter your Parallel API Key',
+        'Optional. With Internet on, RAGFlow sends your search query to Parallel. Leave the key blank to use its rate-limited public search.',
+      parallelApiKeyMessage: 'Enter a Parallel API key (optional)',
       perplexityApiKeyTip:
         'When Perplexity is selected, results from the Perplexity Search API supplement dataset retrieval.',
       perplexityApiKeyMessage: 'Please enter your Perplexity API Key',

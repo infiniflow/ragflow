@@ -731,6 +731,9 @@ func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	if promptConfig["quote"] != true {
 		t.Fatalf("expected default quote=true, got %#v", promptConfig["quote"])
 	}
+	if promptConfig["web_search_provider"] != webSearchProviderParallel {
+		t.Fatalf("expected Parallel on new chat, got %#v", promptConfig["web_search_provider"])
+	}
 	params, ok := promptConfig["parameters"].([]interface{})
 	if !ok || len(params) != 1 {
 		t.Fatalf("expected default parameters list with 1 entry, got %#v", promptConfig["parameters"])
@@ -747,6 +750,36 @@ func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	}
 	if promptConfig["empty_response"] == "" {
 		t.Fatal("expected non-empty default empty_response")
+	}
+}
+
+func TestChatServiceCreatePreservesWebSearchChoice(t *testing.T) {
+	setupChatRESTUpdateServiceTestDB(t)
+	svc := NewChatService()
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	for _, tc := range []struct {
+		name   string
+		config map[string]interface{}
+		want   *webSearchProviderConfig
+	}{
+		{"explicit choice", map[string]interface{}{"web_search_provider": "exa", "exa_api_key": "test"}, &webSearchProviderConfig{Provider: "exa", APIKey: "test"}},
+		{"legacy choice", map[string]interface{}{"tavily_api_key": "test"}, &webSearchProviderConfig{Provider: "tavily", APIKey: "test"}},
+		{"explicitly cleared", map[string]interface{}{"web_search_provider": "", "tavily_api_key": "test"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, code, err := svc.Create(ctx, map[string]interface{}{"name": tc.name, "prompt_config": tc.config})
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("Create: code=%v, err=%v", code, err)
+			}
+			chat, err := svc.GetChat(ctx, resp["id"].(string))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := resolveWebSearchProvider(chat.PromptConfig)
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Fatalf("saved provider = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 
