@@ -910,6 +910,8 @@ build_cpp() {
     if [ "$(uname -s)" = "Darwin" ]; then
         local goarch
         goarch="$(go env GOARCH 2>/dev/null)"
+        # Use the same Intel architecture name as CMake and lipo.
+        [ "$goarch" = "amd64" ] && goarch="x86_64"
         [ -n "$goarch" ] && cmake_args+=("-DCMAKE_OSX_ARCHITECTURES=${goarch}")
     fi
     # Extra arguments for the C++ configure step, e.g. to point pcre2 at a
