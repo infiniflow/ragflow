@@ -1913,24 +1913,29 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 // The cleanup runs on a detached, bounded context: the client may have
 // disconnected, and Elasticsearch forwards the request context to the delete,
 // which would leave the old-model row behind for a caller that never retries.
-//
-// A transient engine error must not strand the rejected row either, so the
-// removal is retried a bounded number of times. Every attempt re-reads the row
-// and removes it only while it still carries this add's create timestamp: two
-// adds of the same content share the chunk id, so a concurrent add with the
-// dataset's current model can have replaced the row and committed its counters
-// already, and deleting by id alone would strand that write.
 func (s *ChunkService) removeChunkAfterEmbeddingChange(ctx context.Context, indexName, chunkID, docID, datasetID string, writeStamp interface{}) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
+	s.removeChunkWithRetries(cleanupCtx, indexName, chunkID, docID, datasetID, writeStamp)
+}
 
+// removeChunkWithRetries retries a transient engine error a bounded number of
+// times. Every attempt re-reads the row and removes it only while it still
+// carries this add's create timestamp: two adds of the same content share the
+// chunk id, so a concurrent add with the dataset's current model can have
+// replaced the row and committed its counters already, and deleting by id
+// alone would strand that write. When every attempt fails, including when the
+// cleanup context expires between attempts, the warning names the row so an
+// operator can remove it.
+func (s *ChunkService) removeChunkWithRetries(cleanupCtx context.Context, indexName, chunkID, docID, datasetID string, writeStamp interface{}) {
 	const attempts = 3
 	var lastErr error
+retry:
 	for attempt := 1; attempt <= attempts; attempt++ {
 		if attempt > 1 {
 			select {
 			case <-cleanupCtx.Done():
-				return
+				break retry
 			case <-time.After(100 * time.Millisecond):
 			}
 		}

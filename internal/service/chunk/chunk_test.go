@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -1891,6 +1893,76 @@ func TestRemoveChunkAfterEmbeddingChangeDoesNotDeleteReplacementWrittenBetweenAt
 	if engine.deleteChunksCalls != 0 {
 		t.Fatalf("cleanup deleted the replacement written by the other add: %#v", engine.deleteChunksCondition)
 	}
+}
+
+func TestRemoveChunkAfterEmbeddingChangeWarnsWhenRetriesAreExhausted(t *testing.T) {
+	logs := observeChunkWarnings(t)
+	engine := &addChunkTestEngine{
+		storedChunk:    map[string]interface{}{"id": "chunk-1", "create_timestamp_flt": 42.0},
+		deleteFailures: 99,
+	}
+	svc := &ChunkService{docEngine: engine}
+
+	svc.removeChunkAfterEmbeddingChange(t.Context(), "ragflow_tenant", "chunk-1", "doc-1", "kb-1", 42.0)
+
+	if engine.deleteAttempts != 3 {
+		t.Fatalf("delete attempts = %d, want the three bounded attempts", engine.deleteAttempts)
+	}
+	entries := logs.FilterMessageSnippet("could not remove the chunk inserted just before the embedding model switched").All()
+	if len(entries) != 1 {
+		t.Fatalf("exhausted cleanup warnings = %d, want one carrying the row", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if fields["chunk_id"] != "chunk-1" || fields["document_id"] != "doc-1" || fields["dataset_id"] != "kb-1" {
+		t.Fatalf("warning fields = %#v, want the dataset, document and chunk ids", fields)
+	}
+}
+
+func TestRemoveChunkAfterEmbeddingChangeWarnsWhenCleanupContextExpires(t *testing.T) {
+	logs := observeChunkWarnings(t)
+	engine := &addChunkTestEngine{
+		storedChunk:    map[string]interface{}{"id": "chunk-1", "create_timestamp_flt": 42.0},
+		deleteFailures: 99,
+	}
+	svc := &ChunkService{docEngine: engine}
+	// The cleanup context expires before the retry, the way a 30 s cleanup
+	// budget runs out while the engine is failing.
+	cleanupCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	svc.removeChunkWithRetries(cleanupCtx, "ragflow_tenant", "chunk-1", "doc-1", "kb-1", 42.0)
+
+	if engine.deleteAttempts != 1 {
+		t.Fatalf("delete attempts = %d, want the expired retry to stop after one attempt", engine.deleteAttempts)
+	}
+	if n := logs.FilterMessageSnippet("could not remove the chunk inserted just before the embedding model switched").Len(); n != 1 {
+		t.Fatalf("cleanup warnings = %d, want the expiry still warned about the stranded row", n)
+	}
+}
+
+// observeChunkWarnings captures Warn-and-higher logs for the chunk package.
+// Cleanup restores the previous logger and level; callers must not run in
+// parallel.
+func observeChunkWarnings(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+	previousLogger, previousSugar := common.Logger, common.Sugar
+	var previousLevel string
+	if previousLogger != nil {
+		previousLevel = common.GetLogLevel()
+	}
+	t.Cleanup(func() {
+		common.Logger, common.Sugar = previousLogger, previousSugar
+		if previousLevel != "" {
+			if err := common.SetLogLevel(previousLevel); err != nil {
+				t.Errorf("restore log level: %v", err)
+			}
+		}
+	})
+	common.InitLogger("warn", common.FileOutput{}, "")
+	core, logs := observer.New(zap.WarnLevel)
+	common.Logger = zap.New(core)
+	common.Sugar = common.Logger.Sugar()
+	return logs
 }
 
 func TestStoreChunkImageMergesExistingImage(t *testing.T) {
