@@ -35,6 +35,8 @@ import (
 // configExtras is empty in the community edition.
 type configExtras struct{}
 
+func ingestionErrorCode(error) string { return "" }
+
 // loadConfigExtras returns no additional settings in the community edition.
 func loadConfigExtras(context.Context) (configExtras, error) { return configExtras{}, nil }
 
