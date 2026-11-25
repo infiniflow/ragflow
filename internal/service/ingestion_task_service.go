@@ -199,7 +199,7 @@ const emitIngestLogTimeout = 3 * time.Second
 // inside it (slow sink, DB error, panic). The caller snapshots the identity
 // scalars and returns immediately; enrichment + emit run on a detached,
 // panic-recovered goroutine.
-func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, typ, status, errorInfo string) {
+func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, status, errorInfo string) {
 	if s.eventEmitter == nil || task == nil {
 		return
 	}
@@ -218,7 +218,6 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 		userID:        task.UserID,
 		datasetID:     task.DatasetID,
 		pipelineLogID: task.PipelineLogID,
-		typ:           typ,
 		status:        status,
 		errorInfo:     errorInfo,
 	}
@@ -235,7 +234,6 @@ type ingestEventSnapshot struct {
 	userID        string
 	datasetID     string
 	pipelineLogID *string
-	typ           string
 	status        string
 	errorInfo     string
 }
@@ -280,7 +278,9 @@ func (s *IngestionTaskService) emitLifecycleEventAsync(parentCtx context.Context
 		run, _ = s.pipelineLogDAO.GetByID(ctx, db, *logID)
 	}
 	ctx = s.enrichIngestIdentity(ctx, db, task, doc)
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, snap.typ, snap.status, snap.errorInfo))
+	// event_type now carries the event scope, which for lifecycle events is
+	// always "task"; the lifecycle state itself is carried by status.
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, "task", snap.status, snap.errorInfo))
 }
 
 // enrichIngestIdentity attaches the owning user and tenant display names to the
@@ -434,7 +434,7 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		// close the open row. Close it here or it stays RUNNING forever.
 		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, task, "Task stopped by user.")
-		s.emitLifecycleEvent(ctx, task, "stopped", common.STOPPED, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, task, common.STOPPED, "Task stopped by user.")
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -465,7 +465,7 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 	// reflect this run rather than a zero or previous-run value. Emitting here
 	// (guarded by a successful claim in the caller) keeps one running event per
 	// actual run start.
-	s.emitLifecycleEvent(ctx, task, "running", common.RUNNING, "")
+	s.emitLifecycleEvent(ctx, task, common.RUNNING, "")
 }
 
 // ErrTaskNotInScope indicates RequestStopScoped was asked to stop a task whose
@@ -500,7 +500,7 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 		// CANCEL here, otherwise the detail page keeps a queued entry.
 		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
-		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
 		task, err := s.transition(ctx, task.ID, common.STOPPING)
@@ -570,7 +570,7 @@ func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskI
 		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel, terminalMessage); err != nil {
 			return nil, err
 		}
-		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, terminalMessage)
+		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, terminalMessage)
 		return stopped, nil
 	case common.RUNNING, common.STOPPING:
 		return nil, fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
@@ -629,7 +629,7 @@ func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string)
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "completed", common.COMPLETED, "")
+	s.emitLifecycleEvent(ctx, updated, common.COMPLETED, "")
 	return nil
 }
 
@@ -657,7 +657,7 @@ func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason st
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "failed", common.FAILED, reason)
+	s.emitLifecycleEvent(ctx, updated, common.FAILED, reason)
 	return nil
 }
 
@@ -676,7 +676,7 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "stopped", common.STOPPED, "")
+	s.emitLifecycleEvent(ctx, updated, common.STOPPED, "")
 	return nil
 }
 
@@ -919,7 +919,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
+			s.emitLifecycleEvent(ctx, existing, common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -938,7 +938,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			// run identity commits so the re-queued task is not cancelled at
 			// the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
+			s.emitLifecycleEvent(ctx, existing, common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -959,7 +959,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		}
 		return nil, fmt.Errorf("ensure run identity for task %s: %w", created.ID, err)
 	}
-	s.emitLifecycleEvent(ctx, created, "created", common.CREATED, "")
+	s.emitLifecycleEvent(ctx, created, common.CREATED, "")
 	if err = s.enqueueTask(ctx, created, kbCache); err != nil {
 		s.settlePublishFailure(ctx, created)
 		return nil, err
@@ -1050,7 +1050,7 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		}
 		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
 		s.recordRunMessage(ctx, task, "Task is queued...")
-		s.emitLifecycleEvent(ctx, task, "scheduled", common.SCHEDULED, "")
+		s.emitLifecycleEvent(ctx, task, common.SCHEDULED, "")
 		return task, nil
 	}
 

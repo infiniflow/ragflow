@@ -127,6 +127,7 @@ export enum LLMFactory {
   Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
+  Onomeo = 'onomeo',
   Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
   Wiro = 'Wiro AI',
@@ -242,6 +243,7 @@ export const IconMap = {
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Onomeo]: 'onomeo',
   [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
@@ -308,6 +310,7 @@ export const APIMapUrl = {
   [LLMFactory.Cheapaimodel]:
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
+  [LLMFactory.Onomeo]: 'https://onomeo.com/dashboard',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',

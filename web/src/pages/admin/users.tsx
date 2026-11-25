@@ -163,11 +163,13 @@ function AdminUserManagement() {
     mutationFn: async ({
       email,
       password,
+      nickname,
     }: {
       email: string;
       password: string;
+      nickname: string;
     }) => {
-      await createUser(email, rsaPsw(password) as string);
+      await createUser(email, rsaPsw(password) as string, nickname);
     },
     onSuccess: () => {
       // message.success(t('admin.userCreatedSuccessfully'));

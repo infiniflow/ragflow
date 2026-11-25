@@ -49,7 +49,7 @@ func liveEngine(t *testing.T) *serenedbEngine {
 		t.Skip("SERENEDB_TEST_DSN not set; skipping live SereneDB integration test")
 	}
 	logOnce.Do(func() {
-		_ = common.InitLogger("info", common.FileOutput{Path: filepath.Join(t.TempDir(), "serenedb-it.log")}, "serenedb-it")
+		common.InitLogger("info", common.FileOutput{Path: filepath.Join(t.TempDir(), "serenedb-it.log")}, "serenedb-it")
 	})
 	t.Setenv("SERENEDB_DSN", dsn)
 	e, err := NewEngine(config.SereneDBConfig{})

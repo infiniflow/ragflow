@@ -35,9 +35,7 @@ import (
 // folding rag-*-slovak analyzers, so an accented word in a chunk matches a query
 // typed with or without its diacritics.
 func TestSlovakChunkStoreMatchesWithAndWithoutDiacritics(t *testing.T) {
-	if err := common.InitLogger("error", common.FileOutput{}, "infinity_language_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("error", common.FileOutput{}, "infinity_language_test")
 	uri := os.Getenv("RAGFLOW_INFINITY_URI")
 	if uri == "" {
 		uri = "localhost:23817"

@@ -175,9 +175,7 @@ func newRetrievalIntegrationFixture(t *testing.T, backend string, lexicalBoost .
 	// and pagination fixtures opt out so unrelated content is not boosted by
 	// important_kwd^30/important_tks^20. Existing ES and reranker fixtures retain it.
 	boostLexical := len(lexicalBoost) == 0 || lexicalBoost[0]
-	if err := common.InitLogger("error", common.FileOutput{}, ""); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("error", common.FileOutput{}, "")
 	if !tokenizer.IsInitialized() {
 		if err := tokenizer.Init(&tokenizer.PoolConfig{MinSize: 1, MaxSize: 2}); err != nil {
 			t.Fatalf("initialize production tokenizer: %v", err)

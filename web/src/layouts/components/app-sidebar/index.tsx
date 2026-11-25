@@ -2,7 +2,8 @@ import { SidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { EnterpriseSidebarTenantSwitcher } from '@/ee/layouts/components/header-enterprise';
-import { EnterpriseOrganizationNavGroup } from '@/ee/layouts/components/app-sidebar/organization-navigation';
+import { OrganizationNavGroup } from '@/ee/layouts/components/app-sidebar/organization-nav-group';
+import { useVisibleNavItems } from '@/ee/hooks/use-visible-nav-items';
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
@@ -14,7 +15,7 @@ import { LucidePanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { IntegrationsNavGroup, NavItemLink } from './nav-item';
-import { matchesPath, NavItems } from './navigation';
+import { matchesPath, NavItemKey, NavItems } from './navigation';
 import { useSidebarCollapse } from './use-sidebar-collapse';
 import { UserFooter } from './user-footer';
 
@@ -42,6 +43,13 @@ function AppSidebarContent() {
     toggleCollapsed: toggleCompilationTemplateSidebar,
   } = useCompilationTemplateSidebarCollapse();
   const { pathname } = useLocation();
+  const visibleNavItems = useVisibleNavItems(NavItems);
+  const primaryNavItems = visibleNavItems.filter(
+    (item) => item.key !== NavItemKey.Team,
+  );
+  const teamNavItems = visibleNavItems.filter(
+    (item) => item.key === NavItemKey.Team,
+  );
 
   const activeSecondarySidebar = [
     {
@@ -138,7 +146,7 @@ function AppSidebarContent() {
 
       <nav className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-3 md:px-3">
         <ul className="flex min-w-0 flex-col gap-1">
-          {NavItems.map((item) => (
+          {primaryNavItems.map((item) => (
             <li key={item.key}>
               <NavItemLink item={item} />
             </li>
@@ -149,9 +157,12 @@ function AppSidebarContent() {
           <li>
             <IntegrationsNavGroup />
           </li>
-          <li>
-            <EnterpriseOrganizationNavGroup />
-          </li>
+          <OrganizationNavGroup />
+          {teamNavItems.map((item) => (
+            <li key={item.key}>
+              <NavItemLink item={item} />
+            </li>
+          ))}
         </ul>
       </nav>
 

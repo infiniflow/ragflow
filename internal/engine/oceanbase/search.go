@@ -124,7 +124,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			condition["kb_id"] = req.KbIDs
 		}
 
-		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) {
+		var schema chunkTableSchema
+		if kind == "chunk" && (chunkSelectionNeedsSchema(effectiveReq.SelectFields) ||
+			chunkFilterUsesExtra(condition, nil) || chunkOrderUsesExtra(effectiveReq.OrderBy, nil)) {
+			schema, err = e.loadChunkTableSchema(ctx, tableName)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) &&
+			(kind != "chunk" || (!chunkFilterUsesExtra(condition, schema.columns) &&
+				!chunkOrderUsesExtra(effectiveReq.OrderBy, schema.columns))) {
 			chunks, used, hybridErr := e.searchWithDBMS(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
 			if hybridErr != nil {
 				if !isHybridUnavailableError(hybridErr) {
@@ -139,7 +149,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 		}
 
-		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
+		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan, schema)
 		if err != nil {
 			return nil, err
 		}
@@ -160,27 +170,20 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	return result, nil
 }
 
-func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan) ([]map[string]interface{}, int64, error) {
-	var tableColumns map[string]bool
-	if kind == "chunk" && chunkSelectionNeedsSchema(req.SelectFields) {
-		var err error
-		tableColumns, err = e.tableColumns(ctx, tableName)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
+func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan, schema chunkTableSchema) ([]map[string]interface{}, int64, error) {
+	tableColumns := schema.columns
 	fieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "", tableColumns)
 	if err != nil {
 		return nil, 0, err
 	}
 	var extra *chunkExtraSelection
-	if tableColumns != nil {
+	if tableColumns != nil && chunkSelectionNeedsSchema(req.SelectFields) {
 		extra = &chunkExtraSelection{
 			fields:    chunkFieldsFromExtra(req.SelectFields, tableColumns),
 			keepExtra: slices.Contains(req.SelectFields, "extra"),
 		}
 	}
-	filterSQL, filterArgs, err := buildFilter(condition, kind)
+	filterSQL, filterArgs, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -206,7 +209,7 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 		if err != nil || count == 0 {
 			return []map[string]interface{}{}, count, err
 		}
-		orderSQL, err := buildOrderBy(req.OrderBy, kind)
+		orderSQL, err := buildOrderBy(req.OrderBy, kind, schema)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -423,7 +426,20 @@ func (e *Engine) fullTextHint(tableName, kind string) string {
 	return fmt.Sprintf("/*+ UNION_MERGE(%s %s) */ ", tableName, strings.Join(indexes, " "))
 }
 
-func buildOrderBy(orderBy *types.OrderByExpr, kind string) (string, error) {
+// A nil schema means an optional sort field could reside in extra.
+func chunkOrderUsesExtra(orderBy *types.OrderByExpr, tableColumns map[string]bool) bool {
+	if orderBy != nil {
+		for _, order := range orderBy.Fields {
+			column := mapChunkField(order.Field)
+			if isOptionalChunkColumn(column) && !tableColumns[column] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func buildOrderBy(orderBy *types.OrderByExpr, kind string, schema chunkTableSchema) (string, error) {
 	if orderBy == nil || len(orderBy.Fields) == 0 {
 		return "", nil
 	}
@@ -433,15 +449,20 @@ func buildOrderBy(orderBy *types.OrderByExpr, kind string) (string, error) {
 		if kind == "memory" {
 			column = mapMemoryField(column)
 		}
-		if kind == "chunk" && column == "chunk_order_int" {
-			column = "_order_id"
+		if kind == "chunk" {
+			column = mapChunkField(column)
 		}
 		if !validColumns(kind)[column] {
 			return "", fmt.Errorf("unknown order field: %s", order.Field)
 		}
-		expression := quoteIdentifier(column)
+		var expression string
 		if kind == "chunk" && arrayColumns[column] {
-			expression = "ARRAY_AVG(" + expression + ")"
+			if chunkFieldInExtra(column, schema.columns) {
+				return "", fmt.Errorf("cannot sort by string array field %s", order.Field)
+			}
+			expression = "ARRAY_AVG(" + quoteIdentifier(column) + ")"
+		} else {
+			expression = schema.filterColumn(kind, column, true)
 		}
 		direction := "ASC"
 		if order.Type == types.SortDesc {

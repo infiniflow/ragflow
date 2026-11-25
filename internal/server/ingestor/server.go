@@ -21,7 +21,6 @@ package ingestor
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -38,30 +37,6 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 )
-
-// extraSupportedTypes holds extra document types an edition adds to the
-// ingestor's accepted set. defaultSupportedTypes merges them over the
-// community base so the community list never has to change.
-var extraSupportedTypes = map[string]struct{}{}
-
-// RegisterSupportedType adds a document type to the ingestor's accepted set.
-// Intended for enterprise editions to extend the community supported types.
-func RegisterSupportedType(t string) {
-	if t == "" {
-		return
-	}
-	extraSupportedTypes[strings.ToLower(t)] = struct{}{}
-}
-
-// defaultSupportedTypes returns the community base supported types merged with
-// any edition-registered extras.
-func defaultSupportedTypes() []string {
-	base := []string{"pdf", "docx", "txt"}
-	for t := range extraSupportedTypes {
-		base = append(base, t)
-	}
-	return base
-}
 
 func logTokenizerCounters() {
 	var available, unavailable []string
@@ -124,7 +99,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 		common.Error("Invalid ingestor dependencies", err)
 		return fmt.Errorf("ingestor dependencies invalid: %w", err)
 	}
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), defaultSupportedTypes(), tier, ingestorDeps)
+	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), tier, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,

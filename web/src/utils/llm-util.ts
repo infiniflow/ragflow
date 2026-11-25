@@ -15,7 +15,8 @@
  */
 
 import { addModelGroupTenantParams } from '@/ee/utils/add-model-group-tenant-params';
-import { IAddedModel } from '@/interfaces/database/llm';
+import { FieldToModelType } from '@/constants/llm';
+import { IAddedModel, IDefaultModel } from '@/interfaces/database/llm';
 import { getCachedLlmList } from './llm-cache';
 
 // The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
@@ -61,6 +62,16 @@ export function buildModelValue(model: {
 }) {
   const value = `${model.model_name}@${model.model_instance}@${model.model_provider}`;
   return model.tenant_id ? `${value}#${model.tenant_id}` : value;
+}
+
+export function getDefaultModelIdByField(
+  defaultModels: IDefaultModel[],
+  modelField: string,
+) {
+  const modelType = FieldToModelType[modelField];
+  const model = defaultModels.find((item) => item.model_type === modelType);
+  if (!model?.enable) return '';
+  return model.model_id || buildModelValue(model);
 }
 
 /**

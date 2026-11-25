@@ -325,11 +325,14 @@ func applyStatsToCheckpointState(state *syncerconnector.SyncCheckpointState, sta
 func (r *SyncRunner) submitBatch(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
 	resultChan, err := r.queue.submit(ctx, func(jobCtx context.Context) (service.SyncStats, error) {
 		stats, err := r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
-		message := fmt.Sprintf("Batch of %d files: %d added, %d updated, %d skipped, %d errors", len(batch.Documents), stats.Added, stats.Updated, stats.Skipped, stats.ErrorCount)
+		message := fmt.Sprintf("Batch of %d files: %d added, %d updated, %d skipped", len(batch.Documents), stats.Added, stats.Updated, stats.Skipped)
 		if err != nil {
 			message = "[WARN] Batch encountered a processing error. " + message
-		} else if stats.ErrorCount > 0 {
-			message = "[WARN] " + message
+		} else {
+			message += fmt.Sprintf(", %d errors", stats.ErrorCount)
+			if stats.ErrorCount > 0 {
+				message = "[WARN] " + message
+			}
 		}
 		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "batch", message)
 		return stats, err

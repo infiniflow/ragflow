@@ -38,7 +38,6 @@ func TestListChunksTwoPhase_IndexLightweightFullFetch(t *testing.T) {
 	ad := NewGrepAdapter(fe)
 	ctx := context.Background()
 	scope := runtime.GrepRequest{
-		TenantID:   "t",
 		DatasetIDs: []string{"kb1"},
 		DocScope:   []string{"d1"},
 	}
@@ -62,7 +61,6 @@ func TestListChunksTwoPhase_IndexLightweightFullFetch(t *testing.T) {
 
 	// Pass 2: fetch two selected ids; the graph chunk's payload is skipped.
 	fetched, err := ad.FetchChunksByID(ctx, runtime.GrepRequest{
-		TenantID:   scope.TenantID,
 		DatasetIDs: scope.DatasetIDs,
 		DocScope:   scope.DocScope,
 		ChunkScope: []string{"c0", "c2"},
