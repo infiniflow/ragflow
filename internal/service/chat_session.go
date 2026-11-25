@@ -139,7 +139,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, chatID, sessi
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
 	}
-	sessionUserID, err := chatSessionListOwner(ctx, chatID, sessionUserID)
+	sessionUserID, err := chatSessionListOwner(ctx, chatID, sessionUserID, s.permissionChecker)
 	if err != nil {
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
@@ -295,7 +295,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			ownerFilter, err := chatSessionOwnerFilter(ctx, chatID, permission.OperationDelete, "")
+			ownerFilter, err := chatSessionOwnerFilter(ctx, chatID, permission.OperationDelete, "", s.permissionChecker)
 			if err != nil {
 				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return nil, "", code, normalizedErr
@@ -1179,7 +1179,7 @@ func (s *ChatSessionService) ChatCompletions(
 			authorizedChannelSession, _ := ctx.Value(channelChatSessionContextKey{}).(string)
 			// The validated channel grants use of its conversation across API key rotations.
 			if authorizedChannelSession != sessionID || session.Source != entity.ChatSessionSourceChatChannel {
-				if err = authorizeChatSessionConversation(ctx, chatID, session); err != nil {
+				if err = authorizeChatSessionConversation(ctx, chatID, session, s.permissionChecker); err != nil {
 					code, normalizedErr := permissionresponse.NormalizeHidden(err)
 					return fail(common.NewCodedError(code, normalizedErr.Error()))
 				}

@@ -9,11 +9,11 @@ import (
 	"ragflow/internal/permission"
 )
 
-func chatSessionListOwner(_ context.Context, _, requestedOwnerID string) (string, error) {
+func chatSessionListOwner(_ context.Context, _, requestedOwnerID string, _ chatSessionPermissionChecker) (string, error) {
 	return requestedOwnerID, nil
 }
 
-func chatSessionOwnerFilter(ctx context.Context, chatID string, crossUserOperation permission.Operation, requestedOwnerID string) (string, error) {
+func chatSessionOwnerFilter(ctx context.Context, chatID string, crossUserOperation permission.Operation, requestedOwnerID string, _ chatSessionPermissionChecker) (string, error) {
 	return requestedOwnerID, nil
 }
 
@@ -24,7 +24,7 @@ func authorizeChatSessionOwner(ctx context.Context, _ string, session *entity.Ch
 	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: session.ID}, operation)
 }
 
-func authorizeChatSessionConversation(context.Context, string, *entity.ChatSession) error {
+func authorizeChatSessionConversation(context.Context, string, *entity.ChatSession, chatSessionPermissionChecker) error {
 	return nil
 }
 
