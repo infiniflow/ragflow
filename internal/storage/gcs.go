@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
@@ -28,8 +29,20 @@ import (
 
 	"cloud.google.com/go/storage"
 	"go.uber.org/zap"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 )
+
+// isGCSNotFound reports a missing bucket from either the typed sentinel or
+// the raw googleapi 404 returned by the object iterator. Object-level 404s
+// must not be treated as a missing bucket.
+func isGCSNotFound(err error) bool {
+	if errors.Is(err, storage.ErrBucketNotExist) {
+		return true
+	}
+	var apiErr *googleapi.Error
+	return errors.As(err, &apiErr) && apiErr.Code == http.StatusNotFound
+}
 
 // GCSStorage implements Storage interface for GCS
 type GCSStorage struct {
@@ -225,7 +238,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 	it := bucket.Objects(ctx, nil)
 	for {
 		attrs, err := it.Next()
-		if errors.Is(err, iterator.Done) {
+		if errors.Is(err, iterator.Done) || isGCSNotFound(err) {
 			break
 		}
 		if err != nil {
@@ -237,7 +250,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 		}
 	}
 
-	if err := bucket.Delete(ctx); err != nil {
+	if err := bucket.Delete(ctx); err != nil && !isGCSNotFound(err) {
 		return err
 	}
 

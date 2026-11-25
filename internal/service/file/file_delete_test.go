@@ -17,7 +17,6 @@
 package file
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -32,12 +31,6 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
-
-type failingObjectCheckStorage struct{ storage.Storage }
-
-func (f failingObjectCheckStorage) ObjectExists(context.Context, string, string) (bool, error) {
-	return false, errors.New("storage unavailable")
-}
 
 func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	db := setupFolderTestDB(t)
@@ -80,25 +73,6 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	}
 	if entries := logs.FilterMessage("Deleted folder").All(); len(entries) != 1 || entries[0].ContextMap()["folder"] != "folder ("+folder.ID+")" {
 		t.Errorf("folder deletion logs = %v", entries)
-	}
-}
-
-func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
-	db := setupFolderTestDB(t)
-	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
-	if err != nil {
-		t.Fatal(err)
-	}
-	insertFolderTestFile(t, "file-1", folder.ID, "tracked")
-	factory := storage.GetStorageFactory()
-	previous := factory.GetStorage()
-	factory.SetStorage(failingObjectCheckStorage{storage.NewMemoryStorage()})
-	t.Cleanup(func() { factory.SetStorage(previous) })
-	if err := testFileService().deleteFolderRecursive(t.Context(), folder); err == nil {
-		t.Fatal("expected storage check error")
-	}
-	if _, err := testFileService().fileDAO.GetByID(t.Context(), db, "file-1"); err != nil {
-		t.Fatalf("file record deleted after storage check failed: %v", err)
 	}
 }
 

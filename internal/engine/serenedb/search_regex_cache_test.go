@@ -1,0 +1,98 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package serenedb
+
+import (
+	"reflect"
+	"testing"
+)
+
+func highlightFixture() []map[string]interface{} {
+	return []map[string]interface{}{
+		{"id": "c1", "content": "hello world and hello again"},
+		{"id": "c2", "content": "nothing relevant"},
+	}
+}
+
+// TestGetHighlightDoesNotCompileRegexPerCall pins that highlight patterns are
+// compiled once per keyword and reused across calls.
+func TestGetHighlightDoesNotCompileRegexPerCall(t *testing.T) {
+	e := &serenedbEngine{}
+	chunks := highlightFixture()
+	keywords := []string{"hello", "world"}
+	want := e.GetHighlight(chunks, keywords, "content")
+	allocs := testing.AllocsPerRun(100, func() {
+		if got := e.GetHighlight(chunks, keywords, "content"); !reflect.DeepEqual(got, want) {
+			t.Fatalf("highlight changed across calls: %v vs %v", got, want)
+		}
+	})
+	if allocs > 40 {
+		t.Fatalf("GetHighlight allocations = %v/op, want <= 40 (patterns are recompiled)", allocs)
+	}
+}
+
+// BenchmarkGetHighlightCached guards the per-result highlight path against
+// reintroducing per-call regex compilation.
+func BenchmarkGetHighlightCached(b *testing.B) {
+	e := &serenedbEngine{}
+	chunks := highlightFixture()
+	keywords := []string{"hello", "world"}
+	e.GetHighlight(chunks, keywords, "content")
+	b.ResetTimer()
+	for range b.N {
+		e.GetHighlight(chunks, keywords, "content")
+	}
+}
+
+// TestGetHighlightCacheKeepsOutput pins byte-for-byte equivalence of the
+// cached highlighting with the original per-call compilation.
+func TestGetHighlightCacheKeepsOutput(t *testing.T) {
+	e := &serenedbEngine{}
+	got := e.GetHighlight(highlightFixture(), []string{"hello", "world"}, "content")
+	want := map[string]string{
+		"c1": "<em>hello world</em> and <em>hello</em> again",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetHighlight = %v, want %v", got, want)
+	}
+}
+
+// TestGetHighlightCacheKeepsWordBoundary is the adversarial case: a keyword
+// that is a substring of a longer word must still be left alone.
+func TestGetHighlightCacheKeepsWordBoundary(t *testing.T) {
+	e := &serenedbEngine{}
+	chunks := []map[string]interface{}{
+		{"id": "c1", "content": "helloworld hello worlds hello"},
+	}
+	want := map[string]string{"c1": "helloworld <em>hello</em> worlds <em>hello</em>"}
+	for range 3 {
+		if got := e.GetHighlight(chunks, []string{"hello"}, "content"); !reflect.DeepEqual(got, want) {
+			t.Fatalf("GetHighlight = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestGetHighlightCacheSkipsEmptyKeywords pins that blank keywords never
+// reach the pattern cache and still contribute no highlight.
+func TestGetHighlightCacheSkipsEmptyKeywords(t *testing.T) {
+	e := &serenedbEngine{}
+	got := e.GetHighlight(highlightFixture(), []string{"", "  ", "hello"}, "content")
+	want := map[string]string{"c1": "<em>hello</em> world and <em>hello</em> again"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetHighlight = %v, want %v", got, want)
+	}
+}
