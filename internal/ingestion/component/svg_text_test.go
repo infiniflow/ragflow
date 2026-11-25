@@ -17,9 +17,14 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"strings"
 	"testing"
@@ -29,6 +34,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
@@ -110,10 +116,35 @@ func TestExtractSVGTextHonorsCancellation(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchImageSVG runs the picture template on an SVG. The text
-// comes from the document itself, so it needs neither the local OCR analyzer
-// nor a vision model, and the raw SVG is never sent to a vision provider.
+func withSVGTranscoderForTest(t *testing.T, fn media.ImageTranscoder) {
+	t.Helper()
+	prev := media.RegisterImageTranscoder("image/svg+xml", fn)
+	t.Cleanup(func() {
+		media.RegisterImageTranscoder("image/svg+xml", prev)
+	})
+}
+
+func tinyTestPNGBytes(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := range 8 {
+		for x := range 8 {
+			img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestMaybeDispatchImageSVG runs the picture template on an SVG when no SVG
+// transcoder is registered. The text comes from the document itself, so it
+// needs neither the local OCR analyzer nor a vision model, and the raw SVG is
+// never sent to a vision provider.
 func TestMaybeDispatchImageSVG(t *testing.T) {
+	withSVGTranscoderForTest(t, nil)
 	templateData, err := os.ReadFile("../pipeline/template/ingestion_pipeline_picture.json")
 	if err != nil {
 		t.Fatal(err)
@@ -182,6 +213,7 @@ func TestMaybeDispatchImageSVG(t *testing.T) {
 }
 
 func TestMaybeDispatchImageSVGWarnings(t *testing.T) {
+	withSVGTranscoderForTest(t, nil)
 	driver := &imagePromptCaptureDriver{}
 	original := resolveTenantModelByType
 	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -220,4 +252,101 @@ func TestMaybeDispatchImageRejectsInvalidSVG(t *testing.T) {
 			t.Fatalf("ocr %v: error = %v, want size limit error", ocr, err)
 		}
 	}
+}
+
+func TestMaybeDispatchImageSVGWithTranscoder(t *testing.T) {
+	pngBytes := tinyTestPNGBytes(t)
+
+	t.Run("text SVG sends PNG to VLM and skips OCR", func(t *testing.T) {
+		withSVGTranscoderForTest(t, func(context.Context, []byte) (string, []byte, error) {
+			return "image/png", pngBytes, nil
+		})
+		origFactory := deepdoctype.NativeDocAnalyzerFactory
+		deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+			t.Error("SVG with native XML text must not invoke raster OCR")
+			return nil, false
+		}
+		t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = origFactory })
+
+		driver := &imagePromptCaptureDriver{}
+		origTenant := resolveTenantModelByType
+		resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+			return driver, "vision", &modelModule.APIConfig{}, 0, nil
+		}
+		t.Cleanup(func() { resolveTenantModelByType = origTenant })
+
+		result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "diagram.svg", pictureSVGFixture, map[string]any{"tenant_id": "t1"}, defaultSetups(), true, visionSettings{})
+		if err != nil || !handled || len(result.JSON) != 1 {
+			t.Fatalf("result = %+v, handled = %v, err = %v", result, handled, err)
+		}
+		item := result.JSON[0].ToMap()
+		if got, _ := item["image"].(string); !strings.HasPrefix(got, "data:image/png;base64,") {
+			t.Fatalf("image = %q, want data:image/png;base64,...", got)
+		}
+		wantText := pictureSVGFixtureText + "\ncaptured"
+		if got, _ := item["text"].(string); got != wantText {
+			t.Fatalf("text = %q, want %q", got, wantText)
+		}
+		if len(driver.captured) != 1 {
+			t.Fatalf("captured VLM calls = %d, want 1", len(driver.captured))
+		}
+	})
+
+	t.Run("textless SVG falls back to OCR when enabled", func(t *testing.T) {
+		withSVGTranscoderForTest(t, func(context.Context, []byte) (string, []byte, error) {
+			return "image/png", pngBytes, nil
+		})
+		ocrCalled := false
+		origFactory := deepdoctype.NativeDocAnalyzerFactory
+		deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+			ocrCalled = true
+			return nil, false
+		}
+		t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = origFactory })
+
+		textless := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><path d="M0 0L8 8"/></svg>`)
+		result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "outlined.svg", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), false, visionSettings{})
+		if err != nil || !handled || len(result.JSON) != 1 {
+			t.Fatalf("result = %+v, handled = %v, err = %v", result, handled, err)
+		}
+		if !ocrCalled {
+			t.Fatal("expected OCR analyzer lookup for textless rasterized SVG")
+		}
+		if got, _ := result.JSON[0].ToMap()["image"].(string); !strings.HasPrefix(got, "data:image/png;base64,") {
+			t.Fatalf("image = %q, want PNG data URI", got)
+		}
+	})
+
+	t.Run("transcoder failure degrades gracefully", func(t *testing.T) {
+		withSVGTranscoderForTest(t, func(context.Context, []byte) (string, []byte, error) {
+			return "", nil, errors.New("render boom")
+		})
+		driver := &imagePromptCaptureDriver{}
+		origTenant := resolveTenantModelByType
+		resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+			return driver, "vision", &modelModule.APIConfig{}, 0, nil
+		}
+		t.Cleanup(func() { resolveTenantModelByType = origTenant })
+
+		result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "diagram.svg", pictureSVGFixture, map[string]any{"tenant_id": "t1"}, defaultSetups(), true, visionSettings{})
+		if err != nil || !handled || len(result.JSON) != 1 {
+			t.Fatalf("result = %+v, handled = %v, err = %v", result, handled, err)
+		}
+		item := result.JSON[0].ToMap()
+		if got, _ := item["text"].(string); got != pictureSVGFixtureText {
+			t.Fatalf("text = %q, want %q", got, pictureSVGFixtureText)
+		}
+		if got, _ := item["image"].(string); !strings.HasPrefix(got, "data:image/svg+xml;base64,") {
+			t.Fatalf("image = %q, want original SVG data URI", got)
+		}
+		if len(driver.captured) != 0 {
+			t.Fatalf("VLM should not be called after rasterization failure")
+		}
+		warnings := strings.Join(result.Warnings, "\n")
+		for _, want := range []string{"image SVG rasterization unavailable", "image VLM enhancement skipped: SVG is not rasterized"} {
+			if !strings.Contains(warnings, want) {
+				t.Fatalf("warnings = %q, want %q", warnings, want)
+			}
+		}
+	})
 }
