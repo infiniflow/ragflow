@@ -124,12 +124,13 @@ func (c *MySQLConnector) ValidateConnectorSetting(ctx context.Context, request m
 
 // OpenSync opens one MySQL sync session.
 func (c *MySQLConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
-	orderColumn := c.syncOrderColumn(request)
-	db, bases, err := c.openQueries(ctx, orderColumn != "")
+	mode := request.rdbmsMode(c.idColumn, c.timestampColumn)
+	db, bases, err := c.openQueries(ctx, mode != rdbmsVerbatim)
 	if err != nil {
 		return nil, err
 	}
-	queries := c.buildSyncQueries(bases, request)
+	queries := c.buildSyncQueries(bases, request, mode)
+	orderColumn := c.syncOrderColumn(request)
 	session := &mysqlSyncSession{
 		connector:         c,
 		db:                db,
@@ -260,10 +261,10 @@ func (c *MySQLConnector) tableQueries(ctx context.Context, db *sql.DB) ([]rdbmsQ
 // one is available, so a checkpoint can resume the stream from an anchor.
 // Each query carries an unordered fallback used when a custom SQL query does
 // not expose the configured ordering column.
-func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncRequest) []rdbmsSyncQuery {
+func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncRequest, mode rdbmsSyncMode) []rdbmsSyncQuery {
 	queries := make([]rdbmsSyncQuery, 0, len(bases))
-	switch {
-	case !request.FromBeginning && c.timestampColumn != "":
+	switch mode {
+	case rdbmsTimeWindow:
 		start := request.WindowStart
 		end := &request.WindowEnd
 		for _, base := range bases {
@@ -274,7 +275,7 @@ func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncReques
 				fallback: c.buildTimeFilteredQuery(base.sql, start, end),
 			})
 		}
-	case request.FromBeginning && c.idColumn != "":
+	case rdbmsOrderByID:
 		for _, base := range bases {
 			queries = append(queries, rdbmsSyncQuery{
 				name:     base.name,

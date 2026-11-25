@@ -26,6 +26,25 @@ import (
 	"ragflow/internal/utility/sqllex"
 )
 
+type rdbmsSyncMode int
+
+const (
+	rdbmsVerbatim rdbmsSyncMode = iota
+	rdbmsOrderByID
+	rdbmsTimeWindow
+)
+
+func (r SyncRequest) rdbmsMode(idColumn, timestampColumn string) rdbmsSyncMode {
+	switch {
+	case r.FromBeginning && idColumn != "":
+		return rdbmsOrderByID
+	case !r.FromBeginning && timestampColumn != "":
+		return rdbmsTimeWindow
+	default:
+		return rdbmsVerbatim
+	}
+}
+
 type rdbmsSessionDB interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	Close() error
