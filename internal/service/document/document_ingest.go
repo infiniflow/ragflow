@@ -18,6 +18,16 @@ func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *str
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	for _, docID := range common.Deduplicate(docIDs) {
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
+		if err != nil || doc == nil {
+			return nil, fmt.Errorf("document %s not found in dataset", docID)
+		}
+		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
+	}
 	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, docIDs)
 	if err != nil {
 		return nil, err
@@ -27,8 +37,7 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string,
 }
 
 func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	userID := permission.UserIDFromContext(ctx)
-	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
+	return s.stopIngestionTasks(ctx, tasks)
 }
 
 func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
@@ -68,7 +77,7 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationRun); err != nil {
+		if err := service.CheckDocumentWrite(ctx, docID, doc.KbID, permission.OperationRun, ""); err != nil {
 			code, permissionErr := permissionresponse.Normalize(err)
 			return code, permissionErr
 		}

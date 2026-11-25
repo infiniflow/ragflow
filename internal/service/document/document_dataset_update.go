@@ -61,7 +61,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			hasError = true
 			continue
 		}
-		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+		if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 			_, normalizedErr := permissionresponse.Normalize(err)
 			result[docID] = map[string]string{"error": normalizedErr.Error()}
 			if permissionresponse.IsPermissionError(err) {
@@ -165,13 +165,6 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	checker := permission.NewDatabaseChecker(dao.DB)
-	datasetRef := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
-	if err := checker.CheckResource(ctx, datasetRef, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
@@ -187,7 +180,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 		}
 		return nil, common.CodeServerError, err
 	}
-	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentManage(ctx, documentID, datasetID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}

@@ -7,6 +7,11 @@
  * delete it.
  */
 
+export function hasReadPermission(operatorPermission: number) {
+  void operatorPermission;
+  return true;
+}
+
 export function hasPreviewPermission(operatorPermission: number) {
   void operatorPermission;
   return false;
@@ -40,4 +45,12 @@ export function disableEditButton(operatorPermission: number) {
 export function hasManagePermissionPermission(operatorPermission: number) {
   void operatorPermission;
   return true;
+}
+
+export function hasDocumentManagementPermission(
+  operatorPermission: number,
+  datasetPermission: boolean,
+) {
+  void operatorPermission;
+  return datasetPermission;
 }

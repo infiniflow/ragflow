@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -453,6 +454,13 @@ func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID string, 
 			})
 			continue
 		}
+		if doc.KbID != datasetID {
+			return nil, fmt.Errorf("document %s not found in dataset", docID)
+		}
+		if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
 
 		if doc.Status != nil && *doc.Status != "0" {
 			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
@@ -490,6 +498,12 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 			return nil, fmt.Errorf("Documents not found: [%s]", strings.Join(quoted, ", "))
 		}
 		return nil, err
+	}
+	for _, doc := range docs {
+		if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
 	}
 
 	var errs []string
@@ -582,6 +596,21 @@ func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID s
 	ids = common.Deduplicate(ids)
 	if len(ids) == 0 {
 		return map[string]interface{}{"success_count": 0}, nil
+	}
+	for _, batch := range chunkDocumentIDs(ids, cancelAllTaskBatchSize) {
+		docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, batch)
+		if err != nil {
+			return nil, err
+		}
+		for _, doc := range docs {
+			if doc == nil || doc.KbID != datasetID {
+				continue
+			}
+			if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationRun, ""); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return nil, permissionErr
+			}
+		}
 	}
 
 	// Load the latest task per document in bounded batches so the IN-clause never

@@ -66,6 +66,7 @@ describe('ChunkCard', () => {
     render(
       <ChunkCard
         item={item}
+        canEditDocument={true}
         checked={false}
         switchChunk={switchChunk}
         editChunk={jest.fn()}
@@ -98,6 +99,7 @@ describe('ChunkCard', () => {
     render(
       <ChunkCard
         item={item}
+        canEditDocument={true}
         checked={false}
         switchChunk={jest.fn()}
         editChunk={jest.fn()}
