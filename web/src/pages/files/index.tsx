@@ -75,15 +75,11 @@ export default function Files() {
     }
   }, [folderNotFound, navigateToOtherFolder]);
 
-  const {
-    rowSelection,
-    setRowSelection,
-    rowSelectionIsEmpty,
-    clearRowSelection,
-    selectedCount,
-  } = useRowSelection();
+  const { rowSelection, setRowSelection, clearRowSelection } =
+    useRowSelection();
 
   useClearSelectionOnPageChange(pagination, clearRowSelection);
+  useEffect(clearRowSelection, [searchString, clearRowSelection]);
 
   useGoToPreviousPageOnEmpty(files?.length, loading, {
     deletionKey: ListDeletionKey.FileList,
@@ -102,7 +98,7 @@ export default function Files() {
   const connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType =
     useHandleConnectToKnowledge();
 
-  const { list } = useBulkOperateFile({
+  const { list, selectedCount } = useBulkOperateFile({
     files,
     rowSelection,
     showMoveFileModal,
@@ -155,7 +151,7 @@ export default function Files() {
           </DropdownMenu>
         </ListFilterBar>
 
-        {!rowSelectionIsEmpty && (
+        {selectedCount > 0 && (
           <BulkOperateBar className="mt-4" list={list} count={selectedCount} />
         )}
       </header>
