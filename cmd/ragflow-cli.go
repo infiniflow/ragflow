@@ -33,7 +33,8 @@ func main() {
 	var err error
 	cli.Arguments, err = cli.ParseArgs(os.Args[1:])
 	if err != nil {
-		return
+		fmt.Printf("Failed to parse arguments: %v\n", err)
+		os.Exit(1)
 	}
 
 	if cli.Arguments.ShowHelp {

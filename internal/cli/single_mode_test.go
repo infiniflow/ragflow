@@ -65,8 +65,37 @@ func TestSingleCommandDispatchCoversParserTypes(t *testing.T) {
 
 // The connection flags configure the API client instead of joining the
 // command text, and without a command the CLI stays interactive.
-func TestParseArgsCommandModeConnectionFlags(t *testing.T) {
-	cfg, err := ParseArgs([]string{"-h", "10.1.2.3:9380", "-t", "secret", "-u", "alice", "-p", "pw", "ws", "ls"})
+// Single-command mode takes its connection settings from rf.yml alone, so the
+// connection and config flags are rejected instead of configuring the client
+// or landing in the command text.
+func TestParseArgsCommandModeRejectsConnectionFlags(t *testing.T) {
+	flags := [][]string{
+		{"-h", "10.1.2.3:9380"},
+		{"--host", "10.1.2.3:9380"},
+		{"-t", "secret"},
+		{"--token", "secret"},
+		{"-u", "alice"},
+		{"--user", "alice"},
+		{"-p", "pw"},
+		{"--password", "pw"},
+		{"-f", "other.yml"},
+		{"--config", "other.yml"},
+		{"-k", "key.pem"},
+		{"--key", "key.pem"},
+	}
+	for _, flag := range flags {
+		args := append(append([]string{}, flag...), "ws", "ls")
+		_, err := ParseArgs(args)
+		if err == nil || !strings.Contains(err.Error(), "rf.yml") {
+			t.Errorf("%v: err = %v, want a rejection naming rf.yml", args, err)
+		}
+	}
+}
+
+// Without the connection flags the client keeps the rf.yml defaults, and the
+// command text still loses the output switches.
+func TestParseArgsCommandModeUsesConfigDefaults(t *testing.T) {
+	cfg, err := ParseArgs([]string{"ws", "ls"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,26 +103,8 @@ func TestParseArgsCommandModeConnectionFlags(t *testing.T) {
 		t.Fatalf("command = %v, want %q", cfg.Command, "ws ls")
 	}
 	api := cfg.APIClientConfig.APIServerMap[cfg.APIClientConfig.CurrentAPIServer]
-	if api.IP != "10.1.2.3" || api.Port != 9380 {
-		t.Errorf("host = %s:%d, want 10.1.2.3:9380", api.IP, api.Port)
-	}
-	if api.APIKey == nil || *api.APIKey != "secret" {
-		t.Errorf("api key not applied")
-	}
-	if api.UserName == nil || *api.UserName != "alice" {
-		t.Errorf("user name not applied")
-	}
-
-	cfg, err = ParseArgs([]string{"-h", "10.1.2.3:9380"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Command != nil {
-		t.Errorf("command = %q, want nil so the CLI stays interactive", *cfg.Command)
-	}
-	api = cfg.APIClientConfig.APIServerMap[cfg.APIClientConfig.CurrentAPIServer]
-	if api.IP != "10.1.2.3" || api.Port != 9380 {
-		t.Errorf("host = %s:%d, want 10.1.2.3:9380", api.IP, api.Port)
+	if api.IP != "127.0.0.1" || api.Port != 9380 {
+		t.Errorf("host = %s:%d, want the rf.yml defaults 127.0.0.1:9380", api.IP, api.Port)
 	}
 }
 

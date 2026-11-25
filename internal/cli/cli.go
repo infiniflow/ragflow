@@ -249,14 +249,13 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			APIKey:       nil,
 		}
 
-		configFile := "rf.yml"
 		var err error
-		commandArgs, configFile, err = collectCommandArgs(args, defaultApiServerConfig, configFile)
+		commandArgs, err = collectSingleCommandArgs(args)
 		if err != nil {
 			return nil, err
 		}
 
-		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
+		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, "rf.yml")
 		if err != nil {
 			return nil, err
 		}
@@ -365,6 +364,47 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	}
 
 	return commandLineConfig, nil
+}
+
+// collectSingleCommandArgs keeps only the command words and the output
+// switches of single-command mode. Its server configuration always comes from
+// the default rf.yml, so the connection and config flags are rejected here
+// instead of being parsed as settings or silently folded into the command
+// text.
+func collectSingleCommandArgs(args []string) ([]string, error) {
+	var commandArgs []string
+	var foundCommand bool
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch arg {
+		case "-o", "--output":
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		case "-v", "--verbose", "--help", "-help", "--version", "-V":
+			continue
+		}
+
+		if foundCommand {
+			commandArgs = append(commandArgs, arg)
+			continue
+		}
+
+		switch arg {
+		case "-h", "--host", "-t", "--token", "-u", "--user", "-p", "--password", "-f", "--config", "-k", "--key":
+			return nil, fmt.Errorf("single-command mode reads its settings from rf.yml; %s is not accepted", arg)
+		}
+
+		if !strings.HasPrefix(arg, "-") {
+			commandArgs = append(commandArgs, arg)
+			foundCommand = true
+		}
+	}
+
+	return commandArgs, nil
 }
 
 // collectCommandArgs applies the connection flags of the API-backed modes to
@@ -504,9 +544,11 @@ Authentication:
   Note: These two methods are mutually exclusive.
 
 Configuration File:
-  The CLI will automatically read rf.yml from the current directory if it exists.
-  Use -f or --config to specify a custom config file path.
-  Command line options override config file values.
+  The CLI reads rf.yml from the current directory when it exists.
+  Single-command mode takes the connection settings only from rf.yml: every
+  other argument is part of the command, and the connection flags
+  (-h/-t/-u/-p/-f/-k) are rejected there. Use -f or --config to select another
+  file in the other modes.
 
   Config file format:
     host: 127.0.0.1:9380
@@ -842,11 +884,12 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow-cli -f rf.yml "LIST DATASETS"        # SQL mode (with quotes)
-  ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
-  ragflow-cli -f rf.yml ls files               # List files in root
-  ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
-  ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
+  ragflow-cli "LIST DATASETS"                  # SQL mode (with quotes)
+  ragflow-cli ls datasets                      # Filesystem mode (no quotes)
+  ragflow-cli ls files                         # List files in root
+  ragflow-cli cat datasets                     # Error: datasets is a directory
+  ragflow-cli ls files/myfolder                # List folder contents
+  ragflow-cli -o json ws ls                    # JSON output
 
 For more information, see documentation.
 
