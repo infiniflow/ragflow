@@ -214,7 +214,7 @@ func preserveMarkdownTableLink(node ast.Node, entering bool) ast.WalkStatus {
 		return ast.GoToNext
 	}
 	destination := strings.TrimSpace(string(link.Destination))
-	scheme, address, hasScheme := strings.Cut(destination, ":")
+	scheme, address, hasScheme := strings.Cut(html.UnescapeString(destination), ":")
 	if destination == "" || (hasScheme && strings.EqualFold(scheme, "data")) {
 		return ast.SkipChildren
 	}

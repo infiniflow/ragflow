@@ -78,7 +78,7 @@ func TestMarkdownParserPreservesLinkDestinationsInTableCells(t *testing.T) {
 		"| --- | --- |\n" +
 		"| [](/guide#setup) | [Email support](mailto:support@example.org) |\n" +
 		"| <https://example.org> | <support@example.org> |\n" +
-		"| [inline file](data:text/plain;base64,SGVsbG8=) | end |"
+		"| [inline file](data:text/plain;base64,SGVsbG8=) | [encoded file](d&#97;ta:text/plain;base64,SGVsbG8=) |"
 	res := p.ParseWithResult(t.Context(), "table.md", []byte(md))
 	if res.Err != nil || len(res.JSON) != 1 {
 		t.Fatalf("result=%+v", res)
@@ -87,7 +87,7 @@ func TestMarkdownParserPreservesLinkDestinationsInTableCells(t *testing.T) {
 		{"Product catalog (https://example.org/products?lang=en&sort=id)", "Contact"},
 		{"/guide#setup", "Email support (mailto:support@example.org)"},
 		{"https://example.org", "support@example.org"},
-		{"inline file", "end"},
+		{"inline file", "encoded file"},
 	})
 }
 
