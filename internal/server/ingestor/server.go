@@ -58,7 +58,7 @@ func logTokenizerCounters() {
 // Run starts the RAGFlow ingestion worker. It blocks until ctx is cancelled
 // (OS shutdown signal) or the ingestor receives a shutdown command from the
 // admin, then gracefully stops the ingestor.
-func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func Run(ctx context.Context, cancel context.CancelFunc, arguments *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	globalConfig := server.GetConfig()
 	logTokenizerCounters()
 
@@ -79,7 +79,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 	}
 	// Resolve the ingestor tier (which lanes this ingestor consumes) from
 	// CLI > env > default(low), failing fast on an invalid value.
-	tier, err := globalConfig.GetIngestorTier(args.IngestorTier)
+	tier, err := globalConfig.GetIngestorTier(arguments.IngestorTier)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 		common.Error("Invalid ingestor dependencies", err)
 		return fmt.Errorf("ingestor dependencies invalid: %w", err)
 	}
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), tier, ingestorDeps)
+	ingestor := ingestion.NewIngestor(*arguments.Name, int32(workers), tier, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
@@ -139,8 +139,8 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 	}
 
 	var readyErr error
-	if args.Ready != nil {
-		readyErr = args.Ready()
+	if arguments.Ready != nil {
+		readyErr = arguments.Ready()
 		if readyErr != nil {
 			cancel()
 		}
@@ -150,9 +150,9 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 	select {
 	case <-ctx.Done():
 		common.Info("Received shutdown signal")
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *arguments.Name))
 	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.Name))
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *arguments.Name))
 		cancel()
 	}
 
@@ -162,7 +162,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 
 	ingestor.Stop(shutdownCtx)
 
-	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.Name))
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *arguments.Name))
 
 	return readyErr
 }
