@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -49,8 +50,9 @@ type TenantKBIDs struct {
 	KBIDs    []string
 }
 
-// GroupKBIDsByTenant resolves every requested knowledge base and preserves
-// first-seen tenant order. Missing datasets must not yield a partial scope.
+// GroupKBIDsByTenant resolves the requested knowledge bases and preserves
+// first-seen tenant order. Datasets that no longer exist are skipped: a scope is
+// only unusable when the lookup itself fails.
 func GroupKBIDsByTenant(ctx context.Context, db *gorm.DB, kbIDs []string) ([]TenantKBIDs, error) {
 	if len(kbIDs) == 0 {
 		return nil, nil
@@ -66,10 +68,12 @@ func GroupKBIDsByTenant(ctx context.Context, db *gorm.DB, kbIDs []string) ([]Ten
 	}
 	groups := make([]TenantKBIDs, 0)
 	positions := make(map[string]int)
+	missing := make([]string, 0)
 	for _, kbID := range kbIDs {
 		tenantID, ok := tenants[kbID]
 		if !ok || tenantID == "" {
-			return nil, fmt.Errorf("dataset %s has no tenant: %w", kbID, gorm.ErrRecordNotFound)
+			missing = append(missing, kbID)
+			continue
 		}
 		pos, ok := positions[tenantID]
 		if !ok {
@@ -78,6 +82,10 @@ func GroupKBIDsByTenant(ctx context.Context, db *gorm.DB, kbIDs []string) ([]Ten
 			groups = append(groups, TenantKBIDs{TenantID: tenantID})
 		}
 		groups[pos].KBIDs = append(groups[pos].KBIDs, kbID)
+	}
+	if len(missing) > 0 {
+		common.WarnCtx(ctx, "dao: skipping datasets that no longer exist",
+			zap.Strings("dataset_ids", missing))
 	}
 	return groups, nil
 }

@@ -45,9 +45,8 @@ func SetLogger(serverName string, logLevel string) {
 	}
 
 	common.SyncLog()
-	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
-		common.Error("Failed to initialize startup logger", err)
-	}
+
+	common.InitLogger(logLevel, fileOut, serverName)
 }
 
 // SetIngestLog (re)initializes the ingestion lifecycle event sink for the given

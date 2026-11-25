@@ -8,7 +8,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { ChunkDetailEntry } from '@/ee/pages/chunk/components/chunk-card/chunk-detail-entry';
 import { ChunkVersionEntry } from '@/ee/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/chunk-version-entry';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
@@ -24,6 +23,7 @@ import styles from './index.module.less';
 
 interface IProps {
   item: IChunk;
+  canEditDocument: boolean;
   checked: boolean;
   switchChunk: (available?: number, chunkIds?: string[]) => Promise<void>;
   editChunk: (chunkId: string) => void;
@@ -37,6 +37,7 @@ interface IProps {
 
 const ChunkCard = ({
   item,
+  canEditDocument,
   checked,
   handleCheckboxClick,
   editChunk,
@@ -48,7 +49,6 @@ const ChunkCard = ({
   t: imageCacheKey,
 }: IProps) => {
   const { t } = useTranslation();
-  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
 
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
@@ -119,6 +119,7 @@ const ChunkCard = ({
           className="mt-1"
           onCheckedChange={handleCheck}
           checked={checked}
+          disabled={!canEditDocument}
         />
 
         {/* Using <Tooltip> instead of <Popover> to avoid flickering when hovering over the image */}
@@ -179,7 +180,7 @@ const ChunkCard = ({
               onCheckedChange={onChange}
               aria-readonly
               className="!m-0 !mt-[22px]"
-              disabled={datasetEditButtonDisabled || switching}
+              disabled={!canEditDocument || switching}
             />
             <Button
               variant="ghost"
@@ -187,7 +188,7 @@ const ChunkCard = ({
               aria-label={t('common.edit')}
               title={t('common.edit')}
               onClick={handleEditClick}
-              disabled={datasetEditButtonDisabled}
+              disabled={!canEditDocument}
             >
               <PenLine className="size-4" />
             </Button>
@@ -201,7 +202,7 @@ const ChunkCard = ({
               aria-label={t('common.delete')}
               title={t('common.delete')}
               onClick={handleDeleteClick}
-              disabled={datasetEditButtonDisabled}
+              disabled={!canEditDocument}
             >
               <Trash2 className="size-4 text-state-error" />
             </Button>

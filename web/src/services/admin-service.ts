@@ -174,10 +174,15 @@ export const logout = () => request.post<ResponseData<void>>(adminLogout);
 export const listUsers = () =>
   request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
 
-export const createUser = (email: string, password: string) =>
+export const createUser = (
+  email: string,
+  password: string,
+  nickname?: string,
+) =>
   request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
     username: email,
     password,
+    nickname,
   });
 
 export const grantSuperuser = (email: string) =>

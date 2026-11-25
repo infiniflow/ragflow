@@ -77,7 +77,7 @@ export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
   } = {},
 ) {
   const { t } = useTranslation();
-  const { validIds, isFetched: modelsFetched } = useModelValidIds(
+  const { validIds, isSettled: modelsFetched } = useModelValidIds(
     modelTypes,
     resourceTenantId,
   );

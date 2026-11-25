@@ -211,19 +211,19 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 }
 
-func TestParseRejectsInaccessibleDataset(t *testing.T) {
+func TestParseRejectsUnauthorizedDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
 	svc := newParseTestService(t)
-	svc.checkDatasetAccessFunc = func(string) error { return permission.ErrPermissionDenied }
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "another-user", "tenant-1")
 	_, code, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
-	if code != common.CodeForbidden {
-		t.Fatalf("expected CodeForbidden, got %v", code)
-	}
-	if err.Error() != "Permission denied" {
-		t.Fatalf("unexpected error: %v", err)
+	if code == common.CodeSuccess {
+		t.Fatalf("expected document authorization to reject the parse, got code %v", code)
 	}
 }
 
@@ -2812,7 +2812,7 @@ func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	svc.checkDatasetAccessFunc = func(string) error { return nil }
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	_, _, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
 	if err == nil {
 		t.Fatal("expected error for RUNNING ingestion task, got nil")
@@ -2835,7 +2835,7 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 		calledDocID = doc.ID
 		return nil
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	_, code, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

@@ -29,22 +29,21 @@ import (
 )
 
 // Run owns the channel runtime until cancellation, including adapter shutdown.
-func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, serverType common.ServerType, arguments *bootstrap.ServerArgs) error {
 	if !kvrocks.IsEnabled() {
 		return fmt.Errorf("chatter requires Kvrocks for shared channel runtime status")
 	}
 	api := server.GetConfig().GetAPIServerConfig()
-	host := api.Host
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
+	if api.Host == "" {
+		return fmt.Errorf("API server host is required")
 	}
-	runtime, err := channels.Start(ctx, "http://"+net.JoinHostPort(host, strconv.Itoa(api.HTTPPort)))
+	runtime, err := channels.Start(ctx, "http://"+net.JoinHostPort(api.Host, strconv.Itoa(api.HTTPPort)))
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}
 	defer runtime.Stop()
 
-	if common.GetRAGFlowType() == common.EnterpriseEdition {
+	if serverType == common.ServerTypeChatter {
 		common.Info("\n  ____ _           _   _\n" +
 			" / ___| |__   __ _| |_| |_ ___ _ __\n" +
 			"| |   | '_ \\ / _` | __| __/ _ \\ '__|\n" +
@@ -57,8 +56,8 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 		defer hb.Stop()
 	}
 	common.Info("Chat-channel service started")
-	if args.Ready != nil {
-		if err := args.Ready(); err != nil {
+	if arguments.Ready != nil {
+		if err = arguments.Ready(); err != nil {
 			return err
 		}
 	}

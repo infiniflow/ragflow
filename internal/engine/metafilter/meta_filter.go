@@ -440,6 +440,11 @@ func coerceRangeValue(value interface{}, flt map[string]interface{}) interface{}
 		return s
 	}
 
+	// Preserve integer boundaries before trying floating-point values.
+	if parsed, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return parsed
+	}
+
 	// Try to parse as number
 	if parsed, err := strconv.ParseFloat(s, 64); err == nil {
 		return parsed

@@ -121,6 +121,10 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("model_provider::"+providerName), permission.ActionEnable); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return code, normalizedErr
+	}
 	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
@@ -717,17 +721,8 @@ func (m *ModelProviderService) findProviderByIDOrNameInCurrentTenant(ctx context
 		if provider.TenantID != tenantID {
 			return nil, gorm.ErrRecordNotFound
 		}
-		if provider.UserID != userID {
-			if !includeTenantOwner {
-				return nil, gorm.ErrRecordNotFound
-			}
-			owner, ownerErr := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
-			if ownerErr != nil {
-				return nil, ownerErr
-			}
-			if provider.UserID != owner.UserID {
-				return nil, gorm.ErrRecordNotFound
-			}
+		if provider.UserID != userID && !includeTenantOwner {
+			return nil, gorm.ErrRecordNotFound
 		}
 		return provider, nil
 	}
@@ -1155,13 +1150,11 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"status":        instance.Status,
 		"is_owner":      access.Source == permission.AccessSourceOwner,
 	}
-	if access.Source == permission.AccessSourceOwner || access.Allows(permission.OperationUpdate) {
-		configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
-		result["api_key_configured"] = configured
-		result["api_key_config"] = config
-		result["credential_status"] = credentialStatus
-		result["credential_masks"] = credentialMasks
-	}
+	configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
+	result["api_key_configured"] = configured
+	result["api_key_config"] = config
+	result["credential_status"] = credentialStatus
+	result["credential_masks"] = credentialMasks
 
 	return result, common.CodeSuccess, nil
 }

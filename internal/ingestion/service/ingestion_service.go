@@ -35,6 +35,7 @@ import (
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/observability"
 	"ragflow/internal/permission"
+	"ragflow/internal/progressstore"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/service/datasetversion"
 	documentpkg "ragflow/internal/service/document"
@@ -66,7 +67,6 @@ type Ingestor struct {
 
 	// Configuration
 	maxConcurrency           int32
-	supportedDocTypes        []string
 	version                  string
 	heartbeatInterval        time.Duration
 	memoryReconcileInterval  time.Duration
@@ -178,7 +178,7 @@ type pendingDocumentCompileEvent struct {
 // process-wide relational handle, message-queue engine, and kvrocks client;
 // they are resolved once at the server assembly point and injected here rather
 // than read from the package globals (arch_test.go guards that rule).
-func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tier common.Tier, deps *ingestion.Deps) *Ingestor {
+func NewIngestor(name string, maxConcurrency int32, tier common.Tier, deps *ingestion.Deps) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
 	}
@@ -209,7 +209,6 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 		dispatchCtx:              dispatchCtx,
 		dispatchCancel:           dispatchCancel,
 		maxConcurrency:           maxConcurrency,
-		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
 		ingestorTier:             tier,
 		currentTasks:             make(map[string]struct{}),
@@ -958,6 +957,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			stopped := e.markStopped(ctx, task.ID)
 			if stopped {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
+				e.markProgressTerminal(ctx, task, string(entity.TaskStatusCancel))
 			}
 			return stopped
 		}
@@ -967,22 +967,29 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			ok := e.markFailed(ctx, task.ID, "Task timed out.")
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
+				e.markProgressTerminal(ctx, task, string(entity.TaskStatusFail))
 			}
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err), err)
+			e.markProgressTerminal(ctx, task, string(entity.TaskStatusFail))
 		}
 		return ok
 	}
 
-	if err := e.completeTask(ctx, task.ID); err != nil {
+	settled, err := e.completeTask(ctx, task.ID)
+	if err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
 	}
-	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
+	// completeTask may settle a concurrently stopped task to STOPPED instead of
+	// COMPLETED. Both the run row and the progress snapshot must carry the
+	// status that was actually persisted, not an unconditional DONE.
+	e.recordTerminalPipelineLog(ctx, task, string(settled), "Task completed.")
+	e.markProgressTerminal(ctx, task, string(settled))
 	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
@@ -1009,25 +1016,29 @@ func (e *Ingestor) markTerminalProgress(task *entity.IngestionTask) {
 // concurrent stop (or another worker) moved it - is NOT retried: the pipeline
 // already did the work, so completeOrSettle settles the task to its actual
 // terminal state and the caller Acks instead of redelivering.
-func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
+func (e *Ingestor) completeTask(ctx context.Context, taskID string) (entity.TaskStatus, error) {
+	var settled entity.TaskStatus
 	_, err := backoff.Retry(ctx, func() (struct{}, error) {
-		return struct{}{}, e.completeOrSettle(ctx, taskID)
+		var retryErr error
+		settled, retryErr = e.completeOrSettle(ctx, taskID)
+		return struct{}{}, retryErr
 	}, backoff.WithMaxTries(3))
-	return err
+	return settled, err
 }
 
 // completeOrSettle marks the task COMPLETED, or - if the transition is
 // terminally invalid because the task is no longer RUNNING - settles it to its
-// actual terminal state. Returns nil once the task is in any terminal state;
-// returns a non-terminal (transient) error only for retry-worthy DB failures.
-func (e *Ingestor) completeOrSettle(ctx context.Context, taskID string) error {
+// actual terminal state. It returns the run status corresponding to the state
+// that was persisted once the task is terminal; it returns an empty status and
+// a non-terminal (transient) error only for retry-worthy DB failures.
+func (e *Ingestor) completeOrSettle(ctx context.Context, taskID string) (entity.TaskStatus, error) {
 	if err := e.ingestionTaskSvc.MarkCompleted(ctx, taskID); err != nil {
 		if isTerminalTransitionError(err) {
 			return e.settleToTerminal(ctx, taskID)
 		}
-		return err
+		return "", err
 	}
-	return nil
+	return entity.TaskStatusDone, nil
 }
 
 // isTerminalTransitionError reports whether err is a state-machine transition
@@ -1046,21 +1057,25 @@ func isTerminalTransitionError(err error) bool {
 // re-cancel); already-terminal states (COMPLETED/STOPPED/FAILED) need no
 // action. An unexpected status returns an error so the caller nacks and
 // redelivery settles it.
-func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
+func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) (entity.TaskStatus, error) {
 	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	switch task.Status {
 	case common.STOPPING:
 		if !e.markStopped(ctx, taskID) {
-			return fmt.Errorf("task %s: settle to STOPPED failed", taskID)
+			return "", fmt.Errorf("task %s: settle to STOPPED failed", taskID)
 		}
-		return nil
-	case common.COMPLETED, common.STOPPED, common.FAILED:
-		return nil
+		return entity.TaskStatusCancel, nil
+	case common.COMPLETED:
+		return entity.TaskStatusDone, nil
+	case common.STOPPED:
+		return entity.TaskStatusCancel, nil
+	case common.FAILED:
+		return entity.TaskStatusFail, nil
 	default:
-		return fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
+		return "", fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
 	}
 }
 
@@ -1325,6 +1340,26 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
 	sink := newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)
+	// Install the structured-progress emitter: component page/chunk positions
+	// are forwarded to the ingestion log sink. Identity is captured once here
+	// (the run row is loaded a single time) so the high-frequency callback never
+	// touches the DB. A missing run still yields an event with task identity.
+	var progressRun *entity.PipelineOperationLog
+	if pipelineLogID != "" {
+		progressRun, _ = dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, pipelineLogID)
+	}
+	// Progress positions/phases are buffered in memory and drained by the sink's
+	// flusher, keeping KV I/O off the emitMu-guarded emit path. A nil/disabled
+	// client degrades to a no-op inside the store.
+	sink.installProgressWriter(progressstore.New(e.deps.KV), pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID)
+	sink.detailEmitter = func(component, unit string, current, total uint32) {
+		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
+		common.LogIngest(&log)
+	}
+	sink.lifecycleEmitter = func(component string, phase uint8, message string) {
+		log := observability.BuildComponentIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, phase, message)
+		common.LogIngest(&log)
+	}
 	// Close is idempotent and intentionally called twice: the defer is the
 	// panic backstop (an unwind out of Execute must still stop the flusher),
 	// and the explicit call pins the final flush ahead of docState.apply,
@@ -1408,7 +1443,7 @@ func (e *Ingestor) publishPendingCompileEvent(ctx context.Context, task *entity.
 	}
 }
 
-func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {
+func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string, causes ...error) {
 	if ingestionTask == nil || status == "" {
 		return
 	}
@@ -1447,7 +1482,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 		return
 	}
-	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message); err != nil {
+	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message, causes...); err != nil {
 		common.Warn(fmt.Sprintf("record terminal event for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 	}
 }

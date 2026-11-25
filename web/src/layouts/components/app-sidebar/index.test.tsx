@@ -61,9 +61,19 @@ jest.mock('./use-sidebar-collapse', () => ({
   }),
 }));
 
+jest.mock('@/ee/hooks/use-visible-nav-items', () => ({
+  useVisibleNavItems: (items: unknown[]) => items,
+}));
+
+jest.mock('@/ee/layouts/components/app-sidebar/organization-nav-group', () => ({
+  OrganizationNavGroup: () => null,
+}));
+
 jest.mock('./nav-item', () => ({
-  IntegrationsNavGroup: () => null,
-  NavItemLink: () => null,
+  IntegrationsNavGroup: () => <span data-testid="integrations-nav" />,
+  NavItemLink: ({ item }: { item: { key: string } }) => (
+    <span data-testid={`nav-item-${item.key}`} />
+  ),
 }));
 
 jest.mock('./user-footer', () => ({
@@ -77,6 +87,19 @@ function renderAppSidebar(path: string) {
     </MemoryRouter>,
   );
 }
+
+describe('AppSidebar navigation order', () => {
+  it('places Team immediately after Integrations', () => {
+    renderAppSidebar('/team');
+
+    const integrations = screen.getByTestId('integrations-nav');
+    const team = screen.getByTestId('nav-item-team');
+
+    expect(integrations.parentElement?.nextElementSibling).toContainElement(
+      team,
+    );
+  });
+});
 
 describe('AppSidebar secondary sidebar expansion', () => {
   beforeEach(() => {

@@ -58,6 +58,21 @@ jest.mock('@/components/svg-icon', () => ({
   LlmIcon: () => null,
 }));
 
+jest.mock('@/ee/components/model-reference-label', () => {
+  const LLMLabel = jest.requireActual(
+    '@/components/llm-select/llm-label',
+  ).default;
+  return {
+    ModelReferenceLabel: ({
+      value,
+      ownerTenantId,
+    }: {
+      value?: string;
+      ownerTenantId?: string;
+    }) => <LLMLabel value={value} resourceTenantId={ownerTenantId} />,
+  };
+});
+
 function renderCard(llmId?: string) {
   return render(
     <ResourceTenantIdContext.Provider value="owner-tenant">

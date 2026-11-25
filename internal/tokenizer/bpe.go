@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -820,7 +821,7 @@ func buildByteToRune() [256]rune {
 	cs = append(cs, bs...)
 	extra := 0
 	for b := 0; b < 256; b++ {
-		if containsInt(bs, b) {
+		if slices.Contains(bs, b) {
 			continue
 		}
 		bs = append(bs, b)
@@ -832,15 +833,6 @@ func buildByteToRune() [256]rune {
 		table[bs[i]] = rune(cs[i])
 	}
 	return table
-}
-
-func containsInt(xs []int, v int) bool {
-	for _, x := range xs {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 // ---------------------------------------------------------------------------

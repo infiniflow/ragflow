@@ -112,6 +112,7 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	var logLevelSet, portSet bool
 	args.LogLevel = app.Flag("log-level", "Log level").IsSetByUser(&logLevelSet).String()
 	args.Port = app.Flag("port", "HTTP port (API by default, admin with --admin)").IsSetByUser(&portSet).Int()
+	validateFlags := registerEEFlags(app, args)
 
 	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
 	modeFlags := make([]*bool, len(modes))
@@ -159,7 +160,10 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 		args.Mode = &modes[i]
 	}
 
-	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
+	args.InitSuperUser = args.InitSuperUser || (args.Mode != nil && *args.Mode == "admin")
+	if err := validateFlags(); err != nil {
+		return nil, err
+	}
 
 	if logLevelSet {
 		if err := validateLogLevel(*args.LogLevel); err != nil {
@@ -209,6 +213,7 @@ func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintln(os.Stderr, "  --port int         \tHTTP port: API by default, admin with --admin (1-65535)")
 	fmt.Fprintln(os.Stderr, "  --profile          \tEnable pprof server")
 	fmt.Fprintln(os.Stderr, "  -h, --help         \tShow this help message and exit")
+	printEEHelp()
 }
 
 func main() {
@@ -241,60 +246,63 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	serverType := common.ServerTypeUnknown
-	var serverName string
-	if arguments.Mode == nil {
-		serverType = common.ServerTypeStandalone
-		serverName = "ragflow_standalone"
-	} else {
+	serverType := common.ServerTypeStandalone
+	serverName := "ragflow_standalone"
+	if arguments.Mode != nil {
 		serverType = bootstrap.GetServerType(arguments)
 		serverName = bootstrap.TempServerName(serverType, arguments.Name)
 	}
-	if err := server.InitLocalVariables(); err != nil {
-		return fmt.Errorf("initialize local variables: %w", err)
-	}
-	logLevel := bootstrap.SelectedLogLevel(arguments, "")
+
+	// Init local variables
+	server.InitLocalVariables()
+
+	// Init logger from arguments
+	logLevel := bootstrap.GetLogLevel(arguments)
 	if common.LogLevelHigherThanInfo(logLevel) {
 		logLevel = "info"
 	}
-	if err := common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
-		return fmt.Errorf("initialize logger: %w", err)
-	}
+	common.InitLogger(logLevel, common.FileOutput{}, serverName)
 	defer common.SyncLog()
+
 	var configPath string
 	if arguments.ConfigPath != nil {
 		configPath = *arguments.ConfigPath
 	}
+
+	// Read config file
 	if err := server.Init(configPath); err != nil {
 		return fmt.Errorf("initialize configuration: %w", err)
 	}
-	config := server.GetConfig()
-	resolvedLogLevel, err := config.ResolveLogLevel(arguments.LogLevel)
+
+	// Set log level according to config file
+	globalConfig := server.GetConfig()
+	resolvedLogLevel, err := globalConfig.ResolveLogLevel(arguments.LogLevel)
 	if err != nil {
 		return err
 	}
-	config.SetLogLevel(resolvedLogLevel)
+	globalConfig.SetLogLevel(resolvedLogLevel)
+
 	var port int
 	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
-		port, err = config.ResolvePort(config.GetAPIServerConfig().HTTPPort, arguments.Port)
-		if err != nil {
-			return fmt.Errorf("resolve API port: %w", err)
+		if arguments.Port != nil {
+			err = globalConfig.SetAPIServerHTTPPort(port)
+			if err != nil {
+				return err
+			}
 		}
-		config.SetAPIServerHTTPPort(port)
 	}
+
 	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAdmin {
-		var adminPort *int
-		if serverType == common.ServerTypeAdmin {
-			adminPort = arguments.Port
+		if arguments.Port != nil {
+			err = globalConfig.SetAdminHTTPPort(port)
+			if err != nil {
+				return err
+			}
 		}
-		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, adminPort)
-		if err != nil {
-			return fmt.Errorf("resolve admin port: %w", err)
-		}
-		config.SetAdminHTTPPort(port)
 	}
+
 	if serverType != common.ServerTypeStandalone {
-		arguments.Name = config.GetServerName(*arguments.Mode)
+		arguments.Name = globalConfig.GetServerName(*arguments.Mode)
 		serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
 		if err != nil {
 			return err
@@ -313,13 +321,13 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		}
 		return nil
 	}
-	if config.GetMode() == "debug" {
+	if globalConfig.GetMode() == "debug" {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	local.InitAdminStatus()
-	auditConfig := config.GetAuditConfig()
+	auditConfig := globalConfig.GetAuditConfig()
 	if err = common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName); err != nil {
 		return fmt.Errorf("initialize audit logger: %w", err)
 	}
@@ -392,10 +400,12 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
 	}
-	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
-		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion {
+		if err = billing.Init(ctx, globalConfig.GetBillingConfig()); err != nil {
 			return fmt.Errorf("initialize billing: %w", err)
 		}
+	}
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
 		if err = billing.Start(ctx); err != nil {
 			return fmt.Errorf("start billing: %w", err)
 		}
@@ -429,23 +439,23 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	defer cancel()
 	switch serverType {
 	case common.ServerTypeStandalone:
-		return runServices(ctx, cancel, arguments, services)
+		return standaloneRun(ctx, cancel, arguments, services)
 	case common.ServerTypeAdmin:
-		return admin.Run(ctx, arguments)
+		return admin.Run(ctx, serverType, arguments)
 	case common.ServerTypeAPI:
 		return apipkg.Run(ctx, *arguments.Name, arguments, services)
 	case common.ServerTypeIngestion:
-		return ingestorpkg.Run(ctx, cancel, arguments, services)
+		return ingestorpkg.Run(ctx, serverType, cancel, arguments, services)
 	case common.ServerTypeFileSyncer:
-		return syncerpkg.Run(ctx, cancel, arguments)
+		return syncerpkg.Run(ctx, serverType, cancel, arguments)
 	case common.ServerTypeChatter:
-		return chatterpkg.Run(ctx, arguments)
+		return chatterpkg.Run(ctx, serverType, arguments)
 	default:
 		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
 	}
 }
 
-func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func standaloneRun(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	group, serviceCtx := errgroup.WithContext(ctx)
 	var workerReady []<-chan struct{}
 	waitReady := func(mode string, ready <-chan struct{}) error {
@@ -469,13 +479,13 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		serviceArgs.Mode = &mode
 		serviceArgs.InitSuperUser = mode == "admin"
 		var port int
-		config := server.GetConfig()
+		globalConfig := server.GetConfig()
 		if mode == "admin" {
-			port = config.GetAdminServerConfig().HTTPPort
+			port = globalConfig.GetAdminServerConfig().HTTPPort
 		} else if mode == "api" {
-			port = config.GetAPIServerConfig().HTTPPort
+			port = globalConfig.GetAPIServerConfig().HTTPPort
 		}
-		name, err := bootstrap.ResolveServerName(mode, config.GetServerName(mode), port)
+		name, err := bootstrap.ResolveServerName(mode, globalConfig.GetServerName(mode), port)
 		if err != nil {
 			startupErr = err
 			return
@@ -502,18 +512,20 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 			workerReady = append(workerReady, ready)
 		}
 	}
-	startService("admin", admin.Run)
+	startService("admin", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return admin.Run(ctx, common.ServerTypeStandalone, args)
+	})
 	startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
 		return apipkg.Run(ctx, *args.Name, args, services)
 	})
 	startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return ingestorpkg.Run(ctx, cancel, args, services)
+		return ingestorpkg.Run(ctx, common.ServerTypeStandalone, cancel, args, services)
 	})
 	startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return syncerpkg.Run(ctx, cancel, args)
+		return syncerpkg.Run(ctx, common.ServerTypeStandalone, cancel, args)
 	})
 	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args)
+		return chatterpkg.Run(ctx, common.ServerTypeStandalone, args)
 	})
 	if startupErr == nil {
 		for _, ready := range workerReady {

@@ -393,6 +393,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	}
 	zipBytes, err := monkeyOCRv2ParseRequest(ctx, baseURL+"/parse", filename, binary, timeout)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
 		return parser.ParseResult{}, err
 	}
 	budget := media.NewBudget()
@@ -537,10 +538,12 @@ func dispatchUnlimitedOCR2PDF(
 	}
 	task, err := driver.ParseFile(ctx, &backend, binary, nil, effectiveAPIConfig, parseConfig, nil)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", err)
 	}
 	taskResult, err := pollUnlimitedOCRTaskResult(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
 	}
 
@@ -1393,6 +1396,7 @@ func dispatchMinerUPDF(
 		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
 		finish()
 		if err != nil {
+			noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
 		return finishMinerURemoteResult(ctx, filename, binary, result)
@@ -1418,6 +1422,7 @@ func dispatchMinerUPDF(
 		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, timeout)
 		finish()
 		if err != nil {
+			noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
 		return finishMinerURemoteResult(ctx, filename, binary, result)
@@ -1426,6 +1431,7 @@ func dispatchMinerUPDF(
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
@@ -1603,6 +1609,7 @@ func dispatchMonkeyOCRPDF(
 	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
 	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
 	}
 	sections, err := mineruExtractSections(zipBytes)
@@ -1698,6 +1705,7 @@ func dispatchPaddleOCRPdf(
 	ocrConfig := &modelModule.OCRConfig{Timeout: paddleOCRRequestTimeout(setup, apiConfig)}
 	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, ocrConfig, nil)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
 
@@ -1803,6 +1811,7 @@ func dispatchOCRModelPDF(ctx context.Context, db *gorm.DB, filename string, bina
 	}
 	resp, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, config, nil)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, selector)
 		return parser.ParseResult{}, fmt.Errorf("parser: %s OCRFile: %w", provider, err)
 	}
 	result := parser.OCRPDFResult(ctx, provider, filename, binary, resp)
@@ -3102,6 +3111,7 @@ func dispatchSoMarkPDF(
 	}
 	res := p.ParseWithResult(ctx, filename, binary)
 	if res.Err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return parser.ParseResult{}, true, res.Err
 	}
 	return res, true, nil

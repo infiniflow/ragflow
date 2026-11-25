@@ -62,14 +62,13 @@ const searchBm25DefaultTopN = 12
 // SearchBm25ChunksTool performs lexical BM25 retrieval over 1-5 keyword
 // queries, merging results by chunk id. Backs onto runtime.GetBm25Service().
 type SearchBm25ChunksTool struct {
-	tenantID   string
 	datasetIDs []string
 }
 
 // NewSearchBm25ChunksTool returns a SearchBm25ChunksTool scoped to the given
-// tenant and datasets, implementing eino's InvokableTool.
-func NewSearchBm25ChunksTool(tenantID string, datasetIDs []string) *SearchBm25ChunksTool {
-	return &SearchBm25ChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
+// datasets, implementing eino's InvokableTool.
+func NewSearchBm25ChunksTool(datasetIDs []string) *SearchBm25ChunksTool {
+	return &SearchBm25ChunksTool{datasetIDs: datasetIDs}
 }
 
 // Info returns the tool metadata with a JSON-schema parameter block, mirroring
@@ -180,7 +179,6 @@ func (k *SearchBm25ChunksTool) invokableRun(ctx context.Context, argumentsInJSON
 		DatasetIDs: datasetIDs,
 		DocScope:   docScope,
 		TopN:       topN,
-		TenantID:   k.tenantID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("search_bm25_chunks: %w", err)

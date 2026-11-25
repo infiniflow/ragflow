@@ -223,7 +223,7 @@ services:
     # network. Remote access is an explicit opt-in through VB_BIND_ADDR
     # (e.g. 0.0.0.0 or a specific interface IP) in docker/.env.
     ports:
-      - ${VB_BIND_ADDR:-127.0.0.1}:${EXPOSE_VB_PORT:-5432}:5432
+      - ${VB_BIND_ADDR:-127.0.0.1}:${VB_PORT:-5432}:5432
     volumes:
       - vastbase_data:/home/vastbase/data
       - ./vastbase/init:/docker-entrypoint-initdb.d
@@ -338,7 +338,7 @@ services:
       - --innodb-io-capacity-max=4000
       - --innodb-redo-log-capacity=1G
     ports:
-      - ${EXPOSE_MYSQL_PORT}:3306
+      - ${MYSQL_PORT}:3306
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
@@ -453,8 +453,8 @@ services:
         soft: 65536
         hard: 65536
     ports:
-      - ${EXPOSE_NATS_PORT:-4222}:4222
-      - ${EXPOSE_NATS_MONITORING_PORT:-8222}:8222
+      - ${NATS_PORT:-4222}:4222
+      - ${NATS_MONITORING_PORT:-8222}:8222
     volumes:
       - nats_data:/data
     command: -js -sd /data --http_port 8222
@@ -546,7 +546,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - ${EXPOSE_CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
       - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
     env_file: .env
     environment:

@@ -61,6 +61,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/utility/sqllex"
 )
 
 // ExeSQL-specific errors. ErrExeSQLDAOMissing is surfaced when
@@ -535,7 +536,7 @@ func isBadFloat(f float64) bool {
 // database, so the scanner enables backslash escapes, dollar quotes, bracketed
 // identifiers, and # comments only for dialects that support them.
 func splitSQLStatements(s, dbType string) []string {
-	masked, _ := maskSQLLiteralsAndComments(s, dbType)
+	masked, _ := sqllex.MaskLiteralsAndComments(s, dbType)
 	statements := make([]string, 0, strings.Count(masked, ";")+1)
 	start := 0
 	for i := range masked {
@@ -552,7 +553,7 @@ func splitSQLStatements(s, dbType string) []string {
 // Each executable fragment is checked independently so a read-only first
 // statement cannot hide a later write statement.
 func validateExeSQLStatements(sqlText, dbType string) error {
-	if _, executableComment := maskSQLLiteralsAndComments(sqlText, dbType); executableComment {
+	if _, executableComment := sqllex.MaskLiteralsAndComments(sqlText, dbType); executableComment {
 		return ErrExeSQLNotSelect
 	}
 	hasStatement := false
@@ -698,7 +699,7 @@ var writeCapableSQLKeywords = map[string]struct{}{
 // leading keyword. Quoted text and comments are masked first, so write verbs
 // in data values do not cause false rejections.
 func isReadOnlySQLStatement(sql, dbType string) bool {
-	masked, executableComment := maskSQLLiteralsAndComments(sql, dbType)
+	masked, executableComment := sqllex.MaskLiteralsAndComments(sql, dbType)
 	if executableComment {
 		return false
 	}
@@ -729,157 +730,3 @@ func isReadOnlySQLStatement(sql, dbType string) bool {
 }
 
 var sqlKeywordRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
-
-// maskSQLLiteralsAndComments replaces non-executable SQL regions with spaces
-// without changing byte offsets. The returned flag identifies MySQL/MariaDB
-// executable comments, which are rejected rather than mistaken for comments.
-func maskSQLLiteralsAndComments(s, dbType string) (string, bool) {
-	masked := []byte(s)
-	dialect := strings.ToLower(dbType)
-	isMySQL := dialect == "mysql" || dialect == "mariadb" || dialect == "oceanbase"
-	isPostgres := dialect == "postgres" || dialect == "postgresql"
-	isMSSQL := dialect == "mssql" || dialect == "sqlserver"
-	executableComment := false
-
-	mask := func(start, end int) {
-		for i := start; i < end; i++ {
-			masked[i] = ' '
-		}
-	}
-
-	for i := 0; i < len(s); {
-		if i+1 < len(s) && s[i] == '-' && s[i+1] == '-' &&
-			(!isMySQL || i+2 == len(s) || s[i+2] <= ' ') {
-			end := i + 2
-			for end < len(s) && s[end] != '\n' && s[end] != '\r' {
-				end++
-			}
-			mask(i, end)
-			i = end
-			continue
-		}
-		if isMySQL && s[i] == '#' {
-			end := i + 1
-			for end < len(s) && s[end] != '\n' && s[end] != '\r' {
-				end++
-			}
-			mask(i, end)
-			i = end
-			continue
-		}
-		if i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
-			if isMySQL && (i+2 < len(s) && s[i+2] == '!' ||
-				i+3 < len(s) && s[i+2] == 'M' && s[i+3] == '!') {
-				executableComment = true
-			}
-			end := scanSQLBlockComment(s, i, isPostgres)
-			mask(i, end)
-			i = end
-			continue
-		}
-		if s[i] == '\'' || s[i] == '"' || s[i] == '`' {
-			backslashEscapes := isMySQL || isPostgres && s[i] == '\'' && isPostgresEscapeString(s, i)
-			end := scanSQLQuotedText(s, i, s[i], backslashEscapes)
-			mask(i, end)
-			i = end
-			continue
-		}
-		if isMSSQL && s[i] == '[' {
-			end := scanSQLQuotedText(s, i, ']', false)
-			mask(i, end)
-			i = end
-			continue
-		}
-		if isPostgres && s[i] == '$' {
-			if delimiter := postgresDollarQuoteDelimiter(s, i); delimiter != "" {
-				end := i + len(delimiter)
-				if closeAt := strings.Index(s[end:], delimiter); closeAt >= 0 {
-					end += closeAt + len(delimiter)
-				} else {
-					end = len(s)
-				}
-				mask(i, end)
-				i = end
-				continue
-			}
-		}
-		i++
-	}
-	return string(masked), executableComment
-}
-
-func scanSQLBlockComment(s string, start int, nested bool) int {
-	depth := 1
-	for i := start + 2; i < len(s); {
-		if nested && i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
-			depth++
-			i += 2
-			continue
-		}
-		if i+1 < len(s) && s[i] == '*' && s[i+1] == '/' {
-			depth--
-			i += 2
-			if depth == 0 {
-				return i
-			}
-			continue
-		}
-		i++
-	}
-	return len(s)
-}
-
-func scanSQLQuotedText(s string, start int, quote byte, backslashEscapes bool) int {
-	for i := start + 1; i < len(s); {
-		if backslashEscapes && s[i] == '\\' && i+1 < len(s) {
-			i += 2
-			continue
-		}
-		if s[i] != quote {
-			i++
-			continue
-		}
-		if i+1 < len(s) && s[i+1] == quote {
-			i += 2
-			continue
-		}
-		return i + 1
-	}
-	return len(s)
-}
-
-func isPostgresEscapeString(s string, quoteAt int) bool {
-	if quoteAt == 0 || s[quoteAt-1] != 'E' && s[quoteAt-1] != 'e' {
-		return false
-	}
-	return quoteAt == 1 || !isSQLIdentifierByte(s[quoteAt-2])
-}
-
-func postgresDollarQuoteDelimiter(s string, start int) string {
-	if start > 0 && isSQLIdentifierByte(s[start-1]) {
-		return ""
-	}
-	for i := start + 1; i < len(s); i++ {
-		if s[i] == '$' {
-			return s[start : i+1]
-		}
-		if i == start+1 {
-			if !isSQLIdentifierStartByte(s[i]) {
-				return ""
-			}
-			continue
-		}
-		if !isSQLIdentifierByte(s[i]) {
-			return ""
-		}
-	}
-	return ""
-}
-
-func isSQLIdentifierStartByte(b byte) bool {
-	return b == '_' || b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z'
-}
-
-func isSQLIdentifierByte(b byte) bool {
-	return isSQLIdentifierStartByte(b) || b >= '0' && b <= '9' || b == '$'
-}

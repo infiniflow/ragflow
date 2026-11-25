@@ -24,12 +24,12 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const githubToolName = "github_search"
@@ -213,7 +213,7 @@ func buildGitHubReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if !ok {
 			continue
 		}
-		content := truncateGitHubRunes(githubValueString(repository["description"])+"\n stars:"+githubValueString(repository["watchers"]), 10000)
+		content := utility.TruncateRunes(githubValueString(repository["description"])+"\n stars:"+githubValueString(repository["watchers"]), 10000)
 		if content == "" {
 			continue
 		}
@@ -295,11 +295,4 @@ func githubValueString(value any) string {
 		return "False"
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateGitHubRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }

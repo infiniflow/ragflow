@@ -683,7 +683,7 @@ func runMapBatches(
 		return nil, nil
 	}
 	extracts := make([]wikiExtract, len(batches))
-	completed := window.Counter(ctx, len(batches))
+	completed := window.WithPhase("batch:map").Counter(ctx, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
@@ -879,7 +879,7 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 			return nil
 		})
 	}
-	planDone = p.deps.Progress.Sub(2, 6).Counter(p.ctx, len(jobs))
+	planDone = p.deps.Progress.Sub(2, 6).WithPhase("job:plan").Counter(p.ctx, len(jobs))
 	if err := runBatches(p.ctx, jobs); err != nil {
 		return wikiPlan{}, err
 	}
@@ -956,7 +956,7 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 			results[i] = res
 			progressMu.Lock()
 			completed++
-			p.deps.Progress.Sub(3, 6).Report(p.ctx, float64(completed)/float64(len(pages)))
+			p.deps.Progress.Sub(3, 6).WithPhase("page:refine").ReportPosition(p.ctx, uint32(completed), uint32(len(pages)))
 			if shouldReportRefineProgress(completed, len(pages)) {
 				runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Progress: completed_pages=%d total_pages=%d", completed, len(pages)))
 			}

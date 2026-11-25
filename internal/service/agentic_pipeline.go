@@ -213,7 +213,11 @@ func (s *ChatPipelineService) agenticRag(
 		if info := chain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
 			modelType = "image2text"
 		}
-		agentMessages := s.convertMessagesToEino(runCtx, modelType, messages)
+		agentMessages, attachmentErr := s.convertMessagesToEino(runCtx, modelType, messages)
+		if attachmentErr != nil {
+			sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", attachmentErr), Final: true})
+			return
+		}
 		// Image-bearing turns cannot fail over to a text-only model.
 		for _, msg := range agentMessages {
 			if len(msg.UserInputMultiContent) > 0 {
@@ -275,7 +279,7 @@ func (s *ChatPipelineService) agenticRag(
 			Template:        &tmpl,
 			TenantID:        chat.TenantID,
 			UserID:          userID,
-			DatasetIDs:      chatDatasetIDs(chat),
+			DatasetIDs:      chatDatasetIDs(chat), // the corpus index set is resolved from these datasets' own tenants
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,
 			Stream:          stream,
@@ -350,7 +354,7 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+			reference, answer = s.buildAgenticReference(ctx, chatDatasetIDs(chat), answer, registry)
 		} else {
 			if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 				common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
@@ -533,14 +537,17 @@ func agenticFailoverModelIDs(chat *entity.Chat) []string {
 
 // convertMessagesToEino converts pre-filtered user/assistant messages into
 // eino schema messages, resolving uploaded attachments throughout the history.
-func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, modelType string, messages []map[string]interface{}) []*schema.Message {
+func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, modelType string, messages []map[string]interface{}) ([]*schema.Message, error) {
 	out := make([]*schema.Message, 0, len(messages))
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
 		switch role {
 		case "user":
-			text, images := s.splitChatAttachments(ctx, m["files"])
+			text, images, err := s.splitChatAttachments(ctx, m["files"])
+			if err != nil {
+				return nil, err
+			}
 			if text != "" {
 				content += "\n\n" + text
 			}
@@ -563,7 +570,7 @@ func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, modelTy
 			continue
 		}
 	}
-	return out
+	return out, nil
 }
 
 // chatDatasetIDs reads the conversation's bound dataset ids.

@@ -39,3 +39,5 @@ func grantDatasetTestResource(_ *testing.T, _ string, _ string, _ string, _ stri
 // enableDatasetTestModelAccess grants nothing: the community edition has no
 // model group access control.
 func enableDatasetTestModelAccess(_ *testing.T, _ string, _ string, _ string) {}
+
+func datasetTestResourcePermissionsAvailable() bool { return false }

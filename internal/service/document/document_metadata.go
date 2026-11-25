@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/service/datasetversion"
 	"reflect"
@@ -791,6 +793,12 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	ids := make([]string, 0, len(targetDocIDs))
 	for id := range targetDocIDs {
 		ids = append(ids, id)
+	}
+	for _, docID := range ids {
+		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationUpdate, ""); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
+		}
 	}
 
 	// Apply updates and deletes per document using Python's batch_update_metadata

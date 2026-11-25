@@ -131,9 +131,7 @@ func newSearchIntegrationFixture(t *testing.T) *searchIntegrationFixture {
 	if os.Getenv("ES_HOST") == "" || os.Getenv("TEI_BASE_URL") == "" {
 		t.Skip("set ES_HOST and TEI_BASE_URL to run real SearchDatasets integration tests")
 	}
-	if err := common.InitLogger("error", common.FileOutput{}, ""); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("error", common.FileOutput{}, "")
 	if !tokenizer.IsInitialized() {
 		if err := tokenizer.Init(&tokenizer.PoolConfig{MinSize: 1, MaxSize: 2}); err != nil {
 			t.Fatal(err)

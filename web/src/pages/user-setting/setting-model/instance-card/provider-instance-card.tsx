@@ -49,6 +49,7 @@ import {
 import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
+  canManageProviderInstance,
 } from './interface';
 
 /**
@@ -140,7 +141,7 @@ const GenericProviderInstanceCard = forwardRef<
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
   const { baseUrlOptions, urlHint } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
-    providerName,
+    isDraft ? providerName : instance.provider_id || providerName,
     instance.id,
     isDraft,
     open,
@@ -291,6 +292,7 @@ const GenericProviderInstanceCard = forwardRef<
           editedInstanceName={editedInstanceName}
           onRename={setEditedInstanceName}
           instance={{ ...instance, ...(instanceDetails ?? {}) }}
+          canManage={canManageProviderInstance(instance)}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
           onInstanceModelsStatusChange={(ready) => {

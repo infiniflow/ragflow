@@ -14,13 +14,11 @@
  *  limitations under the License.
  */
 
+import { usePipelineOperatorNodesPrivate } from '@/ee/hooks/use-pipeline-operator-private';
 import { useFetchPipelineDslByPipelineId } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import {
-  buildParserConfigFromNodes,
-  buildPipelineOperatorNodes,
-} from '@/utils/pipeline-operator';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { buildParserConfigFromNodes } from '@/utils/pipeline-operator';
+import { useEffect, useRef, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 
 export const usePipelineOperatorNodes = ({
@@ -44,11 +42,10 @@ export const usePipelineOperatorNodes = ({
     isBuiltin,
   );
 
-  const operatorNodes = useMemo(() => {
-    return buildPipelineOperatorNodes(dsl, savedParserConfig);
-  }, [dsl, savedParserConfig]);
+  const { operatorNodes, loading: privateLoading } =
+    usePipelineOperatorNodesPrivate({ dsl, savedParserConfig });
 
-  return { operatorNodes, loading };
+  return { operatorNodes, loading: loading || privateLoading };
 };
 
 /**

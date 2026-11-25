@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -259,18 +259,6 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 	return out, nil
 }
 
-// sortedKeys returns the claim map's chunk ids in a stable order, so repeated
-// compilations produce the same product sequence (and therefore the same row
-// ids) even though Go map iteration is randomized.
-func sortedKeys(m map[string][]Claim) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // buildTreeClaimProducts turns extracted claims into their own searchable rows.
 //
 // Claims are deliberately NOT part of the structure graph: they carry no
@@ -298,7 +286,7 @@ func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string,
 
 	var payloads []map[string]any
 	var descs []string
-	for _, chunkID := range sortedKeys(claimsByChunk) {
+	for _, chunkID := range slices.Sorted(maps.Keys(claimsByChunk)) {
 		for _, c := range claimsByChunk[chunkID] {
 			name := strings.TrimSpace(c.Name)
 			if name == "" {
