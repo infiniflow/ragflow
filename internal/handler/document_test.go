@@ -197,6 +197,7 @@ type fakeDocumentService struct {
 	uploadLocalKB          *entity.Knowledgebase
 	uploadLocalPath        string
 	uploadOverride         map[string]interface{}
+	uploadLocalParserID    string
 	ingestCode             common.ErrorCode
 	ingestErr              error
 	ingestUserID           string
@@ -410,10 +411,11 @@ func (f *fakeDocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID
 	f.metadataByIDsDocIDs = append([]string(nil), docIDs...)
 	return f.metadataByIDsResult, f.metadataByIDsErr
 }
-func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}, parserID string) ([]map[string]interface{}, []string) {
 	f.uploadLocalKB = kb
 	f.uploadLocalPath = parentPath
 	f.uploadOverride = parserConfigOverride
+	f.uploadLocalParserID = parserID
 	return f.uploadLocalData, f.uploadLocalErrs
 }
 func (f *fakeDocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, name, url string) (map[string]interface{}, common.ErrorCode, error) {
@@ -965,6 +967,39 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 	if fake.uploadOverride != nil {
 		t.Fatalf("bad parser_config should be ignored, got %v", fake.uploadOverride)
+	}
+}
+
+// TestUploadDocumentsHandler_LocalRejectsUnknownParserID pins the up-front
+// validation of a per-document parser_id override: an unknown parser_id is
+// rejected before any document is created, so a typo cannot silently upload
+// documents under the dataset default parser instead of the requested one.
+func TestUploadDocumentsHandler_LocalRejectsUnknownParserID(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare upload permission fixture: %v", err)
+	}
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parser_id": "no-such-parser",
+	}, "a.txt", []byte("abc"))
+
+	h.UploadDocuments(c)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected non-200 for unknown parser_id, got %d: %s", w.Code, w.Body.String())
+	}
+	if fake.uploadLocalKB != nil {
+		t.Fatalf("UploadLocalDocuments must not run for an unknown parser_id, got kb=%v", fake.uploadLocalKB)
 	}
 }
 

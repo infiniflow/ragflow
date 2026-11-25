@@ -126,7 +126,7 @@ func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, datasetI
 				key := family + ":" + dedicatedDocumentParserID(filetype, name)
 				settings := settingsByFamily[key]
 				if settings == nil {
-					sel, config := resolveDocumentParser(ctx, &kb, name, filetype, cloneParserConfigForDocument(kb.ParserConfig))
+					sel, config := resolveDocumentParser(ctx, &kb, name, filetype, cloneParserConfigForDocument(kb.ParserConfig), "")
 					parserID, pipelineID := parserSelectionColumns(sel)
 					var versionID *string
 					if sel.IsPipeline() {

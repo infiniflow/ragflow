@@ -160,7 +160,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	}
 
 	// create the 'doc'
-	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig)
+	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig, "")
 	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, selection, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
 	if ownerID := strings.TrimSpace(kb.CreatedBy); ownerID != "" {
 		doc.CreatedBy = ownerID
