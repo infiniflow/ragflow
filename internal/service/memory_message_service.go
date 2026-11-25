@@ -406,18 +406,28 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		contents[i], _ = message["content"].(string)
 	}
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, mem.TenantID), mem.EmbdID)
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
+	var embeddings []models.EmbeddingData
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, mem.TenantID), mem.EmbdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			// Embed inside the model's window: memory contents are caller-supplied and
+			// unbounded, and the provider answers 400/20015 instead of truncating them.
+			embeds, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
+			if invErr != nil {
+				return fmt.Errorf("embed model: %w", invErr)
+			}
+			if len(embeds) != len(messages) {
+				return fmt.Errorf("embedding response count %d does not match message count %d", len(embeds), len(messages))
+			}
+			embeddings = embeds
+			return nil
+		}, nil)
 	if err != nil {
 		return err
-	}
-	// Embed inside the model's window: memory contents are caller-supplied and
-	// unbounded, and the provider answers 400/20015 instead of truncating them.
-	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
-	if err != nil {
-		return fmt.Errorf("embed model: %w", err)
-	}
-	if len(embeddings) != len(messages) {
-		return fmt.Errorf("embedding response count %d does not match message count %d", len(embeddings), len(messages))
 	}
 
 	vectorDim := 0

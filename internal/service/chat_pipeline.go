@@ -1466,42 +1466,26 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 				return nil
 			}
-			if chatDriver.ToolConfig != nil {
-				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
-			} else {
-				driverErr = chatDriver.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-			}
-			// The gp- primary failed before any delta reached the client:
-			// flip its current group member inactive and retry once on the
-			// next member. Once deltas have streamed the answer cannot be
-			// replayed on another model, so the error surfaces as-is.
-			if driverErr != nil && ctx.Err() == nil && fullAnswer == "" {
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					modelCtx := permission.WithTenantID(ctx, chat.TenantID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						if retryDriver := s.buildChatDriver(ctx, chat, retryModel); retryDriver != nil {
-							fullAnswer = ""
-							thinkState = &ThinkStreamState{}
-							if retryDriver.ToolConfig != nil {
-								_, driverErr = retryDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
-							} else {
-								driverErr = retryDriver.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-							}
-							if driverErr != nil {
-								common.WarnCtx(ctx, "chat completions: group failover retry failed",
-									zap.String("llm_id", chat.LLMID), zap.Error(driverErr))
-							}
-						} else {
-							common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(fmt.Errorf("re-resolved driver is nil")))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+			// Failover: a gp- group reference whose invocation fails before
+			// any delta reached the client (canRetry sees fullAnswer) flips
+			// its current member inactive and retries once on the next
+			// member. Once deltas have streamed the answer cannot be replayed
+			// on another model, so the error surfaces as-is.
+			driverErr = dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					fullAnswer = ""
+					thinkState = &ThinkStreamState{}
+					if model.ToolConfig != nil {
+						_, err := model.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
+						return err
 					}
-				}
-			}
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+				},
+				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -1572,55 +1556,32 @@ func (s *ChatPipelineService) AsyncChat(
 			final.AudioBinary = nil
 			send(final)
 		} else {
-			// Non-streaming: get the answer synchronously.
+			// Non-streaming: get the answer synchronously, with gp- group
+			// failover (flip + re-resolve + retry once on invocation error).
 			var answer string
-			var err error
-			// Tool routing: use tool-loop when tools are bound.
-			if chatDriver.ToolConfig != nil {
-				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
-			} else {
-				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-				if respErr != nil {
-					err = respErr
-				} else if resp != nil && resp.Answer != nil {
-					answer = *resp.Answer
-				}
-			}
+			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					if model.ToolConfig != nil {
+						a, _, callErr := model.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
+						answer = a
+						return callErr
+					}
+					resp, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					if callErr != nil {
+						return callErr
+					}
+					if resp != nil && resp.Answer != nil {
+						answer = *resp.Answer
+					}
+					return nil
+				},
+				nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 
-			if err != nil {
-				// The gp- primary failed: flip its current group member
-				// inactive and retry once on the next member.
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					modelCtx := permission.WithTenantID(ctx, chat.TenantID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						if retryDriver := s.buildChatDriver(ctx, chat, retryModel); retryDriver != nil {
-							if retryDriver.ToolConfig != nil {
-								answer, _, err = retryDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
-							} else {
-								resp, respErr := retryDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-								if respErr != nil {
-									err = respErr
-								} else if resp != nil && resp.Answer != nil {
-									answer = *resp.Answer
-									err = nil
-								}
-							}
-							if err != nil {
-								common.WarnCtx(ctx, "chat completions: group failover retry failed",
-									zap.String("llm_id", chat.LLMID), zap.Error(err))
-							}
-						} else {
-							common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(fmt.Errorf("re-resolved driver is nil")))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
-					}
-				}
-			}
 			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1940,28 +1901,22 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				}
 				return nil
 			}
-			driverErr := chatModel.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-			// The gp- primary failed before any delta reached the client:
-			// flip its current group member inactive and retry once on the
-			// next member. Once deltas have streamed the answer cannot be
-			// replayed on another model, so the error surfaces as-is.
-			if driverErr != nil && ctx.Err() == nil && fullAnswer == "" {
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						thinkState = &ThinkStreamState{}
-						fullAnswer = ""
-						driverErr = retryModel.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-						if driverErr != nil {
-							common.WarnCtx(ctx, "chat completions: group failover retry failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(driverErr))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
-					}
-				}
-			}
+			// Failover: a gp- group reference whose invocation fails before
+			// any delta reached the client flips its current member inactive
+			// and retries once on the next member. Once deltas have streamed
+			// the answer cannot be replayed on another model, so the error
+			// surfaces as-is.
+			driverErr := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatModel, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					thinkState = &ThinkStreamState{}
+					fullAnswer = ""
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+				},
+				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -2029,30 +1984,26 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				Final:       true,
 			})
 		} else {
-			// Non-streaming: one-shot call.
+			// Non-streaming: one-shot call, with gp- group failover (flip +
+			// re-resolve + retry once on invocation error).
 			chatCfg := BuildChatConfig(chat, config)
-			timer.Enter(common.PhaseGenerateAnswer)
-			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-			timer.Exit(common.PhaseGenerateAnswer)
-			if err != nil {
-				// The gp- primary failed: flip its current group member
-				// inactive and retry once on the next member.
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						timer.Enter(common.PhaseGenerateAnswer)
-						resp, err = retryModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-						timer.Exit(common.PhaseGenerateAnswer)
-						if err != nil {
-							common.WarnCtx(ctx, "chat completions: group failover retry failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(err))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+			var resp *modelModule.ChatResponse
+			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatModel, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					timer.Enter(common.PhaseGenerateAnswer)
+					r, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					timer.Exit(common.PhaseGenerateAnswer)
+					if callErr != nil {
+						return callErr
 					}
-				}
-			}
+					resp = r
+					return nil
+				},
+				nil)
 			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -2061,7 +2012,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			answer := ""
-			if resp.Answer != nil {
+			if resp != nil && resp.Answer != nil {
 				answer = *resp.Answer
 			}
 			// Debug log matching Python's dialog_service.py:335-336.

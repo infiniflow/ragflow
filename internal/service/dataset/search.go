@@ -294,73 +294,136 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	metadataSvc := service.NewMetadataService()
 	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
 
-	// Determine embedding model
-	var embeddingModel *modelModule.EmbeddingModel
-	if kbRecords[0].EmbdID != "" {
-		embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), kbRecords[0].EmbdID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
+	// Resolve retrieval models under group failover: when exactly one of the
+	// two model references is a gp- group, an invocation failure flips that
+	// group's current member inactive and the whole retrieval retries once on
+	// the next member. With both behind groups the failing side cannot be
+	// told apart from the error alone, so failover only covers the
+	// single-group case.
+	embdRef := kbRecords[0].EmbdID
+	_, embdIsGroup := common.ParseGroupModelRef(embdRef)
+	_, rerankIsGroup := common.ParseGroupModelRef(rerankID)
+	failoverType, failoverRef := entity.ModelType(0), ""
+	switch {
+	case embdIsGroup && !rerankIsGroup:
+		failoverType, failoverRef = entity.ModelTypeEmbedding, embdRef
+	case rerankIsGroup && !embdIsGroup:
+		failoverType, failoverRef = entity.ModelTypeRerank, rerankID
+	}
+
+	runRetrieval := func(ctx context.Context, embeddingModel *modelModule.EmbeddingModel, rerankModel *modelModule.RerankModel) (*service.SearchDatasetsResponse, error) {
+		retrievalReq := &nlp.RetrievalRequest{
+			TenantIDs:                  tenantIDs,
+			Question:                   modifiedQuestion,
+			KbIDs:                      datasetIDs,
+			DocIDs:                     docIDs,
+			DocumentPermissionsChecked: true,
+			Page:                       page,
+			PageSize:                   pageSize,
+			RerankCandidatesCount:      &rerankCandidatesCount,
+			KNNTopK:                    &knnTopK,
+			KNNNumCandidates:           &knnNumCandidates,
+			SimilarityThreshold:        &similarityThreshold,
+			VectorSimilarityWeight:     &vectorSimilarityWeight,
+			RerankModel:                rerankModel,
+			RankFeature:                &labels,
+			EmbeddingModel:             embeddingModel,
+			Highlight:                  req.Highlight,
+			Language:                   entity.KnowledgebasesLanguage(kbRecords),
 		}
-	}
-
-	// Get rerank model if rerankID is specified
-	var rerankModel *modelModule.RerankModel
-	if rerankID != "" {
-		rerankModel, err = modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
+		retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
+		if includeDatasetProducts {
+			// Dataset artifacts use dataset IDs instead of source document IDs.
+			retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 		}
+
+		retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
+		if err != nil {
+			return nil, fmt.Errorf("retrieval search failed: %w", err)
+		}
+
+		filteredChunks := retrievalResult.Chunks
+
+		if useKG {
+			common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
+		}
+
+		filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
+		formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
+
+		common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
+
+		pyChunks := common.ConvertFloatsToPyFormat(filteredChunks).([]map[string]interface{})
+
+		return &service.SearchDatasetsResponse{
+			Chunks:  pyChunks,
+			DocAggs: retrievalResult.DocAggs,
+			Labels:  &labels,
+			Total:   retrievalResult.Total,
+		}, nil
 	}
 
-	retrievalReq := &nlp.RetrievalRequest{
-		TenantIDs:                  tenantIDs,
-		Question:                   modifiedQuestion,
-		KbIDs:                      datasetIDs,
-		DocIDs:                     docIDs,
-		DocumentPermissionsChecked: true,
-		Page:                       page,
-		PageSize:                   pageSize,
-		RerankCandidatesCount:      &rerankCandidatesCount,
-		KNNTopK:                    &knnTopK,
-		KNNNumCandidates:           &knnNumCandidates,
-		SimilarityThreshold:        &similarityThreshold,
-		VectorSimilarityWeight:     &vectorSimilarityWeight,
-		RerankModel:                rerankModel,
-		RankFeature:                &labels,
-		EmbeddingModel:             embeddingModel,
-		Highlight:                  req.Highlight,
-		Language:                   entity.KnowledgebasesLanguage(kbRecords),
-	}
-	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
-	if includeDatasetProducts {
-		// Dataset artifacts use dataset IDs instead of source document IDs.
-		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
+	if failoverType == 0 {
+		// Get embedding model
+		var embeddingModel *modelModule.EmbeddingModel
+		if embdRef != "" {
+			embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), embdRef)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
+			}
+		}
+		// Get rerank model if rerankID is specified
+		var rerankModel *modelModule.RerankModel
+		if rerankID != "" {
+			rerankModel, err = modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
+			}
+		}
+		return runRetrieval(ctx, embeddingModel, rerankModel)
 	}
 
-	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
+	// The retrieval is a read-only pipeline (question embedding, engine
+	// query, optional rerank), so an invocation failure can safely replay it
+	// on the next group member.
+	type retrievalModels struct {
+		embedding *modelModule.EmbeddingModel
+		rerank    *modelModule.RerankModel
+	}
+	resolveModels := func(ctx context.Context) (*retrievalModels, error) {
+		var embeddingModel *modelModule.EmbeddingModel
+		if embdRef != "" {
+			m, rerr := modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), embdRef)
+			if rerr != nil {
+				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", rerr)
+			}
+			embeddingModel = m
+		}
+		var rerankModel *modelModule.RerankModel
+		if rerankID != "" {
+			m, rerr := modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
+			if rerr != nil {
+				return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rerr)
+			}
+			rerankModel = m
+		}
+		return &retrievalModels{embedding: embeddingModel, rerank: rerankModel}, nil
+	}
+	var result *service.SearchDatasetsResponse
+	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantIDs[0], failoverType, failoverRef,
+		resolveModels, nil,
+		func(ctx context.Context, resolved *retrievalModels) error {
+			resp, invErr := runRetrieval(ctx, resolved.embedding, resolved.rerank)
+			if invErr != nil {
+				return invErr
+			}
+			result = resp
+			return nil
+		}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("retrieval search failed: %w", err)
+		return nil, err
 	}
-
-	filteredChunks := retrievalResult.Chunks
-
-	if useKG {
-		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
-	}
-
-	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
-	formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
-
-	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
-
-	pyChunks := common.ConvertFloatsToPyFormat(filteredChunks).([]map[string]interface{})
-
-	return &service.SearchDatasetsResponse{
-		Chunks:  pyChunks,
-		DocAggs: retrievalResult.DocAggs,
-		Labels:  &labels,
-		Total:   retrievalResult.Total,
-	}, nil
+	return result, nil
 }
 
 // formatDatasetSearchChunks applies API field names and compilation visibility after parent promotion.

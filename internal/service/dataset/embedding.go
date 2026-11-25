@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
@@ -64,11 +65,6 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, kb.TenantID), embeddingID)
-	if err != nil {
-		return nil, common.CodeDataError, err
-	}
-
 	checkNum := defaultEmbeddingCheckNum
 	if req.CheckNum != nil {
 		checkNum = *req.CheckNum
@@ -88,91 +84,132 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 		}, common.CodeSuccess, nil
 	}
 
-	results := make([]service.EmbeddingCheckResult, 0, len(samples))
-	effectiveSimilarities := make([]float64, 0, len(samples))
-	sawTitleAndContent := false
-	for _, sample := range samples {
-		if sample.Vector == nil || len(sample.Vector) == 0 {
-			continue
+	// runCheck samples stored chunks and encodes them with the resolved
+	// model. Only engine/encode failures are invocation failures; the
+	// dimension mismatch below is a client-side verdict and never retries.
+	type embeddingCheckRun struct {
+		results            []service.EmbeddingCheckResult
+		sims               []float64
+		sawTitleAndContent bool
+	}
+	runCheck := func(ctx context.Context, embeddingModel *modelModule.EmbeddingModel) (embeddingCheckRun, common.ErrorCode, error) {
+		run := embeddingCheckRun{
+			results:            make([]service.EmbeddingCheckResult, 0, len(samples)),
+			sims:               make([]float64, 0, len(samples)),
+			sawTitleAndContent: false,
 		}
+		for _, sample := range samples {
+			if sample.Vector == nil || len(sample.Vector) == 0 {
+				continue
+			}
 
-		rawChunk, err := d.docEngine.GetChunk(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), sample.ChunkID, []string{datasetID})
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to get sampled chunk %s: %w", sample.ChunkID, err)
-		}
-		chunkMap := datasetMap(rawChunk)
-		if len(chunkMap) == 0 {
-			return nil, common.CodeServerError, fmt.Errorf("sampled chunk %s was not found", sample.ChunkID)
-		}
-
-		title := datasetString(chunkMap["title_tks"])
-		content := datasetString(chunkMap["content_ltks"])
-
-		var titleVector [][]float64
-		if title != "" {
-			titleVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{title})
+			rawChunk, err := d.docEngine.GetChunk(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), sample.ChunkID, []string{datasetID})
 			if err != nil {
-				return nil, common.CodeServerError, err
+				return run, common.CodeServerError, fmt.Errorf("failed to get sampled chunk %s: %w", sample.ChunkID, err)
 			}
-		}
-		var contentVector [][]float64
-		if content != "" {
-			contentVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{content})
-			if err != nil {
-				return nil, common.CodeServerError, err
+			chunkMap := datasetMap(rawChunk)
+			if len(chunkMap) == 0 {
+				return run, common.CodeServerError, fmt.Errorf("sampled chunk %s was not found", sample.ChunkID)
 			}
-		}
 
-		var vectors [][]float64
-		if len(titleVector) > 0 && len(contentVector) > 0 {
-			vectors = [][]float64{titleVector[0], contentVector[0]}
-			sawTitleAndContent = true
-		} else if len(titleVector) > 0 {
-			vectors = titleVector
-		} else if len(contentVector) > 0 {
-			vectors = contentVector
-		} else {
-			continue
-		}
+			title := datasetString(chunkMap["title_tks"])
+			content := datasetString(chunkMap["content_ltks"])
 
-		if len(vectors[0]) != len(sample.Vector) {
-			return nil, common.CodeDataError, fmt.Errorf("Embedding failure. The dimension (%d) of given embedding model is different from the original (%d)", len(vectors[0]), len(sample.Vector))
-		}
-
-		var sim float64
-		if len(vectors) == 2 {
-			simContent := datasetCosSim(vectors[1], sample.Vector)
-			simMix := datasetCosSim(datasetMixVectors(vectors[0], vectors[1], 0.1), sample.Vector)
-			sim = simContent
-			if simMix > sim {
-				sim = simMix
-				sawTitleAndContent = true
+			var titleVector [][]float64
+			if title != "" {
+				titleVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{title})
+				if err != nil {
+					return run, common.CodeServerError, err
+				}
 			}
-		} else {
-			sim = datasetCosSim(vectors[0], sample.Vector)
-		}
-		sim = datasetRoundFloat(sim, 6)
+			var contentVector [][]float64
+			if content != "" {
+				contentVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{content})
+				if err != nil {
+					return run, common.CodeServerError, err
+				}
+			}
 
-		effectiveSimilarities = append(effectiveSimilarities, sim)
-		results = append(results, service.EmbeddingCheckResult{
-			ChunkID:     sample.ChunkID,
-			DocID:       sample.DocID,
-			DocName:     sample.DocName,
-			VectorField: sample.VectorField,
-			VectorDim:   len(sample.Vector),
-			CosSim:      sim,
-		})
+			var vectors [][]float64
+			if len(titleVector) > 0 && len(contentVector) > 0 {
+				vectors = [][]float64{titleVector[0], contentVector[0]}
+				run.sawTitleAndContent = true
+			} else if len(titleVector) > 0 {
+				vectors = titleVector
+			} else if len(contentVector) > 0 {
+				vectors = contentVector
+			} else {
+				continue
+			}
+
+			if len(vectors[0]) != len(sample.Vector) {
+				return run, common.CodeDataError, fmt.Errorf("Embedding failure. The dimension (%d) of given embedding model is different from the original (%d)", len(vectors[0]), len(sample.Vector))
+			}
+
+			var sim float64
+			if len(vectors) == 2 {
+				simContent := datasetCosSim(vectors[1], sample.Vector)
+				simMix := datasetCosSim(datasetMixVectors(vectors[0], vectors[1], 0.1), sample.Vector)
+				sim = simContent
+				if simMix > sim {
+					sim = simMix
+					run.sawTitleAndContent = true
+				}
+			} else {
+				sim = datasetCosSim(vectors[0], sample.Vector)
+			}
+			sim = datasetRoundFloat(sim, 6)
+
+			run.sims = append(run.sims, sim)
+			run.results = append(run.results, service.EmbeddingCheckResult{
+				ChunkID:     sample.ChunkID,
+				DocID:       sample.DocID,
+				DocName:     sample.DocName,
+				VectorField: sample.VectorField,
+				VectorDim:   len(sample.Vector),
+				CosSim:      sim,
+			})
+		}
+		return run, common.CodeSuccess, nil
+	}
+
+	// Group failover: a gp- reference whose member fails the check flips
+	// inactive and the whole check replays once on the next member.
+	var (
+		run      embeddingCheckRun
+		lastCode common.ErrorCode
+	)
+	err = dao.InvokeWithGroupFailover(ctx, dao.DB, kb.TenantID, entity.ModelTypeEmbedding, embeddingID,
+		func(ctx context.Context) (*modelModule.EmbeddingModel, error) {
+			return service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, kb.TenantID), embeddingID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *modelModule.EmbeddingModel) error {
+			r, code, invErr := runCheck(ctx, embeddingModel)
+			lastCode = code
+			if invErr != nil {
+				return invErr
+			}
+			run = r
+			return nil
+		},
+		func(error) bool { return lastCode == common.CodeServerError })
+	if err != nil {
+		if lastCode == 0 {
+			// Resolution failed — same mapping as before failover existed.
+			return nil, common.CodeDataError, err
+		}
+		return nil, lastCode, err
 	}
 
 	// Aggregate the batch mode explicitly: title_and_content when any sample was
 	// matched against the title+content mix, content_only otherwise.
 	matchMode := "content_only"
-	if sawTitleAndContent {
+	if run.sawTitleAndContent {
 		matchMode = "title_and_content"
 	}
-	summary := datasetEmbeddingCheckSummary(datasetID, embeddingID, len(samples), effectiveSimilarities, matchMode)
-	response := &service.EmbeddingCheckResponse{Summary: summary, Results: results}
-	if len(effectiveSimilarities) == 0 {
+	summary := datasetEmbeddingCheckSummary(datasetID, embeddingID, len(samples), run.sims, matchMode)
+	response := &service.EmbeddingCheckResponse{Summary: summary, Results: run.results}
+	if len(run.sims) == 0 {
 		return nil, common.CodeDataError, errors.New("No embedded chunks are available to compare.")
 	}
 	if summary.AvgCosSim >= 0.9 {
@@ -193,18 +230,28 @@ const embeddingSwitchProbeText = "dimension probe"
 var embeddingDimensionProbe = probeEmbeddingDimension
 
 func probeEmbeddingDimension(ctx context.Context, tenantID, embeddingID string) (int, error) {
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embeddingID)
+	// Group failover: a gp- reference whose member fails the probe call
+	// flips inactive and retries once on the next member.
+	var dimension int
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embeddingID,
+		func(ctx context.Context) (*modelModule.EmbeddingModel, error) {
+			return service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embeddingID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *modelModule.EmbeddingModel) error {
+			vectors, invErr := datasetEncodeEmbedding(ctx, embeddingModel, []string{embeddingSwitchProbeText})
+			if invErr != nil {
+				return invErr
+			}
+			if len(vectors) == 0 || len(vectors[0]) == 0 {
+				return fmt.Errorf("embedding model %q returned no vector", embeddingID)
+			}
+			dimension = len(vectors[0])
+			return nil
+		}, nil)
 	if err != nil {
 		return 0, err
 	}
-	vectors, err := datasetEncodeEmbedding(ctx, embeddingModel, []string{embeddingSwitchProbeText})
-	if err != nil {
-		return 0, err
-	}
-	if len(vectors) == 0 || len(vectors[0]) == 0 {
-		return 0, fmt.Errorf("embedding model %q returned no vector", embeddingID)
-	}
-	return len(vectors[0]), nil
+	return dimension, nil
 }
 
 // embeddingSwitchNeedsCheck reports whether a request replaces the embedding

@@ -596,13 +596,13 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			llmMaxOutput = modelInfo.MaxOutput
 		}
 
-		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: embeddingModel}
+		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: embeddingModel, db: kcWiringDeps.DB}
 		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(kcWiringDeps.DB, kcWiringDeps.Engine, func(ctx context.Context) (int, error) {
 			return embedderVectorSize(ctx, embedder)
 		})
 
 		return kc.Deps{
-			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
+			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID, db: kcWiringDeps.DB},
 			Embed:           embedder,
 			WikiPages:       &kcWikiPageStore{docEngine: kcWiringDeps.Engine},
 			WikiMapVersions: mapStore,
@@ -620,19 +620,13 @@ type kcChatInvoker struct {
 	factory  *service.ModelFactory
 	tenantID string
 	llmID    string
+	db       *gorm.DB
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
 	llmID := c.llmID
 	if req.LLMID != "" {
 		llmID = req.LLMID
-	}
-	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
-	if err != nil {
-		if !req.DisableRetry {
-			runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(err))
-		}
-		return nil, err
 	}
 	msgs := []models.Message{
 		{Role: "system", Content: req.SystemPrompt},
@@ -641,53 +635,71 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	config := chatConfigForRequest(req)
-	// Retry transient transport/provider failures (HTTP timeout, reset,
-	// connection refused, 5xx, 429) with exponential backoff. A single
-	// external-LLM hiccup must not abort the whole knowledge compile — the reply
-	// is never cached, so each attempt issues a fresh request. Permanent
-	// configuration/model errors (auth, unknown model) are not retried.
+
+	// Group failover wraps the transient-retry loop: when every retry on the
+	// current member is exhausted (or the error is permanent, e.g. auth) and
+	// llmID is a gp- reference, that member flips inactive and the whole call
+	// replays once on the next member.
 	var resp *models.ChatResponse
-	failureReporter := kc.RetryFailureReporter{}
-	attempt := 0
-	call := func() error {
-		attempt++
-		// Bound each attempt so a stalled LLM provider eventually releases its
-		// compile sub-batch. Knowledge compilation prompts can be large and some
-		// providers legitimately need several minutes to return a response.
-		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
-		defer cancel()
-		r, err := func() (*models.ChatResponse, error) {
-			finishIO := runtime.TrackIO(ctx, "Compiler", "LLM call", "")
-			defer finishIO()
-			return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
-		}()
-		if err != nil {
-			if !req.DisableRetry {
-				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
-				delay := kcChatRetryDelay
-				if final {
-					delay = 0
+	err := dao.InvokeWithGroupFailover(ctx, c.db, c.tenantID, entity.ModelTypeChat, llmID,
+		func(ctx context.Context) (*models.ChatModel, error) {
+			chatModel, rerr := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
+			if rerr != nil {
+				if !req.DisableRetry {
+					runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(rerr))
 				}
-				if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
-					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				return nil, rerr
+			}
+			return chatModel, nil
+		}, nil,
+		func(ctx context.Context, chatModel *models.ChatModel) error {
+			// Retry transient transport/provider failures (HTTP timeout, reset,
+			// connection refused, 5xx, 429) with exponential backoff. A single
+			// external-LLM hiccup must not abort the whole knowledge compile — the reply
+			// is never cached, so each attempt issues a fresh request. Permanent
+			// configuration/model errors (auth, unknown model) are not retried.
+			failureReporter := kc.RetryFailureReporter{}
+			attempt := 0
+			call := func() error {
+				attempt++
+				// Bound each attempt so a stalled LLM provider eventually releases its
+				// compile sub-batch. Knowledge compilation prompts can be large and some
+				// providers legitimately need several minutes to return a response.
+				attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
+				defer cancel()
+				r, err := func() (*models.ChatResponse, error) {
+					finishIO := runtime.TrackIO(ctx, "Compiler", "LLM call", "")
+					defer finishIO()
+					return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+				}()
+				if err != nil {
+					if !req.DisableRetry {
+						final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
+						delay := kcChatRetryDelay
+						if final {
+							delay = 0
+						}
+						if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
+							runtime.ReportProgressMessage(ctx, "Compiler", message)
+						}
+					}
+					return err
 				}
+				resp = r
+				if !req.DisableRetry {
+					if message, ok := failureReporter.RecoveryMessage(attempt); ok {
+						runtime.ReportProgressMessage(ctx, "Compiler", message)
+					}
+				}
+				return nil
 			}
-			return err
-		}
-		resp = r
-		if !req.DisableRetry {
-			if message, ok := failureReporter.RecoveryMessage(attempt); ok {
-				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			if req.DisableRetry {
+				return call()
 			}
-		}
-		return nil
-	}
-	if req.DisableRetry {
-		if err := call(); err != nil {
-			return nil, err
-		}
-	} else if retryErr := appcommon.RetryWithBackoff(ctx, kcChatRetryMax, kcChatRetryDelay, call, appcommon.IsTransientError); retryErr != nil {
-		return nil, retryErr
+			return appcommon.RetryWithBackoff(ctx, kcChatRetryMax, kcChatRetryDelay, call, appcommon.IsTransientError)
+		}, nil)
+	if err != nil {
+		return nil, err
 	}
 	content := ""
 	if resp != nil && resp.Answer != nil {
@@ -750,6 +762,7 @@ type kcEmbedder struct {
 	factory  *service.ModelFactory
 	tenantID string
 	embdID   string
+	db       *gorm.DB
 	dim      atomic.Int64
 }
 
@@ -757,17 +770,45 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	mdl, err := e.resolveModel(ctx)
+	// Group failover: a gp- reference whose member fails any batch flips
+	// inactive and the whole Encode replays once on the next member. An empty
+	// embdID resolves the tenant default (never a group reference), so the
+	// failover call degrades to a plain resolve+invoke.
+	var out [][]float32
+	err := dao.InvokeWithGroupFailover(ctx, e.db, e.tenantID, entity.ModelTypeEmbedding, e.embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return e.resolveModel(ctx)
+		}, nil,
+		func(ctx context.Context, mdl *models.EmbeddingModel) error {
+			embeds, runErr := kcEncodeBatches(ctx, mdl, texts)
+			if runErr != nil {
+				return runErr
+			}
+			out = embeds
+			return nil
+		}, nil)
 	if err != nil {
 		return nil, err
 	}
+	// Derive the vector dimension from the first non-empty vector.
+	for _, vec := range out {
+		if len(vec) > 0 {
+			e.dim.CompareAndSwap(0, int64(len(vec)))
+			break
+		}
+	}
+	return out, nil
+}
+
+// kcEncodeBatches slices inputs into per-provider batches: providers cap the
+// per-request input count and reject larger batches rather than chunking
+// internally. The batch size is resolved from the model's capability
+// (all_models.json batch_size, added by #17877/#17878) via
+// EmbeddingModel.ResolveBatchSize, which falls back to a conservative default.
+// Batches are fanned out on the shared compiler pool and concatenated back in
+// input order.
+func kcEncodeBatches(ctx context.Context, mdl *models.EmbeddingModel, texts []string) ([][]float32, error) {
 	config := &models.EmbeddingConfig{}
-	// Slice inputs into per-provider batches: providers cap the per-request input
-	// count and reject larger batches rather than chunking internally. The batch
-	// size is resolved from the model's capability (all_models.json batch_size,
-	// added by #17877/#17878) via EmbeddingModel.ResolveBatchSize, which falls
-	// back to a conservative default. Batches are fanned out on the shared compiler
-	// pool and concatenated back in input order.
 	batchSize := mdl.ResolveBatchSize()
 	numBatches := (len(texts) + batchSize - 1) / batchSize
 	slots := make([][][]float32, numBatches) // per-batch vector lists, distinct indices => no race
@@ -799,23 +840,13 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 			return nil
 		})
 	}
-	if err = knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
+	if err := knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
 		return nil, err
 	}
-	// Flatten in input order and derive the vector dimension from the first
-	// batch's first vector.
+	// Flatten in input order.
 	out := make([][]float32, 0, len(texts))
-	var batchDim int
 	for _, slot := range slots {
-		for _, vec := range slot {
-			out = append(out, vec)
-			if batchDim == 0 {
-				batchDim = len(vec)
-			}
-		}
-	}
-	if batchDim > 0 {
-		e.dim.CompareAndSwap(0, int64(batchDim))
+		out = append(out, slot...)
 	}
 	return out, nil
 }
