@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ragflow/internal/common"
@@ -104,9 +105,18 @@ type fieldMappingCacheEntry struct {
 // projects with the same file name never share an entry.
 var fieldMappingCache sync.Map
 
+// fieldMappingGeneration detects an invalidation that lands while a cold load
+// is reading the file; such a load must not republish the old mapping.
+var fieldMappingGeneration atomic.Uint64
+
+// readFieldMappingFile is an indirection so tests can interleave a file
+// replacement or an invalidation with the read.
+var readFieldMappingFile = os.ReadFile
+
 // InvalidateFieldMapping drops all cached field mappings. Call after a mapping
 // file is replaced at runtime, or in tests that rewrite the fixture in place.
 func InvalidateFieldMapping() {
+	fieldMappingGeneration.Add(1)
 	fieldMappingCache.Range(func(key, _ any) bool {
 		fieldMappingCache.Delete(key)
 		return true
@@ -127,21 +137,20 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 		return nil, nil, err
 	}
 
-	// Stat is cheap compared with ReadFile + Unmarshal. Skip the fast path if
-	// stat itself fails and let ReadFile below report the real problem.
-	var cachedEntry fieldMappingCacheEntry
-	haveCached := false
-	if info, statErr := os.Stat(*filePath); statErr == nil {
+	// Stat is cheap compared with ReadFile + Unmarshal. The pre-read fingerprint
+	// describes the bytes we are about to parse and is the only one we publish.
+	preInfo, preStatErr := os.Stat(*filePath)
+	if preStatErr == nil {
 		if cached, ok := fieldMappingCache.Load(*filePath); ok {
-			cachedEntry = cached.(fieldMappingCacheEntry)
-			haveCached = cachedEntry.modTime.Equal(info.ModTime()) && cachedEntry.size == info.Size()
+			cachedEntry := cached.(fieldMappingCacheEntry)
+			if cachedEntry.modTime.Equal(preInfo.ModTime()) && cachedEntry.size == preInfo.Size() {
+				return cachedEntry.aliasToActual, cachedEntry.actualToFirstAlias, nil
+			}
 		}
 	}
-	if haveCached {
-		return cachedEntry.aliasToActual, cachedEntry.actualToFirstAlias, nil
-	}
+	generation := fieldMappingGeneration.Load()
 
-	data, err := os.ReadFile(*filePath)
+	data, err := readFieldMappingFile(*filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, map[string]string{}, nil
@@ -175,16 +184,20 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 			actualToFirstAlias[actual] = firstAlias
 		}
 	}
-	info, statErr := os.Stat(*filePath)
-	if statErr != nil {
-		return nil, nil, fmt.Errorf("stat field mapping %q: %w", *filePath, statErr)
+	// Publish only when the file was unchanged across the read and no
+	// invalidation landed in between. Otherwise the parsed bytes describe a
+	// file state that is no longer current.
+	if preStatErr == nil && fieldMappingGeneration.Load() == generation {
+		if postInfo, postStatErr := os.Stat(*filePath); postStatErr == nil &&
+			postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
+			fieldMappingCache.Store(*filePath, fieldMappingCacheEntry{
+				aliasToActual:      aliasToActual,
+				actualToFirstAlias: actualToFirstAlias,
+				modTime:            preInfo.ModTime(),
+				size:               preInfo.Size(),
+			})
+		}
 	}
-	fieldMappingCache.Store(*filePath, fieldMappingCacheEntry{
-		aliasToActual:      aliasToActual,
-		actualToFirstAlias: actualToFirstAlias,
-		modTime:            info.ModTime(),
-		size:               info.Size(),
-	})
 	return aliasToActual, actualToFirstAlias, nil
 }
 

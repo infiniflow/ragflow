@@ -17,9 +17,20 @@
 package serenedb
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
+
+func resetHighlightRegexCache(t *testing.T) {
+	t.Helper()
+	highlightRegexCache.Clear()
+	highlightRegexCount.Store(0)
+	t.Cleanup(func() {
+		highlightRegexCache.Clear()
+		highlightRegexCount.Store(0)
+	})
+}
 
 func highlightFixture() []map[string]interface{} {
 	return []map[string]interface{}{
@@ -40,6 +51,41 @@ func TestCachedHighlightRegexIsReused(t *testing.T) {
 	}
 	if first == other {
 		t.Error("highlight regex cache did not separate distinct keywords")
+	}
+}
+
+// TestHighlightRegexCacheIsBounded is the adversarial memory case: unique
+// query tokens must not grow the memo without limit. The baseline cache kept
+// every key forever, so this fails before a rotation policy exists.
+func TestHighlightRegexCacheIsBounded(t *testing.T) {
+	resetHighlightRegexCache(t)
+
+	const uniqueKeywords = 5000
+	const maxEntries = 4096
+	for i := range uniqueKeywords {
+		cachedHighlightRegex(fmt.Sprintf("term%06d", i))
+	}
+
+	entries := 0
+	highlightRegexCache.Range(func(_, _ any) bool {
+		entries++
+		return true
+	})
+	if entries > maxEntries {
+		t.Fatalf("highlight cache entries = %d, want <= %d", entries, maxEntries)
+	}
+}
+
+// TestHighlightRegexCacheReusesRepeatedKeywords pins that bounding the memo
+// does not destroy reuse of hot keywords.
+func TestHighlightRegexCacheReusesRepeatedKeywords(t *testing.T) {
+	resetHighlightRegexCache(t)
+
+	first := cachedHighlightRegex("hot-term")
+	for range 3 {
+		if got := cachedHighlightRegex("hot-term"); got != first {
+			t.Fatal("repeated keyword did not reuse the cached regex")
+		}
 	}
 }
 

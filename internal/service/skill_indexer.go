@@ -467,20 +467,8 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, spaceID string, do
 	common.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
-	indexName := SkillIndexName(tenantID, spaceID)
-	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
-	if exists {
-		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
-		if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
-			common.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
-		}
-	}
-
-	// Create new index with correct dimension
-	common.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, newDimension))
-	// The old index was just dropped above, so creation must not drop again.
-	if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, newDimension); err != nil {
-		return nil, fmt.Errorf("failed to create index with dimension %d: %w", newDimension, err)
+	if err := recreateSkillIndex(ctx, s, tenantID, spaceID, embdID, docEngine, newDimension); err != nil {
+		return nil, err
 	}
 
 	// Get space info to find folder ID
@@ -915,6 +903,24 @@ func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID
 	if err != nil {
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
+	return s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension)
+}
+
+// recreateSkillIndex drops an existing table and creates it again at the new
+// dimension. It is extracted from ReindexAll so the drop/create sequence is
+// testable without the surrounding service wiring.
+func recreateSkillIndex(ctx context.Context, s *SkillIndexerService, tenantID, spaceID, embdID string, docEngine engine.DocEngine, dimension int) error {
+	indexName := SkillIndexName(tenantID, spaceID)
+	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
+	if exists {
+		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
+		if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
+			// Creating on the stale table would keep the old dimension and rows
+			// while reporting success, so fail instead of continuing.
+			return fmt.Errorf("failed to delete existing index %s: %w", indexName, err)
+		}
+	}
+	common.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, dimension))
 	return s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension)
 }
 

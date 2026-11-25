@@ -31,6 +31,7 @@ type chunkStoreCountingEngine struct {
 	exists      bool
 	existsCalls int
 	dropCalls   int
+	dropErr     error
 	createCalls int
 	createdDims []int
 }
@@ -49,7 +50,7 @@ func (e *chunkStoreCountingEngine) ChunkStoreExists(context.Context, string, str
 
 func (e *chunkStoreCountingEngine) DropChunkStore(context.Context, string, string) error {
 	e.dropCalls++
-	return nil
+	return e.dropErr
 }
 
 func (e *chunkStoreCountingEngine) CreateChunkStore(_ context.Context, _, _ string, dimension int, _, _ string) error {
