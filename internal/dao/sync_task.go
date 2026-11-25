@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -149,7 +150,7 @@ func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int, cursor 
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune})
+		Where("sync_logs.status = ? AND connector.status <> ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusCancel, []string{TaskTypeSync, TaskTypePrune})
 	if cursor != nil {
 		query = query.Where("COALESCE(sync_logs.update_time, 0) < ? OR (COALESCE(sync_logs.update_time, 0) = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
 	}
@@ -180,7 +181,7 @@ func (d *SyncTaskDAO) GetScheduledTask(ctx context.Context, taskID string) (Sche
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.id = ? AND sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", taskID, SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune}).
+		Where("sync_logs.id = ? AND sync_logs.status = ? AND connector.status <> ? AND sync_logs.task_type IN ?", taskID, SyncStatusSchedule, SyncStatusCancel, []string{TaskTypeSync, TaskTypePrune}).
 		First(&row).Error; err != nil {
 		return ScheduledSyncTask{}, err
 	}
@@ -192,33 +193,50 @@ func (d *SyncTaskDAO) GetScheduledTask(ctx context.Context, taskID string) (Sche
 	}, nil
 }
 
-// ClaimTask conditionally marks a scheduled task as running.
+// ClaimTask marks a scheduled task and its connector running in one transaction.
 func (d *SyncTaskDAO) ClaimTask(ctx context.Context, taskID string, now time.Time) (bool, error) {
+	var candidate entity.SyncLogs
+	err := d.db.WithContext(ctx).Select("connector_id").
+		Where("id = ? AND status = ?", taskID, SyncStatusSchedule).Take(&candidate).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
 	var claimed bool
-	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task entity.SyncLogs
-		query := tx.WithContext(ctx)
-		if tx.Dialector.Name() != "sqlite" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	err = d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Pause and task finalization also lock the connector before its tasks.
+		var connector entity.Connector
+		err := forUpdate(ctx, tx).Select("status", "config").Where("id = ?", candidate.ConnectorID).Take(&connector).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
 		}
-		if err := query.Where("id = ?", taskID).First(&task).Error; err != nil {
+		if err != nil {
+			return err
+		}
+		var task entity.SyncLogs
+		if err := forUpdate(ctx, tx).Where("id = ? AND connector_id = ?", taskID, candidate.ConnectorID).Take(&task).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
 			return err
 		}
-		if task.Status != SyncStatusSchedule {
+		if task.Status != SyncStatusSchedule || connector.Status == SyncStatusCancel {
+			return nil
+		}
+		if task.TaskType == TaskTypePrune && !utility.ConfigBool(connector.Config, "sync_deleted_files") {
 			return nil
 		}
 
 		var mapping entity.Connector2Kb
-		lockQuery := tx.WithContext(ctx)
-		if tx.Dialector.Name() != "sqlite" {
-			lockQuery = lockQuery.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := lockQuery.
+		if err := forUpdate(ctx, tx).
 			Where("connector_id = ? AND kb_id = ?", task.ConnectorID, task.KbID).
-			First(&mapping).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			Take(&mapping).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
 			return err
 		}
 
@@ -239,9 +257,12 @@ func (d *SyncTaskDAO) ClaimTask(ctx context.Context, taskID string, now time.Tim
 			return result.Error
 		}
 		claimed = result.RowsAffected == 1
+		if claimed {
+			return tx.Model(&entity.Connector{}).Where("id = ?", task.ConnectorID).Update("status", SyncStatusRunning).Error
+		}
 		return nil
 	})
-	return claimed, err
+	return claimed && err == nil, err
 }
 
 // GetTaskContext loads a task with connector, mapping, and knowledgebase rows.
@@ -269,6 +290,16 @@ func (d *SyncTaskDAO) GetTaskContext(ctx context.Context, taskID string) (SyncTa
 	return SyncTaskContext{Task: task, Connector: connector, Connector2Kb: connector2Kb, Knowledgebase: kb}, nil
 }
 
+// IsPruneEnabled reads the setting independently of a worker's snapshot.
+func (d *SyncTaskDAO) IsPruneEnabled(ctx context.Context, connectorID string) (bool, error) {
+	var connector entity.Connector
+	err := d.db.WithContext(ctx).Select("config").Take(&connector, "id = ?", connectorID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil && utility.ConfigBool(connector.Config, "sync_deleted_files"), err
+}
+
 // IsTaskCanceled reports whether a sync_logs task has been canceled.
 func (d *SyncTaskDAO) IsTaskCanceled(ctx context.Context, taskID string) (bool, error) {
 	var task entity.SyncLogs
@@ -292,9 +323,18 @@ func (d *SyncTaskDAO) GetTaskStatus(ctx context.Context, taskID string) (status 
 	return task.Status, true, nil
 }
 
-// MarkConnectorRunning marks a connector running.
-func (d *SyncTaskDAO) MarkConnectorRunning(ctx context.Context, connectorID string) error {
-	return d.db.WithContext(ctx).Model(&entity.Connector{}).Where("id = ?", connectorID).Update("status", SyncStatusRunning).Error
+func lockSyncConnectorStatus(ctx context.Context, tx *gorm.DB, connectorID string) (string, error) {
+	var connector entity.Connector
+	err := forUpdate(ctx, tx).Select("status").Where("id = ?", connectorID).Take(&connector).Error
+	return connector.Status, err
+}
+
+func forUpdate(ctx context.Context, tx *gorm.DB) *gorm.DB {
+	query := tx.WithContext(ctx)
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	return query
 }
 
 // RescheduleClaimed puts a claimed task back into schedule state. When
@@ -359,17 +399,34 @@ func (d *SyncTaskDAO) FailTask(ctx context.Context, taskID, connectorID, message
 // class is reached. errorClass identifies the current failure class; the
 // class-scoped retry counter resets whenever the class changes, so failures of
 // one class never consume another class's retry budget. ErrorCount is kept as
-// the total failure count for diagnostics.
-func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connectorID, message, errorClass string, maxRetries int64) (int64, bool, error) {
+// the total failure count for diagnostics. Exhausted periodic tasks keep their
+// failure record and create a new round without advancing the sync waterline.
+func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connectorID, message, errorClass string, maxRetries int64) (int64, bool, string, error) {
 	var attempts int64
 	var failed bool
+	var nextTaskID string
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task entity.SyncLogs
-		query := tx.WithContext(ctx)
+		connectorQuery := tx.WithContext(ctx)
+		taskQuery := tx.WithContext(ctx)
 		if tx.Dialector.Name() != "sqlite" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+			connectorQuery = connectorQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+			taskQuery = taskQuery.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
-		if err := query.Where("id = ? AND status = ?", taskID, SyncStatusRunning).First(&task).Error; err != nil {
+		// Connector updates also lock this row before canceling task rows.
+		var connector entity.Connector
+		if connectorID != "" {
+			if err := connectorQuery.Where("id = ?", connectorID).First(&connector).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+			if connector.Status == SyncStatusCancel {
+				return nil
+			}
+		}
+		var task entity.SyncLogs
+		if err := taskQuery.Where("id = ? AND status = ?", taskID, SyncStatusRunning).First(&task).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
@@ -405,15 +462,71 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 		if connectorID == "" {
 			return nil
 		}
+		if failed {
+			var err error
+			nextTaskID, err = scheduleAfterFailure(ctx, tx, connector, task)
+			if err != nil || nextTaskID != "" {
+				return err
+			}
+		}
 		return tx.Model(&entity.Connector{}).Where("id = ?", connectorID).Update("status", connectorStatus).Error
 	})
-	return attempts, failed, err
+	return attempts, failed, nextTaskID, err
+}
+
+// scheduleAfterFailure starts the next periodic round from the failed round's
+// original window. Partial ingestion must not skip unfinished source records.
+func scheduleAfterFailure(ctx context.Context, tx *gorm.DB, connector entity.Connector, task entity.SyncLogs) (string, error) {
+	frequency := connector.RefreshFreq
+	switch task.TaskType {
+	case TaskTypeSync:
+	case TaskTypePrune:
+		if !utility.ConfigBool(connector.Config, "sync_deleted_files") {
+			return "", nil
+		}
+		frequency = connector.PruneFreq
+	default:
+		return "", nil
+	}
+	if frequency <= 0 {
+		return "", nil
+	}
+
+	var binding entity.Connector2Kb
+	if err := tx.WithContext(ctx).Where("connector_id = ? AND kb_id = ?", connector.ID, task.KbID).First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	var knowledgebase entity.Knowledgebase
+	if err := tx.WithContext(ctx).Select("id").Where("id = ?", task.KbID).First(&knowledgebase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	var pollRangeStart *time.Time
+	if task.PollRangeStart != nil {
+		start := task.PollRangeStart.Time()
+		pollRangeStart = &start
+	}
+	fromBeginning := task.FromBeginning != nil && (*task.FromBeginning == "1" || strings.EqualFold(*task.FromBeginning, "true"))
+	return createScheduledTask(ctx, tx, connector.ID, task.KbID, task.TaskType, fromBeginning, pollRangeStart, task.TotalDocsIndexed)
 }
 
 // CompleteSyncTask marks SYNC done and creates the next schedule task.
 func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTaskContext, pollRangeEnd time.Time, newDocs, totalDocs, errorCount int64, errorMsg string) (string, error) {
 	var nextTaskID string
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		status, err := lockSyncConnectorStatus(ctx, tx, taskContext.Connector.ID)
+		if errors.Is(err, gorm.ErrRecordNotFound) || status == SyncStatusCancel {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
 		result := tx.Model(&entity.SyncLogs{}).Where("id = ? AND status = ?", taskContext.Task.ID, SyncStatusRunning).Updates(map[string]any{
 			"status":             SyncStatusDone,
 			"poll_range_end":     entity.FlexibleTime(pollRangeEnd),
@@ -432,7 +545,6 @@ func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTask
 			return err
 		}
 
-		var err error
 		nextTaskID, err = createScheduledTask(ctx, tx, taskContext.Connector.ID, taskContext.Knowledgebase.ID, TaskTypeSync, false, &pollRangeEnd, taskContext.Task.TotalDocsIndexed+totalDocs)
 		return err
 	})
@@ -443,6 +555,15 @@ func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTask
 func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTaskContext, removed int64) (string, error) {
 	var nextTaskID string
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var connector entity.Connector
+		err := forUpdate(ctx, tx).Select("status", "config").Where("id = ?", taskContext.Connector.ID).Take(&connector).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) || connector.Status == SyncStatusCancel {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
 		result := tx.Model(&entity.SyncLogs{}).Where("id = ? AND status = ?", taskContext.Task.ID, SyncStatusRunning).Updates(map[string]any{
 			"status":                  SyncStatusDone,
 			"docs_removed_from_index": gorm.Expr("docs_removed_from_index + ?", removed),
@@ -456,10 +577,9 @@ func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTas
 		if err := tx.Model(&entity.Connector{}).Where("id = ?", taskContext.Connector.ID).Update("status", SyncStatusDone).Error; err != nil {
 			return err
 		}
-		if !utility.ConfigBool(taskContext.Connector.Config, "sync_deleted_files") {
+		if !utility.ConfigBool(connector.Config, "sync_deleted_files") {
 			return nil
 		}
-		var err error
 		nextTaskID, err = createScheduledTask(ctx, tx, taskContext.Connector.ID, taskContext.Knowledgebase.ID, TaskTypePrune, false, nil, taskContext.Task.TotalDocsIndexed)
 		return err
 	})

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"gorm.io/gorm"
 	"testing"
 
 	"ragflow/internal/common"
@@ -421,5 +422,55 @@ func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 	}
 	if activeCount != 1 {
 		t.Fatalf("active tasks = %d, want 1", activeCount)
+	}
+}
+
+func TestConnectorPauseDuringClaimKeepsBothRowsCanceled(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{}); err != nil {
+		t.Fatal(err)
+	}
+	const owner, connectorID, datasetID, taskID = "user-1", "source", "dataset", "next"
+	ctx := serviceTestContext(t, owner, owner)
+	for _, row := range []any{
+		&entity.Connector{ID: connectorID, TenantID: owner, Name: "Source", Source: "rss", InputType: "poll",
+			Config: entity.ConnectorConfig{}, Status: dao.SyncStatusSchedule, RefreshFreq: 5},
+		&entity.Knowledgebase{ID: datasetID, TenantID: owner, Name: "Dataset", CreatedBy: owner,
+			EmbdID: "fixture", ParserConfig: entity.JSONMap{}},
+		&entity.Connector2Kb{ID: "link", ConnectorID: connectorID, KbID: datasetID, AutoParse: "1"},
+		&entity.SyncLogs{ID: taskID, ConnectorID: connectorID, KbID: datasetID,
+			TaskType: dao.TaskTypeSync, Status: dao.SyncStatusSchedule},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paused := false
+	if err := db.Callback().Query().After("gorm:query").Register("test:pause-during-claim", func(query *gorm.DB) {
+		_, loadingTask := query.Statement.Dest.(*entity.SyncLogs)
+		_, loadingDataset := query.Statement.Dest.(*entity.Knowledgebase)
+		readingCandidate := loadingTask && len(query.Statement.Selects) == 1 && query.Statement.Selects[0] == "connector_id"
+		if paused || (!readingCandidate && !loadingDataset) {
+			return
+		}
+		paused = true
+		source, _, err := NewConnectorService().UpdateConnector(ctx, connectorID, &UpdateConnectorRequest{Status: dao.SyncStatusCancel})
+		if err != nil || source.Status != dao.SyncStatusCancel {
+			t.Fatalf("pause did not commit: %v", err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tasks := dao.NewSyncTaskDAO(db)
+	claimed, err := NewSyncTaskService(tasks).Claim(ctx, taskID)
+	if err != nil || !paused {
+		t.Fatalf("claim interleaving: claimed=%t, pause called=%t, err=%v", claimed, paused, err)
+	}
+	current, err := tasks.GetTaskContext(ctx, taskID)
+	if err != nil || current.Connector.Status != dao.SyncStatusCancel || current.Task.Status != dao.SyncStatusCancel || claimed {
+		t.Fatalf("after pause: claimed=%t, connector=%s, task=%s, err=%v", claimed, current.Connector.Status, current.Task.Status, err)
 	}
 }

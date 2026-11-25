@@ -194,7 +194,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		maxRetries := maxTaskRetries(err)
-		attempts, failed, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), taskErrorClass(err), maxRetries)
+		attempts, failed, nextTaskID, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), taskErrorClass(err), maxRetries)
 		if transientErr != nil {
 			if _, rescheduleErr := w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID, taskContext.Task.TimeStarted); rescheduleErr != nil {
 				common.Warn("syncer task reschedule failed after failure handling error", zap.String("task_id", taskContext.Task.ID), zap.Error(rescheduleErr))
@@ -205,34 +205,19 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 		logSyncRetry(taskContext, attempts, failed, maxRetries, err)
 		if failed {
 			recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, fmt.Sprintf("[ERROR] Task failed after %d attempts", attempts))
+			w.scheduler.scheduleNextTask(ctx, nextTaskID)
 		} else if attempts > 0 {
 			delay := transientRetryDelay(attempts)
 			recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, fmt.Sprintf("[WARN] Attempt %d failed. Retrying in %s", attempts, delay))
 			w.scheduleRetry(ctx, taskContext.Task.ID, delay)
-		} else {
-			w.scheduleRetry(ctx, taskContext.Task.ID, transientRetryDelay(attempts))
 		}
 		ackEnvelope(envelope)
 		return
 	}
 	logSyncTaskDuration(taskContext, startedAt)
 	recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task completed")
-	w.scheduleNext(ctx, outcome.NextTaskID)
+	w.scheduler.scheduleNextTask(ctx, outcome.NextTaskID)
 	ackEnvelope(envelope)
-}
-
-func (w *TaskWorker) scheduleNext(ctx context.Context, taskID string) {
-	if w.scheduler == nil || taskID == "" {
-		return
-	}
-	task, err := w.taskDAO.GetScheduledTask(ctx, taskID)
-	if err != nil {
-		common.Warn("syncer schedule next task lookup failed", zap.String("task_id", taskID), zap.Error(err))
-		return
-	}
-	if err = w.scheduler.ScheduleTask(ctx, task); err != nil {
-		common.Warn("syncer schedule next task failed", zap.String("task_id", taskID), zap.Error(err))
-	}
 }
 
 // scheduleRetry schedule retry when web error occurred
