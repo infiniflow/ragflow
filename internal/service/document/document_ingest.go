@@ -21,10 +21,22 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string,
 	if permission.UserIDFromContext(ctx) == "" {
 		return nil, permission.ErrUnauthenticated
 	}
+	if _, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, permission.ErrResourceNotFound
+		}
+		return nil, fmt.Errorf("failed to fetch dataset: %w", err)
+	}
 	for _, docID := range common.Deduplicate(docIDs) {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
-		if err != nil || doc == nil {
-			return nil, permission.ErrResourceNotFound
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to fetch document: %w", err)
+		}
+		if doc == nil {
+			continue
 		}
 		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
