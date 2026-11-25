@@ -5,12 +5,12 @@ jest.mock('@/components/llm-select/llm-label', () => ({
   __esModule: true,
   default: ({
     value,
-    ownerTenantId,
+    resourceTenantId,
   }: {
     value?: string;
-    ownerTenantId?: string;
+    resourceTenantId?: string;
   }) => (
-    <span data-testid="direct-label" data-owner={ownerTenantId}>
+    <span data-testid="direct-label" data-owner={resourceTenantId}>
       {value}
     </span>
   ),
