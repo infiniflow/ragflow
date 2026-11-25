@@ -167,8 +167,8 @@ export function NextMessageInput({
 
   // Level 5 is not a deeper step on the same ladder: the backend hands it to
   // the agentic RAG agent, which runs its own retrieval instead of the
-  // pipeline's. Higher engine levels (6-8) are contributed by the edition
-  // overlay and render ahead of these, highest effort first.
+  // pipeline's. The edition overlay contributes further engine levels (e.g. 8)
+  // and renders them ahead of these, highest effort first.
   const thinkingOptions = [
     ...extraThinkingOptions.map((option) => ({
       label: t(option.labelKey),

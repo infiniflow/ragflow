@@ -86,7 +86,7 @@ const storage = {
     localStorage.setItem(ThinkingLevel, level);
   },
   // The selector offers the naive ('0') and react ('5') levels; the edition
-  // overlay may add more (mode 6-8). A level persisted by a since-removed
+  // overlay may add more (e.g. mode 8). A level persisted by a since-removed
   // option falls back to the naive default rather than reaching the request
   // as NaN.
   getThinkingLevel: (): string => {
