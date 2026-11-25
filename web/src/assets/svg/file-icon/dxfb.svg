@@ -1,0 +1,9 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+        d="M7.75 4C7.75 2.20508 9.20508 0.75 11 0.75H27C27.1212 0.75 27.2375 0.798159 27.3232 0.883885L38.1161 11.6768C38.2018 11.7625 38.25 11.8788 38.25 12V36C38.25 37.7949 36.7949 39.25 35 39.25H11C9.20507 39.25 7.75 37.7949 7.75 36V4Z"
+        stroke="#D0D5DD" stroke-width="1.5" />
+    <path d="M27 0.5V8C27 10.2091 28.7909 12 31 12H38.5" stroke="#D0D5DD" stroke-width="1.5" />
+    <rect x="1" y="18" width="31" height="16" rx="2" fill="#7A5AF8" />
+    <text x="16.5" y="29.5" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700"
+        letter-spacing="0.4" fill="#FFFFFF" text-anchor="middle">DXF</text>
+</svg>
