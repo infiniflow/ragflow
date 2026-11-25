@@ -2581,3 +2581,30 @@ func TestThinkStreamResultRoutesReasoning(t *testing.T) {
 		t.Fatalf("answer delta = %+v, want Answer=answer and empty Reasoning", got)
 	}
 }
+
+// A stream that only reports reasoning closes with an empty answer: the text
+// already travelled on the reasoning channel, so neither the visible-answer
+// extraction nor the final response split may copy it back into the content.
+func TestReasoningOnlyStreamFinishesWithoutAnswer(t *testing.T) {
+	reasoning := strings.Repeat("plan ", 20)
+
+	state := &ThinkStreamState{}
+	state.EnterReasoning()
+	_ = NextThinkDelta(state, reasoning, 16)
+	if !state.ExitReasoning() {
+		t.Fatal("ExitReasoning should close the open reasoning block")
+	}
+
+	finalAnswer := ExtractVisibleAnswer(state.fullText)
+	if finalAnswer != "" {
+		t.Fatalf("final answer = %q, want empty for a reasoning-only stream", finalAnswer)
+	}
+
+	content, gotReasoning, _ := splitFinalResponse(AsyncChatResult{Answer: finalAnswer, Final: true}, reasoning)
+	if content != "" {
+		t.Fatalf("content = %q, want empty", content)
+	}
+	if gotReasoning == "" {
+		t.Fatal("reasoning must keep travelling on the reasoning channel")
+	}
+}

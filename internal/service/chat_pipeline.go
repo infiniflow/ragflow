@@ -1939,10 +1939,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					return
 				}
 			}
+			// A reasoning-only stream has no visible answer. fullAnswer is not a
+			// fallback: it also collected the text already sent on the reasoning
+			// channel, so using it here would copy reasoning into the answer.
 			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
-			if finalAnswer == "" {
-				finalAnswer = fullAnswer
-			}
 			sendResult(AsyncChatResult{
 				Answer:      finalAnswer,
 				Reference:   map[string]interface{}{},
