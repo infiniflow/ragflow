@@ -1854,7 +1854,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 
-	fake := &fakeDocumentService{}
+	fake := &fakeDocumentService{stopErr: permission.ErrPermissionDenied}
 	h := &DocumentHandler{
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),

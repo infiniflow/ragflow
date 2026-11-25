@@ -1703,19 +1703,18 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
+	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
+	if err != nil || kb == nil {
+		return nil, addChunkError{code: common.CodeNotFound, message: "Resource not found"}
+	}
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
-		return nil, addChunkError{code: common.CodeNotFound, message: "Resource not found"}
+		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the document %s.", req.DocumentID)}
 	}
 	if err := service.CheckDocumentWrite(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
-	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
-	if err != nil || kb == nil {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
-	}
-
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
 		return nil, addChunkError{code: common.CodeDataError, message: "`content` is required"}

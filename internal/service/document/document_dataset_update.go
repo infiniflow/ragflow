@@ -176,7 +176,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeNotFound, permission.ErrResourceNotFound
+			return nil, common.CodeDataError, errors.New("can't find this document")
 		}
 		return nil, common.CodeServerError, err
 	}

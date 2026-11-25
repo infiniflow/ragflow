@@ -485,6 +485,12 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	if len(deduped) == 0 {
 		return nil, fmt.Errorf("no document IDs provided")
 	}
+	if _, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, permission.ErrResourceNotFound
+		}
+		return nil, fmt.Errorf("failed to fetch dataset: %w", err)
+	}
 
 	docs, err := s.validateDocsInDataset(ctx, deduped, datasetID)
 	if err != nil {
