@@ -33,9 +33,13 @@ export function useIngestionProgress(
   logId: string | undefined,
   enabled: boolean,
 ) {
+  // No run identity (or a hidden modal) means progress does not apply to this
+  // consumer. Track it explicitly so the summary can render nothing instead
+  // of a misleading "unavailable" for memory logs and the first fetch frame.
+  const idle = !enabled || !datasetId || !logId;
   const query = useQuery({
     queryKey: ['ingestionProgress', datasetId, logId],
-    enabled: enabled && !!datasetId && !!logId,
+    enabled: !idle,
     queryFn: async () => {
       const response = await getIngestionProgress(datasetId!, logId!);
       if (response.data?.code !== 0) {
@@ -53,6 +57,8 @@ export function useIngestionProgress(
   return {
     data: query.data ?? null,
     error: query.isError,
+    idle,
+    loading: !idle && query.isPending,
     reload: () => query.refetch(),
   };
 }
@@ -93,13 +99,20 @@ interface IngestionProgressSummaryProps {
   logId?: string;
   data: IngestionProgressResponse | null;
   error: boolean;
+  idle?: boolean;
+  loading?: boolean;
 }
 
 export const IngestionProgressSummary: React.FC<
   IngestionProgressSummaryProps
-> = ({ datasetId, logId, data, error }) => {
+> = ({ datasetId, logId, data, error, idle, loading }) => {
   const { t } = useTranslation();
 
+  // No progress source, or the first fetch has not resolved: render nothing.
+  // Only a real fetch failure is presented as "unavailable".
+  if (idle || loading) {
+    return null;
+  }
   if (error || !data) {
     return (
       <div className="text-text-secondary text-sm">

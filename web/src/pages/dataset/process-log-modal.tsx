@@ -114,11 +114,12 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   logId,
 }) => {
   const { t } = useTranslate(translateKey || 'knowledgeDetails');
-  const { data: progress, error: progressError } = useIngestionProgress(
-    datasetId,
-    logId,
-    visible,
-  );
+  const {
+    data: progress,
+    error: progressError,
+    idle: progressIdle,
+    loading: progressLoading,
+  } = useIngestionProgress(datasetId, logId, visible);
   const { t: tc } = useTranslation();
   const blackKeyList = [
     'loadPreviousEvents',
@@ -176,12 +177,17 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
       className="process-log-modal"
     >
       <div className=" rounded-lg">
-        <IngestionProgressSummary
-          datasetId={datasetId}
-          logId={logId}
-          data={progress}
-          error={progressError}
-        />
+        {/* Ingestion progress only applies to dataset runs with both ids. */}
+        {datasetId && logId ? (
+          <IngestionProgressSummary
+            datasetId={datasetId}
+            logId={logId}
+            data={progress}
+            error={progressError}
+            idle={progressIdle}
+            loading={progressLoading}
+          />
+        ) : null}
         <div className="flex flex-wrap ">
           {Object?.keys(logInfo).map((key) => {
             if (

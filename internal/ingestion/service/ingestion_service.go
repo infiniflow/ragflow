@@ -1350,19 +1350,17 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if pipelineLogID != "" {
 		progressRun, _ = dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, pipelineLogID)
 	}
-	// The progress snapshot is written alongside the ingestion log so the API
-	// can serve a one-screen summary without ClickHouse. The store uses the
-	// injected KV client; a nil/disabled client degrades to a no-op.
-	progressStore := progressstore.New(e.deps.KV)
+	// Progress positions/phases are buffered in memory and drained by the sink's
+	// flusher, keeping KV I/O off the emitMu-guarded emit path. A nil/disabled
+	// client degrades to a no-op inside the store.
+	sink.installProgressWriter(progressstore.New(e.deps.KV), pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID)
 	sink.detailEmitter = func(component, unit string, current, total uint32) {
 		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
 		common.LogIngest(&log)
-		progressStore.Update(ctx, pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID, component, unit, current, total)
 	}
 	sink.lifecycleEmitter = func(component string, phase uint8, message string) {
 		log := observability.BuildComponentIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, phase, message)
 		common.LogIngest(&log)
-		progressStore.SetPhase(ctx, pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID, component, phaseLabel(phase))
 	}
 	// Close is idempotent and intentionally called twice: the defer is the
 	// panic backstop (an unwind out of Execute must still stop the flusher),

@@ -16,9 +16,11 @@
 
 import { render, screen } from '@testing-library/react';
 import i18next from 'i18next';
-import React from 'react';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
 import en from '@/locales/en';
+
+// This suite uses jest.mock, so esbuild-jest's babel transform does not strip
+// TypeScript. JSX here uses the automatic runtime; no React import is needed.
 
 // Keep the real i18next key parser: the app's locale config leaves the default
 // nsSeparator (':'), so unit keys such as "page:parse" must be explicitly
@@ -58,7 +60,8 @@ function summary(overrides = {}) {
   };
 }
 
-function renderSummary(data) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function renderSummary(data: any) {
   return render(
     <I18nextProvider i18n={instance}>
       <IngestionProgressSummary
@@ -72,6 +75,30 @@ function renderSummary(data) {
 }
 
 describe('IngestionProgressSummary', () => {
+  it('renders nothing when the query is idle or still loading', () => {
+    // Adversarial: no run identity (idle) and a pending first fetch are not
+    // errors. Showing the unavailable state here would present a normal
+    // read as broken, and permanently for consumers without a run.
+    for (const state of [{ idle: true }, { loading: true }]) {
+      const view = render(
+        <I18nextProvider i18n={instance}>
+          <IngestionProgressSummary data={null} error={false} {...state} />
+        </I18nextProvider>,
+      );
+      expect(screen.queryByText(/temporarily unavailable/)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('still reports an actual fetch failure', () => {
+    render(
+      <I18nextProvider i18n={instance}>
+        <IngestionProgressSummary data={null} error={true} />
+      </I18nextProvider>,
+    );
+    expect(screen.getByText(/temporarily unavailable/)).toBeTruthy();
+  });
+
   it('shows a distinct label for each terminal status', () => {
     const cases = [
       ['3', 'Completed'],

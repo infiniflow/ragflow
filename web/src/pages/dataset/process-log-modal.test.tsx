@@ -10,8 +10,16 @@ jest.mock('@/hooks/common-hooks', () => ({
 }));
 
 jest.mock('./ingestion-progress', () => ({
-  useIngestionProgress: () => ({ data: null, error: false }),
-  IngestionProgressSummary: () => null,
+  useIngestionProgress: () => ({
+    data: null,
+    error: false,
+    idle: false,
+    loading: false,
+  }),
+  IngestionProgressSummary: () => {
+    const ReactLib = jest.requireActual('react');
+    return ReactLib.createElement('div', { 'data-testid': 'progress-summary' });
+  },
 }));
 
 import ProcessLogModal from './process-log-modal';
@@ -52,6 +60,13 @@ function renderModal(events: LogEvent[] = [], details = '') {
 }
 
 describe('ProcessLogModal ingestion events', () => {
+  it('does not show a progress summary when the log has no run identity', () => {
+    // Memory task logs (and any other consumer without dataset/run ids) must
+    // not render an ingestion-only summary.
+    renderModal();
+    expect(screen.queryByTestId('progress-summary')).toBeNull();
+  });
+
   it('renders each event line prefixed with its timestamp', () => {
     renderModal([
       {
