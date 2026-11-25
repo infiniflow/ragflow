@@ -126,9 +126,9 @@ func withSVGTranscoderForTest(t *testing.T, fn media.ImageTranscoder) {
 
 func tinyTestPNGBytes(t *testing.T) []byte {
 	t.Helper()
-	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
-	for y := range 8 {
-		for x := range 8 {
+	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	for y := range 16 {
+		for x := range 16 {
 			img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
 		}
 	}
@@ -296,24 +296,58 @@ func TestMaybeDispatchImageSVGWithTranscoder(t *testing.T) {
 		withSVGTranscoderForTest(t, func(context.Context, []byte) (string, []byte, error) {
 			return "image/png", pngBytes, nil
 		})
-		ocrCalled := false
 		origFactory := deepdoctype.NativeDocAnalyzerFactory
 		deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
-			ocrCalled = true
-			return nil, false
+			return &pictureOCRAnalyzer{}, true
 		}
 		t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = origFactory })
 
-		textless := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><path d="M0 0L8 8"/></svg>`)
+		textless := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path d="M0 0L16 16"/></svg>`)
 		result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "outlined.svg", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), false, visionSettings{})
 		if err != nil || !handled || len(result.JSON) != 1 {
 			t.Fatalf("result = %+v, handled = %v, err = %v", result, handled, err)
 		}
-		if !ocrCalled {
-			t.Fatal("expected OCR analyzer lookup for textless rasterized SVG")
+		item := result.JSON[0].ToMap()
+		if got, _ := item["text"].(string); got != "OCR text" {
+			t.Fatalf("text = %q, want %q", got, "OCR text")
 		}
-		if got, _ := result.JSON[0].ToMap()["image"].(string); !strings.HasPrefix(got, "data:image/png;base64,") {
+		if got, _ := item["image"].(string); !strings.HasPrefix(got, "data:image/png;base64,") {
 			t.Fatalf("image = %q, want PNG data URI", got)
+		}
+		if len(result.Warnings) != 0 {
+			t.Fatalf("warnings = %v, want none", result.Warnings)
+		}
+	})
+
+	t.Run("textless SVG table falls back to OCR table item", func(t *testing.T) {
+		tablePNG := tablePicturePNG(t)
+		withSVGTranscoderForTest(t, func(context.Context, []byte) (string, []byte, error) {
+			return "image/png", tablePNG, nil
+		})
+		origFactory := deepdoctype.NativeDocAnalyzerFactory
+		deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+			return &pictureTableAnalyzer{}, true
+		}
+		t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = origFactory })
+
+		textless := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140"><rect width="240" height="140"/></svg>`)
+		result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "table.svg", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), false, visionSettings{})
+		if err != nil || !handled || len(result.JSON) != 1 {
+			t.Fatalf("result = %+v, handled = %v, err = %v", result, handled, err)
+		}
+		item := result.JSON[0].ToMap()
+		if item["doc_type_kwd"] != "table" {
+			t.Fatalf("doc_type_kwd = %v, want table", item["doc_type_kwd"])
+		}
+		table, ok := item["table"].(*entity.TableData)
+		if !ok || table == nil || table.HeaderRows != 1 || len(table.Grid) != 2 || len(table.Grid[0]) != 2 {
+			t.Fatalf("table = %#v", item["table"])
+		}
+		if table.Grid[0][0].Text != "Name" || table.Grid[1][1].Text != "42" {
+			t.Fatalf("table grid = %+v", table.Grid)
+		}
+		if len(result.Warnings) != 0 {
+			t.Fatalf("warnings = %v, want none", result.Warnings)
 		}
 	})
 
