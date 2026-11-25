@@ -82,6 +82,9 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 			}
 			result.Warnings = append(result.Warnings, parsed.Warnings...)
 			position := paddleOCRBlockPosition(page, block.BBox, size)
+			if len(position) == 0 && page.KeepPagePosition {
+				position = []any{page.Index + 1, 0.0, 0.0, 0.0, 0.0}
+			}
 			isTitle := label == "doc_title" || label == "paragraph_title"
 			if label == "figure_title" || label == "table_title" {
 				label = "caption"
