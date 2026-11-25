@@ -18,6 +18,9 @@ func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *str
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	for _, docID := range common.Deduplicate(docIDs) {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil || doc == nil {

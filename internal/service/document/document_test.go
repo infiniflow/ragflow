@@ -2553,7 +2553,7 @@ func TestStopParseDocuments_Success(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2587,7 +2587,7 @@ func TestStopParseDocuments_CancelStatus(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2608,7 +2608,7 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2637,7 +2637,7 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2702,7 +2702,7 @@ func TestStopParseDocuments_Deduplicate(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1", "doc-1", "doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -4311,7 +4311,7 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
 	}, []MetadataUpdate{
@@ -4373,7 +4373,7 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2"},
 	}, nil, []MetadataDelete{{Key: "status", Value: "draft"}})
@@ -4402,7 +4402,7 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
 	}, []MetadataUpdate{
