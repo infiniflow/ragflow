@@ -33,6 +33,9 @@ type ConnectorDAO struct{}
 
 var errConnectorNotAccessible = errors.New("connector is not accessible for this tenant")
 
+// ErrConnectorSyncScopeChanged means a saved checkpoint predates a new REST API scan.
+var ErrConnectorSyncScopeChanged = errors.New("REST API sync scope has changed; schedule a new sync")
+
 // IsConnectorNotAccessibleErr reports connector ownership mismatches.
 func IsConnectorNotAccessibleErr(err error) bool {
 	return errors.Is(err, errConnectorNotAccessible)
@@ -166,14 +169,14 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.D
 			return nil, err
 		}
 
-		taskID, err := scheduleConnectorTask(ctx, tx, connector.ID, kbID, connectorTaskTypeSync, true)
+		taskID, err := scheduleConnectorTask(ctx, tx, &fullConnector, kbID, connectorTaskTypeSync, true)
 		if err != nil {
 			return nil, err
 		}
 		taskIDs = append(taskIDs, taskID)
 
 		if connectorConfigBool(fullConnector.Config, "sync_deleted_files") {
-			taskID, err = scheduleConnectorTask(ctx, tx, connector.ID, kbID, connectorTaskTypePrune, false)
+			taskID, err = scheduleConnectorTask(ctx, tx, &fullConnector, kbID, connectorTaskTypePrune, false)
 			if err != nil {
 				return nil, err
 			}
@@ -209,6 +212,14 @@ func (dao *ConnectorDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*
 	return &connector, nil
 }
 
+// GetByIDForUpdate locks the connector row for a config or task update.
+func (dao *ConnectorDAO) GetByIDForUpdate(ctx context.Context, tx *gorm.DB, id string) (*entity.Connector, error) {
+	if tx.Dialector.Name() != "sqlite" {
+		tx = tx.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	return dao.GetByID(ctx, tx, id)
+}
+
 // Create a new connector
 func (dao *ConnectorDAO) Create(ctx context.Context, db *gorm.DB, connector *entity.Connector) error {
 	return db.WithContext(ctx).Create(connector).Error
@@ -231,44 +242,36 @@ func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(ctx context.Context, db *g
 		Update("status", string(entity.TaskStatusCancel)).Error
 }
 
-// ScheduleConnectorTasks schedules sync and optional prune tasks for a connector.
-func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, db *gorm.DB, connectorID string) ([]string, error) {
-	taskIDs := []string{}
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var connector entity.Connector
-		if err := tx.WithContext(ctx).Where("id = ?", connectorID).First(&connector).Error; err != nil {
-			return err
-		}
+// ScheduleConnectorTasks schedules sync and optional prune tasks in the caller's transaction.
+func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, tx *gorm.DB, connector *entity.Connector, fromBeginning bool) ([]string, error) {
+	var mappings []entity.Connector2Kb
+	if err := tx.WithContext(ctx).Where("connector_id = ?", connector.ID).Find(&mappings).Error; err != nil {
+		return nil, err
+	}
 
-		var mappings []entity.Connector2Kb
-		if err := tx.WithContext(ctx).Where("connector_id = ?", connectorID).Find(&mappings).Error; err != nil {
-			return err
+	var taskIDs []string
+	for _, mapping := range mappings {
+		taskID, err := scheduleConnectorTask(ctx, tx, connector, mapping.KbID, connectorTaskTypeSync, fromBeginning)
+		if err != nil {
+			return nil, err
 		}
-
-		for _, mapping := range mappings {
-			taskID, err := scheduleConnectorTask(ctx, tx, connectorID, mapping.KbID, connectorTaskTypeSync, false)
+		if taskID != "" {
+			taskIDs = append(taskIDs, taskID)
+		}
+		if connectorConfigBool(connector.Config, "sync_deleted_files") {
+			taskID, err = scheduleConnectorTask(ctx, tx, connector, mapping.KbID, connectorTaskTypePrune, false)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if taskID != "" {
 				taskIDs = append(taskIDs, taskID)
 			}
-			if connectorConfigBool(connector.Config, "sync_deleted_files") {
-				taskID, err = scheduleConnectorTask(ctx, tx, connectorID, mapping.KbID, connectorTaskTypePrune, false)
-				if err != nil {
-					return err
-				}
-				if taskID != "" {
-					taskIDs = append(taskIDs, taskID)
-				}
-			}
 		}
+	}
 
-		return tx.WithContext(ctx).Model(&entity.Connector{}).
-			Where("id = ?", connectorID).
-			Update("status", string(entity.TaskStatusSchedule)).Error
+	return taskIDs, dao.UpdateByID(ctx, tx, connector.ID, map[string]interface{}{
+		"status": string(entity.TaskStatusSchedule),
 	})
-	return taskIDs, err
 }
 
 // Connector2KBExists reports whether the connector is bound to the knowledge base.
@@ -384,6 +387,10 @@ func (dao *ConnectorDAO) RebuildConnector(ctx context.Context, db *gorm.DB, conn
 // ResumeFailedSyncTask schedules one failed sync task for checkpoint resume.
 func (dao *ConnectorDAO) ResumeFailedSyncTask(ctx context.Context, db *gorm.DB, connectorID, kbID, taskID string) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		connector, err := dao.GetByIDForUpdate(ctx, tx, connectorID)
+		if err != nil {
+			return err
+		}
 		var task entity.SyncLogs
 		query := tx.WithContext(ctx)
 		if tx.Dialector.Name() != "sqlite" {
@@ -393,6 +400,16 @@ func (dao *ConnectorDAO) ResumeFailedSyncTask(ctx context.Context, db *gorm.DB, 
 			Where("id = ? AND connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", taskID, connectorID, kbID, connectorTaskTypeSync, string(entity.TaskStatusFail)).
 			First(&task).Error; err != nil {
 			return err
+		}
+
+		if connector.Source == "rest_api" {
+			fullSync, err := latestRESTFullSync(ctx, tx, connectorID, kbID)
+			if err != nil {
+				return err
+			}
+			if syncLogPrecedesFullSync(&task, fullSync) {
+				return ErrConnectorSyncScopeChanged
+			}
 		}
 
 		now := time.Now().Local()
@@ -437,7 +454,8 @@ func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, t
 	}).Error
 }
 
-func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) (string, error) {
+func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connector *entity.Connector, kbID, taskType string, fromBeginning bool) (string, error) {
+	connectorID := connector.ID
 	var scheduled entity.SyncLogs
 	err := tx.WithContext(ctx).
 		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusSchedule)).
@@ -470,18 +488,26 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", err
 		}
+		if connector.Source == "rest_api" && !fromBeginning {
+			fullSync, err := latestRESTFullSync(ctx, tx, connectorID, kbID)
+			if err != nil {
+				return "", err
+			}
+			// A canceled or failed full scan still invalidates the older scope's waterline.
+			fromBeginning = syncLogPrecedesFullSync(&latest, fullSync)
+		}
 		if err == nil {
 			totalDocsIndexed = latest.TotalDocsIndexed
-			if latest.PollRangeEnd != nil {
+			if !fromBeginning && latest.PollRangeEnd != nil {
 				pollRangeEnd := latest.PollRangeEnd.Time()
 				pollRangeStart = &pollRangeEnd
 			}
 		}
 	}
 
-	fromBeginning := "0"
-	if reindex {
-		fromBeginning = "1"
+	fullSyncFlag := "0"
+	if fromBeginning {
+		fullSyncFlag = "1"
 	}
 	now := time.Now().Local()
 	taskID := common.GenerateToken()
@@ -491,12 +517,32 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		KbID:             kbID,
 		TaskType:         taskType,
 		Status:           string(entity.TaskStatusSchedule),
-		FromBeginning:    &fromBeginning,
+		FromBeginning:    &fullSyncFlag,
 		PollRangeStart:   entity.NewFlexibleTime(pollRangeStart),
 		TimeStarted:      &now,
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,
 	}).Error
+}
+
+func latestRESTFullSync(ctx context.Context, tx *gorm.DB, connectorID, kbID string) (*entity.SyncLogs, error) {
+	var task entity.SyncLogs
+	err := tx.WithContext(ctx).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND from_beginning = ?", connectorID, kbID, connectorTaskTypeSync, "1").
+		Order("create_time DESC").Order("update_time DESC").
+		Take(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func syncLogPrecedesFullSync(task, fullSync *entity.SyncLogs) bool {
+	return fullSync != nil && fullSync.CreateTime != nil && task.ID != fullSync.ID &&
+		(task.CreateTime == nil || *task.CreateTime <= *fullSync.CreateTime)
 }
 
 func connectorConfigBool(config map[string]interface{}, key string) bool {

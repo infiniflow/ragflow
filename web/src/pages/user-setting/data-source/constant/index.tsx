@@ -36,6 +36,12 @@ import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
+import {
+  getRestAPIWindowFormFields,
+  RestAPIWindowDefaultValues,
+  RestAPIWindowToggleKey,
+  restAPIWindowEnabled,
+} from './rest-api-window-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
 import { sitemapConstant } from './sitemap-constant';
@@ -2050,6 +2056,10 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: 'id',
       tooltip: t('setting.restApiIdFieldTip'),
+      customValidate: (value: string, values: any) =>
+        !restAPIWindowEnabled(values) || String(value ?? '').trim()
+          ? true
+          : t('setting.restApiWindowIdRequired'),
     },
     {
       label: t('setting.dataSourceFieldAuthType'),
@@ -2240,7 +2250,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: 'limit (leave empty if already in Query Parameters)',
       shouldRender: (values: any) =>
-        !!values?.config?.show_advanced &&
+        (!!values?.config?.show_advanced || restAPIWindowEnabled(values)) &&
         values?.config?.pagination_type === 'offset',
     },
     {
@@ -2250,7 +2260,8 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       shouldRender: (values: any) =>
         !!values?.config?.show_advanced &&
-        values?.config?.pagination_type === 'cursor',
+        values?.config?.pagination_type === 'cursor' &&
+        !restAPIWindowEnabled(values),
     },
     {
       label: t('setting.dataSourceFieldMaxPages'),
@@ -2270,6 +2281,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       tooltip: t('setting.restApiRequestDelayTip'),
       shouldRender: (values: any) => !!values?.config?.show_advanced,
     },
+    ...getRestAPIWindowFormFields(t),
     {
       label: t('setting.dataSourceFieldPollTimestampField'),
       name: 'config.poll_timestamp_field',
@@ -2277,7 +2289,12 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.restApiPollTimestampFieldTip'),
-      shouldRender: (values: any) => !!values?.config?.show_advanced,
+      shouldRender: (values: any) =>
+        !!values?.config?.show_advanced || restAPIWindowEnabled(values),
+      customValidate: (value: string, values: any) =>
+        !restAPIWindowEnabled(values) || String(value ?? '').trim()
+          ? true
+          : t('setting.restApiWindowTimestampRequired'),
     },
     {
       label: t('setting.dataSourceFieldRequestBody'),
@@ -2824,6 +2841,8 @@ export const DataSourceFormDefaultValues = {
       pagination_type: 'none',
       pagination_config: {},
       poll_timestamp_field: '',
+      [RestAPIWindowToggleKey]: false,
+      request_window: RestAPIWindowDefaultValues,
       request_body: '',
       max_pages: 1000,
       request_delay: 0.5,
