@@ -323,17 +323,19 @@ export function MemoryTable({
             >
               <TextSelect />
             </Button>
-            {canWrite && <Button
-              variant={'delete'}
-              disabled={disabledRowFunc(row)}
-              className="bg-transparent"
-              aria-label="Edit"
-              onClick={() => {
-                handleClickDeleteMessage(row.original);
-              }}
-            >
-              <Eraser />
-            </Button>}
+            {canWrite && (
+              <Button
+                variant={'delete'}
+                disabled={disabledRowFunc(row)}
+                className="bg-transparent"
+                aria-label="Edit"
+                onClick={() => {
+                  handleClickDeleteMessage(row.original);
+                }}
+              >
+                <Eraser />
+              </Button>
+            )}
           </div>
         ),
       },

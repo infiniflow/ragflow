@@ -13,7 +13,7 @@ func chatSessionListOwner(_ context.Context, _, requestedOwnerID string) (string
 	return requestedOwnerID, nil
 }
 
-func chatSessionOwnerFilter(_ context.Context, _, _ permission.Operation, requestedOwnerID string) (string, error) {
+func chatSessionOwnerFilter(ctx context.Context, chatID string, crossUserOperation permission.Operation, requestedOwnerID string) (string, error) {
 	return requestedOwnerID, nil
 }
 

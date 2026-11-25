@@ -26,7 +26,11 @@ export const defaultAdvancedSettingsForm = {
   system_prompt: '',
   user_prompt: '',
 };
-export const AdvancedSettingsForm = ({ readOnly = false }: { readOnly?: boolean }) => {
+export const AdvancedSettingsForm = ({
+  readOnly = false,
+}: {
+  readOnly?: boolean;
+}) => {
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   return (
     <>
@@ -69,7 +73,11 @@ export const AdvancedSettingsForm = ({ readOnly = false }: { readOnly?: boolean 
                       <Label htmlFor="r1">{t('memory.config.onlyMe')}</Label>
                     </div>
                     <div className="flex items-center gap-3">
-                      <RadioGroupItem value="team" id="r2" disabled={readOnly} />
+                      <RadioGroupItem
+                        value="team"
+                        id="r2"
+                        disabled={readOnly}
+                      />
                       <Label htmlFor="r2">{t('memory.config.team')}</Label>
                     </div>
                   </RadioGroup>

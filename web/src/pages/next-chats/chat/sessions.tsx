@@ -69,10 +69,7 @@ export function Sessions({
     canCreateSession,
     canManageAll: canManageAllSessions,
     canDeleteOwnSession,
-  } = useChatSessionAccess(
-    data,
-    userInfo.id,
-  );
+  } = useChatSessionAccess(data, userInfo.id);
   const { collapsed, setCollapsed } = useChatSidebarCollapse();
   const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
   const { removeSessions } = useRemoveSessions();
@@ -121,8 +118,7 @@ export function Sessions({
           (x) =>
             selectedIds.has(x.id) &&
             (canManageAllSessions ||
-              (canDeleteOwnSession &&
-                (x.user_id === userInfo.id || x.is_new))),
+              (canDeleteOwnSession && (x.user_id === userInfo.id || x.is_new))),
         )
         .map((x) => x.id),
     [
@@ -139,8 +135,7 @@ export function Sessions({
     const deletableConversations = conversationList.filter(
       (item) =>
         canManageAllSessions ||
-        (canDeleteOwnSession &&
-          (item.user_id === userInfo.id || item.is_new)),
+        (canDeleteOwnSession && (item.user_id === userInfo.id || item.is_new)),
     );
     setSelectedIds((prev) => {
       const allVisibleSelected =
@@ -151,7 +146,12 @@ export function Sessions({
       }
       return new Set(deletableConversations.map((x) => x.id));
     });
-  }, [conversationList, canManageAllSessions, canDeleteOwnSession, userInfo.id]);
+  }, [
+    conversationList,
+    canManageAllSessions,
+    canDeleteOwnSession,
+    userInfo.id,
+  ]);
 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
@@ -410,7 +410,9 @@ export function Sessions({
                         (x.user_id === userInfo.id || x.is_new))) && (
                       <ConversationDropdown
                         conversation={x}
-                        removeTemporaryConversation={removeTemporaryConversation}
+                        removeTemporaryConversation={
+                          removeTemporaryConversation
+                        }
                       >
                         <MoreButton
                           className={cn(

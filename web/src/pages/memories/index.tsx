@@ -110,10 +110,12 @@ export default function MemoryList() {
             onChange={handleFilterSubmit}
             value={filterValue}
           >
-            {canCreateMemory && <Button onClick={openCreateModalFun}>
-              <Plus className="size-[1em]" />
-              {t('createMemory')}
-            </Button>}
+            {canCreateMemory && (
+              <Button onClick={openCreateModalFun}>
+                <Plus className="size-[1em]" />
+                {t('createMemory')}
+              </Button>
+            )}
           </NavGroupListFilterBar>
         </header>
 

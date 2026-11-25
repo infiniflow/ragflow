@@ -114,23 +114,25 @@ export default function MemoryMessage() {
                       <AdvancedSettingsForm readOnly={!canEditConfig} />
                     </section>
                   </div>
-                  {canEditConfig && <div className="text-right items-center flex justify-end gap-3 w-full">
-                    <Button
-                      type="reset"
-                      className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
-                      onClick={() => {
-                        form.reset();
-                      }}
-                    >
-                      {t('knowledgeConfiguration.cancel')}
-                    </Button>
-                    <DynamicForm.SavingButton
-                      submitLoading={loading}
-                      submitFunc={(value) => {
-                        onSubmit(value as IMemory);
-                      }}
-                    ></DynamicForm.SavingButton>
-                  </div>}
+                  {canEditConfig && (
+                    <div className="text-right items-center flex justify-end gap-3 w-full">
+                      <Button
+                        type="reset"
+                        className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
+                        onClick={() => {
+                          form.reset();
+                        }}
+                      >
+                        {t('knowledgeConfiguration.cancel')}
+                      </Button>
+                      <DynamicForm.SavingButton
+                        submitLoading={loading}
+                        submitFunc={(value) => {
+                          onSubmit(value as IMemory);
+                        }}
+                      ></DynamicForm.SavingButton>
+                    </div>
+                  )}
                 </form>
               </Form>
             </ModelResourceAccessUserIdContext.Provider>

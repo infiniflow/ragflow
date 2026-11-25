@@ -28,7 +28,11 @@ export const defaultMemoryModelForm = {
   memory_type: [],
   memory_size: 0,
 };
-export const MemoryModelForm = ({ readOnly = false }: { readOnly?: boolean }) => {
+export const MemoryModelForm = ({
+  readOnly = false,
+}: {
+  readOnly?: boolean;
+}) => {
   const { t } = useTranslation();
   const { data } = useFetchMemoryMessageList();
   const { data: configData } = useMemorySettingContext();
