@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"ragflow/internal/harness/core/schema"
@@ -1625,6 +1626,10 @@ func TestCancel_TimeoutEscalation_Flags(t *testing.T) {
 
 // TestCancel_MultiCall_TimeoutDeadlineJoinAbsolute verifies absolute time join.
 func TestCancel_MultiCall_TimeoutDeadlineJoinAbsolute(t *testing.T) {
+	synctest.Test(t, testCancelMultiCallTimeoutDeadlineJoinAbsolute)
+}
+
+func testCancelMultiCallTimeoutDeadlineJoinAbsolute(t *testing.T) {
 	cc := newCancelContext()
 	cf := cc.buildCancelFunc()
 	_, ok1 := cf(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(200*time.Millisecond))
