@@ -94,11 +94,11 @@ func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID
 				return fmt.Errorf("selected image OCR: %w", invErr)
 			}
 			if response == nil || response.Text == nil {
-				return fmt.Errorf("selected image OCR returned no text")
+				return fmt.Errorf("selected image OCR returned no text (%w)", errOCRResultNoText)
 			}
 			text = strings.TrimSpace(*response.Text)
 			return nil
-		}, nil)
+		}, ocrFailoverCanRetry)
 	if err != nil {
 		return "", err
 	}

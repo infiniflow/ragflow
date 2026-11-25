@@ -50,6 +50,15 @@ var (
 	// text layer (a pure-image input) - a property of the document, not of
 	// the member.
 	errMonkeyOCRNoTextualLayouts = errors.New("MonkeyOCRv2 ZIP contains no textual layouts")
+	// errOCRResultNoText: the OCR backend answered successfully but with no
+	// text payload (image-only or blank input) - a property of the document,
+	// not of the member.
+	errOCRResultNoText = errors.New("OCR result contains no text")
+	// errOCRResponseTerminal: post-probe validation of a resolved target or
+	// conversion of an already-received response (corrupt/empty archive,
+	// rejected extraction switches) - the member answered, so these say
+	// nothing that warrants flipping it.
+	errOCRResponseTerminal = errors.New("OCR response handling failed terminally")
 )
 
 // ocrFailoverCanRetry excludes context cancellation, accepted-task polling
@@ -61,7 +70,10 @@ func ocrFailoverCanRetry(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	return !errors.Is(err, errOCRTaskPollTimeout) && !errors.Is(err, errMonkeyOCRNoTextualLayouts)
+	return !errors.Is(err, errOCRTaskPollTimeout) &&
+		!errors.Is(err, errMonkeyOCRNoTextualLayouts) &&
+		!errors.Is(err, errOCRResultNoText) &&
+		!errors.Is(err, errOCRResponseTerminal)
 }
 
 // minerUDefaultLanguage is MinerU's own OCR language default, applied when
@@ -1524,14 +1536,14 @@ func dispatchMinerUPDF(
 				return fmt.Errorf("parser: MinerU probe: %w", probeErr)
 			}
 			if verr := modelModule.ValidateMinerUConfigForAPI(target.backend, target.serverURL, v1); verr != nil {
-				return verr
+				return fmt.Errorf("parser: MinerU config: %w (%w)", verr, errOCRResponseTerminal)
 			}
 
 			if v1 {
 				// V1's strict CreateJobRequest has no extraction switches. Reject
 				// unsupported choices before creating an upload or parse job.
 				if !extraction.formulaEnable || !extraction.tableEnable {
-					return fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches")
+					return fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches (%w)", errOCRResponseTerminal)
 				}
 				finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
 				v1Result, invErr := modelModule.ParseMinerUV1(ctx, target.baseURL, target.apiKeyRaw, filename, binary, target.backend, target.parseMethod, target.timeout)
@@ -1556,7 +1568,9 @@ func dispatchMinerUPDF(
 			sizes, geometryErr := mineruPageSizes(ctx, binary)
 			items, mediaWarnings, extractErr := mineruExtractJSONItems(zipBytes, sizes)
 			if extractErr != nil {
-				return fmt.Errorf("parser: MinerU extract: %w", extractErr)
+				// The member answered and the returned archive failed to
+				// convert: terminal, not a member-health signal.
+				return fmt.Errorf("parser: MinerU extract: %w (%w)", extractErr, errOCRResponseTerminal)
 			}
 
 			res := mineruJSONParseResult(filename, items)
@@ -1594,9 +1608,9 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 		return normalizePDFMarkdown(ctx, filename, result.Markdown), nil
 	}
 	if extractErr != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w (%w)", extractErr, errOCRResponseTerminal)
 	}
-	return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
+	return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections (%w)", errOCRResponseTerminal)
 }
 
 func mineruHTTPErrorText(raw []byte) string {

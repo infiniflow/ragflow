@@ -38,6 +38,8 @@ func TestOCRFailoverCanRetry(t *testing.T) {
 		{name: "poll timeout plain", err: errOCRTaskPollTimeout, wantRetry: false},
 		{name: "poll timeout wrapped", err: wrap(fmt.Errorf("timed out: %w (%w)", errors.New("boom"), errOCRTaskPollTimeout)), wantRetry: false},
 		{name: "no textual layouts", err: wrap(errMonkeyOCRNoTextualLayouts), wantRetry: false},
+		{name: "image OCR empty text", err: wrap(fmt.Errorf("selected image OCR returned no text (%w)", errOCRResultNoText)), wantRetry: false},
+		{name: "MinerU response terminal", err: wrap(fmt.Errorf("parser: MinerU extract: %w (%w)", errors.New("corrupt archive"), errOCRResponseTerminal)), wantRetry: false},
 		{name: "context canceled", err: wrap(context.Canceled), wantRetry: false},
 		{name: "context deadline", err: wrap(context.DeadlineExceeded), wantRetry: false},
 		{name: "deadline wrapped in provider error", err: wrap(fmt.Errorf("post: %w", context.DeadlineExceeded)), wantRetry: false},
