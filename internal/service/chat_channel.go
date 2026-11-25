@@ -93,6 +93,12 @@ func (s *ChatChannelService) List(ctx context.Context) ([]*entity.ChatChannelLis
 }
 
 func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat_channel", permission.ActionEnable); err != nil {
+		return nil, err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("chat_channel::"+strings.TrimSpace(channelType)), permission.ActionEnable); err != nil {
+		return nil, err
+	}
 	userID := permission.UserIDFromContext(ctx)
 	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {

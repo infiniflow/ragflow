@@ -17,6 +17,7 @@
 import { evictDocumentImage } from '@/components/image';
 import message from '@/components/ui/message';
 import { useChunkHistoryCache } from '@/ee/hooks/use-chunk-history-cache';
+import { useChunkIdQuery } from '@/ee/hooks/use-chunk-id-query';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
@@ -162,12 +163,18 @@ export const useFetchNextChunkList = (
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds?.slice(0, 100);
+  const optionChunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const [available, setAvailable] = useState<number | undefined>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  // The enterprise build can read the box as a chunk id lookup; upstream's stub
+  // answers undefined here, which leaves this a text search.
+  const idQuery = useChunkIdQuery(debouncedSearchString);
+  // A search for ids replaces the ids a caller pinned: the box is the newer
+  // intent. Without one, the pinned set still narrows the list.
+  const chunkIds = idQuery ? idQuery.ids : optionChunkIds;
 
   const {
     data,
@@ -195,7 +202,9 @@ export const useFetchNextChunkList = (
         page: pagination.current,
         size: Math.min(pagination.pageSize, 100),
         available_int: available,
-        keywords: searchString,
+        // The id search and the text search are mutually exclusive: an id query
+        // must not also match prose, or the result set stops being explainable.
+        keywords: idQuery ? undefined : searchString,
         chunk_ids: chunkIds,
       });
       if (data.code === 0) {

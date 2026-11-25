@@ -277,13 +277,6 @@ func readOptionalJSONMap(path string) (map[string]any, bool) {
 	return out, true
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func exitErr(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)

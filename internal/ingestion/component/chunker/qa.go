@@ -33,6 +33,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -381,20 +382,68 @@ func extractQATextCSV(text string, lines []string) []qaPair {
 	return pairs
 }
 
+// detectDelimiter decides how a text Q&A payload separates question from
+// answer, mirroring Python's csv_pair_delimiter (rag/app/qa.py): TAB is the
+// documented delimiter, but a file that reads as comma separated must keep
+// reading with comma.
+//
+// A file with no TAB anywhere is comma separated. Otherwise each physical line
+// is parsed as one comma-separated row, and a row that carries a TAB is TAB
+// separated — unless it is already known to be comma separated (a non-first row
+// with exactly two non-empty values). When the counts disagree, the row shapes
+// decide: comma wins when "two values, no TAB" rows outnumber the rest.
+//
+// Parsing per line (rather than the whole text) matches the reference: a quoted
+// field left open at the end of a line is a parse error there, and an
+// unparseable file falls back to TAB.
 func detectDelimiter(lines []string) string {
-	comma, tab := 0, 0
+	hasTab := false
 	for _, line := range lines {
-		if len(strings.Split(line, ",")) == 2 {
-			comma++
-		}
-		if len(strings.Split(line, "\t")) == 2 {
-			tab++
+		if strings.Contains(line, "\t") {
+			hasTab = true
+			break
 		}
 	}
-	if tab >= comma {
-		return "\t"
+	if !hasTab {
+		return ","
 	}
-	return ","
+
+	tabFreePairs, otherRows := 0, 0
+	for _, line := range lines {
+		r := csv.NewReader(strings.NewReader(line + "\n"))
+		r.FieldsPerRecord = -1
+		r.LazyQuotes = true
+		row, err := r.Read()
+		if err != nil && err != io.EOF {
+			return "\t"
+		}
+		values := 0
+		rowHasTab := false
+		for _, field := range row {
+			if strings.TrimSpace(field) != "" {
+				values++
+			}
+			if strings.Contains(field, "\t") {
+				rowHasTab = true
+			}
+		}
+		if values == 0 {
+			continue
+		}
+		firstRow := tabFreePairs+otherRows == 0
+		if rowHasTab && (firstRow || values != 2) {
+			return "\t"
+		}
+		if values == 2 && !rowHasTab {
+			tabFreePairs++
+		} else {
+			otherRows++
+		}
+	}
+	if tabFreePairs > otherRows {
+		return ","
+	}
+	return "\t"
 }
 
 // ---------------------------------------------------------------------------

@@ -1155,7 +1155,10 @@ func TestEmailParser_RechunkAttachmentTextPath(t *testing.T) {
 	}
 
 	p := NewEmailParser()
-	extra := p.rechunkEmailAttachments(ctx, content, 0)
+	extra, err := p.rechunkEmailAttachments(ctx, content, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(extra) != 1 {
 		t.Fatalf("expected 1 indexed attachment, got %d: %#v", len(extra), extra)
@@ -1196,7 +1199,10 @@ func TestRechunkEmailAttachments_ContextCancelled(t *testing.T) {
 			{"filename": "note.txt", "payload": "must not be re-chunked"},
 		},
 	}
-	extra := NewEmailParser().rechunkEmailAttachments(ctx, content, 0)
+	extra, err := NewEmailParser().rechunkEmailAttachments(ctx, content, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(extra) != 0 {
 		t.Errorf("cancelled context should short-circuit re-chunk: extra=%#v", extra)
 	}
@@ -1240,20 +1246,26 @@ func TestEmailParser_RechunkPrefersRaw(t *testing.T) {
 	ctx := t.Context()
 	p := NewEmailParser()
 
-	withRaw := p.rechunkEmailAttachments(ctx, map[string]any{
+	withRaw, err := p.rechunkEmailAttachments(ctx, map[string]any{
 		"attachments": []map[string]any{
 			{"filename": "note.txt", "payload": "WORLD", "raw": "HELLO"},
 		},
 	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(withRaw) != 1 || withRaw[0]["text"] != "HELLO" {
 		t.Fatalf("raw not preferred: extra=%#v", withRaw)
 	}
 
-	fallback := p.rechunkEmailAttachments(ctx, map[string]any{
+	fallback, err := p.rechunkEmailAttachments(ctx, map[string]any{
 		"attachments": []map[string]any{
 			{"filename": "note.txt", "payload": "WORLD"},
 		},
 	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(fallback) != 1 || fallback[0]["text"] != "WORLD" {
 		t.Fatalf("payload fallback broken: extra=%#v", fallback)
 	}

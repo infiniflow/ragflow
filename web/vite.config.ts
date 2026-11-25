@@ -221,7 +221,7 @@ export default defineConfig(({ mode }) => {
       },
       sourcemap: env.VITE_BUILD_SOURCEMAP !== 'false',
       cssCodeSplit: true,
-      target: 'es2015',
+      target: 'es2020',
     },
     esbuild: {
       tsconfigRaw: {

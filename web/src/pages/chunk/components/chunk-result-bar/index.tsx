@@ -1,12 +1,11 @@
 import { Button } from '@/components/ui/button';
-import { SearchInput } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Radio } from '@/components/ui/radio';
-import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
+import { ChunkSearchEntry } from '@/ee/pages/chunk/components/chunk-result-bar/chunk-search-entry';
 import { cn } from '@/lib/utils';
 import { ListChevronsUpDown, LucideFilter, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +15,7 @@ interface ChunkResultBarProps {
   changeChunkTextMode: (mode: ChunkTextMode) => void;
   textMode: ChunkTextMode;
   total: number;
+  canEditDocument: boolean;
   available: number | undefined;
   selectAllChunk: (value: boolean) => void;
   handleSetAvailable: (value: number | undefined) => void;
@@ -28,6 +28,7 @@ export default function ChunkResultBar({
   changeChunkTextMode,
   textMode,
   total,
+  canEditDocument,
   available,
   selectAllChunk,
   handleSetAvailable,
@@ -35,7 +36,6 @@ export default function ChunkResultBar({
   handleInputChange,
   searchString,
 }: ChunkResultBarProps) {
-  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
   const { t } = useTranslation('translation', { keyPrefix: 'chunk' });
   const handleFilterChange = (e: string | number) => {
     const value = e === -1 ? undefined : (e as number);
@@ -85,11 +85,7 @@ export default function ChunkResultBar({
       </div>
       <Popover>
         <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={datasetEditButtonDisabled}
-          >
+          <Button variant="outline" size="icon">
             <LucideFilter />
           </Button>
         </PopoverTrigger>
@@ -98,18 +94,18 @@ export default function ChunkResultBar({
         </PopoverContent>
       </Popover>
 
-      <SearchInput
-        className="w-28"
-        placeholder={t('search', { keyPrefix: 'common' })}
-        onChange={handleInputChange}
-        value={searchString}
+      {/* The box is an enterprise seam: the enterprise build adds the switch that
+          says what it reads, upstream renders the plain search box. */}
+      <ChunkSearchEntry
+        searchString={searchString}
+        handleInputChange={handleInputChange}
       />
 
       <Button
         variant="outline"
         size="icon"
         onClick={() => createChunk()}
-        disabled={datasetEditButtonDisabled}
+        disabled={!canEditDocument}
       >
         <Plus size={44} />
       </Button>

@@ -30,9 +30,7 @@ import (
 
 func init() {
 	// Initialize logger for tests
-	if err := common.InitLogger("info", common.FileOutput{}, "tokenizer_test"); err != nil {
-		fmt.Printf("Failed to initialize logger: %v\n", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "tokenizer_test")
 }
 
 // TestConcurrentTokenize tests concurrent tokenization with dynamic pool expansion and shrinking

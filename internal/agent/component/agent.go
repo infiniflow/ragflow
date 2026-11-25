@@ -36,6 +36,7 @@ import (
 	"maps"
 	"ragflow/internal/dao"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1374,7 +1375,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			content = cleaned
 		} else {
 			common.Warn("component: Agent: outputs.structured set but no parseable JSON matching schema",
-				zap.Strings("expected_keys", sortedMapKeys(structuredExpectedKeySet(p.OutputStructure))))
+				zap.Strings("expected_keys", slices.Sorted(maps.Keys(structuredExpectedKeySet(p.OutputStructure)))))
 		}
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
@@ -2108,15 +2109,6 @@ func jsonValueMatchesSchemaType(v any, typ string) bool {
 	default:
 		return true
 	}
-}
-
-func sortedMapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is

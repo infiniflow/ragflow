@@ -119,10 +119,10 @@
 /internal/service/nlp/ @qinling0210
 /internal/service/wikisearch/ @yuzhichang
 /internal/storage/ @wangq8
-/internal/syncer/ @xugangqiang
-/internal/syncer/connector/ @xugangqiang
+/internal/syncer/ @wangq8
+/internal/syncer/connector/ @wangq8
 /internal/tokenizer/ @qinling0210
-/internal/utility/ @xugangqiang
+/internal/utility/ @wangq8
 
 # web/ overrides; omitted subfolders inherit the same reviewer.
 /web/src/ee-stub/ @dcc123456

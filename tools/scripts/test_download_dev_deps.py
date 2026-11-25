@@ -167,6 +167,114 @@ def test_prunes_foreign_platform_dir_on_short_circuit(tmp_path):
     assert expected.is_dir()
 
 
+# --- Variant-aware pruning: a pre-staged -full ORT archive must survive a
+# downloader run. The PR requires users to pre-stage it manually, so the
+# downloader must never treat that sibling variant dir as stale. ---
+
+
+def _seed_ort_dir(path, payload):
+    (path / "lib").mkdir(parents=True, exist_ok=True)
+    (path / "lib" / "libonnxruntime.a").write_bytes(payload)
+
+
+def _ort_static_lib(tmp_path):
+    return tmp_path / "onnxruntime" / "static_lib"
+
+
+def _prestaged_full_dir(static_lib):
+    """The exact dir the PR's build.sh hint tells GPU users to pre-stage."""
+    return static_lib / "onnxruntime-linux-x64-static_lib-1.29.0-full"
+
+
+def test_prune_keeps_prestaged_full_variant_dir(tmp_path):
+    """Core regression: the minimal and full dirs of the SAME pinned version
+    must coexist. The old prune deleted every dir whose name differed from
+    expected_dir, destroying the manually pre-staged -full archive on every
+    downloader run — exactly the state the PR introduces."""
+    static_lib = _ort_static_lib(tmp_path)
+    minimal = static_lib / native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    full = _prestaged_full_dir(static_lib)
+    _seed_ort_dir(minimal, b"minimal-ort")
+    _seed_ort_dir(full, b"PRESTAGED-FULL-ORT")
+
+    native.prune_stale_onnxruntime(str(static_lib), minimal.name)
+
+    assert (full / "lib" / "libonnxruntime.a").read_bytes() == b"PRESTAGED-FULL-ORT", "pre-staged -full archive was pruned as stale"
+    assert minimal.is_dir()
+
+
+def test_prune_still_removes_stale_version_and_foreign_platform(tmp_path):
+    """Guard against over-correction: variant-aware must NOT become a no-op.
+    Genuinely stale version/platform dirs still have to be removed so build.sh
+    cannot link two different ORT builds."""
+    static_lib = _ort_static_lib(tmp_path)
+    minimal = static_lib / native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    full = _prestaged_full_dir(static_lib)
+    stale_version = static_lib / "onnxruntime-linux-x64-static_lib-1.28.0-glibc2_28"
+    foreign_full = static_lib / "onnxruntime-osx-arm64-static_lib-1.29.0-full"
+    for path, payload in ((minimal, b"minimal"), (full, b"full"), (stale_version, b"old"), (foreign_full, b"mac")):
+        _seed_ort_dir(path, payload)
+
+    native.prune_stale_onnxruntime(str(static_lib), minimal.name)
+
+    assert not stale_version.exists(), "old-version dir must still be pruned"
+    assert not foreign_full.exists(), "foreign-platform dir must still be pruned"
+    assert full.exists() and minimal.exists(), "same-version variant dirs must survive"
+
+
+def test_prune_removes_suffixless_stray_dir(tmp_path):
+    """Adversarial: the sibling-variant exception must only apply to dirs with
+    a RECOGNIZED variant suffix. A stray same-version dir without a suffix would
+    match the default wildcard link glob and must still be pruned."""
+    static_lib = _ort_static_lib(tmp_path)
+    minimal = static_lib / native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    stray = static_lib / "onnxruntime-linux-x64-static_lib-1.29.0"
+    full = _prestaged_full_dir(static_lib)
+    for path, payload in ((minimal, b"minimal"), (stray, b"stray"), (full, b"full")):
+        _seed_ort_dir(path, payload)
+
+    native.prune_stale_onnxruntime(str(static_lib), minimal.name)
+
+    assert not stray.exists(), "suffixless stray dir must still be pruned"
+    assert minimal.exists() and full.exists()
+
+
+def test_extract_onnxruntime_preserves_prestaged_full(tmp_path):
+    """End-to-end through the real downloader call path: extracting the minimal
+    release zip must not delete a pre-staged -full archive."""
+    static_lib = _ort_static_lib(tmp_path)
+    full = _prestaged_full_dir(static_lib)
+    _seed_ort_dir(full, b"PRESTAGED-FULL-ORT")
+    archive, minimal_name = ort_archive(tmp_path)
+
+    assert native.extract_onnxruntime(str(static_lib), str(archive), minimal_name) is True
+
+    assert (full / "lib" / "libonnxruntime.a").read_bytes() == b"PRESTAGED-FULL-ORT"
+    assert native.has_static_archives(str(static_lib / minimal_name))
+
+
+def test_ort_normalized_dir_derives_requested_variant(monkeypatch):
+    """The requested variant (from DEEPDOC_ORT_VARIANT) must drive the dir name:
+    cpu keeps the legacy minimal dir, gpu/full resolve to the -full dir."""
+    monkeypatch.delenv("DEEPDOC_ORT_VARIANT", raising=False)
+    assert native.requested_ort_variant() == "cpu"
+    monkeypatch.setenv("DEEPDOC_ORT_VARIANT", "gpu")
+    assert native.requested_ort_variant() == "gpu"
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64", "gpu") == "onnxruntime-linux-x64-static_lib-1.29.0-full"
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64", "full") == "onnxruntime-linux-x64-static_lib-1.29.0-full"
+    # Explicit cpu keeps the byte-for-byte legacy name (additive guarantee).
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64", "cpu") == "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28"
+
+
+def test_requested_ort_variant_rejects_invalid_and_empty(monkeypatch):
+    """Mirror ort_variant.sh: an unknown OR explicitly-empty variant must fail
+    loudly, never silently fall back to the minimal/wildcard path."""
+    for bad in ("gpou", ""):
+        monkeypatch.setenv("DEEPDOC_ORT_VARIANT", bad)
+        with pytest.raises(ValueError, match="DEEPDOC_ORT_VARIANT"):
+            native.requested_ort_variant()
+
+
 def test_host_platform_normalizes_aliases(monkeypatch):
     # build.sh's detect_target_platform accepts Linux/Darwin + x86_64/amd64
     # aliases; host_platform must normalize the same way or it KeyErrors when
@@ -1470,3 +1578,20 @@ def test_extract_native_lib_honors_ragflow_native_libs_dir_env(tmp_path, monkeyp
     native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
     assert (tmp_path / "isolated" / "pdfium-static" / "v7809" / "lib" / "libpdfium.a").is_file()
     assert not os.path.exists("/attribute-path-ignored")
+
+
+def test_ee_native_download_hook_noop_and_delegates(monkeypatch):
+    import sys
+    import types
+
+    # When the optional extension module is absent, the hook is a safe no-op.
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", None)
+    assert native._run_ee_native_downloads("linux", "amd64") is None
+
+    # When provided, the hook delegates (goos, goarch) to download_ee_native_libs.
+    calls = []
+    fake = types.ModuleType("download_dev_deps_ee")
+    fake.download_ee_native_libs = lambda goos, goarch: calls.append((goos, goarch))
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", fake)
+    native._run_ee_native_downloads("linux", "amd64")
+    assert calls == [("linux", "amd64")]

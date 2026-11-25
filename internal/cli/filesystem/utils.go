@@ -244,7 +244,7 @@ func GetParentPath(path string) string {
 		return ""
 	}
 
-	return joinStrings(parts[:len(parts)-1], "/")
+	return strings.Join(parts[:len(parts)-1], "/")
 }
 
 // GetBaseName returns the last component of a path

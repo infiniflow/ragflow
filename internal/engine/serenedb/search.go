@@ -339,7 +339,7 @@ func (e *serenedbEngine) countRows(ctx context.Context, tableName, where string)
 	if len(rows) == 0 {
 		return 0, nil
 	}
-	return toInt64(rows[0]["c"]), nil
+	return common.ToInt64(rows[0]["c"]), nil
 }
 
 // parseMatchExprs extracts the text query, dense vector, and fusion weight from
@@ -468,21 +468,6 @@ func formatFloat(f float64) string {
 // low-precision by nature, so rounding to 1e-6 is exact enough.
 func formatWeight(f float64) string {
 	return strconv.FormatFloat(math.Round(f*1e6)/1e6, 'f', -1, 64)
-}
-
-func toInt64(v interface{}) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	case float64:
-		return int64(n)
-	case string:
-		i, _ := strconv.ParseInt(n, 10, 64)
-		return i
-	}
-	return 0
 }
 
 func toFloat64(v interface{}) float64 {

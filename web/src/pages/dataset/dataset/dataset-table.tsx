@@ -29,8 +29,9 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
+import { hasManagePermissionPermission } from '@/ee/utils/permission-util';
 import ProcessLogModal from '../process-log-modal';
 import {
   ChangeParserDialog,
@@ -39,6 +40,7 @@ import {
 import { useShowLog } from './hooks';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
+import { hasEditPermission } from '@/ee/utils/permission-util';
 import { useRenameDocument } from './use-rename-document';
 
 export type DatasetTableProps = Pick<
@@ -85,7 +87,8 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { showLog, logInfo, logVisible, hideLog, datasetId, logId } =
+    useShowLog(documents);
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
@@ -94,7 +97,6 @@ export function DatasetTable({
     showLog,
     setRowSelection,
   });
-
   const currentPagination = useMemo(() => {
     return {
       pageIndex: (pagination.current || 1) - 1,
@@ -111,6 +113,8 @@ export function DatasetTable({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: (row) =>
+      hasEditPermission(row.original.operator_permission ?? 0),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     getRowId: (row) => row.id, // Use document ID instead of row index
@@ -191,6 +195,11 @@ export function DatasetTable({
           onOk={onChangeParserOk}
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
+          readOnly={
+            !hasManagePermissionPermission(
+              changeParserRecord.operator_permission ?? 0,
+            )
+          }
         />
       )}
 
@@ -218,6 +227,8 @@ export function DatasetTable({
           visible={logVisible}
           onCancel={() => hideLog()}
           logInfo={logInfo}
+          datasetId={datasetId}
+          logId={logId}
         />
       )}
     </>

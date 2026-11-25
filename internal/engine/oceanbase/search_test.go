@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"reflect"
 	"regexp"
 	"testing"
@@ -101,19 +100,22 @@ func TestSearchWildcardWithOptionalFieldKeepsExtra(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB("seekdb", "legacy_doc", db)
 
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?")).
+		WithArgs("legacy_doc", "ragflow_tenant_1").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(`id`) FROM `ragflow_tenant_1` WHERE 1=1")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(id)"}).AddRow(1))
 	mock.ExpectQuery("SELECT \\* FROM `ragflow_tenant_1` WHERE 1=1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "extra"}).
 			AddRow("chunk-1", `{"compile_kwd":"tree","token_num":12}`))
 
-	rows, count, err := engine.searchTableWithSQL(context.Background(), "ragflow_tenant_1", "chunk",
-		map[string]interface{}{},
-		&types.SearchRequest{SelectFields: []string{"*", "compile_kwd"}},
-		searchPlan{})
+	result, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant_1"}, SelectFields: []string{"*", "compile_kwd"},
+	})
 	if err != nil {
-		t.Fatalf("searchTableWithSQL: %v", err)
+		t.Fatalf("Search: %v", err)
 	}
+	rows, count := result.Chunks, result.Total
 	if count != 1 || len(rows) != 1 {
 		t.Fatalf("count=%d rows=%d, want one row", count, len(rows))
 	}
@@ -142,5 +144,42 @@ func TestBuildQualifiedSelectFieldsUsesStructuredColumns(t *testing.T) {
 	}
 	if wantAliases := []string{"id", "content", "row_id"}; !reflect.DeepEqual(aliases, wantAliases) {
 		t.Fatalf("buildQualifiedSelectFields() aliases = %v, want %v", aliases, wantAliases)
+	}
+}
+
+func TestSearchResolvesTableCollationForLegacySortOnly(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+	const table = "ragflow_tenant_1"
+	mock.ExpectQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	mock.ExpectQuery(chunkTableSchemaSQL).
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME", "TABLE_COLLATION"}).
+			AddRow("id", "utf8mb4_unicode_ci").AddRow("extra", "utf8mb4_unicode_ci").AddRow("outlinks_int", "utf8mb4_unicode_ci"))
+	mock.ExpectQuery("SELECT COUNT(`id`) FROM `ragflow_tenant_1` WHERE 1=1").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(id)"}).AddRow(3))
+	const title = "JSON_EXTRACT(`extra`, '$.title_kwd')"
+	mock.ExpectQuery("SELECT `id` FROM `ragflow_tenant_1` WHERE 1=1 ORDER BY " +
+		"`outlinks_int` DESC, (CASE WHEN JSON_TYPE(" + title + ") <> 'NULL' THEN JSON_UNQUOTE(" + title +
+		") END) COLLATE utf8mb4_unicode_ci ASC LIMIT 1, 1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("page-2"))
+	result, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{table}, SelectFields: []string{"id"}, Offset: 1, Limit: 1,
+		OrderBy: (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 3 || len(result.Chunks) != 1 || result.Chunks[0]["id"] != "page-2" {
+		t.Fatalf("unexpected page: %#v", result)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

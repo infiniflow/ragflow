@@ -75,6 +75,7 @@ func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID
 	apiConfig.BaseURL = &baseURL
 	response, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, nil, nil)
 	if err != nil {
+		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		return "", fmt.Errorf("selected image OCR: %w", err)
 	}
 	if response == nil || response.Text == nil {

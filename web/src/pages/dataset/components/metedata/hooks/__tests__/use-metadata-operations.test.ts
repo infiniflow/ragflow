@@ -1,12 +1,18 @@
 import { act, renderHook } from '@testing-library/react';
+import type { MetadataValueType } from '../../interface';
 import { useMetadataOperations } from '../use-manage-modal';
 
-describe('delete metadata and add a list in the same save', () => {
-  it.each(['status', 'tags'])('preserves the new list field %s', (newKey) => {
+describe.each<[MetadataValueType, string[], string | string[]]>([
+  ['list', ['first', 'second'], ['first', 'second']],
+  ['string', ['published'], 'published'],
+  ['time', ['2026-11-24 10:30:00'], '2026-11-24 10:30:00'],
+  ['number', ['42'], '42'],
+])('delete and add a %s metadata field', (valueType, values, value) => {
+  it.each(['status', 'replacement'])('preserves the new field %s', (newKey) => {
     const { result } = renderHook(useMetadataOperations);
     act(() => {
       result.current.addDeleteRow('status');
-      result.current.addUpdateValue(newKey, '', ['first', 'second'], 'list');
+      result.current.addUpdateValue(newKey, '', values, valueType);
     });
 
     expect(result.current.operations).toEqual({
@@ -14,18 +20,18 @@ describe('delete metadata and add a list in the same save', () => {
         {
           key: newKey,
           match: '',
-          value: ['first', 'second'],
-          valueType: 'list',
+          value,
+          valueType,
         },
       ],
       deletes: newKey === 'status' ? [] : [{ key: 'status' }],
     });
   });
 
-  it('keeps a field deletion made after adding the new list', () => {
+  it('keeps a field deletion made after the addition', () => {
     const { result } = renderHook(useMetadataOperations);
     act(() => {
-      result.current.addUpdateValue('status', '', ['first', 'second'], 'list');
+      result.current.addUpdateValue('status', '', values, valueType);
       result.current.addDeleteRow('status');
     });
     expect(result.current.operations.deletes).toEqual([{ key: 'status' }]);

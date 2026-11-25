@@ -59,7 +59,7 @@ func (q *legacyPullTestQueue) PullMessage(_ context.Context) (common.TaskHandle,
 // makes a hard-coded TierDefault implementation fail.
 func TestPullOneTaskRoutesThroughTierCapability(t *testing.T) {
 	queue := &tierPullTestQueue{}
-	ing := NewIngestor("tier-capability-test", 1, nil, common.Tier("sentinel-tier"), &ingestion.Deps{MQ: queue})
+	ing := NewIngestor("tier-capability-test", 1, common.Tier("sentinel-tier"), &ingestion.Deps{MQ: queue})
 
 	_, err := ing.pullOneTask(t.Context())
 	if !errors.Is(err, errTierPull) {
@@ -74,7 +74,7 @@ func TestPullOneTaskRoutesThroughTierCapability(t *testing.T) {
 // the tier-restricted pull keeps the legacy whole-queue path.
 func TestPullOneTaskFallsBackWithoutTierCapability(t *testing.T) {
 	queue := &legacyPullTestQueue{}
-	ing := NewIngestor("legacy-capability-test", 1, nil, common.TierDefault, &ingestion.Deps{MQ: queue})
+	ing := NewIngestor("legacy-capability-test", 1, common.TierDefault, &ingestion.Deps{MQ: queue})
 
 	_, err := ing.pullOneTask(t.Context())
 	if !errors.Is(err, errTierPull) {

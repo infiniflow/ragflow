@@ -16,6 +16,7 @@
 
 import message from '@/components/ui/message';
 import { ModelTypeToField } from '@/constants/llm';
+import { useAdditionalModelValidIds } from '@/ee/hooks/use-additional-model-valid-ids';
 import {
   IAddedModel,
   IAvailableProvider,
@@ -46,8 +47,8 @@ import { createContext, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
-  buildModelValue,
   buildValidModelIds,
+  getDefaultModelIdByField,
   parseModelValue,
 } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
@@ -208,7 +209,9 @@ export const useModelValidIds = (
   modelTypes: string[],
   resourceTenantId?: string,
   accessUserId?: string | null,
+  includeAdditionalValidIds = true,
 ) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
   const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
   const waitingForAccessUser =
     accessUserId === null ||
@@ -218,9 +221,25 @@ export const useModelValidIds = (
     resourceTenantId,
     accessUserId,
   );
-  const validIds = useMemo(
+  const directValidIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
+  );
+  const {
+    validIds: additionalValidIds,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds: resolveAdditionalValidIds,
+  } = useAdditionalModelValidIds({
+    modelTypes,
+    models: data,
+    modelsFetched: isFetched,
+    enabled: includeAdditionalValidIds,
+    ownerTenantId: resourceTenantId || contextTenantId,
+  });
+  const validIds = useMemo(
+    () => new Set([...directValidIds, ...additionalValidIds]),
+    [additionalValidIds, directValidIds],
   );
 
   const resolveValidIds = async () => {
@@ -229,10 +248,21 @@ export const useModelValidIds = (
     }
     const result = await refetch();
     if (result.isError) throw result.error;
-    return buildValidModelIds(result.data ?? [], modelTypes);
+    const freshModels = result.data ?? [];
+    const freshAdditionalIds = await resolveAdditionalValidIds(freshModels);
+    return new Set([
+      ...buildValidModelIds(freshModels, modelTypes),
+      ...freshAdditionalIds,
+    ]);
   };
 
-  return { validIds, isFetched, resolveValidIds };
+  return {
+    validIds,
+    isFetched,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds,
+  };
 };
 
 export function useFindLlmByUuid(
@@ -768,19 +798,8 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
 
   const result = useMemo(() => {
     const dict: Record<string, string> = {};
-    Object.entries(ModelTypeToField).forEach(([key, field]) => {
-      const model = defaultModels.find((m) => m.model_type === key);
-      if (!model || !model.enable) {
-        dict[field] = '';
-        return;
-      }
-      dict[field] =
-        model.model_id ||
-        buildModelValue({
-          model_name: model.model_name,
-          model_instance: model.model_instance,
-          model_provider: model.model_provider,
-        });
+    Object.values(ModelTypeToField).forEach((field) => {
+      dict[field] = getDefaultModelIdByField(defaultModels, field);
     });
     return dict;
   }, [defaultModels]);

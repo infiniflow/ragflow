@@ -72,7 +72,7 @@ func TestJanitorClearsBackpressureOnFailedSample(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "backpressure to engage", func() bool { return doctype.Backpressure() })
 
@@ -103,10 +103,120 @@ func TestJanitorPrunesIdleBetweenWatermarks(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go resourceJanitor(ctx, r, 10*time.Millisecond, 8000)
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
 
 	waitUntil(t, 2*time.Second, "idle prune between watermarks", func() bool {
 		return pruned.Load() > 0
+	})
+}
+
+// TestJanitorKeepsBackpressureInHysteresisBand reproduces the regression that
+// dropped hysteresis from the shared janitor: once a high sample engages the
+// gate, usage between the low and high marks must NOT lift it. A single-threshold
+// janitor lifts it as soon as usage dips below high, which is what this catches.
+//
+// Adversarial fixture: the distinguishing condition (low < used <= high) with
+// the gate already ON. A wrong implementation fails here.
+func TestJanitorKeepsBackpressureInHysteresisBand(t *testing.T) {
+	doctype.SetInferenceLimit(4)
+	ConfigureIdleBudget(idleBudgetConfig{enabled: true, highWaterMB: 8000, lowWaterMB: 5000})
+	defer ConfigureIdleBudget(idleBudgetConfig{})
+	defer doctype.SetBackpressure(false)
+
+	r := &sampleResource{}
+	r.set(9000) // high water -> engage
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
+
+	waitUntil(t, 2*time.Second, "backpressure to engage above high water", func() bool {
+		return doctype.Backpressure()
+	})
+
+	// Wait for an observable janitor sample inside the band so the assertion
+	// cannot pass just because the goroutine had not run after the change.
+	var sampled atomic.Int64
+	registerIdlePruner(func(maxAge time.Duration, maxCount int) int {
+		sampled.Add(1)
+		return 0
+	})
+	r.set(7000) // 5000 < 7000 <= 8000: hysteresis band
+	sampled.Store(0)
+	waitUntil(t, 2*time.Second, "janitor to sample the hysteresis band", func() bool {
+		return sampled.Load() >= 2
+	})
+	if !doctype.Backpressure() {
+		t.Fatal("backpressure lifted inside the hysteresis band; low-water mark is not honoured")
+	}
+}
+
+// TestJanitorLiftsBackpressureBelowLowWater pins the other half of hysteresis:
+// after usage drops below the low mark the gate must be lifted again.
+func TestJanitorLiftsBackpressureBelowLowWater(t *testing.T) {
+	doctype.SetInferenceLimit(4)
+	ConfigureIdleBudget(idleBudgetConfig{enabled: true, highWaterMB: 8000, lowWaterMB: 5000})
+	defer ConfigureIdleBudget(idleBudgetConfig{})
+	defer doctype.SetBackpressure(false)
+
+	r := &sampleResource{}
+	r.set(9000)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
+
+	waitUntil(t, 2*time.Second, "backpressure to engage", func() bool { return doctype.Backpressure() })
+
+	r.set(4000) // below low water
+	waitUntil(t, 2*time.Second, "backpressure to lift below low water", func() bool {
+		return !doctype.Backpressure()
+	})
+}
+
+// TestJanitorWithLowWaterUnsetDoesNotStall guards the coupled-field edge: when
+// only the high mark is configured (lowWaterMB=0), the gate must still lift
+// once usage drops below high. The old hysteresis branch (`used < lowMB`) would
+// never fire in that configuration and stall every deadline-less acquire.
+func TestJanitorWithLowWaterUnsetDoesNotStall(t *testing.T) {
+	doctype.SetInferenceLimit(4)
+	ConfigureIdleBudget(idleBudgetConfig{enabled: true, highWaterMB: 8000, lowWaterMB: 0})
+	defer ConfigureIdleBudget(idleBudgetConfig{})
+	defer doctype.SetBackpressure(false)
+
+	r := &sampleResource{}
+	r.set(9000)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
+
+	waitUntil(t, 2*time.Second, "backpressure to engage", func() bool { return doctype.Backpressure() })
+
+	r.set(7000) // below high, low mark unset
+	waitUntil(t, 2*time.Second, "backpressure to lift with low mark unset", func() bool {
+		return !doctype.Backpressure()
+	})
+}
+
+// TestJanitorEngagesAtConfiguredHighWater pins the single-source-of-truth
+// contract for the water marks: the janitor must take its high threshold from
+// the installed budget config. The adversarial fixture sets cfg high to 6000
+// and feeds a sample of 7000 — a janitor reading any separate/stale threshold
+// above 7000 would stay open and fail this.
+func TestJanitorEngagesAtConfiguredHighWater(t *testing.T) {
+	doctype.SetInferenceLimit(4)
+	ConfigureIdleBudget(idleBudgetConfig{enabled: true, highWaterMB: 6000, lowWaterMB: 5000})
+	defer ConfigureIdleBudget(idleBudgetConfig{})
+	defer doctype.SetBackpressure(false)
+
+	r := &sampleResource{}
+	r.set(7000) // above cfg high (6000)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go resourceJanitor(ctx, r, 10*time.Millisecond)
+
+	waitUntil(t, 2*time.Second, "backpressure to engage at configured high water", func() bool {
+		return doctype.Backpressure()
 	})
 }
 

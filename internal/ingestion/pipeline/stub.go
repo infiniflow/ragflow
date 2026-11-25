@@ -23,3 +23,6 @@ import "io/fs"
 // editionTemplateFS returns the template source DefaultRegistry reads; only
 // the always-embedded shared templates exist in this build.
 func editionTemplateFS() fs.ReadDirFS { return builtinTemplateFS }
+
+// applyEditionTemplateDefaults contributes no build-specific defaults.
+func applyEditionTemplateDefaults(*BuiltinPipeline) {}

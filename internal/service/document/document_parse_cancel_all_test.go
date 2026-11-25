@@ -57,7 +57,7 @@ func TestStopParseDocumentsAll_DefaultSelectsActiveOnly(t *testing.T) {
 	insertTestDocWithFile(t, "doc-5", "file-5", "kb-1") // no task → UNSTART
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	// runStatuses nil → default {SCHEDULED, RUNNING}
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", nil)
 	if err != nil {
@@ -105,7 +105,7 @@ func TestStopParseDocumentsAll_ExplicitIncludesUnstartNoop(t *testing.T) {
 	insertTestDocWithFile(t, "doc-5", "file-5", "kb-1") // no task → UNSTART
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	runStatuses := []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.UNSTART}
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", runStatuses)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestStopParseDocumentsAll_StoppedIdempotent(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", []string{common.STOPPED})
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)
@@ -172,7 +172,7 @@ func TestStopParseDocumentsAll_EmptyMatch(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0) // no docs
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", nil)
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)
@@ -196,7 +196,7 @@ func TestStopParseDocumentsAll_TerminalNotSelected(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.FAILED)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	// Default set is {SCHEDULED, RUNNING}; terminal docs must be excluded.
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", nil)
 	if err != nil {
