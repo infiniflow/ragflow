@@ -383,19 +383,38 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 	return metaByDoc
 }
 
-// FetchDocMetaByKB fetches document metadata from ES for each KB.
+// FetchDocMetaByKB fetches document metadata for every KB in one engine
+// request. The per-KB document lists are combined into a single filter keyed by
+// all KB IDs and all document IDs, so the metadata store is queried once
+// instead of once per KB while returning metadata for the same documents.
 func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
-	for kbID, docIDs := range docIDsByKB {
-		result, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
-		if err != nil {
+	kbIDs := make([]string, 0, len(docIDsByKB))
+	docIDs := make([]string, 0)
+	for kbID, ids := range docIDsByKB {
+		if len(ids) == 0 {
 			continue
 		}
-		for docID, meta := range ConvertSearchResultToDocMeta(result.MetadataRecords) {
-			metaByDoc[docID] = meta
-		}
+		kbIDs = append(kbIDs, kbID)
+		docIDs = append(docIDs, ids...)
 	}
-	return metaByDoc
+	if len(kbIDs) == 0 || s.docEngine == nil {
+		return metaByDoc
+	}
+
+	searchReq := &types.SearchMetadataRequest{
+		TenantID: tenantID,
+		Limit:    len(docIDs),
+		Filter: map[string]interface{}{
+			"kb_id": kbIDs,
+			"id":    docIDs,
+		},
+	}
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
+	if err != nil {
+		return metaByDoc
+	}
+	return ConvertSearchResultToDocMeta(searchResult.MetadataRecords)
 }
 
 // AttachDocMetaToChunks attaches document metadata to matching chunks in-place.

@@ -75,8 +75,53 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		}
 	}
 
-	// First pass: validate every document exists and is accessible before
-	// mutating any state, so a single invalid doc rejects the whole request.
+	// First pass: validate every document exists before mutating any state, so
+	// a single invalid doc rejects the whole request. Collect the distinct
+	// datasets once: a batch often contains many documents from the same KB,
+	// and authorizing/loading that KB per document is pure overhead.
+	kbIDs := make([]string, 0, len(req.DocIDs))
+	seenKB := make(map[string]struct{}, len(req.DocIDs))
+	for _, docID := range req.DocIDs {
+		doc := docsByID[docID]
+		if doc == nil {
+			return common.CodeDataError, fmt.Errorf("document not found")
+		}
+		if _, seen := seenKB[doc.KbID]; seen {
+			continue
+		}
+		seenKB[doc.KbID] = struct{}{}
+		kbIDs = append(kbIDs, doc.KbID)
+	}
+	// Authorize every distinct dataset with one resource load and fetch them
+	// with one query. The per-document loop below still decides which error
+	// wins, in document order: a missing dataset and a denied dataset are
+	// reported exactly as before when the old code checked each document in
+	// turn (GetByID first, then the dataset write check).
+	checker := permission.NewDatabaseChecker(dao.DB)
+	refs := make([]permission.ResourceRef, 0, len(kbIDs))
+	for _, kbID := range kbIDs {
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kbID})
+	}
+	accessible, filterErr := checker.FilterResources(ctx, refs, permission.OperationRun)
+	if filterErr != nil {
+		code, permissionErr := permissionresponse.Normalize(filterErr)
+		return code, permissionErr
+	}
+	allowed := make(map[permission.ResourceRef]bool, len(accessible))
+	for _, ref := range accessible {
+		allowed[ref] = true
+	}
+	loadedKBs, loadErr := service.LoadKBsInOrder(ctx, dao.DB, s.kbDAO, kbIDs)
+	if loadErr != nil {
+		return common.CodeDataError, fmt.Errorf("dataset not found")
+	}
+	kbByID := make(map[string]*entity.Knowledgebase, len(loadedKBs))
+	for i, kb := range loadedKBs {
+		if kb != nil {
+			kbByID[kbIDs[i]] = kb
+		}
+	}
+
 	type validatedDoc struct {
 		doc *entity.Document
 		kb  *entity.Knowledgebase
@@ -85,16 +130,16 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 	validatedIDs := make([]string, 0, len(req.DocIDs))
 	for _, docID := range req.DocIDs {
 		doc := docsByID[docID]
-		if doc == nil {
-			return common.CodeDataError, fmt.Errorf("document not found")
-		}
-		kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
-		if err != nil {
+		kb := kbByID[doc.KbID]
+		if kb == nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if err := service.CheckDocumentWrite(ctx, docID, doc.KbID, permission.OperationRun, ""); err != nil {
-			code, permissionErr := permissionresponse.Normalize(err)
-			return code, permissionErr
+		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: doc.KbID}
+		if !allowed[ref] {
+			if err := checker.CheckResource(ctx, ref, permission.OperationRun); err != nil {
+				code, permissionErr := permissionresponse.Normalize(err)
+				return code, permissionErr
+			}
 		}
 		validated = append(validated, validatedDoc{doc, kb})
 		validatedIDs = append(validatedIDs, docID)

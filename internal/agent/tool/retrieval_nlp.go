@@ -231,13 +231,13 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		_, permissionErr := permissionresponse.Normalize(err)
 		return nil, permissionErr
 	}
+	refs := make([]permission.ResourceRef, 0, len(datasets.kbIDs))
 	for _, datasetID := range datasets.kbIDs {
-		if err := checker.CheckResource(ctx, permission.ResourceRef{
-			Kind: permission.ResourceKindDataset, ID: datasetID,
-		}, permission.OperationUse); err != nil {
-			_, permissionErr := permissionresponse.Normalize(err)
-			return nil, permissionErr
-		}
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID})
+	}
+	if err := permission.CheckResources(ctx, checker, refs, permission.OperationUse); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
 	}
 	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
