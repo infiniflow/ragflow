@@ -116,6 +116,7 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 		if _, exists := templates[tpl.ParserID]; exists {
 			return nil, fmt.Errorf("duplicate parser_id %q", tpl.ParserID)
 		}
+		applyEditionTemplateDefaults(tpl)
 		templates[tpl.ParserID] = tpl
 		meta := tpl.BuiltinPipelineMeta
 		list = append(list, &meta)
