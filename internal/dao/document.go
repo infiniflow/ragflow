@@ -294,7 +294,8 @@ func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts D
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins(latestIngestionTaskJoin)
 	query = applyDocumentListFilters(query, opts, true, ingestionStatus)
-	query = query.Group("document.suffix, " + ingestionStatus)
+	// MySQL cannot match repeated expressions containing subqueries under ONLY_FULL_GROUP_BY.
+	query = query.Group("document.suffix, ingestion_status")
 
 	if err := query.Scan(&groups).Error; err != nil {
 		return nil, 0, err
