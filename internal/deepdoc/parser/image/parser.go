@@ -166,22 +166,12 @@ func cropSection(img image.Image, positions []deepdoctype.Position) image.Image 
 
 func cropImage(img image.Image, x0, y0, x1, y1 float64) image.Image {
 	bounds := img.Bounds()
-	left := clampInt(int(math.Floor(x0)), bounds.Min.X, bounds.Max.X)
-	top := clampInt(int(math.Floor(y0)), bounds.Min.Y, bounds.Max.Y)
-	right := clampInt(int(math.Ceil(x1)), bounds.Min.X, bounds.Max.X)
-	bottom := clampInt(int(math.Ceil(y1)), bounds.Min.Y, bounds.Max.Y)
+	left := min(max(int(math.Floor(x0)), bounds.Min.X), bounds.Max.X)
+	top := min(max(int(math.Floor(y0)), bounds.Min.Y), bounds.Max.Y)
+	right := min(max(int(math.Ceil(x1)), bounds.Min.X), bounds.Max.X)
+	bottom := min(max(int(math.Ceil(y1)), bounds.Min.Y), bounds.Max.Y)
 	if left >= right || top >= bottom {
 		return nil
 	}
 	return util.FastCrop(img, left, top, right, bottom)
-}
-
-func clampInt(value, low, high int) int {
-	if value < low {
-		return low
-	}
-	if value > high {
-		return high
-	}
-	return value
 }

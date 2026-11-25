@@ -514,7 +514,7 @@ func (c *MoodleConnector) forumDocument(ctx context.Context, request SyncRequest
 			return nil, err
 		}
 		markdown = append(markdown, fmt.Sprintf("## %s\n\n%s\n\n---\n", discussion.Name, body))
-		latest = maxInt64(latest, derefInt64(discussion.TimeModified))
+		latest = max(latest, derefInt64(discussion.TimeModified))
 		discussionMetadata = append(discussionMetadata, map[string]any{
 			"id":            discussion.ID,
 			"name":          discussion.Name,
@@ -585,8 +585,8 @@ func (c *MoodleConnector) bookDocument(ctx context.Context, request SyncRequest,
 	}
 	latest := moodleMaxTimestamp(module.TimeCreated, module.TimeModified)
 	for _, content := range module.Contents {
-		latest = maxInt64(latest, derefInt64(content.TimeCreated))
-		latest = maxInt64(latest, derefInt64(content.TimeModified))
+		latest = max(latest, derefInt64(content.TimeCreated))
+		latest = max(latest, derefInt64(content.TimeModified))
 	}
 	if !includeMoodleModule(request, latest) {
 		return nil, nil
@@ -837,7 +837,7 @@ func moodleSlimDocIDForModule(module moodleModule) string {
 func (m moodleModule) windowTimestamp() int64 {
 	ts := moodleMaxTimestamp(m.TimeCreated, m.TimeModified)
 	for _, content := range m.Contents {
-		ts = maxInt64(ts, derefInt64(content.TimeModified))
+		ts = max(ts, derefInt64(content.TimeModified))
 	}
 	return ts
 }
@@ -850,13 +850,6 @@ func moodleMaxTimestamp(values ...*int64) int64 {
 		}
 	}
 	return latest
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func derefInt64(value *int64) int64 {
