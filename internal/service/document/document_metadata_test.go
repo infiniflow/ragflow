@@ -42,7 +42,7 @@ func TestBatchUpdateDocumentMetadatasDeleteScalarAndAddList(t *testing.T) {
 				svc.docEngine = engine
 				svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 				values := []interface{}{"first", "second"}
-				result, code, err := svc.BatchUpdateDocumentMetadatas(t.Context(), "kb-1",
+				result, code, err := svc.BatchUpdateDocumentMetadatas(documentTestContext(t.Context()), "kb-1",
 					&MetadataSelector{DocumentIDs: []string{"doc-1"}},
 					[]MetadataUpdate{{Key: "tags", Value: values, ValueType: "list"}},
 					[]MetadataDelete{{Key: "status"}})

@@ -24,6 +24,7 @@ interface IUseMetadataColumns {
   handleEditValueRow: (data: IMetaDataTableData, index: number) => void;
   showTypeColumn: boolean;
   isShowDescription: boolean;
+  readOnly: boolean;
   setTableData: React.Dispatch<React.SetStateAction<IMetaDataTableData[]>>;
   setShouldSave: React.Dispatch<React.SetStateAction<boolean>>;
   addUpdateValue: (
@@ -41,6 +42,7 @@ export const useMetadataColumns = ({
   handleDeleteSingleRow,
   handleEditValueRow,
   isShowDescription,
+  readOnly,
   setTableData,
   setShouldSave,
   addUpdateValue,
@@ -123,8 +125,9 @@ export const useMetadataColumns = ({
   };
   const columns = useMemo(() => {
     const cols: ColumnDef<IMetaDataTableData>[] = [
-      ...(MetadataType.Manage === metadataType ||
-      MetadataType.UpdateSingle === metadataType
+      ...(!readOnly &&
+      (MetadataType.Manage === metadataType ||
+        MetadataType.UpdateSingle === metadataType)
         ? [
             {
               id: 'select',
@@ -302,15 +305,19 @@ export const useMetadataColumns = ({
                       key={value}
                       variant={'ghost'}
                       className="border border-border-button"
-                      onClick={() =>
-                        handleEditValue(
-                          row.getValue('field'),
-                          value,
-                          row.original.valueType ||
-                            metadataValueTypeEnum.string,
-                        )
+                      disabled={readOnly}
+                      onClick={
+                        readOnly
+                          ? undefined
+                          : () =>
+                              handleEditValue(
+                                row.getValue('field'),
+                                value,
+                                row.original.valueType ||
+                                  metadataValueTypeEnum.string,
+                              )
                       }
-                      aria-label="Edit"
+                      aria-label={readOnly ? undefined : 'Edit'}
                     >
                       <div className="flex gap-1 items-center">
                         <div className="text-sm truncate max-w-24">
@@ -318,7 +325,7 @@ export const useMetadataColumns = ({
                             ? formatDate(value)
                             : value}
                         </div>
-                        {isDeleteSingleValue && (
+                        {isDeleteSingleValue && !readOnly && (
                           <Button
                             variant={'delete'}
                             className="p-0 bg-transparent"
@@ -366,56 +373,65 @@ export const useMetadataColumns = ({
         meta: {
           cellClassName: 'w-12',
         },
-        cell: ({ row }) => (
-          <div className=" flex opacity-0 group-hover:opacity-100 gap-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => {
-                handleEditValueRow(row.original, row.index);
-              }}
-            >
-              <LucidePencil />
-            </Button>
-            <Button
-              variant="delete"
-              size="icon-sm"
-              onClick={() => {
-                setDeleteDialogContent({
-                  visible: true,
-                  title:
-                    // t('common.delete') +
-                    // ' ' +
-                    // t('knowledgeDetails.metadata.metadata')
-                    MetadataDeleteMap(t)[metadataType as MetadataType].title,
-                  name: row.getValue('field'),
-                  warnText:
-                    MetadataDeleteMap(t)[metadataType as MetadataType]
-                      .warnFieldText,
-                  onOk: () => {
-                    hideDeleteModal();
-                    handleDeleteSingleRow(row.getValue('field'));
-                  },
-                  onCancel: () => {
-                    hideDeleteModal();
-                  },
-                });
-              }}
-            >
-              <Trash2 />
-            </Button>
-          </div>
-        ),
+        cell: ({ row }) =>
+          readOnly ? null : (
+            <div className=" flex opacity-0 group-hover:opacity-100 gap-2">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => {
+                  handleEditValueRow(row.original, row.index);
+                }}
+              >
+                <LucidePencil />
+              </Button>
+              <Button
+                variant="delete"
+                size="icon-sm"
+                onClick={() => {
+                  setDeleteDialogContent({
+                    visible: true,
+                    title:
+                      // t('common.delete') +
+                      // ' ' +
+                      // t('knowledgeDetails.metadata.metadata')
+                      MetadataDeleteMap(t)[metadataType as MetadataType].title,
+                    name: row.getValue('field'),
+                    warnText:
+                      MetadataDeleteMap(t)[metadataType as MetadataType]
+                        .warnFieldText,
+                    onOk: () => {
+                      hideDeleteModal();
+                      handleDeleteSingleRow(row.getValue('field'));
+                    },
+                    onCancel: () => {
+                      hideDeleteModal();
+                    },
+                  });
+                }}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ),
       },
     ];
 
     if (!isShowDescription) {
       return cols.filter((col) => {
+        if (readOnly && 'accessorKey' in col && col.accessorKey === 'action') {
+          return false;
+        }
         if ('accessorKey' in col && col.accessorKey === 'description') {
           return false;
         }
         return true;
       });
+    }
+    if (readOnly) {
+      return cols.filter(
+        (col) => !('accessorKey' in col && col.accessorKey === 'action'),
+      );
     }
     return cols;
   }, [
@@ -423,6 +439,7 @@ export const useMetadataColumns = ({
     t,
     handleDeleteSingleValue,
     isShowDescription,
+    readOnly,
     isDeleteSingleValue,
     handleEditValueRow,
     metadataType,

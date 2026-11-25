@@ -1,6 +1,7 @@
 import { SidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { EnterpriseSidebarTenantSwitcher } from '@/ee/layouts/components/header-enterprise';
 import { OrganizationNavGroup } from '@/ee/layouts/components/app-sidebar/organization-nav-group';
 import { useVisibleNavItems } from '@/ee/hooks/use-visible-nav-items';
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
@@ -88,7 +89,7 @@ function AppSidebarContent() {
   return (
     <aside
       className={cn(
-        'flex h-full w-16 shrink-0 flex-col overflow-hidden bg-bg-base transition-[width]',
+        'flex h-full w-16 shrink-0 flex-col overflow-hidden bg-bg-base transition-[width] duration-300 ease-in-out',
         !collapsed && 'md:w-60',
         collapsed && activeSecondarySidebar && 'border-r border-border-button',
       )}
@@ -111,9 +112,17 @@ function AppSidebarContent() {
             <img
               src="/logo.svg"
               alt="RAGFlow logo"
-              className={cn('size-8', { 'size-5': collapsed })}
+              className={cn(
+                'size-8 transition-[width,height] duration-300 ease-in-out',
+                { 'size-5': collapsed },
+              )}
             />
           </Link>
+        )}
+        {!collapsed && (
+          <div className="hidden w-36 shrink-0 md:block">
+            <EnterpriseSidebarTenantSwitcher />
+          </div>
         )}
         {collapsedSecondarySidebar && (
           <div
@@ -135,8 +144,8 @@ function AppSidebarContent() {
         )}
       </SidebarHeader>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 md:px-3">
-        <ul className="flex flex-col gap-1">
+      <nav className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 py-3 md:px-3">
+        <ul className="flex min-w-0 flex-col gap-1">
           {primaryNavItems.map((item) => (
             <li key={item.key}>
               <NavItemLink item={item} />

@@ -48,6 +48,7 @@ export interface IDocumentInfo {
   meta_fields?: Record<string, any>;
   chunk_method: string;
   chunk_count: number;
+  operator_permission?: number;
 }
 
 export interface IParserConfig {

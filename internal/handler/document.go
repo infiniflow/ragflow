@@ -368,7 +368,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		}
 		return
 	}
-	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentManage(ctx, doc.ID, doc.KbID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -662,6 +662,11 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	docs := make([]map[string]interface{}, 0, len(documents))
+	operatorPermissions, permissionErr := documentOperatorPermissions(ctx, documents)
+	if permissionErr != nil {
+		common.RespondError(c, common.CodeServerError, "failed to resolve document permissions: "+permissionErr.Error())
+		return
+	}
 	runIDs := make([]string, 0, len(documents))
 	for _, doc := range documents {
 		if doc != nil && doc.PipelineLogID != nil && *doc.PipelineLogID != "" {
@@ -707,7 +712,9 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		if doc.PipelineLogID != nil {
 			latestEvent = latestEventsByRun[*doc.PipelineLogID]
 		}
-		docs = append(docs, mapDocumentListItem(doc, metaFields, latestEvent))
+		item := mapDocumentListItem(doc, metaFields, latestEvent)
+		item["operator_permission"] = operatorPermissions[doc.ID]
+		docs = append(docs, item)
 	}
 
 	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
@@ -1477,13 +1484,12 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
 
 	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
@@ -1515,6 +1521,9 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	parseResult, err := h.documentService.StopIngestionTasks(ctx, req.Tasks)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
 	}
@@ -1565,13 +1574,11 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
-
 	parseResult, err := h.documentService.ParseDocuments(ctx, datasetID, req.Documents)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
@@ -1622,10 +1629,6 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
 
 	if req.CancelAll {
 		for _, s := range req.RunStatuses {
@@ -1636,6 +1639,9 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		}
 		result, err := h.documentService.StopParseDocumentsAll(ctx, datasetID, req.RunStatuses)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, false) {
+				return
+			}
 			common.RespondError(c, common.CodeExceptionError, err.Error())
 			return
 		}
@@ -1650,6 +1656,9 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	result, err := h.documentService.StopParseDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
@@ -1903,10 +1912,6 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {

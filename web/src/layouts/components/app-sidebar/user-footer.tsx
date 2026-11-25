@@ -12,7 +12,6 @@ import {
   EnterpriseHeaderPlanBadge,
   EnterpriseHeaderTicketsLink,
   EnterpriseHeaderUpgradeBadge,
-  EnterpriseSidebarTenantSwitcher,
 } from '@/ee/layouts/components/header-enterprise';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useLogout } from '@/hooks/use-login-request';
@@ -92,7 +91,7 @@ export function UserFooter() {
               aria-label={nickname || email}
               data-testid="settings-entrypoint"
               className={cn(
-                'h-auto justify-start gap-2.5 px-2 py-2',
+                'h-auto justify-start gap-2.5 px-2 py-2 md:px-1',
                 !collapsed && 'md:min-w-0 md:flex-1',
                 collapsed
                   ? 'size-10 justify-center p-0'
@@ -131,7 +130,6 @@ export function UserFooter() {
                 {email}
               </span>
             </DropdownMenuLabel>
-            <EnterpriseSidebarTenantSwitcher />
             <DropdownMenuSeparator />
 
             <DropdownMenuItem

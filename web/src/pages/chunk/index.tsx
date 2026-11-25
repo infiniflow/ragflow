@@ -29,6 +29,7 @@ import {
   NodeDetailPanel,
 } from '@/pages/chunk/representation/components/claim-list';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
+import { hasEditPermission } from '@/ee/utils/permission-util';
 import FileIcon from '@/components/file-icon';
 import { TruncatedText } from '@/components/truncated-text';
 import { Button } from '@/components/ui/button';
@@ -75,6 +76,8 @@ function Chunk() {
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
 
   const { t } = useTranslation();
+  const documentPermission = documentInfo?.operator_permission ?? 0;
+  const canEditDocument = hasEditPermission(documentPermission);
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
   const { switchChunk } = useSwitchChunk();
   const [chunkList, setChunkList] = useState(data);
@@ -155,6 +158,7 @@ function Chunk() {
   }, [t]);
 
   const handleRemoveChunk = useCallback(async () => {
+    if (!canEditDocument) return;
     if (selectedChunkIds.length > 0) {
       const resCode: number = await removeChunk(selectedChunkIds, documentId);
       if (resCode === 0) {
@@ -165,6 +169,7 @@ function Chunk() {
     }
   }, [
     selectedChunkIds,
+    canEditDocument,
     documentId,
     removeChunk,
     showSelectedChunkWarning,
@@ -173,6 +178,7 @@ function Chunk() {
 
   const handleRemoveChunkById = useCallback(
     async (chunkId: string) => {
+      if (!canEditDocument) return;
       const resCode: number = await removeChunk([chunkId], documentId);
       if (resCode === 0) {
         setSelectedChunkIds((previousIds) =>
@@ -183,11 +189,29 @@ function Chunk() {
         }
       }
     },
-    [removeChunk, documentId, selectedChunkId, handleChunkCardClick],
+    [
+      removeChunk,
+      documentId,
+      selectedChunkId,
+      handleChunkCardClick,
+      canEditDocument,
+    ],
+  );
+
+  const handleCreateChunk = useCallback(() => {
+    if (canEditDocument) showChunkUpdatingModal();
+  }, [canEditDocument, showChunkUpdatingModal]);
+
+  const handleEditChunk = useCallback(
+    (chunkId: string) => {
+      if (canEditDocument) showChunkUpdatingModal(chunkId);
+    },
+    [canEditDocument, showChunkUpdatingModal],
   );
 
   const handleSwitchChunk = useCallback(
     async (available?: number, chunkIds?: string[]) => {
+      if (!canEditDocument) return;
       let ids = chunkIds;
       if (!chunkIds) {
         ids = selectedChunkIds;
@@ -213,6 +237,7 @@ function Chunk() {
     },
     [
       switchChunk,
+      canEditDocument,
       documentId,
       selectedChunkIds,
       showSelectedChunkWarning,
@@ -368,7 +393,8 @@ function Chunk() {
                         changeChunkTextMode={changeChunkTextMode}
                         textMode={textMode}
                         total={total}
-                        createChunk={showChunkUpdatingModal}
+                        canEditDocument={canEditDocument}
+                        createChunk={handleCreateChunk}
                         available={available}
                         selectAllChunk={selectAllChunk}
                         handleSetAvailable={handleSetAvailable}
@@ -377,6 +403,7 @@ function Chunk() {
                       <CheckboxSets
                         className="h-8"
                         selectAllChunk={selectAllChunk}
+                        canEditDocument={canEditDocument}
                         switchChunk={handleSwitchChunk}
                         removeChunk={handleRemoveChunk}
                         checked={selectedChunkIds.length === data.length}
@@ -390,7 +417,8 @@ function Chunk() {
                       selectedChunkId={selectedChunkId}
                       selectedChunkIds={selectedChunkIds}
                       textMode={textMode}
-                      editChunk={showChunkUpdatingModal}
+                      canEditDocument={canEditDocument}
+                      editChunk={handleEditChunk}
                       removeChunk={handleRemoveChunkById}
                       handleCheckboxClick={handleSingleCheckboxClick}
                       switchChunk={handleSwitchChunk}
@@ -437,6 +465,7 @@ interface ChunkVirtualListProps {
   selectedChunkId?: string;
   selectedChunkIds: string[];
   textMode: ChunkTextMode;
+  canEditDocument: boolean;
   editChunk: (chunkId: string) => void;
   removeChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
@@ -454,6 +483,7 @@ function ChunkVirtualList({
   selectedChunkId,
   selectedChunkIds,
   textMode,
+  canEditDocument,
   editChunk,
   removeChunk,
   handleCheckboxClick,
@@ -497,6 +527,7 @@ function ChunkVirtualList({
             >
               <ChunkCard
                 item={item}
+                canEditDocument={canEditDocument}
                 editChunk={editChunk}
                 removeChunk={removeChunk}
                 checked={selectedChunkIds.some((x) => x === item.chunk_id)}
