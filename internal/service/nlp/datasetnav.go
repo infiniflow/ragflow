@@ -239,7 +239,7 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, key
 	}
 	nodes := make([]nav.NavNode, 0, len(chunks))
 	for _, c := range chunks {
-		typ := firstStringValue(c["type_kwd"])
+		typ := common.FirstEngineString(c["type_kwd"])
 		nodeType := "doc"
 		if typ == "nav_cluster" {
 			nodeType = "cluster"
@@ -283,7 +283,7 @@ func (s *NavService) searchNavForest(ctx context.Context, tenantID, kbID, keywor
 	}
 	clusters := make(map[string]map[string]interface{}, len(rows))
 	for _, r := range rows {
-		if firstStringValue(r["type_kwd"]) != nav.TypeNavCluster {
+		if common.FirstEngineString(r["type_kwd"]) != nav.TypeNavCluster {
 			continue
 		}
 		if key := navClusterRowKey(r); key != "" {
@@ -294,7 +294,7 @@ func (s *NavService) searchNavForest(ctx context.Context, tenantID, kbID, keywor
 	kept := make(map[string]map[string]interface{}, len(matches))
 	hit := make(map[string]bool, len(matches))
 	for _, r := range matches {
-		docID := firstStringValue(r["doc_id"])
+		docID := common.FirstEngineString(r["doc_id"])
 		if docID == "" {
 			continue
 		}
@@ -303,14 +303,14 @@ func (s *NavService) searchNavForest(ctx context.Context, tenantID, kbID, keywor
 		hit[key] = true
 		// Walk up to (but excluding) the root sentinel. navMaxDepth bounds the
 		// walk so a corrupt parent cycle can never spin.
-		parent := firstStringValue(r["parent_kwd"])
+		parent := common.FirstEngineString(r["parent_kwd"])
 		for depth := 0; parent != "" && parent != navRootParent && depth < navMaxDepth; depth++ {
 			cluster, ok := clusters[parent]
 			if !ok {
 				break // orphaned edge: the path above it is unknown
 			}
 			kept[navClusterKey(parent)] = cluster
-			parent = firstStringValue(cluster["parent_kwd"])
+			parent = common.FirstEngineString(cluster["parent_kwd"])
 		}
 	}
 	// Deterministic order (shallowest first, then by key): the caller re-nests
@@ -345,7 +345,7 @@ func searchNavClusterCount(matches []map[string]interface{}) int64 {
 	for _, r := range matches {
 		// A leaf with no cluster edge (no writer produces one) has no cluster to
 		// count.
-		if key := firstStringValue(r["parent_kwd"]); key != "" && key != navRootParent {
+		if key := common.FirstEngineString(r["parent_kwd"]); key != "" && key != navRootParent {
 			seen[key] = true
 		}
 	}
@@ -373,7 +373,7 @@ func (s *NavService) navNodesFromRows(rows []map[string]interface{}) []nav.NavNo
 // expands with GET /navigation/<name>/children) matched no row.
 func navRowLabel(row map[string]interface{}) string {
 	for _, col := range []string{"name", "title_kwd", "docnm_kwd"} {
-		if v := firstStringValue(row[col]); v != "" {
+		if v := common.FirstEngineString(row[col]); v != "" {
 			return v
 		}
 	}
@@ -422,7 +422,7 @@ func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string
 	// child-lookup key (parent_kwd references them verbatim), so they must stay
 	// intact; only non-cluster (leaf) rows get the readable fallback, otherwise
 	// GET /navigation/{cluster}/children would no longer match (review Major).
-	isCluster := firstStringValue(row["type_kwd"]) == "nav_cluster"
+	isCluster := common.FirstEngineString(row["type_kwd"]) == "nav_cluster"
 	if !isCluster && graphIsRawID(name) {
 		name = ""
 	}
@@ -430,10 +430,10 @@ func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string
 		Name:     name,
 		DocCount: intValue(row["doc_count_int"]),
 		Type:     fallbackType,
-		DocID:    firstStringValue(row["doc_id"]),
-		Parent:   firstStringValue(row["parent_kwd"]),
+		DocID:    common.FirstEngineString(row["doc_id"]),
+		Parent:   common.FirstEngineString(row["parent_kwd"]),
 	}
-	if t := firstStringValue(row["type_kwd"]); t != "" {
+	if t := common.FirstEngineString(row["type_kwd"]); t != "" {
 		if t == "nav_cluster" {
 			node.Type = "cluster"
 		} else {
@@ -577,9 +577,9 @@ func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter 
 	hits := make([]nav.NavHit, 0, len(chunks))
 	for _, c := range chunks {
 		h := nav.NavHit{
-			Type:   firstStringValue(c["type_kwd"]),
+			Type:   common.FirstEngineString(c["type_kwd"]),
 			Name:   navRowLabel(c),
-			DocID:  firstStringValue(c["doc_id"]),
+			DocID:  common.FirstEngineString(c["doc_id"]),
 			DocIDs: firstStringSlice(c["doc_ids_kwd"]),
 		}
 		if sc, ok := c["_score"].(float64); ok {
@@ -690,7 +690,7 @@ func (s *NavService) SummariesByDocIDs(ctx context.Context, tenantID, kbID strin
 	}
 	out := make(map[string]string, len(chunks))
 	for _, c := range chunks {
-		docID := firstStringValue(c["doc_id"])
+		docID := common.FirstEngineString(c["doc_id"])
 		if docID == "" {
 			continue
 		}
@@ -778,10 +778,10 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// file name. The tokenized text is (re)built when it is missing.
 		title := navDocTitle(in.Summary)
 		titleStale := navRowLabel(existing[0]) != title
-		kindStale := firstStringValue(existing[0]["compile_kwd"]) != in.CompileKind
-		scopeStale := firstStringValue(existing[0]["scope_kwd"]) != "doc"
-		ltksStale := firstStringValue(existing[0]["content_ltks"]) == "" ||
-			firstStringValue(existing[0]["content_sm_ltks"]) == ""
+		kindStale := common.FirstEngineString(existing[0]["compile_kwd"]) != in.CompileKind
+		scopeStale := common.FirstEngineString(existing[0]["scope_kwd"]) != "doc"
+		ltksStale := common.FirstEngineString(existing[0]["content_ltks"]) == "" ||
+			common.FirstEngineString(existing[0]["content_sm_ltks"]) == ""
 		if payload, ok := existing[0]["content_with_weight"].(string); ok {
 			var m map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &m); err == nil {
@@ -996,7 +996,7 @@ func navClusterCondition(tenantID, kbID, clusterName string) map[string]interfac
 // keywords dropped, a type-only condition would match every row of that type in
 // the dataset.
 func navChildRehomeCondition(child map[string]interface{}, kbID string) map[string]interface{} {
-	typ := firstStringValue(child["type_kwd"])
+	typ := common.FirstEngineString(child["type_kwd"])
 	if typ == "" {
 		return nil
 	}
@@ -1004,11 +1004,11 @@ func navChildRehomeCondition(child map[string]interface{}, kbID string) map[stri
 		"type_kwd": []string{nav.TypeNavDoc, nav.TypeNavCluster},
 		"kb_id":    kbID,
 	}
-	if rowID := firstStringValue(child["id"]); rowID != "" {
+	if rowID := common.FirstEngineString(child["id"]); rowID != "" {
 		cond["id"] = []string{rowID}
 		return cond
 	}
-	if docID := firstStringValue(child["doc_id"]); typ == "nav_doc" && docID != "" {
+	if docID := common.FirstEngineString(child["doc_id"]); typ == "nav_doc" && docID != "" {
 		cond["type_kwd"] = []string{typ}
 		cond["doc_id"] = []string{docID}
 		return cond
@@ -1047,13 +1047,13 @@ func (s *NavService) cleanupEmptyCluster(ctx context.Context, tenantID, kbID, cl
 	if len(children) > 0 {
 		return nil // not empty: has children
 	}
-	parent := firstStringValue(chunks[0]["parent_kwd"])
+	parent := common.FirstEngineString(chunks[0]["parent_kwd"])
 	if intValue(chunks[0]["doc_count_int"]) > 0 {
 		return nil // still has docs
 	}
 	// Delete this cluster by the row id returned by the search (robust whether
 	// the engine preserves our explicit stable id or assigns its own).
-	rowID := firstStringValue(chunks[0]["id"])
+	rowID := common.FirstEngineString(chunks[0]["id"])
 	if rowID == "" {
 		rowID = navClusterID(tenantID, kbID, clusterName)
 	}
@@ -1172,7 +1172,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	fanout := 0
 	navDocKids := 0
 	for _, c := range children {
-		if firstStringValue(c["type_kwd"]) == "nav_doc" {
+		if common.FirstEngineString(c["type_kwd"]) == "nav_doc" {
 			navDocKids++
 		}
 		fanout++
@@ -1194,7 +1194,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	// their doc count so each half gets a comparable load.
 	parent := navRootParent
 	if len(clusterChunks) > 0 {
-		parent = firstStringValue(clusterChunks[0]["parent_kwd"])
+		parent = common.FirstEngineString(clusterChunks[0]["parent_kwd"])
 	}
 	splitA := clusterName + ":A"
 	splitB := clusterName + ":B"
@@ -1229,7 +1229,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if i%2 == 1 {
 			acc = &accB
 		}
-		typ := firstStringValue(child["type_kwd"])
+		typ := common.FirstEngineString(child["type_kwd"])
 		// Aggregate this child's doc count + doc ids into the target split.
 		if c := intValue(child["doc_count_int"]); c > 0 {
 			acc.count += c
@@ -1239,7 +1239,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		// nav_cluster rows only. Preserve both shapes when rebuilding the split
 		// clusters' membership indexes for RemoveDoc.
 		if typ == "nav_doc" {
-			childDocIDs = append(childDocIDs, firstStringValue(child["doc_id"]))
+			childDocIDs = append(childDocIDs, common.FirstEngineString(child["doc_id"]))
 		}
 		acc.ids = common.AppendUnique(acc.ids, childDocIDs)
 		childCond := navChildRehomeCondition(child, kbID)
@@ -1259,7 +1259,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	// back to the deterministic id, so the delete always matches (review Major).
 	origRowID := ""
 	if len(clusterChunks) > 0 {
-		origRowID = firstStringValue(clusterChunks[0]["id"])
+		origRowID = common.FirstEngineString(clusterChunks[0]["id"])
 	}
 	if origRowID == "" {
 		origRowID = navClusterID(tenantID, kbID, clusterName)
@@ -1420,7 +1420,7 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 	if raw, ok := rows[0]["content_with_weight"].(string); ok {
 		_ = json.Unmarshal([]byte(raw), &payload)
 	}
-	oldDesc := firstStringValue(payload["description"])
+	oldDesc := common.FirstEngineString(payload["description"])
 	if oldDesc == "" {
 		// Nothing to fuse with: the row carries no description to preserve.
 		return nil
@@ -1633,7 +1633,7 @@ func (s *NavService) deleteNavDoc(ctx context.Context, tenantID, kbID, docID str
 			ids = append(ids, id)
 		}
 		if parent == "" {
-			parent = firstStringValue(c["parent_kwd"])
+			parent = common.FirstEngineString(c["parent_kwd"])
 		}
 	}
 	if len(ids) == 0 {
@@ -1787,12 +1787,6 @@ func contentHash8(s string) string {
 		h *= 16777619
 	}
 	return fmt.Sprintf("%08x", h)
-}
-
-// firstStringValue returns the first string value of a (possibly list-wrapped)
-// engine field.
-func firstStringValue(v interface{}) string {
-	return common.FirstEngineString(v)
 }
 
 // firstStringSlice returns v as a []string, unwrapping a []interface{} whose

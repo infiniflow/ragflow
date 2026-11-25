@@ -112,18 +112,18 @@ func (s *engineWikiService) QueryPages(ctx context.Context, tenantID string, dat
 		// Engine raw rows carry the chunk id under "id" (shimmed to _id) and the
 		// dataset under "kb_id". Normalize explicitly to the agent chunk shape
 		// (chunk_id/dataset_id) so a stable id and KB scope are never lost.
-		id := firstString(row["id"])
-		datasetID := firstString(row["kb_id"])
-		content := firstString(row["content_with_weight"])
+		id := common.FirstEngineString(row["id"])
+		datasetID := common.FirstEngineString(row["kb_id"])
+		content := common.FirstEngineString(row["content_with_weight"])
 		if id == "" && content == "" {
 			continue
 		}
-		docID := firstString(row["doc_id"])
+		docID := common.FirstEngineString(row["doc_id"])
 		chunk := map[string]interface{}{
 			"chunk_id": id, "content_with_weight": content,
-			"doc_id": docID, "docnm_kwd": firstString(row["docnm_kwd"]),
+			"doc_id": docID, "docnm_kwd": common.FirstEngineString(row["docnm_kwd"]),
 			"dataset_id":    datasetID,
-			"wiki_slug_kwd": firstString(row["slug_kwd"]),
+			"wiki_slug_kwd": common.FirstEngineString(row["slug_kwd"]),
 		}
 		if src := stringArray(row["source_chunk_ids"]); len(src) > 0 {
 			chunk["source_chunk_ids"] = src
@@ -131,7 +131,7 @@ func (s *engineWikiService) QueryPages(ctx context.Context, tenantID string, dat
 		out.Chunks = append(out.Chunks, chunk)
 		if docID != "" && !seenDoc[docID] {
 			seenDoc[docID] = true
-			out.DocAggs = append(out.DocAggs, map[string]interface{}{"doc_id": docID, "doc_name": firstString(row["docnm_kwd"])})
+			out.DocAggs = append(out.DocAggs, map[string]interface{}{"doc_id": docID, "doc_name": common.FirstEngineString(row["docnm_kwd"])})
 		}
 	}
 	return out, nil
@@ -170,19 +170,12 @@ func (s *engineWikiService) BackfillChunks(ctx context.Context, tenantID string,
 		// GetChunk rows also carry id/kb_id (ES shims id to _id; source["id"]
 		// set in chunk.go:1991). Normalize to the agent chunk shape.
 		out = append(out, map[string]interface{}{
-			"chunk_id": firstString(m["id"]), "content_with_weight": firstString(m["content_with_weight"]),
-			"doc_id": firstString(m["doc_id"]), "docnm_kwd": firstString(m["docnm_kwd"]),
-			"dataset_id": firstString(m["kb_id"]),
+			"chunk_id": common.FirstEngineString(m["id"]), "content_with_weight": common.FirstEngineString(m["content_with_weight"]),
+			"doc_id": common.FirstEngineString(m["doc_id"]), "docnm_kwd": common.FirstEngineString(m["docnm_kwd"]),
+			"dataset_id": common.FirstEngineString(m["kb_id"]),
 		})
 	}
 	return out, nil
-}
-
-// firstString returns the first string of a possibly array-shaped engine field
-// value (the document engine surfaces keyword fields as arrays), matching the
-// FirstEngineString helper used by the artifact service.
-func firstString(v interface{}) string {
-	return common.FirstEngineString(v)
 }
 
 func stringArray(v interface{}) []string {

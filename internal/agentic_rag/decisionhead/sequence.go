@@ -19,7 +19,6 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 // Sequence is one model input: the token ids, the marker positions the decision
@@ -257,9 +256,18 @@ func splitLineByRunes(enc tokenizer.MetaspaceEncoder, line string, segmentTokens
 	return out
 }
 
-// runePrefix returns the first n runes of s. Callers always pass n >= 1.
+// runePrefix returns the first n runes of s as a prefix of the original bytes.
+// Re-encoding through []rune would rewrite invalid bytes as U+FFFD, making the
+// fragment longer than the original and breaking callers that advance by len().
 func runePrefix(s string, n int) string {
-	return utility.TruncateRunes(s, n)
+	count := 0
+	for i := range s {
+		if count == n {
+			return s[:i]
+		}
+		count++
+	}
+	return s
 }
 
 func totalLen(parts [][]int32) int {

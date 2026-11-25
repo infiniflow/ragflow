@@ -92,7 +92,7 @@ func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectField
 	}
 	byID := make(map[string]map[string]interface{}, len(res.Chunks))
 	for _, c := range res.Chunks {
-		id := firstStringValue(c["id"])
+		id := common.FirstEngineString(c["id"])
 		if id != "" {
 			byID[id] = c
 		}
@@ -102,7 +102,7 @@ func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectField
 
 // graphLoadPayload parses content_with_weight into a dict.
 func graphLoadPayload(row map[string]interface{}) map[string]interface{} {
-	raw := firstStringValue(row["content_with_weight"])
+	raw := common.FirstEngineString(row["content_with_weight"])
 	if raw == "" {
 		return nil
 	}
@@ -282,8 +282,8 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 	}
 	if src == "" || tgt == "" || graphIsInvalidSentinel(src) || graphIsInvalidSentinel(tgt) {
 		// Fall back to the authoritative *_entity_kwd columns.
-		fallbackSrc := strings.TrimSpace(firstStringValue(row["from_entity_kwd"]))
-		fallbackTgt := strings.TrimSpace(firstStringValue(row["to_entity_kwd"]))
+		fallbackSrc := strings.TrimSpace(common.FirstEngineString(row["from_entity_kwd"]))
+		fallbackTgt := strings.TrimSpace(common.FirstEngineString(row["to_entity_kwd"]))
 		if fallbackSrc != "" && fallbackTgt != "" {
 			return StructureGraphRelation{"from": fallbackSrc, "to": fallbackTgt, "type": typ}
 		}
@@ -523,9 +523,9 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 	entities := make([]StructureGraphNode, 0, len(rows))
 	relations := make([]StructureGraphRelation, 0, len(rows))
 	for _, row := range rows {
-		kg := firstStringValue(row["type_kwd"])
+		kg := common.FirstEngineString(row["type_kwd"])
 		if kg == "" {
-			kg = firstStringValue(row["knowledge_graph_kwd"])
+			kg = common.FirstEngineString(row["knowledge_graph_kwd"])
 		}
 		if kg == "relation" {
 			if edge := projectRelation(row); edge != nil {
@@ -877,10 +877,10 @@ func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.C
 			templateID := rowTemplateID(row)
 			kind := types.CompilationKind(row)
 			if kind == "" {
-				kind = firstStringValue(row["compile_kwd"])
+				kind = common.FirstEngineString(row["compile_kwd"])
 			}
 			if templateID == "" {
-				compileKind := firstStringValue(row["compile_kwd"])
+				compileKind := common.FirstEngineString(row["compile_kwd"])
 				if compileKind == "" {
 					continue
 				}
@@ -1075,7 +1075,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 
 // resolveGraphBucket mirrors Python _resolve_bucket.
 func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[string]interface{}, documentID string) (map[string]interface{}, map[string]interface{}) {
-	compileKwd := firstStringValue(row["compile_kwd"])
+	compileKwd := common.FirstEngineString(row["compile_kwd"])
 	kindVal := types.CompilationKind(row)
 	if kindVal == "" {
 		kindVal = compileKwd
@@ -1275,11 +1275,11 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			template = types.CompilationKind(candidate.row)
 		}
 		if template == "" {
-			template = firstStringValue(candidate.row["compile_kwd"])
+			template = common.FirstEngineString(candidate.row["compile_kwd"])
 		}
 		key := template + "\x00" + name
 		if name == "" {
-			key = firstStringValue(candidate.row["id"])
+			key = common.FirstEngineString(candidate.row["id"])
 		}
 		if key != "" {
 			if candidateSeen[key] {
