@@ -66,7 +66,7 @@ export default function DatasetWrapper() {
                 />
               )}
 
-              <div className="min-h-0 min-w-0 pt-3">
+              <div className="min-h-0 min-w-0 pt-2.5">
                 <Outlet />
               </div>
             </article>

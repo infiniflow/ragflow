@@ -61,6 +61,9 @@ func datasetVersionDataModelsEE() []interface{} { return nil }
 // community edition: it keeps no dataset versions.
 func datasetVersionRuntimeModelsEE() []interface{} { return nil }
 
+// permissionRuntimeModelsEE adds no runtime authorization tables in OSS.
+func permissionRuntimeModelsEE() []interface{} { return nil }
+
 // migrateBillingSchemaEE is a no-op in the community edition.
 func migrateBillingSchemaEE(ctx context.Context, db *gorm.DB) error { return nil }
 
@@ -98,3 +101,5 @@ type BillingSubscriptionDAO struct{}
 
 // NewBillingSubscriptionDAO creates the billing subscription DAO.
 func NewBillingSubscriptionDAO() *BillingSubscriptionDAO { return &BillingSubscriptionDAO{} }
+
+func completionLogModelsEE() []any { return nil }

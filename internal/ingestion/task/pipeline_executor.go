@@ -54,8 +54,12 @@ import (
 // indexed, and these bookkeeping inputs remain for the caller to apply to
 // document state (metadata merge + chunk/token counter bumps).
 type PipelineResult struct {
-	DocID    string
-	KbID     string
+	DocID string
+	KbID  string
+	// TenantID names the tenant whose index holds the document. The finalizer
+	// needs it to delete the chunks a re-parse dropped; the index is built from
+	// the tenant, not from the dataset.
+	TenantID string
 	Metadata map[string]any
 	// ManagedMetadataKeys lists document metadata keys owned by the pipeline
 	// (e.g. Resume mode). On re-parse, any key in this set absent from Metadata
@@ -568,6 +572,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
+		TenantID:              s.taskCtx.Tenant.ID,
 		Metadata:              metadata,
 		ManagedMetadataKeys:   managedMetadataKeys,
 		ChunkCount:            chunkCount,

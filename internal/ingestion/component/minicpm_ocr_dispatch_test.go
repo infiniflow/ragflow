@@ -106,6 +106,8 @@ func TestSelectedPDFOCRProvider(t *testing.T) {
 	}{
 		{"MiniCPM-OCR-1.0@default@MiniCPM-OCR", "MiniCPM-OCR"},
 		{"MiniCPM-OCR-1.0@MiniCPM-OCR", "MiniCPM-OCR"},
+		{"ndi-parse-low@default@Nace", "Nace"},
+		{"ndi-parse-high@Nace", "Nace"},
 		{"PaddleOCR-VL-1.6@default@PaddleOCR", ""},
 		{"SeerRay-Lab/Xiaomi-OCR-0@local@XiaomiOCR", "XiaomiOCR"},
 		{"SeerRay-Lab/Xiaomi-OCR-0@XiaomiOCR", "XiaomiOCR"},

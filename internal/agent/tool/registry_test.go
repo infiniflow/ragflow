@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package tool
 
 import (
@@ -45,6 +61,9 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		name         string
 		wantToolName string
 	}{
+		{name: "AnySearchDiscover", wantToolName: "anysearch_discover"},
+		{name: "AnySearchExtract", wantToolName: "anysearch_extract"},
+		{name: "AnySearchSearch", wantToolName: "anysearch_search"},
 		{name: "CodeExec", wantToolName: "execute_code"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
@@ -233,7 +252,7 @@ func TestBuildByName_YouComReadsCanvasParams(t *testing.T) {
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{
-		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"akshare", "anysearch_discover", "anysearch_extract", "anysearch_search", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
@@ -326,7 +345,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Every entry the registry advertises.
 	names := []string{
-		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"akshare", "anysearch_discover", "anysearch_extract", "anysearch_search", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",

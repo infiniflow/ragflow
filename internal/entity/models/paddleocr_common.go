@@ -20,9 +20,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 )
+
+// paddleOCRCallTimeout returns the deadline for one OCR call: the caller's
+// timeout when set, otherwise the shared long-operation default.
+func paddleOCRCallTimeout(ocrConfig *OCRConfig) time.Duration {
+	if ocrConfig != nil && ocrConfig.Timeout > 0 {
+		return ocrConfig.Timeout
+	}
+	return longOpCallTimeout
+}
 
 // paddleOCRDetectFileType determines the input file type code expected by
 // the PaddleX layout parsing endpoint: 0 for PDF, 1 for images.

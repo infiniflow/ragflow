@@ -266,6 +266,7 @@ type CreateUserHTTPRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	Role     string `json:"role"`
+	Nickname string `json:"nickname"`
 }
 
 // CreateUser handle create user
@@ -280,13 +281,18 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	}
 
 	common.SetOperationResource(c, "target_username", req.Username)
+	req.Nickname = strings.TrimSpace(req.Nickname)
+	if err := common.ValidateAliasRunes(req.Nickname, common.NicknameLimit); err != nil {
+		common.RespondError(c, common.CodeBadRequest, err.Error())
+		return
+	}
 
 	if req.Role == "" {
 		req.Role = "user"
 	}
 	ctx := c.Request.Context()
 
-	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role)
+	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role, req.Nickname)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return

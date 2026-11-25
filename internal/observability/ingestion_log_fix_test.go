@@ -17,7 +17,7 @@ func TestBuildIngestLogPrefersWorkerClaimTime(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(claimTime)}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(enqueue), ProcessBeginAt: ptrTime(openTime)}
 
-	log := BuildIngestLog(context.Background(), task, doc, run, "completed", "COMPLETED", "")
+	log := BuildIngestLog(context.Background(), task, doc, run, "task", "COMPLETED", "")
 	if !log.BeginTime.Equal(claimTime) {
 		t.Errorf("BeginTime = %v, want worker-claim time %v", log.BeginTime, claimTime)
 	}
@@ -32,7 +32,7 @@ func TestBuildIngestLogPopulatesDurationMS(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(base.Add(10 * time.Minute))}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(base), ProcessBeginAt: ptrTime(base.Add(1 * time.Minute)), ProcessDuration: 600}
 
-	log := BuildIngestLog(context.Background(), task, doc, run, "completed", "COMPLETED", "")
+	log := BuildIngestLog(context.Background(), task, doc, run, "task", "COMPLETED", "")
 	want := int64(log.ParseDurationS * 1000)
 	if want <= 0 {
 		t.Fatalf("ParseDurationS = %v, want > 0 for setup", log.ParseDurationS)
@@ -41,7 +41,7 @@ func TestBuildIngestLogPopulatesDurationMS(t *testing.T) {
 		t.Errorf("DurationMS = %d, want %d", log.DurationMS, want)
 	}
 
-	created := BuildIngestLog(context.Background(), task, doc, &entity.PipelineOperationLog{RunCount: ptrInt(1)}, "created", "CREATED", "")
+	created := BuildIngestLog(context.Background(), task, doc, &entity.PipelineOperationLog{RunCount: ptrInt(1)}, "task", "CREATED", "")
 	if created.DurationMS != 0 {
 		t.Errorf("created DurationMS = %d, want 0", created.DurationMS)
 	}

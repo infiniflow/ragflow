@@ -166,7 +166,7 @@ describe('useModelValidIds', () => {
         ownerTenantId,
       });
       expect(mockListAllAddedModels).toHaveBeenCalledWith(
-        { params: { tenant_id: ownerTenantId } },
+        { params: {}, paramsSerializer: { indexes: null } },
         true,
       );
       expect(result.current.validIds).toEqual(

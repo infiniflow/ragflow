@@ -84,7 +84,7 @@ func TestWorkerDispatcherLimitsPendingPullsToOne(t *testing.T) {
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
-	ingestor := newUnitIngestor("test-single-pull", 2, nil)
+	ingestor := newUnitIngestor("test-single-pull", 2)
 	ingestor.dispatcherWg.Add(1)
 	go ingestor.consumeLoop()
 	t.Cleanup(func() {
@@ -125,7 +125,7 @@ func TestWorkerDispatcherHandsOffPulledMessageImmediately(t *testing.T) {
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
-	ingestor := newUnitIngestor("test-single-message-handoff", 1, nil)
+	ingestor := newUnitIngestor("test-single-message-handoff", 1)
 	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
 	ingestor.workerQueue <- worker
 	ingestor.dispatcherWg.Add(1)
@@ -162,7 +162,7 @@ func TestWorkerDispatcherNacksReservedHandleOnShutdown(t *testing.T) {
 	previousQueue := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
-	ingestor := newUnitIngestor("test-nack-reserved-handle", 1, nil)
+	ingestor := newUnitIngestor("test-nack-reserved-handle", 1)
 	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()

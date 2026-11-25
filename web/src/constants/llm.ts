@@ -128,6 +128,7 @@ export enum LLMFactory {
   Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
+  Onomeo = 'onomeo',
   Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
   Wiro = 'Wiro AI',
@@ -135,6 +136,7 @@ export enum LLMFactory {
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
   Morse = 'Morse',
+  TeamoRouter = 'TeamoRouter',
 }
 
 // Please lowercase the file name
@@ -244,6 +246,7 @@ export const IconMap = {
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Onomeo]: 'onomeo',
   [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
@@ -251,6 +254,7 @@ export const IconMap = {
   [LLMFactory.HopBase]: 'hopbase',
   [LLMFactory.GreenNode]: 'greennode',
   [LLMFactory.Morse]: 'morse',
+  [LLMFactory.TeamoRouter]: 'teamorouter',
 };
 
 /**
@@ -269,7 +273,7 @@ export const ModelTypeToField: Record<string, string> = {
   decision: 'decision_id',
   embedding: 'embd_id',
   scoring: 'scoring_id',
-  vision: 'img2txt_id',
+  vlm: 'img2txt_id',
   asr: 'asr_id',
   rerank: 'rerank_id',
   tts: 'tts_id',
@@ -280,7 +284,7 @@ export const FieldToModelType: Record<string, string> = {
   decision_id: 'decision',
   embd_id: 'embedding',
   scoring_id: 'scoring',
-  img2txt_id: 'vision',
+  img2txt_id: 'vlm',
   asr_id: 'asr',
   rerank_id: 'rerank',
   tts_id: 'tts',
@@ -310,11 +314,13 @@ export const APIMapUrl = {
   [LLMFactory.Cheapaimodel]:
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
+  [LLMFactory.Onomeo]: 'https://onomeo.com/dashboard',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.Morse]: 'https://console.trymorse.ai',
+  [LLMFactory.TeamoRouter]: 'https://teamorouter.com/dashboard?tab=api-keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

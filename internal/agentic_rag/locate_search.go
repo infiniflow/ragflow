@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -126,9 +127,6 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
 
-	seen := map[string]struct{}{}
-	var merged []runtime.RetrievalChunk
-	var failed []error
 	// Over-fetching candidates is a FUSION need: the weighted sum needs a pool
 	// larger than the page to re-rank inside. A vector-only request returns
 	// exactly what the kNN ranked, so pulling 4x and discarding three quarters
@@ -137,33 +135,62 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	if spec.vectorOnly {
 		topK = topN
 	}
-	for _, q := range queries {
-		chunks, err := svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
-			Query:                    q,
-			DatasetIDs:               datasetIDs,
-			TopN:                     topN,
-			TopK:                     topK,
-			SimilarityThreshold:      &similarityThreshold,
-			KeywordsSimilarityWeight: &weight,
-			DocScope:                 docScope,
-			TenantID:                 tenantID,
-			VectorOnly:               spec.vectorOnly,
-			// Agentic, so no dense-only rescue.
-			AllowDenseFallback: new(false),
-			SelectFields:       grepChunksSelectFields,
-			// Same "only ordinary prose" filter as grep_chunks: exclude
-			// compiled products so the model reads original document text, not
-			// derived graph content.
-			OnlyOriginalText: true,
-		})
-		if err != nil {
+
+	// Fan the queries out, but keep each response in its query's slot. A plain
+	// WaitGroup joins them without handing a failed query's cancellation to
+	// its siblings: ectx stays the single engine context for every call, and a
+	// per-query error is recorded in errs[i] instead of aborting the others.
+	results := make([][]runtime.RetrievalChunk, len(queries))
+	errs := make([]error, len(queries))
+	var wg sync.WaitGroup
+	for i, q := range queries {
+		i, q := i, q
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A panic in a goroutine would end the whole process; turn it into
+			// this query's failure so the partial/outage paths can report it.
+			defer func() {
+				if r := recover(); r != nil {
+					errs[i] = fmt.Errorf("retrieval panicked: %v", r)
+				}
+			}()
+			results[i], errs[i] = svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
+				Query:                    q,
+				DatasetIDs:               datasetIDs,
+				TopN:                     topN,
+				TopK:                     topK,
+				SimilarityThreshold:      &similarityThreshold,
+				KeywordsSimilarityWeight: &weight,
+				DocScope:                 docScope,
+				TenantID:                 tenantID,
+				VectorOnly:               spec.vectorOnly,
+				// Agentic, so no dense-only rescue.
+				AllowDenseFallback: new(false),
+				SelectFields:       grepChunksSelectFields,
+				// Same "only ordinary prose" filter as grep_chunks: exclude
+				// compiled products so the model reads original document text, not
+				// derived graph content.
+				OnlyOriginalText: true,
+			})
+		}()
+	}
+	wg.Wait()
+
+	// Merge in the original query order, never completion order: the dedup
+	// set and the XML the model reads are both order-sensitive.
+	seen := map[string]struct{}{}
+	var merged []runtime.RetrievalChunk
+	var failed []error
+	for i, q := range queries {
+		if err := errs[i]; err != nil {
 			// Record and fall back on failure, keep other queries' results.
 			// (A query embedding failure lands here: the semantic bridge is
 			// dead for that query, but the others may still return hits.)
 			failed = append(failed, fmt.Errorf("%q: %w", q, err))
 			continue
 		}
-		for _, c := range chunks {
+		for _, c := range results[i] {
 			if _, dup := seen[c.ID]; dup {
 				continue
 			}

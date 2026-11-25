@@ -4,7 +4,6 @@ import {
 } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
-import { TruncatedText } from '@/components/truncated-text';
 import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
@@ -154,8 +153,6 @@ export default function Dataset() {
     return item;
   });
 
-  const datasetDescription = t('knowledgeDetails.datasetDescription');
-
   return (
     <PageFrame>
       <CardHeader as="header" className="p-5 space-y-0 shrink-0">
@@ -173,13 +170,6 @@ export default function Dataset() {
               <h1 className="leading-normal font-medium truncate">
                 {t('knowledgeDetails.subbarFiles')}
               </h1>
-              <TruncatedText
-                as="p"
-                className="text-text-secondary text-sm font-normal truncate"
-                tooltip={datasetDescription}
-              >
-                {datasetDescription}
-              </TruncatedText>
             </div>
           }
         >
@@ -187,9 +177,12 @@ export default function Dataset() {
             <CancelParsingDropdown />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="default" disabled={datasetEditButtonDisabled}>
+                <Button
+                  size="icon"
+                  disabled={datasetEditButtonDisabled}
+                  aria-label={t('knowledgeDetails.addFile')}
+                >
                   <LucidePlus />
-                  {t('knowledgeDetails.addFile')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-auto min-w-40" align="end">
@@ -265,6 +258,7 @@ export default function Dataset() {
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
+            readOnly={metadataConfig.readOnly}
             isAddValue={metadataConfig.isAddValue}
             isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}

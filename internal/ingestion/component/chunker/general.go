@@ -309,6 +309,10 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
+	// General chunking is synchronous and its output count is unknown until
+	// the final split, so report a single terminal position rather than a
+	// synthetic in-flight progress bar.
+	runtime.ReportProgressDetail(ctx, "chunk:final", uint32(len(chunks)), uint32(len(chunks)))
 	attachPDFOutline(chunks, upstream.File)
 	return chunkOutputs(chunks), nil
 }

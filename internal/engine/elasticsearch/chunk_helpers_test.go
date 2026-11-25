@@ -75,9 +75,7 @@ func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -885,9 +883,7 @@ func TestMapMemoryMessageToESDoc(t *testing.T) {
 // of the bool taken when the kNN clause is built and must keep only the scope and
 // lexical predicates.
 func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -948,9 +944,7 @@ func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
 // TestSearchKeepsEveryRankFeatureClause covers the multi-feature case: appending
 // to the pre-loop should header used to keep only the last clause.
 func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -1020,9 +1014,7 @@ func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
 // through the rank_feature clause and the final similarity through the reranker;
 // folding it in here again would count it twice.
 func TestSearchDoesNotAddPageRankToHitScore(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		w.Header().Set("Content-Type", "application/json")

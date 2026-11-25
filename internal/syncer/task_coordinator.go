@@ -69,18 +69,23 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext dao.SyncTaskC
 	defer cancel()
 	ctx = runCtx
 
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "connector", "Opening source connection")
 	connector, err := c.registry.Open(ctx, taskContext)
 	if err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "connector", "[ERROR] Could not open source connection")
 		return TaskOutcome{}, err
 	}
 	if err = connector.Validate(ctx); err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "connector", "[ERROR] Source connection validation failed")
 		return TaskOutcome{}, err
 	}
 
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "connector", "Source connection validated")
 	switch taskContext.Task.TaskType {
 	case dao.TaskTypeSync:
 		queue, err := c.executor.RegisterTask(ctx, taskContext.Task.ID)
 		if err != nil {
+			recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "sync", "[ERROR] Could not initialize batch executor")
 			return TaskOutcome{}, err
 		}
 		defer queue.Close()

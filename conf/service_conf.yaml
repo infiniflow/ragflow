@@ -132,6 +132,10 @@ ingestor:
     max_age: 30             # days
 file_syncer:
   max_concurrent_syncs: 5
+deepdoc:
+  name: 'deepdoc'
+  host: 'localhost'
+  port: 9388
 user_default_llm:
   default_models:
     embedding_model:

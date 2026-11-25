@@ -25,12 +25,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const wikipediaToolName = "wikipedia_search"
@@ -248,7 +248,7 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 		if content == "" {
 			continue
 		}
-		content = truncateWikipediaRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		fullURL := p.FullURL
 		if fullURL == "" {
 			fullURL = fmt.Sprintf("https://%s.wikipedia.org/wiki/%s", lang, url.PathEscape(p.Title))
@@ -288,7 +288,7 @@ func buildWikipediaReferences(envelope map[string]any) ([]map[string]any, []map[
 			continue
 		}
 		content := wikipediaDataImagePattern.ReplaceAllString(wikipediaText(item["content"]), "")
-		content = truncateWikipediaRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -341,13 +341,6 @@ func wikipediaText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateWikipediaRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func renderWikipediaResults(results []wikipediaResult) string {

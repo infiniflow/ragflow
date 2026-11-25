@@ -698,12 +698,12 @@ jobs:
                INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
                INFINITY_HTTP_PORT=$((23820 + PORT_OFFSET))
                INFINITY_PSQL_PORT=$((5432 + PORT_OFFSET))
-               EXPOSE_MYSQL_PORT=$((5455 + PORT_OFFSET))
+               MYSQL_PORT=$((5455 + PORT_OFFSET))
                MINIO_PORT=$((9000 + PORT_OFFSET))
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
-               EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               NATS_PORT=$((4222 + PORT_OFFSET))
+               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
@@ -712,12 +712,12 @@ jobs:
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
-               EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+               CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
                CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env (not .env). Without syncing these two,
@@ -733,13 +733,13 @@ jobs:
                  echo "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}"
                  echo "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}"
                  echo "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}"
-                 echo "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}"
+                 echo "MYSQL_PORT=${MYSQL_PORT}"
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "KVROCKS_PORT=${KVROCKS_PORT}"
-                 echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
+                 echo "NATS_PORT=${NATS_PORT}"
+                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -747,7 +747,7 @@ jobs:
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+                 echo "CLICKHOUSE_TCP_PORT=${CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
                  echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
@@ -1214,12 +1214,12 @@ jobs:
                INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
                INFINITY_HTTP_PORT=$((23820 + PORT_OFFSET))
                INFINITY_PSQL_PORT=$((5432 + PORT_OFFSET))
-               EXPOSE_MYSQL_PORT=$((5455 + PORT_OFFSET))
+               MYSQL_PORT=$((5455 + PORT_OFFSET))
                MINIO_PORT=$((9000 + PORT_OFFSET))
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
-               EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               NATS_PORT=$((4222 + PORT_OFFSET))
+               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
@@ -1228,12 +1228,12 @@ jobs:
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
-               EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+               CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
                CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env (not .env). Without syncing these two,
@@ -1249,13 +1249,13 @@ jobs:
                  echo "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}"
                  echo "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}"
                  echo "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}"
-                 echo "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}"
+                 echo "MYSQL_PORT=${MYSQL_PORT}"
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "KVROCKS_PORT=${KVROCKS_PORT}"
-                 echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
+                 echo "NATS_PORT=${NATS_PORT}"
+                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -1263,7 +1263,7 @@ jobs:
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+                 echo "CLICKHOUSE_TCP_PORT=${CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
                  echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
@@ -1760,12 +1760,12 @@ jobs:
                INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
                INFINITY_HTTP_PORT=$((23820 + PORT_OFFSET))
                INFINITY_PSQL_PORT=$((5432 + PORT_OFFSET))
-               EXPOSE_MYSQL_PORT=$((5455 + PORT_OFFSET))
+               MYSQL_PORT=$((5455 + PORT_OFFSET))
                MINIO_PORT=$((9000 + PORT_OFFSET))
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
-               EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               NATS_PORT=$((4222 + PORT_OFFSET))
+               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
@@ -1774,12 +1774,12 @@ jobs:
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
-               EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+               CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
                CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env (not .env). Without syncing these two,
@@ -1795,13 +1795,13 @@ jobs:
                  echo "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}"
                  echo "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}"
                  echo "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}"
-                 echo "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}"
+                 echo "MYSQL_PORT=${MYSQL_PORT}"
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "KVROCKS_PORT=${KVROCKS_PORT}"
-                 echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
+                 echo "NATS_PORT=${NATS_PORT}"
+                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -1809,7 +1809,7 @@ jobs:
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+                 echo "CLICKHOUSE_TCP_PORT=${CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
                  # NOTE: the engine profile (${DOC_ENGINE} -> "infinity") MUST be
                  # first, otherwise the engine service never starts. We drop
@@ -1960,15 +1960,15 @@ jobs:
           _port() { grep -E "^$1=" docker/.env | head -1 | cut -d= -f2-; }
           INFINITY_THRIFT_PORT=$(_port INFINITY_THRIFT_PORT)
           INFINITY_HTTP_PORT=$(_port INFINITY_HTTP_PORT)
-          EXPOSE_MYSQL_PORT=$(_port EXPOSE_MYSQL_PORT)
+          MYSQL_PORT=$(_port MYSQL_PORT)
           MINIO_PORT=$(_port MINIO_PORT)
           REDIS_PORT=$(_port REDIS_PORT)
           KVROCKS_PORT=$(_port KVROCKS_PORT)
-          EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
-          EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
+          NATS_PORT=$(_port NATS_PORT)
+          CLICKHOUSE_TCP_PORT=$(_port CLICKHOUSE_TCP_PORT)
           export RAGFLOW_INFINITY_URI="host.docker.internal:${INFINITY_THRIFT_PORT}"
           export RAGFLOW_MYSQL_HOST=host.docker.internal
-          export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
+          export RAGFLOW_MYSQL_PORT="${MYSQL_PORT}"
           export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
           export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
           # Test-only Kvrocks endpoint. Do not export RAGFLOW_KVROCKS_HOST here:
@@ -1976,9 +1976,9 @@ jobs:
           export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:${KVROCKS_PORT}"
           export KVROCKS_TEST_ADDR="${RAGFLOW_TEST_KVROCKS_ADDR}"
           export RAGFLOW_NATS_HOST=host.docker.internal
-          export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
+          export RAGFLOW_NATS_PORT="${NATS_PORT}"
           export RAGFLOW_CLICKHOUSE_HOST=host.docker.internal
-          export RAGFLOW_CLICKHOUSE_PORT="${EXPOSE_CLICKHOUSE_TCP_PORT}"
+          export RAGFLOW_CLICKHOUSE_PORT="${CLICKHOUSE_TCP_PORT}"
           # The model-backed native DeepDoc tests under internal/deepdoc/**
           # register the in-process backend from within their own packages and are
           # covered separately by the ragflow_native_backend job (--test-native),

@@ -298,11 +298,14 @@ func autoMigrateModels() []interface{} {
 		// from these tables at runtime, so the Go side must guarantee they exist.
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
 	dataModels = append(dataModels, chunkVersionDataModelsEE()...)
 	dataModels = append(dataModels, datasetVersionDataModelsEE()...)
+	dataModels = append(dataModels, completionLogModelsEE()...)
 	return dataModels
 }
 
@@ -609,6 +612,8 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.API4ConversationMessage{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
 	// Edition-specific runtime tables: the chunk edit history and the dataset
 	// history are written on every chunk and dataset mutation, but the
@@ -618,6 +623,8 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	// and only log).
 	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
 	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, permissionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, completionLogModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
 			tableName := fmt.Sprintf("%T", m)

@@ -34,7 +34,7 @@ import (
 func TestMarkFailedToleratesNilDatabase(t *testing.T) {
 	defer testutil.ReplaceDBForTest(t, nil)()
 
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	if terminal := ingestor.markFailed(context.Background(), "task-1", ""); terminal {
 		t.Fatal("markFailed reported a durable FAILED write without a database")
 	}
@@ -46,7 +46,7 @@ func TestRunTaskToleratesNilDatabase(t *testing.T) {
 	defer testutil.ReplaceDBForTest(t, nil)()
 
 	runID := "run-1"
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error { return nil }
 	ingestor.runTask(context.Background(), &entity.IngestionTask{
 		ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,

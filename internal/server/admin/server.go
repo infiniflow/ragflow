@@ -38,7 +38,7 @@ import (
 
 // Run starts the RAGFlow admin HTTP server. It blocks until ctx is cancelled,
 // then gracefully shuts the HTTP server down.
-func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, arguments *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
 
 	adminService := adminapi.NewService()
@@ -48,7 +48,7 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 		common.Warn("Failed to initialize license", zap.Error(err))
 	}
 
-	if args.InitSuperUser {
+	if arguments.InitSuperUser {
 		// Initialize default admin user
 		if err := adminService.InitDefaultAdmin(); err != nil {
 			return fmt.Errorf("initialize default admin user: %w", err)
@@ -119,8 +119,8 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 			serveErr <- err
 		}
 	}()
-	if args.Ready != nil {
-		if err := args.Ready(); err != nil {
+	if arguments.Ready != nil {
+		if err = arguments.Ready(); err != nil {
 			srv.Close()
 			return fmt.Errorf("report admin readiness: %w", err)
 		}
@@ -141,7 +141,7 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 	defer quitCancel()
 
 	// Shutdown HTTP server
-	if err := srv.Shutdown(quitCtx); err != nil {
+	if err = srv.Shutdown(quitCtx); err != nil {
 		srv.Close()
 		return fmt.Errorf("shutdown admin server: %w", err)
 	}

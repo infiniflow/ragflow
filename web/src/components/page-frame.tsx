@@ -8,7 +8,7 @@ type PageFrameProps = PropsWithChildren<{
 
 export function PageFrame({ children, className }: PageFrameProps) {
   return (
-    <div className="h-full pr-2.5 pb-2.5">
+    <div className="page-frame h-full pr-2.5 pb-2.5">
       <Card
         as="article"
         className={cn(

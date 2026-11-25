@@ -10,6 +10,7 @@ type ChangeParserDialogProps = {
   onOk: (values: IChangeParserRequestBody) => Promise<void>;
   hideModal: () => void;
   loading: boolean;
+  readOnly?: boolean;
 };
 
 // The document parser-change dialog edits the pipeline-shaped parser config.
@@ -18,6 +19,7 @@ export function ChangeParserDialog({
   onOk,
   hideModal,
   loading,
+  readOnly = false,
 }: ChangeParserDialogProps) {
   return (
     <DocumentPipelineDialog
@@ -29,6 +31,7 @@ export function ChangeParserDialog({
       hideModal={hideModal}
       loading={loading}
       saveDisabled={isDocumentProcessing(record)}
+      readOnly={readOnly}
     ></DocumentPipelineDialog>
   );
 }

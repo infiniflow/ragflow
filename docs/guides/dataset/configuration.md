@@ -49,6 +49,8 @@ The following built-in parsing methods are available:
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
 
+Upload a Docling JSON export (`.json`) and use the **General** parsing method to index its body text and headings in reading order. RAGFlow retains page numbers and valid bounding boxes from the export.
+
 ### Built-in Parsing Configuration
 
 After selecting a built-in template parsing method, you can further configure document parsing, chunking, and content enhancement. Appropriate settings can improve the accuracy and recall of subsequent retrieval.

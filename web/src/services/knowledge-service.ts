@@ -16,6 +16,7 @@
 
 import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
+import { IngestionProgressResponse } from '@/interfaces/database/ingestion';
 import {
   IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
@@ -543,6 +544,13 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const getIngestionProgress = (
+  datasetId: string,
+  logId: string,
+): Promise<{
+  data: { code: number; message?: string; data: IngestionProgressResponse };
+}> => request.get(api.getIngestionProgress(datasetId, logId));
 
 export const listIngestionMessages = (
   datasetId: string,
