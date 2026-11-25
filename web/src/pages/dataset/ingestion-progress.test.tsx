@@ -15,36 +15,14 @@
  */
 
 import { render, screen } from '@testing-library/react';
+import i18next from 'i18next';
 import React from 'react';
+import { I18nextProvider, initReactI18next } from 'react-i18next';
+import en from '@/locales/en';
 
-const mockTranslations = {
-  'knowledgeDetails.ingestionProgress.status': 'Status',
-  'knowledgeDetails.ingestionProgress.parsing': 'Parsing',
-  'knowledgeDetails.ingestionProgress.completed': 'Completed',
-  'knowledgeDetails.ingestionProgress.failed': 'Failed',
-  'knowledgeDetails.ingestionProgress.stopped': 'Stopped',
-  'knowledgeDetails.ingestionProgress.totalDuration': 'Total duration',
-  'knowledgeDetails.ingestionProgress.chunks': 'Chunks',
-  'knowledgeDetails.ingestionProgress.currentStage': 'Current stage',
-  'knowledgeDetails.ingestionProgress.progress': 'Progress',
-  'knowledgeDetails.ingestionProgress.elapsed': 'Elapsed',
-  'knowledgeDetails.ingestionProgress.updatedAt': 'Updated at',
-  'knowledgeDetails.ingestionProgress.unavailable':
-    'Progress information is temporarily unavailable; see the full log.',
-  'knowledgeDetails.ingestionProgress.detailUnavailable':
-    'Detailed progress is temporarily unavailable',
-  'knowledgeDetails.ingestionProgress.units.batch:generate': 'Batch generation',
-  'knowledgeDetails.ingestionProgress.units.batch:embed': 'Batch embedding',
-  'knowledgeDetails.ingestionProgress.units.page:parse': 'Page parsing',
-};
-
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key, options) => mockTranslations[key] ?? options?.defaultValue ?? key,
-  }),
-  initReactI18next: { type: '3rdParty', init: () => undefined },
-}));
-
+// Keep the real i18next key parser: the app's locale config leaves the default
+// nsSeparator (':'), so unit keys such as "page:parse" must be explicitly
+// opted out at the call site. A dictionary-mock would hide that regression.
 jest.mock('@/services/knowledge-service', () => ({
   getIngestionProgress: jest.fn(),
 }));
@@ -55,6 +33,17 @@ jest.mock('@/ee/components/ingestion-progress-detail-button', () => ({
 }));
 
 import { IngestionProgressSummary } from './ingestion-progress';
+
+const instance = i18next.createInstance();
+
+beforeAll(async () => {
+  await instance.use(initReactI18next).init({
+    lng: 'en',
+    fallbackLng: 'en',
+    resources: { en: en },
+    interpolation: { escapeValue: false },
+  });
+});
 
 function summary(overrides = {}) {
   return {
@@ -69,6 +58,19 @@ function summary(overrides = {}) {
   };
 }
 
+function renderSummary(data) {
+  return render(
+    <I18nextProvider i18n={instance}>
+      <IngestionProgressSummary
+        datasetId="ds1"
+        logId="run1"
+        data={data}
+        error={false}
+      />
+    </I18nextProvider>,
+  );
+}
+
 describe('IngestionProgressSummary', () => {
   it('shows a distinct label for each terminal status', () => {
     const cases = [
@@ -78,45 +80,42 @@ describe('IngestionProgressSummary', () => {
       ['1', 'Parsing'],
     ];
     for (const [status, label] of cases) {
-      const view = render(
-        <IngestionProgressSummary
-          datasetId="ds1"
-          logId="run1"
-          data={summary({ status })}
-          error={false}
-        />,
-      );
+      const view = renderSummary(summary({ status }));
       expect(screen.getByText(label)).toBeTruthy();
       view.unmount();
     }
   });
 
-  it('translates batch units instead of showing a raw unit key', () => {
-    render(
-      <IngestionProgressSummary
-        data={summary({
-          status: '1',
-          stage: 'Compiler',
-          unit: 'batch:generate',
-          current: 2,
-          total: 5,
-        })}
-        error={false}
-      />,
+  it('translates colon-separated unit keys with the real i18next parser', () => {
+    // Adversarial: the default nsSeparator splits "units.page:parse" into a
+    // namespace, so without nsSeparator:false the raw key leaks to the user.
+    for (const [unit, label] of [
+      ['batch:generate', 'Batch generation'],
+      ['page:parse', 'Page parsing'],
+    ]) {
+      const view = renderSummary(
+        summary({ status: '1', stage: 'Compiler', unit, current: 2, total: 5 }),
+      );
+      expect(screen.getByText(new RegExp(label))).toBeTruthy();
+      view.unmount();
+    }
+  });
+
+  it('falls back to the raw unit for an unknown colon-separated key', () => {
+    const view = renderSummary(
+      summary({ status: '1', stage: 'Compiler', unit: 'custom:unit' }),
     );
-    expect(screen.getByText(/Batch generation/)).toBeTruthy();
+    expect(screen.getByText(/custom:unit/)).toBeTruthy();
+    view.unmount();
   });
 
   it('constrains server-returned stage and unit text', () => {
-    render(
-      <IngestionProgressSummary
-        data={summary({
-          status: '1',
-          stage: 'A very long stage name from the server',
-          unit: 'batch:embed',
-        })}
-        error={false}
-      />,
+    renderSummary(
+      summary({
+        status: '1',
+        stage: 'A very long stage name from the server',
+        unit: 'batch:embed',
+      }),
     );
     const value = screen.getByText(/Batch embedding/);
     expect(value.className).toContain('break-words');

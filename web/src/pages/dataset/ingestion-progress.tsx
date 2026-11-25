@@ -117,6 +117,9 @@ export const IngestionProgressSummary: React.FC<
     : t('knowledgeDetails.ingestionProgress.parsing');
   const unitLabel = data.unit
     ? t(`knowledgeDetails.ingestionProgress.units.${data.unit}`, {
+        // Unit names contain ':' (e.g. page:parse); the default nsSeparator
+        // would split them into an unknown namespace and show the raw key.
+        nsSeparator: false,
         defaultValue: data.unit,
       })
     : '';

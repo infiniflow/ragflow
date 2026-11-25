@@ -215,7 +215,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
 	// already occupied by the shared compiler pool.
+	// Batches whose chunks carried no text never reach buildRows. Count only
+	// the batches that will actually embed so the position reaches its total.
+	embeddable := 0
+	for _, result := range extracted {
+		if len(result.batchIDs) > 0 {
+			embeddable++
+		}
+	}
 	rowCount := 0
+	embedded := 0
 	for i, result := range extracted {
 		if len(result.batchIDs) == 0 {
 			continue
@@ -226,11 +235,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		perBatch[i] = rows
 		rowCount += len(rows)
-		// i and len(extracted) count embed batches, not rows; the unit name
-		// must not claim a row count it cannot know before the loop.
-		remainingWindow.Sub(0, 4).WithPhase("batch:embed").ReportPosition(ctx, uint32(i+1), uint32(len(extracted)))
+		embedded++
+		// Report the embed batch position (not a row count, which is unknown
+		// before the loop), counting only batches that actually embed.
+		remainingWindow.Sub(0, 4).WithPhase("batch:embed").ReportPosition(ctx, uint32(embedded), uint32(embeddable))
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
-			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
+			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, embedded, embeddable, rowCount))
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: deduplicating %d row(s)", compileType, rowCount))
