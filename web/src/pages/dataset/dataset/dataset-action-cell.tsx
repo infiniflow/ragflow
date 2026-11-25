@@ -199,9 +199,12 @@ export function DatasetActionCell({
                 {Object.entries(record)
                   .filter(([key]) => Fields.some((x) => x === key))
                   .map(([key, value], idx) => {
+                    const label = t(`knowledgeDetails.infoFields.${key}`, {
+                      defaultValue: key,
+                    });
                     return (
                       <li key={idx} className="flex gap-2">
-                        {key}:
+                        {label}:
                         <div>
                           {key in FunctionMap
                             ? FunctionMap[key as keyof typeof FunctionMap](
