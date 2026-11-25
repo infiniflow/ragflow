@@ -35,6 +35,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
+
+	"ragflow/internal/utility/sqllex"
 )
 
 const (
@@ -295,7 +297,7 @@ func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncR
 				name:     base.name,
 				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
 				ordered:  true,
-				fallback: wrapRDBMSQuery(base.sql, "*"),
+				fallback: wrapRDBMSQuery(base.sql, "*", sqllex.PostgreSQL),
 			})
 		}
 	default:
@@ -323,7 +325,7 @@ func (c *PostgreSQLConnector) syncOrderColumn(request SyncRequest) string {
 // buildOrderedQuery wraps the base query and orders it by a stable column so
 // connector sync can resume from a checkpoint.
 func (c *PostgreSQLConnector) buildOrderedQuery(base, orderColumn string) string {
-	return wrapRDBMSQuery(base, "*") + " ORDER BY ragflow_src." + orderColumn + " ASC"
+	return wrapRDBMSQuery(base, "*", sqllex.PostgreSQL) + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -335,7 +337,7 @@ func (c *PostgreSQLConnector) buildTimeFilteredQuery(base string, start, end *ti
 	if end != nil {
 		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
-	query := wrapRDBMSQuery(base, "*")
+	query := wrapRDBMSQuery(base, "*", sqllex.PostgreSQL)
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -363,13 +365,13 @@ func (c *PostgreSQLConnector) buildSlimQuery(base string) string {
 		columns = c.contentColumns
 	}
 	if len(columns) == 0 {
-		return wrapRDBMSQuery(base, "*")
+		return wrapRDBMSQuery(base, "*", sqllex.PostgreSQL)
 	}
 	selects := make([]string, 0, len(columns))
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return wrapRDBMSQuery(base, strings.Join(selects, ", "))
+	return wrapRDBMSQuery(base, strings.Join(selects, ", "), sqllex.PostgreSQL)
 }
 
 // formatDatetime renders a UTC time as an ISO-8601 PostgreSQL literal.

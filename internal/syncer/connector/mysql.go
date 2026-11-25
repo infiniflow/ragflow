@@ -32,6 +32,8 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
+	"ragflow/internal/utility/sqllex"
 )
 
 const defaultMySQLBatchSize = 32
@@ -287,7 +289,7 @@ func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncReques
 				name:     base.name,
 				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
 				ordered:  true,
-				fallback: wrapRDBMSQuery(base.sql, "*"),
+				fallback: wrapRDBMSQuery(base.sql, "*", sqllex.MySQL),
 			})
 		}
 	default:
@@ -315,7 +317,7 @@ func (c *MySQLConnector) syncOrderColumn(request SyncRequest) string {
 // buildOrderedQuery wraps the base query and orders it by a stable column so
 // connector sync can resume from a checkpoint.
 func (c *MySQLConnector) buildOrderedQuery(base, orderColumn string) string {
-	return wrapRDBMSQuery(base, "*") + " ORDER BY ragflow_src." + orderColumn + " ASC"
+	return wrapRDBMSQuery(base, "*", sqllex.MySQL) + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -327,7 +329,7 @@ func (c *MySQLConnector) buildTimeFilteredQuery(base string, start, end *time.Ti
 	if end != nil {
 		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
-	query := wrapRDBMSQuery(base, "*")
+	query := wrapRDBMSQuery(base, "*", sqllex.MySQL)
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -355,13 +357,13 @@ func (c *MySQLConnector) buildSlimQuery(base string) string {
 		columns = c.contentColumns
 	}
 	if len(columns) == 0 {
-		return wrapRDBMSQuery(base, "*")
+		return wrapRDBMSQuery(base, "*", sqllex.MySQL)
 	}
 	selects := make([]string, 0, len(columns))
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return wrapRDBMSQuery(base, strings.Join(selects, ", "))
+	return wrapRDBMSQuery(base, strings.Join(selects, ", "), sqllex.MySQL)
 }
 
 // formatDatetime renders a UTC time as a MySQL datetime literal.

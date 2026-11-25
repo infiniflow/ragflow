@@ -22,6 +22,8 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+
+	"ragflow/internal/utility/sqllex"
 )
 
 func TestRDBMSOrderedLimit(t *testing.T) {
@@ -48,11 +50,11 @@ func TestRDBMSOrderedLimit(t *testing.T) {
 		"mysql":      &MySQLConnector{idColumn: "id"},
 		"postgresql": &PostgreSQLConnector{idColumn: "id"},
 	} {
-		full := builder.buildSyncQueries([]rdbmsQuery{{sql: base + ";"}}, SyncRequest{FromBeginning: true})[0]
+		full := builder.buildSyncQueries([]rdbmsQuery{{sql: base + "; -- exported query"}}, SyncRequest{FromBeginning: true})[0]
 		for name, query := range map[string]string{
 			"full":     full.sql,
 			"fallback": full.fallback,
-			"prune":    builder.buildSlimQuery(base + " -- skip the highest priority"),
+			"prune":    builder.buildSlimQuery(base + "; /* skip the highest priority */"),
 		} {
 			t.Run(dialect+"/"+name, func(t *testing.T) {
 				var ids []int
@@ -67,5 +69,38 @@ func TestRDBMSOrderedLimit(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestRDBMSWrappedQueryTerminator(t *testing.T) {
+	// Each example gives the source SQL and the exact text following it. Only
+	// the statement delimiter between them should disappear from the wrapper.
+	tests := []struct {
+		name      string
+		dialect   sqllex.Dialect
+		statement string
+		trailing  string
+	}{
+		{"plain", sqllex.MySQL, "SELECT 1", ""},
+		{"line and block comments", sqllex.PostgreSQL, "SELECT 1", " -- ;\r\n/* more; */"},
+		{"quoted markers", sqllex.MySQL, `SELECT 'it''s; --', "a; /*"`, " -- exported;"},
+		{"quoted identifier", sqllex.MySQL, "SELECT `id;--` FROM products", " # exported;"},
+		{"mysql subtraction", sqllex.MySQL, "SELECT 5--2", " -- exported"},
+		{"mysql escape", sqllex.MySQL, `SELECT 'it\'s; #'`, " # exported"},
+		{"postgres dollar quote", sqllex.PostgreSQL, `SELECT $tag$it'; -- /*$tag$`, " -- exported"},
+		{"postgres UTF-8 dollar quote", sqllex.PostgreSQL, `SELECT $标签$query'; --$标签$`, " -- exported"},
+		{"postgres escape", sqllex.PostgreSQL, `SELECT E'it\'s; --'`, " /* outer /* inner */ end */"},
+		{"postgres operator", sqllex.PostgreSQL, "SELECT 6 # 3", " -- exported"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := "SELECT * FROM (" + tt.statement + tt.trailing + "\n) AS ragflow_src"
+			for _, delimiter := range []string{"", ";"} {
+				input := tt.statement + delimiter + tt.trailing
+				if got := wrapRDBMSQuery(input, "*", tt.dialect); got != want {
+					t.Errorf("wrapRDBMSQuery(%q) = %q, want %q", input, got, want)
+				}
+			}
+		})
 	}
 }
