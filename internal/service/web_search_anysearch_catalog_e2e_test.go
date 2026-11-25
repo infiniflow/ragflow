@@ -288,7 +288,11 @@ func assertAnySearchSavedReferences(t *testing.T, results []map[string]any, ids 
 			content = text(result["snippet"])
 		}
 		content = strings.Join(strings.Fields(content), " ")
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || strings.HasSuffix(u.Host, ":") || content == "" {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || content == "" {
+			continue
+		}
+		host := strings.ToLower(u.Host)
+		if strings.HasPrefix(u.EscapedPath(), "//") && (strings.HasSuffix(host, "http:") || strings.HasSuffix(host, "https:")) {
 			continue
 		}
 		eligible++
