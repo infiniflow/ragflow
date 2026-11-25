@@ -171,6 +171,7 @@ Execution details:
 
 - Component conversion reads each table in id-ordered batches of 256, each batch in its own transaction. Changed rows are updated once by the conversion; unchanged rows retain their original bytes. The existing dataset cleanup performs its own subsequent scan.
 - Each row's `parser_id` determines the builtin component targets. Parser/Chunker/Tokenizer conversion leaves custom pipeline rows and unsupported parser IDs untouched. Extractor conversion can also target existing Extractor nodes in custom pipeline configs.
+- Saved Mistral OCR model references such as `mistral-ocr-latest@default@Mistral OCR` move from `layout_recognize` to the Parser's `pdf.layout_recognizer`, preserving the full reference.
 - Existing component values win, except that dataset-level modular metadata transport remains authoritative under the current service contract.
 - SQL `NULL`, empty strings and JSON `null` are left untouched. Invalid JSON, unsupported metadata schemas and unsupported engine selections stop migration with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely. See [Parser-config conversion failures](./upgrade_from_v1_to_later_releases.md#parser-config-conversion-failures) for recovery instructions.
 - The marker advances only after both table conversions and the existing dataset cleanup succeed. If neither table exists, the marker is left unchanged.

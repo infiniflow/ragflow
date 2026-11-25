@@ -136,6 +136,8 @@ type OCRPage struct {
 	Height     float64    `json:"height"`
 	Normalized bool       `json:"normalized,omitempty"`
 	Blocks     []OCRBlock `json:"blocks"`
+	// KeepPagePosition retains a page-only position for text or tables without a region.
+	KeepPagePosition bool `json:"-"`
 }
 
 // OCRBlock carries a layout region in source-image pixels, or in page
