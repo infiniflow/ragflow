@@ -248,14 +248,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 			continue
 		}
 		docNameID := namedDocument(document)
-		exists, err := store.ObjectExists(ctx, document.KbID, *document.Location)
-		if err != nil {
-			return fmt.Errorf("check document %s: %w", document.ID, err)
-		}
-		if !exists {
-			common.Warn("Document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
-			continue
-		}
 		if err := store.Remove(ctx, document.KbID, *document.Location); err != nil {
 			return fmt.Errorf("remove document %s: %w", docNameID, err)
 		}
@@ -263,12 +255,14 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, dataset := range data.datasets {
 		datasetNameID := namedID(dataset.Name, dataset.ID)
+		// Some backends refuse to remove a logical bucket outright. Skip the
+		// call when the physical bucket is already gone, as the caller did
+		// before bucket removal was made unconditional.
 		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
 		if err != nil {
 			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
 		}
 		if !exists {
-			common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 			continue
 		}
 		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
@@ -293,14 +287,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
-			exists, err := store.ObjectExists(ctx, file.ParentID, *file.Location)
-			if err != nil {
-				return fmt.Errorf("check file %s: %w", file.ID, err)
-			}
-			if !exists {
-				common.Warn("File object already missing", zap.String("file", namedID(file.Name, file.ID)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
-				continue
-			}
 			if err := store.Remove(ctx, file.ParentID, *file.Location); err != nil {
 				return fmt.Errorf("remove file %s: %w", file.ID, err)
 			}
@@ -309,14 +295,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, file := range data.files {
 		if file.Type != "folder" || file.SourceType == string(entity.FileSourceKnowledgebase) || file.TenantID != data.ownedTenantID {
-			continue
-		}
-		exists, err := store.BucketExistsWithError(ctx, file.ID)
-		if err != nil {
-			return fmt.Errorf("check folder bucket %s: %w", file.ID, err)
-		}
-		if !exists {
-			common.Warn("Folder bucket already missing", zap.String("folder", namedID(file.Name, file.ID)), zap.String("bucket", file.ID))
 			continue
 		}
 		if err := store.RemoveEmptyBucket(ctx, file.ID); err != nil {
