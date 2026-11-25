@@ -3,14 +3,12 @@ package knowledge_compile
 import (
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -20,7 +18,7 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}); err != nil {
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
 		t.Fatalf("migrate ingestion logs: %v", err)
 	}
 
@@ -65,28 +63,6 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 		entries, ok := log.DSL["entries"].([]any)
 		if !ok || len(entries) != 1 {
 			t.Fatalf("dataset log entries were not split by task type: %+v", log.DSL["entries"])
-		}
-
-		var events []entity.IngestionTaskLog
-		if err := db.Where("pipeline_log_id = ?", log.ID).Order("id ASC").Find(&events).Error; err != nil {
-			t.Fatalf("load dataset log events: %v", err)
-		}
-		if len(events) != 3 {
-			t.Fatalf("dataset log %s event count = %d, want 3: %+v", log.ID, len(events), events)
-		}
-		if events[0].EventType != dao.EventTypeMessage || !strings.Contains(events[0].Message, "Created automatic "+log.TaskType+" dataset task") {
-			t.Fatalf("unexpected initial event: %+v", events[0])
-		}
-		if events[1].EventType != dao.EventTypeMessage || !strings.Contains(events[1].Message, "2 affected page(s)") {
-			t.Fatalf("unexpected progress event: %+v", events[1])
-		}
-		if events[2].EventType != dao.EventTypeTerminal || !strings.Contains(events[2].Message, "completed") {
-			t.Fatalf("unexpected terminal event: %+v", events[2])
-		}
-		for _, event := range events {
-			if event.TaskID != log.ID || event.PipelineLogID == nil || *event.PipelineLogID != log.ID {
-				t.Fatalf("event is not scoped to dataset log %s: %+v", log.ID, event)
-			}
 		}
 	}
 }

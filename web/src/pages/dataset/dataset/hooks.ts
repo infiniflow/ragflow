@@ -12,7 +12,6 @@ import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import { ILogInfo } from '../process-log-modal';
 import { getDocumentProgressMessage, getDocumentRunningStatus } from './utils';
 import type { IFileLogList } from '../dataset-overview/interface';
-import { useIngestionMessages } from '../ingestion-message-hooks';
 
 const PollIntervalMs = 5000;
 
@@ -87,29 +86,12 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   });
   const logID = documentLog?.logs[0]?.id;
   const selectedLog = documentLog?.logs[0];
-  const {
-    data: messages,
-    fetchPreviousPage,
-    hasPreviousPage,
-    isFetchingPreviousPage,
-  } = useIngestionMessages(datasetId, logID, visible);
-  const latestEvent = useMemo(() => {
-    const items = messages?.items ?? [];
-    return items[items.length - 1];
-  }, [messages]);
-
   const logInfo = useMemo(() => {
     const source = sourceDoc;
     const details = source
-      ? messages?.items.length
-        ? ''
-        : selectedLog?.latest_ingestion_event?.message ||
-          selectedLog?.progress_msg ||
-          getDocumentProgressMessage({
-            ...source,
-            latest_ingestion_event:
-              latestEvent ?? source.latest_ingestion_event,
-          })
+      ? selectedLog?.latest_ingestion_event?.message ||
+        selectedLog?.progress_msg ||
+        getDocumentProgressMessage(source)
       : '-';
     let log: ILogInfo = {
       taskId: source?.id,
@@ -128,24 +110,10 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         duration: formatSecondsToHumanReadable(source.process_duration || 0),
         status: getDocumentRunningStatus(source),
         details,
-        events: messages?.items.length ? messages.items : undefined,
-        loadPreviousEvents: hasPreviousPage
-          ? () => fetchPreviousPage()
-          : undefined,
-        hasPreviousEvents: hasPreviousPage,
-        isLoadingPreviousEvents: isFetchingPreviousPage,
       };
     }
     return log;
-  }, [
-    sourceDoc,
-    selectedLog,
-    latestEvent,
-    messages,
-    fetchPreviousPage,
-    hasPreviousPage,
-    isFetchingPreviousPage,
-  ]);
+  }, [sourceDoc, selectedLog]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

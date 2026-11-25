@@ -353,17 +353,22 @@ func (s *DocumentService) latestIngestionEventsByDocument(ctx context.Context, t
 // every supplied run in a single batch query. Document list mappers receive
 // this data from their caller and never perform per-row event lookups.
 func (s *DocumentService) LatestIngestionEventsByPipelineLogIDs(ctx context.Context, pipelineLogIDs []string) (map[string]*service.IngestionEventItem, error) {
-	eventDAO := s.ingestionTaskLogDAO
-	if eventDAO == nil {
-		eventDAO = dao.NewIngestionTaskLogDAO()
+	items := make(map[string]*service.IngestionEventItem, len(pipelineLogIDs))
+	if s.progressReader == nil || len(pipelineLogIDs) == 0 {
+		return items, nil
 	}
-	latestByRun, err := eventDAO.LatestEventsByPipelineLogIDs(ctx, dao.DB, pipelineLogIDs)
-	if err != nil {
-		return nil, err
-	}
-	items := make(map[string]*service.IngestionEventItem, len(latestByRun))
-	for runID, event := range latestByRun {
-		item := service.IngestionEventItemFromLog(event)
+	for _, runID := range pipelineLogIDs {
+		if runID == "" {
+			continue
+		}
+		snap, ok := s.progressReader.Load(ctx, runID)
+		if !ok || snap == nil {
+			continue
+		}
+		item := service.IngestionEventItemFromSnapshot(snap)
+		if item.Message == "" {
+			continue
+		}
 		items[runID] = &item
 	}
 	return items, nil

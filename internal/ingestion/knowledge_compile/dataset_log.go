@@ -19,14 +19,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 
@@ -220,10 +218,6 @@ func (c *Consumer) startDatasetCompileLog(ctx context.Context, tenantID, dataset
 			if result.RowsAffected == 0 {
 				continue
 			}
-			message := fmt.Sprintf("Created automatic %s dataset task for %d document event(s)", taskType, len(groups[taskType]))
-			if err := createDatasetLogEvent(ctx, tx, log.ID, dao.EventTypeMessage, message); err != nil {
-				return err
-			}
 		}
 		return nil
 	})
@@ -242,7 +236,7 @@ func (c *Consumer) updateDatasetCompileLog(ctx context.Context, claimToken strin
 }
 
 func (c *Consumer) updateDatasetCompileLogForType(ctx context.Context, logID string, progress float64, message string) error {
-	return c.recordDatasetCompileLogEvent(ctx, logID, progress, common.RUNNING, dao.EventTypeMessage, message)
+	return c.recordDatasetCompileLogEvent(ctx, logID, progress, common.RUNNING)
 }
 
 func (c *Consumer) finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, operationStatus, message string, progress float64) error {
@@ -251,14 +245,14 @@ func (c *Consumer) finishDatasetCompileLog(ctx context.Context, claimToken strin
 	}
 	for _, taskType := range taskTypes {
 		logID := datasetCompileLogID(claimToken, taskType)
-		if err := c.recordDatasetCompileLogEvent(ctx, logID, progress, datasetLogOperationStatus(operationStatus), dao.EventTypeTerminal, message); err != nil {
+		if err := c.recordDatasetCompileLogEvent(ctx, logID, progress, datasetLogOperationStatus(operationStatus)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *Consumer) recordDatasetCompileLogEvent(ctx context.Context, logID string, progress float64, operationStatus string, eventType int, message string) error {
+func (c *Consumer) recordDatasetCompileLogEvent(ctx context.Context, logID string, progress float64, operationStatus string) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var log entity.PipelineOperationLog
 		if err := tx.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
@@ -275,20 +269,7 @@ func (c *Consumer) recordDatasetCompileLogEvent(ctx context.Context, logID strin
 		}).Error; err != nil {
 			return err
 		}
-		return createDatasetLogEvent(ctx, tx, logID, eventType, message)
-	})
-}
-
-func createDatasetLogEvent(ctx context.Context, db *gorm.DB, logID string, eventType int, message string) error {
-	// Dataset compilation has no ingestion_task row, so its immutable pipeline
-	// log ID also serves as the event's stable task identity.
-	pipelineLogID := logID
-	return dao.NewIngestionTaskLogDAO().Create(ctx, db, &entity.IngestionTaskLog{
-		TaskID:        logID,
-		PipelineLogID: &pipelineLogID,
-		Checkpoint:    entity.JSONMap{},
-		EventType:     eventType,
-		Message:       message,
+		return nil
 	})
 }
 

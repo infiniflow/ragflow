@@ -207,9 +207,6 @@ func (s *progressSink) OnComponentTotal(ctx context.Context, taskID string, tota
 }
 
 func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.ProgressEvent) {
-	if err := s.taskSvc.RecordLifecycle(ctx, s.pipelineLogID, ev.TaskID, ev.Component, ev.Phase, ev.Message); err != nil {
-		common.Error(fmt.Sprintf("progressSink: record component progress for task %s failed: %v", ev.TaskID, err), err)
-	}
 	// Mirror the component lifecycle into the ingestion log (component-scope
 	// event). Phase is already the 0=enter/1=exit/2=error enum; clamp defensively
 	// so an out-of-range phase never corrupts the LowCardinality column.
@@ -245,11 +242,7 @@ func (s *progressSink) OnComponentFraction(_ context.Context, component string, 
 // OnComponentMessage records detailed compiler-stage information without
 // creating a lifecycle row, so completion percent remains based on actual
 // canvas components.
-func (s *progressSink) OnComponentMessage(ctx context.Context, taskID, _ string, component, message string) {
-	if message == "" {
-		return
-	}
-	if err := s.taskSvc.RecordMessage(ctx, s.pipelineLogID, taskID, fmt.Sprintf("%s: %s", component, message)); err != nil {
-		common.Error(fmt.Sprintf("progressSink: record message for task %s failed", taskID), err)
-	}
+func (s *progressSink) OnComponentMessage(_ context.Context, _, _ string, _, _ string) {
+	// Component messages are no longer persisted: progress detail lives in the
+	// running-state snapshot and compilation messages in their own tables.
 }

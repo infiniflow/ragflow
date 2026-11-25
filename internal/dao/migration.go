@@ -564,25 +564,13 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 		}
 	}
 
-	if migrator.HasTable(&entity.IngestionTaskLog{}) {
-		if !migrator.HasColumn(&entity.IngestionTaskLog{}, "pipeline_log_id") {
-			if err := db.WithContext(ctx).Exec(
-				"ALTER TABLE ingestion_task_log ADD COLUMN pipeline_log_id varchar(32) NULL",
-			).Error; err != nil && !isDuplicateColumnError(err) {
-				return fmt.Errorf("add ingestion_task_log.pipeline_log_id: %w", err)
-			}
-		}
-		if !migrator.HasColumn(&entity.IngestionTaskLog{}, "event_type") {
-			if err := db.WithContext(ctx).Exec(
-				"ALTER TABLE ingestion_task_log ADD COLUMN event_type tinyint NOT NULL DEFAULT 4",
-			).Error; err != nil && !isDuplicateColumnError(err) {
-				return fmt.Errorf("add ingestion_task_log.event_type: %w", err)
-			}
-		}
-		if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
-			return err
-		}
+	// The event-row table is gone: progress lives in the running-state store
+	// and terminal state on the run row. Drop it in the same migration pass.
+	// Online deployments are not yet live, so no compatibility window is needed.
+	if err := db.WithContext(ctx).Exec("DROP TABLE IF EXISTS ingestion_task_log").Error; err != nil {
+		return fmt.Errorf("drop ingestion_task_log: %w", err)
 	}
+
 	return nil
 }
 

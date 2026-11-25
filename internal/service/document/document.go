@@ -26,22 +26,23 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/progressstore"
 )
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO         *dao.DocumentDAO
-	kbDAO               *dao.KnowledgebaseDAO
-	ingestionTaskDAO    *dao.IngestionTaskDAO
-	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
-	ingestionTaskSvc    *service.IngestionTaskService
-	docEngine           engine.DocEngine
-	metadataSvc         *service.MetadataService
-	taskDAO             *dao.TaskDAO
-	file2DocumentDAO    *dao.File2DocumentDAO
-	fileDAO             *dao.FileDAO
-	api4ConvDAO         *dao.API4ConversationDAO
-	purgeTaskState      func(context.Context, string) error
+	documentDAO      *dao.DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	ingestionTaskDAO *dao.IngestionTaskDAO
+	progressReader   progressSnapshotReader
+	ingestionTaskSvc *service.IngestionTaskService
+	docEngine        engine.DocEngine
+	metadataSvc      *service.MetadataService
+	taskDAO          *dao.TaskDAO
+	file2DocumentDAO *dao.File2DocumentDAO
+	fileDAO          *dao.FileDAO
+	api4ConvDAO      *dao.API4ConversationDAO
+	purgeTaskState   func(context.Context, string) error
 }
 
 // NewDocumentService create document service
@@ -54,17 +55,17 @@ func NewDocumentService() *DocumentService {
 	// knowledge_compile.PublishDeleted is effective in API processes as well.
 	knowledge_compile.InitializePublisher(dao.DB, engine.GetMessageQueueEngine())
 	return &DocumentService{
-		documentDAO:         dao.NewDocumentDAO(),
-		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
-		ingestionTaskSvc:    ingestionTaskSvc,
-		kbDAO:               dao.NewKnowledgebaseDAO(),
-		docEngine:           engine.Get(),
-		metadataSvc:         service.NewMetadataService(),
-		taskDAO:             dao.NewTaskDAO(),
-		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
-		fileDAO:             dao.NewFileDAO(),
-		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
+		documentDAO:      dao.NewDocumentDAO(),
+		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		ingestionTaskSvc: ingestionTaskSvc,
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		docEngine:        engine.Get(),
+		metadataSvc:      service.NewMetadataService(),
+		taskDAO:          dao.NewTaskDAO(),
+		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		fileDAO:          dao.NewFileDAO(),
+		api4ConvDAO:      dao.NewAPI4ConversationDAO(),
+		progressReader:   progressstore.Default(),
 	}
 }
 
@@ -302,3 +303,13 @@ type BatchUpdateMetadatasResponse struct {
 // Blob deletion lives in storage.RemoveBlob: the dataset service reclaims the
 // objects of a removed document with the same retry rule, and sharing it keeps the
 // two services from importing each other for it.
+
+// progressSnapshotReader is the read-only seam for run progress snapshots.
+type progressSnapshotReader interface {
+	Load(ctx context.Context, id string) (*progressstore.Snapshot, bool)
+}
+
+// SetProgressReader installs a snapshot reader; tests inject a fake.
+func (s *DocumentService) SetProgressReader(reader progressSnapshotReader) {
+	s.progressReader = reader
+}

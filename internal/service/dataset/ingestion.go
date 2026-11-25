@@ -31,19 +31,6 @@ type downloadStatus struct {
 	FailCount    int64 `json:"fail_count"`
 }
 
-// IngestionMessagesResponse is one immutable run's keyset-paginated event
-// stream. IDs are database event IDs and must be returned unchanged by clients
-// when requesting adjacent pages.
-type IngestionMessagesResponse struct {
-	RunCount      int                          `json:"run_count"`
-	Items         []service.IngestionEventItem `json:"items"`
-	OldestID      int                          `json:"oldest_id"`
-	NewestID      int                          `json:"newest_id"`
-	HasMoreBefore bool                         `json:"has_more_before"`
-	HasMoreAfter  bool                         `json:"has_more_after"`
-	Terminal      bool                         `json:"terminal"`
-}
-
 func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
@@ -145,72 +132,6 @@ func (d *DatasetService) getDownloadStatus(ctx context.Context, datasetID string
 		}
 	}
 	return status, nil
-}
-
-// ListIngestionMessages returns events owned by the requested immutable
-// pipeline log.
-func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
-	if datasetID == "" {
-		return nil, common.CodeArgumentError, errors.New(`lack of "Dataset ID"`)
-	}
-	if logID == "" {
-		return nil, common.CodeArgumentError, errors.New(`lack of "Log ID"`)
-	}
-	if afterID != nil && beforeID != nil {
-		return nil, common.CodeArgumentError, errors.New("after_id and before_id are mutually exclusive")
-	}
-	if afterID != nil && *afterID <= 0 {
-		return nil, common.CodeArgumentError, errors.New("after_id must be a positive integer")
-	}
-	if beforeID != nil && *beforeID <= 0 {
-		return nil, common.CodeArgumentError, errors.New("before_id must be a positive integer")
-	}
-	if limit == 0 {
-		limit = defaultIngestionMessagesLimit
-	}
-	if limit < 0 || limit > maxIngestionMessagesLimit {
-		return nil, common.CodeArgumentError, fmt.Errorf("limit must be between 1 and %d", maxIngestionMessagesLimit)
-	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-
-	run, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
-	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("log not found")
-		}
-		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
-	}
-	if !isReadableIngestionLog(run) {
-		return nil, common.CodeDataError, errors.New("log not found")
-	}
-	if err := checkIngestionLogDocumentRead(ctx, run.DocumentID); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-	response := &IngestionMessagesResponse{}
-	if run.RunCount != nil {
-		response.RunCount = *run.RunCount
-	}
-	response.Terminal = isTerminalIngestionLogStatus(run.OperationStatus)
-
-	page, err := dao.NewIngestionTaskLogDAO().ListEventsPageByPipelineLogID(ctx, dao.DB, logID, limit, afterID, beforeID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("list ingestion messages: %w", err)
-	}
-	response.Items = make([]service.IngestionEventItem, 0, len(page.Events))
-	for _, event := range page.Events {
-		response.Items = append(response.Items, service.IngestionEventItemFromLog(event))
-	}
-	if len(response.Items) > 0 {
-		response.OldestID = response.Items[0].ID
-		response.NewestID = response.Items[len(response.Items)-1].ID
-	}
-	response.HasMoreBefore = page.HasMoreBefore
-	response.HasMoreAfter = page.HasMoreAfter
-	return response, common.CodeSuccess, nil
 }
 
 func isTerminalIngestionLogStatus(status string) bool {
@@ -334,17 +255,14 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID string
 			logIDs = append(logIDs, log.ID)
 		}
 	}
-	latestEvents, err := dao.NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(ctx, dao.DB, logIDs)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("list latest ingestion events: %w", err)
-	}
+	latestEvents := d.latestIngestionEventsByRun(ctx, logIDs)
 
 	items := make([]map[string]interface{}, 0, len(logs))
 	for _, log := range logs {
 		if log == nil {
 			continue
 		}
-		latestEvent := ingestionEventItem(latestEvents[log.ID])
+		latestEvent := latestEvents[log.ID]
 		if logType == "file" {
 			items = append(items, fileIngestionLogToMap(log, latestEvent))
 		} else {
@@ -385,11 +303,7 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, logID s
 		return nil, code, permissionErr
 	}
 
-	latestEvents, err := dao.NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(ctx, dao.DB, []string{log.ID})
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("get latest ingestion event: %w", err)
-	}
-	latestEvent := ingestionEventItem(latestEvents[log.ID])
+	latestEvent := d.latestIngestionEventsByRun(ctx, []string{log.ID})[log.ID]
 	if log.DocumentID == entity.DatasetLogDocumentID {
 		return datasetIngestionLogToMap(log, latestEvent), common.CodeSuccess, nil
 	}
@@ -464,12 +378,4 @@ func addIngestionProgressFallback(values map[string]interface{}, log *entity.Pip
 	if latestEvent == nil && log.ProgressMsg != nil && *log.ProgressMsg != "" {
 		values["progress_msg"] = *log.ProgressMsg
 	}
-}
-
-func ingestionEventItem(event *entity.IngestionTaskLog) *service.IngestionEventItem {
-	if event == nil {
-		return nil
-	}
-	item := service.IngestionEventItemFromLog(event)
-	return &item
 }

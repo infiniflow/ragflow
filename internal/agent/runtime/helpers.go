@@ -47,8 +47,8 @@ import (
 
 // ProgressPhase classifies a component lifecycle event emitted by
 // TrackProgress. The integer values are stable and persisted in the
-// ingestion_task_log.phase column, so they are part of the data contract
-// (see internal/ingestion/pipeline PROGRESS_LOG_RESUME_PLAN §5.1):
+// progress snapshot persisted by the sink, so they are part of the data
+// contract (enter/exit/error -> running/done/failed):
 //
 //	PhaseEnter = 0  component just started
 //	PhaseExit  = 1  component finished cleanly

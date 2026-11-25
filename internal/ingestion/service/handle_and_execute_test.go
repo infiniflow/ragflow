@@ -235,15 +235,6 @@ func TestHandleAndExecute_InvalidRunIdentitySettlesBoundRun(t *testing.T) {
 	if run.OperationStatus != string(entity.TaskStatusFail) {
 		t.Fatalf("pipeline log status = %q, want FAIL", run.OperationStatus)
 	}
-	var terminalCount int64
-	if err := db.Model(&entity.IngestionTaskLog{}).
-		Where("pipeline_log_id = ? AND event_type = ?", "run-"+taskID, dao.EventTypeTerminal).
-		Count(&terminalCount).Error; err != nil {
-		t.Fatalf("count terminal events: %v", err)
-	}
-	if terminalCount != 1 {
-		t.Fatalf("terminal events = %d, want 1", terminalCount)
-	}
 }
 
 func TestHandleAndExecute_InvalidRunIdentityDoesNotCloseForeignRun(t *testing.T) {

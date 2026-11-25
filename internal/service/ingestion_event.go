@@ -1,9 +1,10 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
-	"ragflow/internal/entity"
+	"ragflow/internal/progressstore"
 )
 
 // IngestionEventItem is the API representation of one persisted ingestion
@@ -19,18 +20,62 @@ type IngestionEventItem struct {
 	ErrorCode string     `json:"error_code,omitempty"`
 }
 
-func IngestionEventItemFromLog(event *entity.IngestionTaskLog) IngestionEventItem {
-	if event == nil {
+// unitLabels maps a structured unit tag to its UI label for the one-line
+// progress message. Unknown tags are shown verbatim.
+var unitLabels = map[string]string{
+	"page:parse":      "页面解析",
+	"page:refine":     "页面精炼",
+	"chunk:final":     "文本切分",
+	"chunk:keywords":  "关键词提取",
+	"chunk:tags":      "标签提取",
+	"chunk:resume":    "断点恢复",
+	"chunk:remaining": "信息补全",
+	"chunk:embed":     "向量化",
+	"chunk:claim":     "观点抽取",
+	"entity:generate": "实体生成",
+	"batch:map":       "批量映射",
+	"job:plan":        "规划任务",
+	"row:extract":     "行抽取",
+	"row:dedup":       "行去重",
+}
+
+// IngestionEventItemFromSnapshot derives a one-line progress message from a
+// Kvrocks snapshot, e.g. "Extractor · 标签提取 3123/5047". It prefers the
+// in-flight stage over a completed one that merely retains its last active unit.
+func IngestionEventItemFromSnapshot(snap *progressstore.Snapshot) IngestionEventItem {
+	if snap == nil {
 		return IngestionEventItem{}
 	}
-	errorCode, _ := event.Checkpoint["error_code"].(string)
+	var active, fallback *progressstore.Stage
+	for i := range snap.Stages {
+		stage := &snap.Stages[i]
+		if stage.Active == "" {
+			continue
+		}
+		if _, ok := stage.Units[stage.Active]; !ok {
+			continue
+		}
+		if fallback == nil {
+			fallback = stage
+		}
+		if stage.Phase == "running" {
+			active = stage
+			break
+		}
+	}
+	if active == nil {
+		active = fallback
+	}
+	if active == nil {
+		return IngestionEventItem{}
+	}
+	pos := active.Units[active.Active]
+	label := active.Active
+	if friendly, ok := unitLabels[active.Active]; ok {
+		label = friendly
+	}
 	return IngestionEventItem{
-		ID:        event.ID,
-		TS:        event.CreateDate,
-		EventType: event.EventType,
-		Component: event.Component,
-		Phase:     event.Phase,
-		Message:   event.Message,
-		ErrorCode: errorCode,
+		Component: active.Name,
+		Message:   active.Name + " · " + label + " " + fmt.Sprintf("%d/%d", pos.Current, pos.Total),
 	}
 }

@@ -63,7 +63,6 @@ func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 	if len(tables) == 0 {
 		tables = []any{
 			&entity.IngestionTask{},
-			&entity.IngestionTaskLog{},
 			&entity.PipelineOperationLog{},
 			&entity.Task{},
 			&entity.Document{},

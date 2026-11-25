@@ -282,7 +282,7 @@ func (dao *PipelineOperationLogDAO) NextRunCount(ctx context.Context, db *gorm.D
 // queued write cannot regress a row a concurrent writer already advanced.
 // A row that already left the declared from-states is left untouched and the
 // returned bool is false. The legacy progress_msg column is intentionally not
-// updated; run text belongs to ingestion_task_log events.
+// updated; run progress text is not persisted on this row.
 func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus string) (bool, error) {
 	if logID == "" || len(fromStatuses) == 0 {
 		return false, nil

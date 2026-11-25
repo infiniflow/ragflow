@@ -73,7 +73,6 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.Knowledgebase{},
 		&entity.Task{},
 		&entity.IngestionTask{},
-		&entity.IngestionTaskLog{},
 		&entity.PipelineOperationLog{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},

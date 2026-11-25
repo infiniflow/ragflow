@@ -338,8 +338,8 @@ func (s *PipelineExecutor) WithRunPipelineFunc(f func(ctx context.Context, dsl s
 }
 
 // WithProgressSink injects a sink that receives pipeline component progress
-// events. The sink owns all document/ingestion_task_log persistence; when
-// unset, the pipeline runs DB-independent (progress events are dropped).
+// events. The sink owns all document/run-row persistence; when unset, the
+// pipeline runs DB-independent (progress events are dropped).
 func (s *PipelineExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *PipelineExecutor {
 	s.progressSink = sink
 	return s

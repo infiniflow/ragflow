@@ -225,8 +225,6 @@ const apiEndpoints = {
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
   getIngestionProgress: (datasetId: string, logId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}/progress`,
-  listIngestionMessages: (datasetId: string, logId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}/messages`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   listPipelines: `${restAPIv1}/pipelines?type=builtin`,

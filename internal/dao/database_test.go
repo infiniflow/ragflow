@@ -45,9 +45,6 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	if db.Migrator().HasTable(&entity.IngestionTask{}) {
 		t.Fatal("expected ingestion_task to not exist initially")
 	}
-	if db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
-		t.Fatal("expected ingestion_task_log to not exist initially")
-	}
 	if db.Migrator().HasTable(&entity.MemoryTask{}) {
 		t.Fatal("expected memory_task to not exist initially")
 	}
@@ -60,9 +57,6 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	// Verify tables exist after auto migration
 	if !db.Migrator().HasTable(&entity.IngestionTask{}) {
 		t.Fatal("expected ingestion_task to exist after autoMigrateRuntimeModels")
-	}
-	if !db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
-		t.Fatal("expected ingestion_task_log to exist after autoMigrateRuntimeModels")
 	}
 	if !db.Migrator().HasTable(&entity.MemoryTask{}) {
 		t.Fatal("expected memory_task to exist after autoMigrateRuntimeModels")
@@ -418,19 +412,14 @@ func TestMigrateIngestionLogRunIdentity(t *testing.T) {
 	if err := migrateIngestionLogRunIdentity(ctx, db); err != nil {
 		t.Fatalf("migrateIngestionLogRunIdentity: %v", err)
 	}
+	if db.Migrator().HasTable("ingestion_task_log") {
+		t.Fatal("ingestion_task_log should be dropped by the migration")
+	}
 	migrator := db.Migrator()
 	for _, column := range []string{"run_count", "pipeline_version_id"} {
 		if !migrator.HasColumn(&entity.PipelineOperationLog{}, column) {
 			t.Fatalf("pipeline_operation_log missing %s", column)
 		}
-	}
-	for _, column := range []string{"pipeline_log_id", "event_type"} {
-		if !migrator.HasColumn(&entity.IngestionTaskLog{}, column) {
-			t.Fatalf("ingestion_task_log missing %s", column)
-		}
-	}
-	if !migrator.HasIndex(&entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id") {
-		t.Fatal("ingestion_task_log missing pipeline event index")
 	}
 	if !migrator.HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run") {
 		t.Fatal("pipeline_operation_log missing document run unique index")
@@ -477,7 +466,7 @@ func (s *ingestionLogSchemaMigratorStub) CreateIndex(any, string) error {
 
 func TestCreateIngestionLogSchemaObjectsRechecksAfterCreateError(t *testing.T) {
 	migrator := &ingestionLogSchemaMigratorStub{}
-	if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
+	if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline operation log run index"); err != nil {
 		t.Fatalf("createIngestionLogIndexIfMissing: %v", err)
 	}
 }

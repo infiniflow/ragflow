@@ -648,43 +648,6 @@ func (h *DatasetsHandler) GetIngestionProgress(c *gin.Context) {
 	common.RespondSuccess(c, result, "success")
 }
 
-// ListIngestionMessages handles GET
-// /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
-func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	limit := 0
-	if rawLimit := c.Query("limit"); rawLimit != "" {
-		parsed, err := strconv.Atoi(rawLimit)
-		if err != nil || parsed <= 0 {
-			common.RespondError(c, common.CodeArgumentError, "limit must be a positive integer")
-			return
-		}
-		limit = parsed
-	}
-	afterID, ok := ingestionEventCursor(c, "after_id")
-	if !ok {
-		return
-	}
-	beforeID, ok := ingestionEventCursor(c, "before_id")
-	if !ok {
-		return
-	}
-
-	result, code, err := h.datasetsService.ListIngestionMessages(
-		c.Request.Context(), c.Param("dataset_id"), c.Param("log_id"), limit, afterID, beforeID,
-	)
-	if err != nil {
-		common.RespondError(c, code, err.Error())
-		return
-	}
-	common.RespondSuccess(c, result, "success")
-}
-
 func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
 	raw := c.Query(name)
 	if raw == "" {

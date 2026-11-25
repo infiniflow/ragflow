@@ -559,12 +559,6 @@ export const getIngestionProgress = (
   data: { code: number; message?: string; data: IngestionProgressResponse };
 }> => request.get(api.getIngestionProgress(datasetId, logId));
 
-export const listIngestionMessages = (
-  datasetId: string,
-  logId: string,
-  params?: Record<string, any>,
-) => request.get(api.listIngestionMessages(datasetId, logId), { params });
-
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));
 

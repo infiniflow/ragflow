@@ -41,6 +41,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/permission/testsupport"
+	"ragflow/internal/progressstore"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
@@ -540,7 +541,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.PipelineOperationLog{},
 		&entity.Task{},
 		&entity.IngestionTask{},
-		&entity.IngestionTaskLog{},
+
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -1012,14 +1013,6 @@ func TestDocumentCleanupRecordsCallerSpecificTaskCancellationReason(t *testing.T
 				t.Fatalf("%s: %v", tt.name, err)
 			}
 
-			var terminal entity.IngestionTaskLog
-			if err := db.Where("pipeline_log_id = ? AND event_type = ?", "parse-run-1", dao.EventTypeTerminal).
-				First(&terminal).Error; err != nil {
-				t.Fatalf("load terminal event: %v", err)
-			}
-			if terminal.Message != tt.want {
-				t.Fatalf("terminal message = %q, want %q", terminal.Message, tt.want)
-			}
 		})
 	}
 }
@@ -2535,13 +2528,6 @@ func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
 		t.Fatalf("second run = %+v, want scheduled run 2", logs[1])
 	}
 
-	var terminal entity.IngestionTaskLog
-	if err = db.Where("pipeline_log_id = ? AND event_type = ?", logs[0].ID, dao.EventTypeTerminal).First(&terminal).Error; err != nil {
-		t.Fatalf("load superseded terminal event: %v", err)
-	}
-	if terminal.Message != "Task superseded by a new parse request." {
-		t.Fatalf("terminal message = %q", terminal.Message)
-	}
 }
 
 func TestStopParseDocuments_Success(t *testing.T) {
@@ -5479,15 +5465,6 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 		t.Fatal("expected task to be deleted in delete-only mode")
 	}
 
-	var terminal entity.IngestionTaskLog
-	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "parse-run-1", dao.EventTypeTerminal).
-		First(&terminal).Error; err != nil {
-		t.Fatalf("load terminal event: %v", err)
-	}
-	if terminal.Message != taskTerminalMessageParseResultsDeleted {
-		t.Fatalf("terminal message = %q, want delete-only reason", terminal.Message)
-	}
-
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("query doc: %v", err)
@@ -5522,30 +5499,22 @@ func TestDocumentResponseEmbedsLatestEventForCurrentRun(t *testing.T) {
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
 		t.Fatalf("bind run: %v", err)
 	}
-	for _, message := range []string{"first", "latest"} {
-		if err := db.Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
-			"task_id":         "task-1",
-			"pipeline_log_id": "run-1",
-			"checkpoint":      entity.JSONMap{},
-			"event_type":      dao.EventTypeMessage,
-			"component":       "",
-			"phase":           0,
-			"message":         message,
-		}).Error; err != nil {
-			t.Fatalf("insert event: %v", err)
-		}
-	}
+	// Progress messages now come from the KV snapshot, not the event table.
+	svc := testDocumentService(t)
+	svc.SetProgressReader(&fakeProgressReader{snapshots: map[string]*progressstore.Snapshot{
+		"run-1": runningSnapshot("Extractor", "chunk:tags", 3123, 5047),
+	}})
 
 	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	response, err := testDocumentService(t).toResponse(t.Context(), doc)
+	response, err := svc.toResponse(t.Context(), doc)
 	if err != nil {
 		t.Fatalf("toResponse: %v", err)
 	}
-	if response.LatestIngestionEvent == nil || response.LatestIngestionEvent.ID != 2 || response.LatestIngestionEvent.Message != "latest" {
-		t.Fatalf("response = %+v, want latest current-run event", response)
+	if response.LatestIngestionEvent == nil || response.LatestIngestionEvent.Message != "Extractor · 标签提取 3123/5047" {
+		t.Fatalf("response = %+v, want KV-derived current-run progress message", response)
 	}
 }
 

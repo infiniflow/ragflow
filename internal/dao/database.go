@@ -286,7 +286,6 @@ func autoMigrateModels() []interface{} {
 		&entity.TenantModel{},
 		&entity.TenantModelProvider{},
 		&entity.IngestionTask{},
-		&entity.IngestionTaskLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
 		&entity.KnowledgeCompileDataset{},
@@ -606,7 +605,6 @@ func isPostgresDuplicateObjectErr(err error) bool {
 func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	goRuntimeModels := []interface{}{
 		&entity.IngestionTask{},
-		&entity.IngestionTaskLog{},
 		&entity.MemoryTask{},
 		&entity.KnowledgeCompileBacklog{},
 		&entity.KnowledgeCompileInflight{},

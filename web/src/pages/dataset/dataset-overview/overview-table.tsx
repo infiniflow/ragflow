@@ -49,7 +49,6 @@ import {
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
 import { DatasetTableLayout } from '@/components/dataset-table-layout';
-import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
@@ -346,12 +345,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { id: routeId } = useParams();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const datasetId = knowledgeId || routeId;
-  const {
-    data: messages,
-    fetchPreviousPage,
-    hasPreviousPage,
-    isFetchingPreviousPage,
-  } = useIngestionMessages(datasetId, selectedLogID, isModalVisible);
   const showLog = useCallback((row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
@@ -377,26 +370,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     }
     return {
       ...logInfo,
-      // Keep the seeded progress_msg visible until events arrive: blanking
-      // details unconditionally flashes an empty modal while the messages
-      // query is still loading (mirrors the dataset page's useShowLog).
-      details: messages?.items.length ? '' : logInfo.details,
-      // An empty array is truthy, so passing it through would render a blank
-      // events pane next to the seeded details; collapse it to undefined.
-      events: messages?.items.length ? messages.items : undefined,
-      loadPreviousEvents: hasPreviousPage
-        ? () => fetchPreviousPage()
-        : undefined,
-      hasPreviousEvents: hasPreviousPage,
-      isLoadingPreviousEvents: isFetchingPreviousPage,
     };
-  }, [
-    logInfo,
-    messages,
-    fetchPreviousPage,
-    hasPreviousPage,
-    isFetchingPreviousPage,
-  ]);
+  }, [logInfo]);
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS

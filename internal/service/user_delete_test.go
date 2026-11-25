@@ -128,7 +128,7 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.CompilationTemplate{}, &entity.CompilationTemplateGroup{},
 		&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{},
 		&entity.KnowledgeCompileDataset{}, &entity.WikiDocumentDirty{}, &entity.PipelineOperationLog{},
-		&entity.IngestionTask{}, &entity.IngestionTaskLog{}, &entity.FileCommit{}, &entity.FileCommitItem{},
+		&entity.IngestionTask{}, &entity.FileCommit{}, &entity.FileCommitItem{},
 		&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{},
 		&entity.TenantLangfuse{}, &entity.APIToken{}, &entity.InvitationCode{},
 	)

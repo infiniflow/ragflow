@@ -43,13 +43,6 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	testCtx := t.Context()
 	// Cancellation is terminal for the bound run even when it happens before
 	// pipeline execution begins.
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(testCtx, db, "run-"+taskID)
-	if err != nil {
-		t.Fatalf("list logs: %v", err)
-	}
-	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message != "Task stopped by user." {
-		t.Fatalf("terminal events = %+v, want one stopped event", logs)
-	}
 	// Task must be STOPPED, not left in RUNNING.
 	task, err := dao.NewIngestionTaskDAO().GetByID(testCtx, db, taskID)
 	if err != nil {
@@ -90,13 +83,6 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 	if task.Status != common.FAILED {
 		t.Fatalf("task status = %s, want FAILED", task.Status)
-	}
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, runID)
-	if err != nil {
-		t.Fatalf("list terminal events: %v", err)
-	}
-	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message == "" {
-		t.Fatalf("terminal events = %+v, want one terminal event", logs)
 	}
 }
 

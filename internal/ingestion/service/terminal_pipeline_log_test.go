@@ -3,7 +3,6 @@ package service
 import (
 	"testing"
 
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 )
@@ -66,9 +65,4 @@ func TestRecordTerminalPipelineLogPreservesRunIdentity(t *testing.T) {
 		t.Fatalf("PipelineVersionID = %v, want the run's %q", run.PipelineVersionID, oldVersionID)
 	}
 
-	var terminal entity.IngestionTaskLog
-	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "run-1", dao.EventTypeTerminal).
-		First(&terminal).Error; err != nil {
-		t.Fatalf("terminal event missing: %v", err)
-	}
 }

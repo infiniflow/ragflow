@@ -1313,7 +1313,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	}
 
 	docTaskCtx.Ctx = ctx
-	// The sink owns all document/ingestion_task_log/ingestion_task.component_total
+	// The sink owns all document/run-row/component_total
 	// writes for this run; inject it into the executor so the pipeline reports
 	// progress to the service layer instead of touching the DAO directly.
 	// Keep the final document write bounded. Compiler products can contain large
@@ -1481,9 +1481,6 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	if err := taskpkg.RecordPipelineLog(ctx, e.deps.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 		return
-	}
-	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message, causes...); err != nil {
-		common.Warn(fmt.Sprintf("record terminal event for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 	}
 }
 

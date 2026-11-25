@@ -252,7 +252,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// Framework-level progress fan-out: the canvas framework
 	// (realComponentBody) pulls this callback from ctx via
 	// runtime.ProgressCallbackFromContext and records every component
-	// start/done/fail event as an ingestion_task_log row. The callback
+	// start/done/fail event to the sink. The callback
 	// is nil when the DB is not initialized (unit tests, headless
 	// runs), in which case TrackProgress is a no-op — progress is an
 	// observability concern, not a data dependency.

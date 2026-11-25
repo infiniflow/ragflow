@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/progressstore"
+	"ragflow/internal/service"
 )
 
 // IngestionProgressResponse is the one-screen summary served to the UI.
@@ -157,4 +158,28 @@ func (d *DatasetService) GetIngestionProgress(ctx context.Context, datasetID, lo
 		}
 	}
 	return mergeProgressSnapshot(run, snap, chunkNum), common.CodeSuccess, nil
+}
+
+// latestIngestionEventsByRun projects one KV-derived progress message per run.
+// It replaces the removed ingestion_task_log "latest event" lookup.
+func (d *DatasetService) latestIngestionEventsByRun(ctx context.Context, pipelineLogIDs []string) map[string]*service.IngestionEventItem {
+	items := make(map[string]*service.IngestionEventItem, len(pipelineLogIDs))
+	if d.progressReader == nil || len(pipelineLogIDs) == 0 {
+		return items
+	}
+	for _, runID := range pipelineLogIDs {
+		if runID == "" {
+			continue
+		}
+		snap, ok := d.progressReader.Load(ctx, runID)
+		if !ok || snap == nil {
+			continue
+		}
+		item := service.IngestionEventItemFromSnapshot(snap)
+		if item.Message == "" {
+			continue
+		}
+		items[runID] = &item
+	}
+	return items
 }

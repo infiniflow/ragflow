@@ -69,7 +69,6 @@ type Service struct {
 	api4ConvDAO          *dao.API4ConversationDAO
 	llmDAO               *dao.LLMDAO
 	ingestionTaskDAO     *dao.IngestionTaskDAO
-	ingestionTaskLogDao  *dao.IngestionTaskLogDAO
 	ingestionTaskSvc     *servicepkg.IngestionTaskService
 	modelProviderService *servicepkg.ModelProviderService
 
@@ -99,7 +98,6 @@ func NewService() *Service {
 		api4ConvDAO:          dao.NewAPI4ConversationDAO(),
 		llmDAO:               dao.NewLLMDAO(),
 		ingestionTaskDAO:     dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDao:  dao.NewIngestionTaskLogDAO(),
 		ingestionTaskSvc:     servicepkg.NewIngestionTaskService(),
 		modelProviderService: servicepkg.NewModelProviderService(),
 

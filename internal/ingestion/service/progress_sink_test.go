@@ -30,7 +30,6 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
@@ -182,95 +181,6 @@ func (s *ctxAwareStubDocProgressSvc) UpdateRunState(ctx context.Context, docID s
 	}
 	return s.stubDocProgressSvc.UpdateRunState(ctx, docID, progress)
 }
-
-// TestProgressSinkPersistsViaService verifies the sink is the single writer of
-// ingestion_task.component_total, ingestion_task_log, and document run-progress
-// - all through the service layer, not the DAO.
-func TestProgressSinkPersistsViaService(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
-
-	ctx := t.Context()
-	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
-	stub := &stubDocProgressSvc{}
-	sink.docSvc = stub
-
-	sink.OnComponentTotal(ctx, taskID, 2)
-	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
-	if err != nil {
-		t.Fatalf("load task: %v", err)
-	}
-	if task.ComponentTotal != 2 {
-		t.Fatalf("component_total = %d, want 2", task.ComponentTotal)
-	}
-
-	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
-		TaskID:     taskID,
-		DocumentID: docID,
-		Component:  "Parser",
-		Phase:      1,
-		Message:    "Parser Done",
-	})
-	// Close joins the flusher and performs the final forced flush, making the
-	// mirrored state deterministic regardless of ticker timing.
-	sink.Close()
-
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
-	if err != nil {
-		t.Fatalf("list logs: %v", err)
-	}
-	if len(logs) != 1 {
-		t.Fatalf("expected 1 component-progress row, got %d", len(logs))
-	}
-	if logs[0].Component != "Parser" || logs[0].Phase != 1 || logs[0].Message != "Parser Done" {
-		t.Fatalf("unexpected log row: %+v", logs[0])
-	}
-
-	// 1 of 2 components done -> progress 0.5 mirrored from the in-memory
-	// tracker. The event stream owns text, so this must not write
-	// document.progress_msg (UpdateRunState only touches progress/duration).
-	calls, gotDocID, gotProgress := stub.snapshot()
-	if calls < 1 || gotDocID != docID || gotProgress != 0.5 {
-		t.Fatalf("UpdateRunState = calls:%d doc:%q progress:%v, want >=1/%q/0.5", calls, gotDocID, gotProgress, docID)
-	}
-}
-
-func TestProgressSinkWritesLifecycleEventForCapturedRun(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
-
-	sink := newProgressSink(t.Context(), servicepkg.NewIngestionTaskService(), "run-1")
-	defer sink.Close()
-	sink.OnComponentProgress(t.Context(), pipeline.ProgressEvent{
-		TaskID:    taskID,
-		Component: "Parser",
-		Phase:     1,
-		Message:   "Parser Done",
-	})
-
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, "run-1")
-	if err != nil {
-		t.Fatalf("list events: %v", err)
-	}
-	if len(logs) != 1 {
-		t.Fatalf("event count = %d, want 1", len(logs))
-	}
-	event := logs[0]
-	if event.PipelineLogID == nil || *event.PipelineLogID != "run-1" {
-		t.Fatalf("pipeline_log_id = %v, want run-1", event.PipelineLogID)
-	}
-	if event.EventType != dao.EventTypeLifecycle || event.Component != "Parser" || event.Phase != 1 {
-		t.Fatalf("event = %+v, want lifecycle Parser/1", event)
-	}
-}
-
-// TestProgressSinkEmptyDocumentIDSkipsMirror verifies the log row is still
-// recorded when no owning document is bound, but the document mirror is
-// skipped - including the Close final flush.
 func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -290,13 +200,6 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 	})
 	sink.Close()
 
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
-	if err != nil {
-		t.Fatalf("list logs: %v", err)
-	}
-	if len(logs) != 1 {
-		t.Fatalf("expected 1 component-progress row, got %d", len(logs))
-	}
 	if calls, _, _ := stub.snapshot(); calls != 0 {
 		t.Fatalf("UpdateRunState calls = %d, want 0 (no document bound)", calls)
 	}

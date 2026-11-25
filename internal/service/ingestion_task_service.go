@@ -19,20 +19,6 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-)
-
-// ingestionEventKind intentionally has an invalid zero value. The persisted
-// event protocol starts at zero for lifecycle events, so callers cannot pass a
-// Go zero value and silently create a lifecycle row.
-type ingestionEventKind uint8
-
-const (
-	ingestionEventInvalid ingestionEventKind = iota
-	ingestionEventLifecycle
-	ingestionEventMessage
-	ingestionEventTerminal
-	ingestionEventSystem
 )
 
 const (
@@ -1284,35 +1270,23 @@ func (s *IngestionTaskService) advanceOpenLogIfOpen(ctx context.Context, task *e
 // settleTaskRun closes a terminal task's run ledger and ensures its terminal
 // event exists. The event write is retried even when a previous attempt already
 // advanced the operation row, so a partial settlement never becomes permanent.
-func (s *IngestionTaskService) settleTaskRun(ctx context.Context, task *entity.IngestionTask, operationStatus entity.TaskStatus, terminalMessage string) error {
+func (s *IngestionTaskService) settleTaskRun(ctx context.Context, task *entity.IngestionTask, operationStatus entity.TaskStatus, _ string) error {
 	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
 		return nil
 	}
-	if _, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(operationStatus)); err != nil {
-		return err
-	}
-	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, terminalMessage); err != nil {
-		return fmt.Errorf("record terminal event for task %s run %s: %w", task.ID, *task.PipelineLogID, err)
-	}
-	return nil
+	// The run row's CAS is the sole authority for terminal settlement. A late
+	// writer whose row already left the open states is a no-op, which is the
+	// idempotency guarantee that the removed terminal event row used to carry.
+	_, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(operationStatus))
+	return err
 }
 
-func (s *IngestionTaskService) recordRunMessage(ctx context.Context, task *entity.IngestionTask, message string) {
-	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
-		return
-	}
-	if err := s.RecordMessage(ctx, *task.PipelineLogID, task.ID, message); err != nil {
-		common.Warn(fmt.Sprintf("record run message for task %s: %v", task.ID, err))
-	}
+func (s *IngestionTaskService) recordRunMessage(_ context.Context, _ *entity.IngestionTask, _ string) {
+	// Run text is no longer persisted as event rows.
 }
 
-func (s *IngestionTaskService) recordRunTerminal(ctx context.Context, task *entity.IngestionTask, message string) {
-	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
-		return
-	}
-	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, message); err != nil {
-		common.Warn(fmt.Sprintf("record run terminal event for task %s: %v", task.ID, err))
-	}
+func (s *IngestionTaskService) recordRunTerminal(_ context.Context, _ *entity.IngestionTask, _ string) {
+	// Terminal state lives on the run row; no event row to write.
 }
 
 // buildOpenLogInput resolves immutable run metadata from the document and its
@@ -1381,144 +1355,6 @@ func (s *IngestionTaskService) buildOpenLogInput(ctx context.Context, task *enti
 // graph - the authoritative denominator for progress percentage.
 func (s *IngestionTaskService) UpdateComponentTotal(ctx context.Context, taskID string, total int) error {
 	return s.ingestionTaskDAO.UpdateComponentTotal(ctx, dao.DB, taskID, total)
-}
-
-// RecordLifecycle writes one component lifecycle event for an already
-// validated run. The worker supplies the captured pipeline log ID, never a
-// value reloaded from the mutable task row.
-func (s *IngestionTaskService) RecordLifecycle(ctx context.Context, pipelineLogID, taskID, component string, phase int, message string) error {
-	if component == "" {
-		return rejectIngestionEvent("missing_component", pipelineLogID, taskID, errors.New("ingestion lifecycle event requires a component"))
-	}
-	if phase < 0 || phase > 2 {
-		return rejectIngestionEvent("invalid_phase", pipelineLogID, taskID, fmt.Errorf("ingestion lifecycle event has invalid phase %d", phase))
-	}
-	return s.insertEvent(ctx, ingestionEventLifecycle, pipelineLogID, taskID, component, phase, message)
-}
-
-// RecordMessage writes supplemental process detail without affecting component
-// progress aggregation.
-func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID, taskID, message string) error {
-	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
-}
-
-// RecordTerminal writes a run's terminal explanation and classifies any supplied causes.
-func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string, causes ...error) error {
-	errorCode := ingestionErrorCode(errors.Join(causes...))
-	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message, errorCode); err != nil {
-		return err
-	}
-	foldContext := context.WithoutCancel(ctx)
-	foldStarted := time.Now()
-	foldResult, foldErr := s.foldIngestionRun(foldContext, pipelineLogID, s.logSettings.MaxRowsPerRun)
-	logIngestionFoldResult(taskID, pipelineLogID, foldResult, time.Since(foldStarted), foldErr)
-	if foldErr != nil {
-		common.Warn(fmt.Sprintf("fold terminal ingestion run %s: %v", pipelineLogID, foldErr))
-	}
-	run, err := s.pipelineLogDAO.GetByID(foldContext, dao.DB, pipelineLogID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("load terminal ingestion run %s for document trimming: %v", pipelineLogID, err))
-		logIngestionTrimResult("", taskID, pipelineLogID, ingestionDocumentTrimResult{}, 0, err)
-		return nil
-	}
-	trimStarted := time.Now()
-	trimResult, trimErr := s.trimIngestionDocument(foldContext, run.DocumentID, pipelineLogID, s.logSettings.MaxRowsPerDocument)
-	logIngestionTrimResult(run.DocumentID, taskID, pipelineLogID, trimResult, time.Since(trimStarted), trimErr)
-	if trimErr != nil {
-		common.Warn(fmt.Sprintf("trim ingestion document %s after terminal run %s: %v", run.DocumentID, pipelineLogID, trimErr))
-	}
-	return nil
-}
-
-// ensureTerminalEvent serializes terminal writers on the run row and inserts
-// the terminal event only when one is not already present. This makes retrying
-// settlement safe after the operation status has already advanced.
-func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message, errorCode string) error {
-	if dao.DB == nil {
-		return errors.New("ingestion task: nil database")
-	}
-	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var run entity.PipelineOperationLog
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Take(&run, "id = ?", pipelineLogID).Error; err != nil {
-			return err
-		}
-		var count int64
-		if err := tx.Model(&entity.IngestionTaskLog{}).
-			Where("pipeline_log_id = ? AND event_type = ?", pipelineLogID, dao.EventTypeTerminal).
-			Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return nil
-		}
-		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message, errorCode)
-	})
-}
-
-func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error {
-	common.Warn("ingestion_log_event_rejected",
-		zap.String("event", "ingestion_log_event_rejected"),
-		zap.String("reason", reason),
-		zap.String("pipeline_log_id", pipelineLogID),
-		zap.String("task_id", taskID),
-	)
-	return err
-}
-
-func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
-	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message, "")
-}
-
-func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message, errorCode string) error {
-	if pipelineLogID == "" {
-		return rejectIngestionEvent("missing_pipeline_log_id", pipelineLogID, taskID, errors.New("ingestion event requires a pipeline log id"))
-	}
-	if taskID == "" {
-		return rejectIngestionEvent("missing_task_id", pipelineLogID, taskID, errors.New("ingestion event requires a task id"))
-	}
-	if db == nil {
-		return errors.New("ingestion task: nil database")
-	}
-	eventType := 0
-	switch kind {
-	case ingestionEventLifecycle:
-		eventType = dao.EventTypeLifecycle
-	case ingestionEventMessage:
-		eventType = dao.EventTypeMessage
-	case ingestionEventTerminal:
-		eventType = dao.EventTypeTerminal
-	case ingestionEventSystem:
-		eventType = dao.EventTypeSystem
-	default:
-		return rejectIngestionEvent("invalid_kind", pipelineLogID, taskID, errors.New("ingestion event has invalid kind"))
-	}
-	if kind != ingestionEventLifecycle {
-		component = ""
-		phase = 0
-	}
-	message = s.truncateIngestionEventMessage(message)
-	checkpoint := entity.JSONMap{}
-	if errorCode != "" {
-		checkpoint["error_code"] = errorCode
-	}
-	now := time.Now().Local()
-	// EventTypeLifecycle is zero while the database default is the defensive
-	// legacy value. A map keeps the explicitly mapped protocol value intact;
-	// GORM otherwise substitutes a default-tag value for a zero struct field.
-	return db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
-		"task_id":         taskID,
-		"pipeline_log_id": pipelineLogID,
-		"checkpoint":      checkpoint,
-		"phase":           phase,
-		"event_type":      eventType,
-		"component":       component,
-		"message":         message,
-		"create_time":     now.UnixMilli(),
-		"create_date":     now.Truncate(time.Second),
-		"update_time":     now.UnixMilli(),
-		"update_date":     now.Truncate(time.Second),
-	}).Error
 }
 
 // truncateIngestionEventMessage enforces both limits on the persisted text.

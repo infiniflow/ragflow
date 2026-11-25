@@ -585,12 +585,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	if err := removeIDs("agents", &entity.UserCanvas{}, "id", canvasIDs); err != nil {
 		return err
 	}
-	if err := removeIDs("ingestion task logs", &entity.IngestionTaskLog{}, "task_id", ingestionTaskIDs); err != nil {
-		return err
-	}
-	if err := removeIDs("ingestion task logs", &entity.IngestionTaskLog{}, "pipeline_log_id", pipelineLogIDs); err != nil {
-		return err
-	}
 	if err := removeIDs("ingestion tasks", &entity.IngestionTask{}, "id", ingestionTaskIDs); err != nil {
 		return err
 	}
