@@ -220,13 +220,13 @@ describe('Agents create actions per tab', () => {
     expect(screen.getByTestId('create-agent')).toBeInTheDocument();
   });
 
-  it('shows blank creation and JSON import on the Pipeline tab', () => {
+  it('shows all three actions on the Pipeline tab', () => {
     setListPage({ data: [], debouncedSearchString: '' });
     // An empty built-in catalog keeps the Pipeline tab on the empty card.
     setBuiltin([]);
     renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
     expect(screen.getByText('Create from blank')).toBeInTheDocument();
-    expect(screen.queryByText('Create from template')).toBeNull();
+    expect(screen.getByText('Create from template')).toBeInTheDocument();
     expect(screen.getByText('Import JSON file')).toBeInTheDocument();
   });
 
@@ -251,10 +251,11 @@ describe('Agents create actions per tab', () => {
 
   it('carries the active category when navigating to templates', () => {
     setListPage({ data: [], debouncedSearchString: '' });
-    renderAgents();
+    setBuiltin([]);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
     fireEvent.click(screen.getByText('Create from template'));
     expect(mockNavigateToAgentTemplates).toHaveBeenCalledWith(
-      AgentCategory.AgentCanvas,
+      AgentCategory.DataflowCanvas,
     );
   });
 
