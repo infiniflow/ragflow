@@ -20,10 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
-
-	"ragflow/internal/utility/sqllex"
 )
 
 // ErrSyncResumeInvalid reports that a saved sync resume anchor no longer exists
@@ -117,13 +114,6 @@ type PruneBatch struct {
 type rdbmsQuery struct {
 	name string
 	sql  string
-}
-
-// wrapRDBMSQuery preserves the source query's row selection inside the derived
-// table. The newline terminates a trailing SQL line comment.
-func wrapRDBMSQuery(base, projection string, dialect sqllex.Dialect) string {
-	base = dialect.TrimTerminator(strings.TrimSpace(base))
-	return fmt.Sprintf("SELECT %s FROM (%s\n) AS ragflow_src", projection, base)
 }
 
 // rdbmsSyncQuery is one prepared sync query with its resume metadata.

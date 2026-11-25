@@ -17,13 +17,13 @@
 package connector
 
 import (
+	"context"
+	"database/sql"
 	"slices"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-
-	"ragflow/internal/utility/sqllex"
 )
 
 func TestRDBMSOrderedLimit(t *testing.T) {
@@ -43,18 +43,25 @@ func TestRDBMSOrderedLimit(t *testing.T) {
 		SELECT 1 AS id, 30 AS priority UNION ALL SELECT 2, 5
 		UNION ALL SELECT 3, 90 UNION ALL SELECT 4, 60
 	) AS products ORDER BY priority DESC LIMIT 2 OFFSET 1`
+	query := base + "; /* exported */ -- skip the highest priority"
+	openDB := func(string) (*sql.DB, error) { return conn, nil }
 	for dialect, builder := range map[string]interface {
+		openQueries(context.Context, bool) (rdbmsSessionDB, []rdbmsQuery, error)
 		buildSyncQueries([]rdbmsQuery, SyncRequest) []rdbmsSyncQuery
 		buildSlimQuery(string) string
 	}{
-		"mysql":      &MySQLConnector{idColumn: "id"},
-		"postgresql": &PostgreSQLConnector{idColumn: "id"},
+		"mysql":      &MySQLConnector{idColumn: "id", query: query, openDB: openDB},
+		"postgresql": &PostgreSQLConnector{idColumn: "id", query: query, openDB: openDB},
 	} {
-		full := builder.buildSyncQueries([]rdbmsQuery{{sql: base + "; -- exported query"}}, SyncRequest{FromBeginning: true})[0]
+		_, bases, err := builder.openQueries(t.Context(), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		full := builder.buildSyncQueries(bases, SyncRequest{FromBeginning: true})[0]
 		for name, query := range map[string]string{
 			"full":     full.sql,
 			"fallback": full.fallback,
-			"prune":    builder.buildSlimQuery(base + "; /* skip the highest priority */"),
+			"prune":    builder.buildSlimQuery(bases[0].sql),
 		} {
 			t.Run(dialect+"/"+name, func(t *testing.T) {
 				var ids []int
@@ -69,38 +76,5 @@ func TestRDBMSOrderedLimit(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestRDBMSWrappedQueryTerminator(t *testing.T) {
-	// Each example gives the source SQL and the exact text following it. Only
-	// the statement delimiter between them should disappear from the wrapper.
-	tests := []struct {
-		name      string
-		dialect   sqllex.Dialect
-		statement string
-		trailing  string
-	}{
-		{"plain", sqllex.MySQL, "SELECT 1", ""},
-		{"line and block comments", sqllex.PostgreSQL, "SELECT 1", " -- ;\r\n/* more; */"},
-		{"quoted markers", sqllex.MySQL, `SELECT 'it''s; --', "a; /*"`, " -- exported;"},
-		{"quoted identifier", sqllex.MySQL, "SELECT `id;--` FROM products", " # exported;"},
-		{"mysql subtraction", sqllex.MySQL, "SELECT 5--2", " -- exported"},
-		{"mysql escape", sqllex.MySQL, `SELECT 'it\'s; #'`, " # exported"},
-		{"postgres dollar quote", sqllex.PostgreSQL, `SELECT $tag$it'; -- /*$tag$`, " -- exported"},
-		{"postgres UTF-8 dollar quote", sqllex.PostgreSQL, `SELECT $标签$query'; --$标签$`, " -- exported"},
-		{"postgres escape", sqllex.PostgreSQL, `SELECT E'it\'s; --'`, " /* outer /* inner */ end */"},
-		{"postgres operator", sqllex.PostgreSQL, "SELECT 6 # 3", " -- exported"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			want := "SELECT * FROM (" + tt.statement + tt.trailing + "\n) AS ragflow_src"
-			for _, delimiter := range []string{"", ";"} {
-				input := tt.statement + delimiter + tt.trailing
-				if got := wrapRDBMSQuery(input, "*", tt.dialect); got != want {
-					t.Errorf("wrapRDBMSQuery(%q) = %q, want %q", input, got, want)
-				}
-			}
-		})
 	}
 }

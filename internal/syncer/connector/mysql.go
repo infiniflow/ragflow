@@ -124,17 +124,12 @@ func (c *MySQLConnector) ValidateConnectorSetting(ctx context.Context, request m
 
 // OpenSync opens one MySQL sync session.
 func (c *MySQLConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
-	db, err := c.open()
+	orderColumn := c.syncOrderColumn(request)
+	db, bases, err := c.openQueries(ctx, orderColumn != "")
 	if err != nil {
-		return nil, err
-	}
-	bases, err := c.baseQueries(ctx, db)
-	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	queries := c.buildSyncQueries(bases, request)
-	orderColumn := c.syncOrderColumn(request)
 	session := &mysqlSyncSession{
 		connector:         c,
 		db:                db,
@@ -158,13 +153,8 @@ func (c *MySQLConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 
 // OpenPrune opens one complete MySQL prune snapshot session.
 func (c *MySQLConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
-	db, err := c.open()
+	db, bases, err := c.openQueries(ctx, true)
 	if err != nil {
-		return nil, err
-	}
-	bases, err := c.baseQueries(ctx, db)
-	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	queries := make([]string, 0, len(bases))
@@ -234,13 +224,14 @@ func mysqlPinnedDial(pinIP net.IP, port int) mysql.DialContextFunc {
 	}
 }
 
-// baseQueries returns the configured query or a SELECT per table. Table names
+func (c *MySQLConnector) openQueries(ctx context.Context, wrapped bool) (rdbmsSessionDB, []rdbmsQuery, error) {
+	return openRDBMSQueries(ctx, c.open, c.tableQueries, c.query, sqllex.MySQL, wrapped)
+}
+
+// tableQueries returns a SELECT per table. Table names
 // are sorted so the sync stream order is stable across runs and a resume
 // cursor can reliably skip already-processed tables.
-func (c *MySQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]rdbmsQuery, error) {
-	if c.query != "" {
-		return []rdbmsQuery{{name: "", sql: c.query}}, nil
-	}
+func (c *MySQLConnector) tableQueries(ctx context.Context, db *sql.DB) ([]rdbmsQuery, error) {
 	rows, err := db.QueryContext(ctx, "SHOW TABLES")
 	if err != nil {
 		return nil, err
@@ -289,7 +280,7 @@ func (c *MySQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncReques
 				name:     base.name,
 				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
 				ordered:  true,
-				fallback: wrapRDBMSQuery(base.sql, "*", sqllex.MySQL),
+				fallback: wrapRDBMSQuery(base.sql, "*"),
 			})
 		}
 	default:
@@ -317,7 +308,7 @@ func (c *MySQLConnector) syncOrderColumn(request SyncRequest) string {
 // buildOrderedQuery wraps the base query and orders it by a stable column so
 // connector sync can resume from a checkpoint.
 func (c *MySQLConnector) buildOrderedQuery(base, orderColumn string) string {
-	return wrapRDBMSQuery(base, "*", sqllex.MySQL) + " ORDER BY ragflow_src." + orderColumn + " ASC"
+	return wrapRDBMSQuery(base, "*") + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -329,7 +320,7 @@ func (c *MySQLConnector) buildTimeFilteredQuery(base string, start, end *time.Ti
 	if end != nil {
 		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
-	query := wrapRDBMSQuery(base, "*", sqllex.MySQL)
+	query := wrapRDBMSQuery(base, "*")
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -357,13 +348,13 @@ func (c *MySQLConnector) buildSlimQuery(base string) string {
 		columns = c.contentColumns
 	}
 	if len(columns) == 0 {
-		return wrapRDBMSQuery(base, "*", sqllex.MySQL)
+		return wrapRDBMSQuery(base, "*")
 	}
 	selects := make([]string, 0, len(columns))
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return wrapRDBMSQuery(base, strings.Join(selects, ", "), sqllex.MySQL)
+	return wrapRDBMSQuery(base, strings.Join(selects, ", "))
 }
 
 // formatDatetime renders a UTC time as a MySQL datetime literal.
@@ -572,7 +563,7 @@ func (c *MySQLConnector) splitColumns(value any) []string {
 
 type mysqlSyncSession struct {
 	connector  *MySQLConnector
-	db         *sql.DB
+	db         rdbmsSessionDB
 	queries    []string
 	queryNames []string
 	// orderedFlags[i] reports whether queries[i] carries a stable ORDER BY.
@@ -766,7 +757,7 @@ func isMySQLUnknownColumn(err error) bool {
 
 type mysqlPruneSession struct {
 	connector  *MySQLConnector
-	db         *sql.DB
+	db         rdbmsSessionDB
 	queries    []string
 	queryIndex int
 	rows       *sql.Rows

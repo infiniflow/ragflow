@@ -68,6 +68,39 @@ func newFixtureMySQLConnector(t *testing.T, config map[string]any, expect func(m
 	return connector
 }
 
+func TestMySQLConnectorNoBackslashEscapes(t *testing.T) {
+	const base = `SELECT id, 'C:\' AS path FROM products ORDER BY id`
+	c := newFixtureMySQLConnector(t, map[string]any{
+		"query":     base + "; -- exported;",
+		"id_column": "id",
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT @@SESSION.sql_mode")).WillReturnRows(
+			sqlmock.NewRows([]string{"sql_mode"}).AddRow("STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES"),
+		)
+		want := "SELECT * FROM (" + base + " -- exported;\n) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		mock.ExpectQuery(regexp.QuoteMeta(want)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "path"}).AddRow(7, `C:\`),
+		)
+		mock.ExpectClose()
+	})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := session.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	batch, err := session.NextBatch(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("got %d documents, want 1", len(batch.Documents))
+	}
+}
+
 // TestMySQLConnectorOpenSyncCustomQuery verifies a custom query produces documents.
 func TestMySQLConnectorOpenSyncCustomQuery(t *testing.T) {
 	query := "SELECT * FROM products WHERE status = 'active'"

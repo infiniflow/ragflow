@@ -17,7 +17,10 @@
 // Package sqllex recognizes comments and quoted text in SQL.
 package sqllex
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Dialect selects the quoting and comment rules of a database.
 type Dialect int
@@ -31,10 +34,12 @@ const (
 
 // TrimTerminator removes a semicolon only when it is the final SQL token,
 // leaving trailing comments and semicolons inside quoted text intact.
-func (d Dialect) TrimTerminator(s string) string {
+// sessionMode is MySQL's sql_mode or PostgreSQL's standard_conforming_strings.
+func (d Dialect) TrimTerminator(s, sessionMode string) string {
 	if !strings.Contains(s, ";") {
 		return s
 	}
+	rules := d.quoteRules(sessionMode)
 	last := -1
 	for i := 0; i < len(s); {
 		if end, executable := d.commentEnd(s, i); end > i {
@@ -47,7 +52,7 @@ func (d Dialect) TrimTerminator(s string) string {
 		if strings.IndexByte(" \t\n\r\f\v", s[i]) < 0 {
 			last = i
 		}
-		if end := d.quotedEnd(s, i); end > i {
+		if end := d.quotedEnd(s, i, rules); end > i {
 			i = end
 			continue
 		}
@@ -72,6 +77,7 @@ func MaskLiteralsAndComments(s, dbType string) (string, bool) {
 	case "mssql", "sqlserver":
 		d = sqlServer
 	}
+	rules := d.quoteRules("")
 	masked := []byte(s)
 	executableComment := false
 	for i := 0; i < len(s); {
@@ -84,7 +90,7 @@ func MaskLiteralsAndComments(s, dbType string) (string, bool) {
 			case d == sqlServer && s[i] == '[':
 				end = scanSQLQuotedText(s, i, ']', false)
 			default:
-				end = d.quotedEnd(s, i)
+				end = d.quotedEnd(s, i, rules)
 			}
 		}
 		if end == i {
@@ -117,12 +123,27 @@ func (d Dialect) commentEnd(s string, start int) (int, bool) {
 	return start, false
 }
 
+type quoteRules struct {
+	singleEscapes bool
+	doubleEscapes bool
+}
+
+func (d Dialect) quoteRules(mode string) quoteRules {
+	if d == MySQL {
+		modes := strings.Split(mode, ",")
+		backslash := !slices.Contains(modes, "NO_BACKSLASH_ESCAPES")
+		return quoteRules{singleEscapes: backslash, doubleEscapes: backslash && !slices.Contains(modes, "ANSI_QUOTES")}
+	}
+	return quoteRules{singleEscapes: d == PostgreSQL && mode == "off"}
+}
+
 // quotedEnd returns the byte after a string or quoted identifier, or start.
-func (d Dialect) quotedEnd(s string, start int) int {
+func (d Dialect) quotedEnd(s string, start int, rules quoteRules) int {
 	switch s[start] {
-	case '\'', '"':
-		escapes := d == MySQL || d == PostgreSQL && s[start] == '\'' && isPostgresEscapeString(s, start)
-		return scanSQLQuotedText(s, start, s[start], escapes)
+	case '\'':
+		return scanSQLQuotedText(s, start, '\'', rules.singleEscapes || d == PostgreSQL && isPostgresEscapeString(s, start))
+	case '"':
+		return scanSQLQuotedText(s, start, '"', rules.doubleEscapes)
 	case '`':
 		if d == MySQL {
 			return scanSQLQuotedText(s, start, '`', false)
