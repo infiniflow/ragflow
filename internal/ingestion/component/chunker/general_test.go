@@ -1710,6 +1710,32 @@ func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
 	}
 }
 
+func TestGeneralChunkerMarkdownPreservesTableLinkDestination(t *testing.T) {
+	markdown, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "| Resource | Link |\n| --- | --- |\n| Catalog | [product catalog](https://example.com/products) |"
+	parsed := markdown.ParseWithResult(t.Context(), "doc.md", []byte(source))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+	comp, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name": "doc.md", "file_type": "md", "output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "<td>product catalog (https://example.com/products)</td>"
+	if got := outputTexts(t, out); len(got) != 1 || !strings.Contains(got[0], want) {
+		t.Fatalf("chunk text = %q, want one chunk containing %q", got, want)
+	}
+}
+
 func TestGeneralChunkerMarkdownPreservesUnresolvedImageReferences(t *testing.T) {
 	markdown, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
 	if err != nil {
