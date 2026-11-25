@@ -208,10 +208,15 @@ func (dao *FileDAO) GetSubtreeIDs(ctx context.Context, db *gorm.DB, tenantID, pf
 	return ids, nil
 }
 
+// RootFolderName is the name of every tenant's root folder.
+const RootFolderName = "/"
+
 // GetRootFolder gets or creates root folder for tenant
 func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID string) (*entity.File, error) {
 	var file entity.File
-	err := db.WithContext(ctx).Where("tenant_id = ? AND parent_id = id", tenantID).First(&file).Error
+	// No index serves parent_id = id; the name filter lets the indexed columns
+	// find the root instead of reading every file of the tenant.
+	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ? AND parent_id = id", tenantID, RootFolderName).First(&file).Error
 	if err == nil {
 		return &file, nil
 	}
@@ -224,7 +229,7 @@ func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID str
 		UserID:    tenantID,
 		TenantID:  tenantID,
 		CreatedBy: tenantID,
-		Name:      "/",
+		Name:      RootFolderName,
 		Type:      "folder",
 		Size:      0,
 	}

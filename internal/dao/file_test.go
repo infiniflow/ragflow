@@ -313,3 +313,29 @@ func TestFileDAO_GetByIDAndTenant(t *testing.T) {
 		t.Fatalf("unscoped GetByID should still see the row: %v", err)
 	}
 }
+
+func TestFileDAO_GetRootFolderFindsOrCreatesTenantRoot(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFileTree(t, db) // t1 has a root and a self-parented "other" folder; t2 has none
+	d := NewFileDAO()
+
+	got, err := d.GetRootFolder(t.Context(), db, "t1")
+	if err != nil {
+		t.Fatalf("GetRootFolder(t1): %v", err)
+	}
+	if got.ID != "root" {
+		t.Fatalf("root id = %q, want root", got.ID)
+	}
+
+	created, err := d.GetRootFolder(t.Context(), db, "t2")
+	if err != nil {
+		t.Fatalf("GetRootFolder(t2): %v", err)
+	}
+	if created.ParentID != created.ID || created.Name != RootFolderName || created.TenantID != "t2" {
+		t.Fatalf("created root = %+v, want a self-parented %q folder of t2", created, RootFolderName)
+	}
+	again, err := d.GetRootFolder(t.Context(), db, "t2")
+	if err != nil || again.ID != created.ID {
+		t.Fatalf("second GetRootFolder(t2) = %+v, %v; want the created root %q", again, err, created.ID)
+	}
+}

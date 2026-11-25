@@ -19,6 +19,7 @@ package dao
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -866,4 +867,51 @@ func TestDocumentListStatusLetsARestoreDecideOnlyForRestoredContent(t *testing.T
 			t.Fatalf("completed documents = %v, want %s among them", ids, want)
 		}
 	}
+}
+
+func TestNameExistsInKBIsCaseInsensitiveAndUsesLowerNameIndex(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Report.PDF"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+
+	// Capture the statement NameExistsInKB sends, so the plan check below
+	// follows the DAO's predicate instead of a copy of it.
+	var countSQL string
+	var countVars []interface{}
+	if err := db.Callback().Query().After("gorm:query").Register("test:capture", func(tx *gorm.DB) {
+		countSQL, countVars = tx.Statement.SQL.String(), tx.Statement.Vars
+	}); err != nil {
+		t.Fatalf("register callback: %v", err)
+	}
+
+	dao := NewDocumentDAO()
+	for _, tc := range []struct {
+		kbID, name string
+		want       bool
+	}{
+		{"kb1", "report.pdf", true},
+		{"kb1", "REPORT.pdf", true},
+		{"kb1", "other.pdf", false},
+		{"kb2", "report.pdf", false},
+	} {
+		got, err := dao.NameExistsInKB(t.Context(), db, tc.kbID, tc.name)
+		if err != nil {
+			t.Fatalf("NameExistsInKB(%q, %q): %v", tc.kbID, tc.name, err)
+		}
+		if got != tc.want {
+			t.Errorf("NameExistsInKB(%q, %q) = %v, want %v", tc.kbID, tc.name, got, tc.want)
+		}
+	}
+
+	var plan []struct{ Detail string }
+	if err := db.Raw("EXPLAIN QUERY PLAN "+countSQL, countVars...).Scan(&plan).Error; err != nil {
+		t.Fatalf("explain %q: %v", countSQL, err)
+	}
+	for _, row := range plan {
+		if strings.Contains(row.Detail, "idx_document_kb_lower_name") {
+			return
+		}
+	}
+	t.Fatalf("query %q does not use idx_document_kb_lower_name: %+v", countSQL, plan)
 }

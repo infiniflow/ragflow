@@ -26,7 +26,7 @@ import (
 type Document struct {
 	ID                string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Thumbnail         *string    `gorm:"column:thumbnail;type:longtext" json:"thumbnail,omitempty"`
-	KbID              string     `gorm:"column:kb_id;size:256;not null;index" json:"kb_id"`
+	KbID              string     `gorm:"column:kb_id;size:256;not null;index;index:idx_document_kb_lower_name,priority:1" json:"kb_id"`
 	UserID            string     `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	ParserID          string     `gorm:"column:parser_id;size:32;not null;index" json:"parser_id"`
 	PipelineID        *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
@@ -35,7 +35,7 @@ type Document struct {
 	SourceType        string     `gorm:"column:source_type;size:128;not null;default:local;index" json:"source_type"`
 	Type              string     `gorm:"column:type;size:32;not null;index" json:"type"`
 	CreatedBy         string     `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
-	Name              *string    `gorm:"column:name;size:255;index" json:"name,omitempty"`
+	Name              *string    `gorm:"column:name;size:255;index;index:idx_document_kb_lower_name,priority:2,expression:(LOWER(name))" json:"name,omitempty"`
 	Location          *string    `gorm:"column:location;size:255;index" json:"location,omitempty"`
 	Size              int64      `gorm:"column:size;default:0;index" json:"size"`
 	TokenNum          int64      `gorm:"column:token_num;default:0;index" json:"token_num"`

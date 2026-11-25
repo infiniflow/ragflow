@@ -613,7 +613,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgebase, newName string) (common.ErrorCode, error) {
 	var root entity.File
 	err := tx.WithContext(ctx).
-		Where("tenant_id = ? AND parent_id = id AND type = ?", kb.TenantID, "folder").
+		Where("tenant_id = ? AND name = ? AND parent_id = id AND type = ?", kb.TenantID, dao.RootFolderName, "folder").
 		Take(&root).Error
 	if dao.IsNotFoundErr(err) {
 		return common.CodeSuccess, nil

@@ -652,7 +652,9 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB,
 }
 
 // NameExistsInKB reports whether a document with the given name already
-// exists in the dataset, comparing names case-insensitively.
+// exists in the dataset, comparing names case-insensitively. The predicate
+// must keep the exact LOWER(name) form of idx_document_kb_lower_name, or every
+// call reads all documents of the dataset.
 func (dao *DocumentDAO) NameExistsInKB(ctx context.Context, db *gorm.DB, kbID, name string) (bool, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.Document{}).

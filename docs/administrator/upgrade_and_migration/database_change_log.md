@@ -429,6 +429,7 @@ These steps are not gated by the version marker. They use schema or data checks 
 | `conversation`, `api_4_conversation`                                                       | Index `idx_<table>_dialog_updated (dialog_id, update_time, id)` for conversation list queries.                                                                                                                                                                                                                                                |
 | `knowledgebase` | Adds `pipeline_version_id varchar(32) NULL` (dataflow canvas version binding; design section 5/B4). |
 | `document` | Adds `pipeline_version_id varchar(32) NULL` (inherits the dataset pinned version at upload; design section 5). |
+| `document` | Index `idx_document_kb_lower_name (kb_id, (LOWER(name)))`, created by `AutoMigrate`, for the case-insensitive duplicate-name check on upload. The functional key part requires MySQL 8.0.13 or later. |
 | `user_canvas_version` | Adds `alias varchar(255) NULL` (free-text version alias for the version list filter; design A2/F1). |
 
 `migrateColumnWidths` performs the width changes above. It reads

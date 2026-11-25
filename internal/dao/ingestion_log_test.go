@@ -103,6 +103,11 @@ func TestLatestEventsByPipelineLogIDsReturnsOneRealRowPerRun(t *testing.T) {
 	if len(latest) != 2 || latest["run-1"] == nil || latest["run-1"].ID != 2 || latest["run-2"] == nil || latest["run-2"].ID != 3 {
 		t.Fatalf("latest events = %+v, want IDs run-1=2 run-2=3", latest)
 	}
+
+	none, err := NewIngestionTaskLogDAO().LatestEventsByPipelineLogIDs(t.Context(), db, []string{"missing"})
+	if err != nil || len(none) != 0 {
+		t.Fatalf("LatestEventsByPipelineLogIDs(missing) = %+v, %v; want empty", none, err)
+	}
 }
 
 func assertEventIDs(t *testing.T, events []*entity.IngestionTaskLog, want ...int) {
