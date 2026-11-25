@@ -29,8 +29,8 @@ export interface AgentCreateAction {
 }
 
 // The active tab decides which create actions exist: compilation groups only
-// support blank creation, workflows also offer templates and JSON import,
-// and pipelines also offer JSON import.
+// support blank creation, while workflow/pipeline also offer templates and
+// JSON import.
 export function useAgentCreateActions(
   activeType: FlowType,
   activeCategory: AgentTabCategory,

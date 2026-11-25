@@ -48,7 +48,7 @@ export const FlowTypeConfig: Record<
     createTitleKey: 'createIngestionPipeline',
     color: 'var(--team-group)',
     canvasCategory: AgentCategory.DataflowCanvas,
-    supportsTemplates: false,
+    supportsTemplates: true,
     supportsImport: true,
   },
 };
