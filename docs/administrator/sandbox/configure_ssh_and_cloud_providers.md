@@ -249,6 +249,25 @@ Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/
 
 Keep internet access and insecure HTTP disabled unless required.
 
+## Configure kosa8
+
+Create an API key in the [kosa8 dashboard](https://app.kosa8.com). Each execution runs in a disposable kosa8 microVM sandbox started from the template for its language, and the sandbox is deleted when the run ends. Then select **kosa8** in **Admin > Sandbox** and configure:
+
+| Setting | Required | Default | Description |
+| --- | --- | --- | --- |
+| **API Key** | Yes | — | Begins with `k8c_live_`. |
+| **API Endpoint** | No | `https://api.kosa8.com` | Override for a self-hosted kosa8 deployment. Must use HTTPS. |
+| **Python Template** | No | `python` | Python 3.12 on Alpine. A custom template must provide `python3`, `sh`, and `timeout` (coreutils or busybox). |
+| **Node.js Template** | No | `node` | Node.js 22 on Alpine. A custom template must provide `node`, `sh`, and `timeout` (coreutils or busybox). |
+| **Allow Internet Access** | No | Disabled | Applied as the sandbox's egress policy before code runs. Enable only when required. |
+| **Timeout (seconds)** | No | `30` | Range: 1–600. |
+| **Max Sandbox Lifetime (seconds)** | No | `3600` | Range: 60–86400. kosa8 deletes a sandbox after this even if the run is interrupted. |
+| **Max Output Bytes** | No | `1048576` | Combined stdout and stderr. |
+| **Max Artifacts** | No | `20` | Number of returned files. |
+| **Max Artifact Bytes** | No | `10485760` | Per returned file. |
+
+The settings can also come from the `KOSA8_API_KEY`, `KOSA8_API_URL`, `KOSA8_PYTHON_TEMPLATE`, `KOSA8_NODE_TEMPLATE`, `KOSA8_TIMEOUT`, and `KOSA8_ALLOW_INTERNET` environment variables when `SANDBOX_PROVIDER_TYPE=kosa8`. Keep internet access disabled unless executed code requires it. Artifacts are read through the kosa8 files API; a kosa8 host without it runs code normally but returns no artifacts. A run longer than 90 seconds on a host that cannot time a streamed command is timed with the template's `timeout` command, and fails if the template has none.
+
 ## Verify code execution
 
 After saving the provider:

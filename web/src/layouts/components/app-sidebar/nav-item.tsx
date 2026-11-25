@@ -1,17 +1,15 @@
 import { Button } from '@/components/ui/button';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
+import { useVisibleIntegrationChildren } from '@/ee/hooks/use-visible-integration-children';
 import { cn } from '@/lib/utils';
-import { LucideChevronDown } from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type PropsWithChildren,
-} from 'react';
+import { LucideChevronDown, type LucideIcon } from 'lucide-react';
+import { useCallback, useState, type PropsWithChildren } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router';
 import {
   IntegrationChildren,
   IntegrationsNavItem,
+  matchesPath,
   NavItem,
   useActiveNavigation,
 } from './navigation';
@@ -45,19 +43,21 @@ export function NavItemLink({ item }: { item: NavItem }) {
       <Button
         asLink
         to={item.path}
-        block
+        block={!collapsed}
         variant="ghost"
         aria-label={t(item.labelKey)}
         aria-current={isActive ? 'page' : undefined}
         className={cn(
-          'h-10 justify-start gap-2.5 px-3 text-base',
+          'h-10 justify-start gap-1 p-0 text-base',
           collapsed
             ? 'size-10 justify-center p-0'
             : 'max-md:size-10 max-md:justify-center max-md:p-0',
           isActive && 'bg-bg-card text-text-primary',
         )}
       >
-        <Icon className="size-5 shrink-0 stroke-[1.5]" />
+        <span className="flex size-10 shrink-0 items-center justify-center">
+          <Icon className="size-5 shrink-0 stroke-[1.5]" />
+        </span>
         <span className={cn('hidden truncate', !collapsed && 'md:inline')}>
           {t(item.labelKey)}
         </span>
@@ -66,60 +66,86 @@ export function NavItemLink({ item }: { item: NavItem }) {
   );
 }
 
-export function IntegrationsNavGroup() {
-  const { t } = useTranslation();
-  const { activeIntegrationKey } = useActiveNavigation();
-  const { collapsed } = useSidebarCollapse();
-  const [expanded, setExpanded] = useState(Boolean(activeIntegrationKey));
+export type NavGroupChild = {
+  key: string;
+  path: string;
+  labelKey: string;
+};
 
-  // Follow navigation into an integrations page even when the user
-  // collapsed the group before.
-  useEffect(() => {
-    if (activeIntegrationKey) {
+type CollapsibleNavGroupProps = {
+  id: string;
+  labelKey: string;
+  icon: LucideIcon;
+  items: NavGroupChild[];
+};
+
+export function CollapsibleNavGroup({
+  id,
+  labelKey,
+  icon: Icon,
+  items,
+}: CollapsibleNavGroupProps) {
+  const { t } = useTranslation();
+  const { pathname } = useLocation();
+  const { collapsed } = useSidebarCollapse();
+  const activeChildKey = items.find((child) =>
+    matchesPath(pathname, child.path),
+  )?.key;
+  const [expanded, setExpanded] = useState(Boolean(activeChildKey));
+  const [previousActiveChildKey, setPreviousActiveChildKey] =
+    useState(activeChildKey);
+
+  // Follow navigation into a child page even when the user collapsed the group before.
+  // Synchronize during render to avoid committing the stale collapsed state first.
+  if (activeChildKey !== previousActiveChildKey) {
+    setPreviousActiveChildKey(activeChildKey);
+    if (activeChildKey) {
       setExpanded(true);
     }
-  }, [activeIntegrationKey]);
+  }
 
   const toggleExpanded = useCallback(() => {
     setExpanded((prev) => !prev);
   }, []);
 
-  const Icon = IntegrationsNavItem.icon;
-  const isActive = Boolean(activeIntegrationKey);
+  const isActive = Boolean(activeChildKey);
+
+  if (items.length === 0) {
+    return null;
+  }
 
   return (
     <div>
-      <NavItemTooltip
-        collapsed={collapsed}
-        label={t(IntegrationsNavItem.labelKey)}
-      >
+      <NavItemTooltip collapsed={collapsed} label={t(labelKey)}>
         <Button
-          block
+          block={!collapsed}
           variant="ghost"
-          aria-label={t(IntegrationsNavItem.labelKey)}
+          aria-label={t(labelKey)}
           aria-expanded={expanded}
-          aria-controls="integrations-nav-children"
+          aria-controls={id}
           onClick={toggleExpanded}
           className={cn(
-            'h-10 justify-start gap-2.5 px-3 text-base',
+            'h-10 justify-start gap-1 p-0 text-base',
             collapsed
               ? 'size-10 justify-center p-0'
               : 'max-md:size-10 max-md:justify-center max-md:p-0',
             isActive && 'text-text-primary',
           )}
         >
-          <Icon className="size-5 shrink-0 stroke-[1.5]" />
+          <span className="flex size-10 shrink-0 items-center justify-center">
+            <Icon className="size-5 shrink-0 stroke-[1.5]" />
+          </span>
           <span
             className={cn(
               'hidden flex-1 truncate text-start',
               !collapsed && 'md:inline',
             )}
           >
-            {t(IntegrationsNavItem.labelKey)}
+            {t(labelKey)}
           </span>
           <LucideChevronDown
             className={cn(
-              'hidden size-4 shrink-0 transition-transform',
+              'hidden size-4 shrink-0 transition-transform md:me-3',
               !collapsed && 'md:block',
               expanded && 'rotate-180',
             )}
@@ -129,21 +155,21 @@ export function IntegrationsNavGroup() {
 
       {expanded && (
         <ul
-          id="integrations-nav-children"
+          id={id}
           className={cn(
             'mt-1 flex flex-col gap-1',
             collapsed ? 'items-center' : 'max-md:items-center',
           )}
         >
-          {IntegrationChildren.map((child) => {
-            const isChildActive = activeIntegrationKey === child.key;
+          {items.map((child) => {
+            const isChildActive = activeChildKey === child.key;
             return (
               <li key={child.key}>
                 <NavItemTooltip collapsed={collapsed} label={t(child.labelKey)}>
                   <Button
                     asLink
                     to={child.path}
-                    block
+                    block={!collapsed}
                     variant="ghost"
                     aria-label={t(child.labelKey)}
                     aria-current={isChildActive ? 'page' : undefined}
@@ -176,3 +202,19 @@ export function IntegrationsNavGroup() {
     </div>
   );
 }
+
+export function IntegrationsNavGroup() {
+  const integrationChildren =
+    useVisibleIntegrationChildren(IntegrationChildren);
+
+  return (
+    <CollapsibleNavGroup
+      id="integrations-nav-children"
+      labelKey={IntegrationsNavItem.labelKey}
+      icon={IntegrationsNavItem.icon}
+      items={integrationChildren}
+    />
+  );
+}
+
+// Enterprise: integration children use an EE/OSS hook for role-based visibility.

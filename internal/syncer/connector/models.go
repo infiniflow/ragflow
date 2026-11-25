@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"ragflow/internal/utility"
 )
 
 // ErrSyncResumeInvalid reports that a saved sync resume anchor no longer exists
@@ -157,4 +159,9 @@ func parseRDBMSCursor(cursor string) (rdbmsResumeCursor, error) {
 		return c, fmt.Errorf("rdbms sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	return c, nil
+}
+
+// truncateRunes shortens a value to at most max runes.
+func truncateRunes(value string, max int) string {
+	return utility.TruncateRunes(value, max)
 }

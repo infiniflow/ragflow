@@ -1054,7 +1054,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
         knowledge_graph: 'Bilik qrafı',
         mind_map: 'Düşüncə xəritəsi',
         page_index: 'Səhifə indeksi',
-        timeline: 'Zaman xətti',
         tree: 'Ağac',
         raptor: 'RAPTOR',
       },
@@ -1754,8 +1753,6 @@ Nümunə: Virtual host üslubu`,
         'Axtarış üçün dəyişikliklərin qəbulu sorğularını və problemləri sinxronlaşdırmaq məqsədilə GitHub-u qoşun.',
       airtableDescription:
         'Airtable-a qoşulun və təyin edilmiş iş sahəsindəki müəyyən cədvəldən faylları sinxronlaşdırın.',
-      dingtalkAITableDescription:
-        'Dingtalk AI Table-a qoşulun və müəyyən cədvəldəki qeydləri sinxronlaşdırın.',
       gitlabDescription:
         'Repozitoriyaları, problemləri, birləşdirmə sorğularını və əlaqəli sənədləri sinxronlaşdırmaq üçün GitLab-ı qoşun.',
       asanaDescription:
@@ -2493,12 +2490,10 @@ Nümunə: Virtual host üslubu`,
       navTree: 'Ağac/PageIndex',
       graph: 'Qraf',
       structureMindmap: 'Zehin xəritəsi',
-      structureTimeline: 'Zaman zolağı',
       noWikiPages: 'Hələ viki yoxdur',
       noSkills: 'Hələ bacarıq yoxdur',
       noStructureGraph: 'Hələ qraf yoxdur',
       noStructureMindmap: 'Hələ zehin xəritəsi yoxdur',
-      noStructureTimeline: 'Hələ zaman zolağı yoxdur',
       contents: 'Naviqasiya',
       topics: 'Mövzular',
       searchEntity: 'Obyekt axtarışı',
@@ -2849,6 +2844,16 @@ Nümunə: Virtual host üslubu`,
         'LLM-i cavab yaratmağa yönəldən komponent. Təlimatın düzgün təyin edildiyinə əmin olun.',
       categorizeDescription:
         'İstifadəçi girişlərini əvvəlcədən müəyyən edilmiş kateqoriyalara ayırmaq üçün LLM-dən istifadə edən komponent. Hər kateqoriya üçün ad, təsvir və nümunələri, həmçinin müvafiq növbəti komponenti göstərdiyinizə əmin olun.',
+      scoredSwitchQuestionRequired: 'Hər əlavə sual üçün təlimat lazımdır',
+      scoredSwitchLevelMinimum: 'Ən azı iki səviyyə əlavə edin',
+      scoredSwitchFieldMinimum: 'Ən azı bir sahə əlavə edin',
+      scoredSwitchFieldNameInvalid:
+        'Sahə adı hərf və ya alt xətt ilə başlamalıdır',
+      scoredSwitchListItemsRequired: 'Siyahı üçün element növü lazımdır',
+      scoredSwitchEstimateBoundsRequired:
+        'Qiymətləndirmə üçün minimum və maksimum lazımdır',
+      scoredSwitchForecastRequired: 'Proqnoz üçün üfüq və interval lazımdır',
+      scoredSwitchDecimalsRange: 'Onluqlar 0 ilə 6 arasında olmalıdır',
       relevantDescription:
         'Əvvəlki çıxışın istifadəçinin son sorğusuna uyğun olub-olmadığını qiymətləndirmək üçün LLM-dən istifadə edən komponent. Hər qiymətləndirmə nəticəsi üçün növbəti komponenti göstərdiyinizə əmin olun.',
       rewriteQuestionDescription:

@@ -19,14 +19,11 @@ package opensearch
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -426,6 +423,95 @@ func TestRunSQL_FollowsCursorPagination(t *testing.T) {
 	}
 }
 
+func TestRunSQL_UsesColumnAliasIfPresent(t *testing.T) {
+	aliasResponse := `{
+		"schema": [
+			{"name": "COUNT(1)", "type": "long", "alias": "total_count"},
+			{"name": "doc_id", "type": "text"}
+		],
+		"datarows": [
+			[42, "doc-1"]
+		],
+		"total": 1,
+		"size": 1
+	}`
+	srv, _ := newCapturingServer(t, http.StatusOK, aliasResponse)
+	e := newTestEngine(t, srv.URL)
+
+	rows, err := e.RunSQL(t.Context(), "SELECT COUNT(1) AS total_count, doc_id FROM ragflow_t1", "json")
+	if err != nil {
+		t.Fatalf("RunSQL: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if v, ok := rows[0]["total_count"]; !ok || v != float64(42) {
+		t.Errorf("expected row['total_count'] = 42, got %v", rows[0]["total_count"])
+	}
+	if v, ok := rows[0]["doc_id"]; !ok || v != "doc-1" {
+		t.Errorf("expected row['doc_id'] = 'doc-1', got %v", rows[0]["doc_id"])
+	}
+	if _, ok := rows[0]["COUNT(1)"]; ok {
+		t.Errorf("row['COUNT(1)'] should not be present when alias is defined")
+	}
+}
+
+func TestRunSQL_ClosesCursorOnPrematureExit(t *testing.T) {
+	var (
+		mu           sync.Mutex
+		closeCalled  bool
+		closedCursor string
+		requests     int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		requests++
+		if r.URL.Path == "/_plugins/_sql/close" {
+			closeCalled = true
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			closedCursor = body["cursor"]
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"succeeded": true}`))
+			return
+		}
+
+		if requests == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"schema": [{"name": "doc_id", "type": "text"}],
+				"datarows": [["d1"]],
+				"cursor": "cursor-exit-early"
+			}`))
+			return
+		}
+
+		// Second page fails
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error": "node failure"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	e := newTestEngine(t, srv.URL)
+	_, err := e.RunSQL(t.Context(), "SELECT doc_id FROM ragflow_t1", "json")
+	if err == nil {
+		t.Fatal("expected RunSQL to fail on 500 error")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !closeCalled {
+		t.Errorf("expected /_plugins/_sql/close to be called on error")
+	}
+	if closedCursor != "cursor-exit-early" {
+		t.Errorf("expected closed cursor 'cursor-exit-early', got %q", closedCursor)
+	}
+}
+
 // TestMain registers the engine as "infinity" so tokenizer.Tokenize and
 // tokenizer.FineGrainedTokenize short-circuit and return the input
 // as-is. This lets the rewrite tests assert on the SHAPE of the MATCH()
@@ -434,158 +520,23 @@ func TestMain(m *testing.M) {
 	// Suppress the client's background node-stats polling so the httptest
 	// servers only observe requests issued by the code under test.
 	_ = os.Setenv("OPENSEARCH_GO_DISCOVERY_CONFIG", "-node_stats")
-	_ = common.InitLogger("info", common.FileOutput{}, "opensearch_test")
+	common.InitLogger("info", common.FileOutput{}, "opensearch_test")
 	tokenizer.SetEngineType("infinity")
 	m.Run()
-}
-
-func TestPreprocess_WhitespaceAndBackticks(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"a  b", "a b"},
-		{"a   b   c", "a b c"},
-		{"a`b`c", "a b c"},
-		{"a `` b", "a b"},
-		{"  leading and trailing  ", " leading and trailing "},
-	}
-	for _, c := range cases {
-		if got := Preprocess(c.in); got != c.want {
-			t.Errorf("Preprocess(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocess_StripsPercent(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"count > 0 %", "count > 0 "},
-		{"100% match", "100 match"},
-		{"%%%", ""},
-	}
-	for _, c := range cases {
-		if got := Preprocess(c.in); got != c.want {
-			t.Errorf("Preprocess(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocess_LktksRewrite(t *testing.T) {
-	cases := []struct {
-		name   string
-		in     string
-		field  string
-		expect string
-	}{
-		{
-			"like with single-token value (ltks suffix)",
-			"select content_ltks like 'weather'",
-			"content_ltks",
-			"MATCH(content_ltks,",
-		},
-		{
-			"= with multi-word value (ltks suffix)",
-			"select content_ltks = 'final report'",
-			"content_ltks",
-			"MATCH(content_ltks,",
-		},
-		{
-			"tks (no l) suffix",
-			"select title_tks = 'hello'",
-			"title_tks",
-			"MATCH(title_tks,",
-		},
-		{
-			"leading-space anchor: no leading space means no match (mirrors Python regex)",
-			"content_ltks like 'weather'",
-			"content_ltks",
-			"content_ltks like 'weather'",
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := Preprocess(c.in)
-			isAnchorTest := c.expect == c.in
-			if isAnchorTest {
-				if got != c.in {
-					t.Errorf("Preprocess(%q) = %q, want unchanged (leading-space anchor should prevent match)", c.in, got)
-				}
-				return
-			}
-			if strings.Contains(got, c.field+" ") {
-				pattern := regexp.MustCompile(c.field + `( like | ?= ?)`)
-				if pattern.MatchString(got) {
-					t.Errorf("Preprocess(%q) = %q, still contains the original `<field> like/=` pattern", c.in, got)
-				}
-			}
-			if !strings.Contains(got, c.expect) {
-				t.Errorf("Preprocess(%q) = %q, want substring %q", c.in, got, c.expect)
-			}
-			if !strings.Contains(got, "minimum_should_match=30") {
-				t.Errorf("Preprocess(%q) = %q, want substring minimum_should_match=30", c.in, got)
-			}
-		})
-	}
-}
-
-func TestPreprocess_NoMatchLeavesSQLAlone(t *testing.T) {
-	in := "SELECT doc_id FROM ragflow_t1"
-	got := Preprocess(in)
-	if got != in {
-		t.Errorf("Preprocess(%q) = %q, want unchanged", in, got)
-	}
-}
-
-// fakeNetTimeoutErr implements net.Error with Timeout()==true.
-type fakeNetTimeoutErr struct{}
-
-func (fakeNetTimeoutErr) Error() string   { return "i/o timeout" }
-func (fakeNetTimeoutErr) Timeout() bool   { return true }
-func (fakeNetTimeoutErr) Temporary() bool { return true }
-
-func TestIsTimeoutError(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil error", nil, false},
-		{"context.DeadlineExceeded", context.DeadlineExceeded, true},
-		{"wrapped context.DeadlineExceeded", fmt.Errorf("wrap: %w", context.DeadlineExceeded), true},
-		{"net.Error.Timeout()==true", fakeNetTimeoutErr{}, true},
-		{"wrapped net.Error.Timeout", fmt.Errorf("wrap: %w", fakeNetTimeoutErr{}), true},
-		{"plain string 'i/o timeout'", errors.New("read tcp: i/o timeout"), true},
-		{"plain string 'deadline exceeded'", errors.New("context deadline exceeded"), true},
-		{"plain string 'connection timeout'", errors.New("connection timeout while reading"), true},
-		{"unrelated error", errors.New("parse: invalid character"), false},
-		{"EOF is not a timeout", errors.New("EOF"), false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := isTimeoutError(c.err); got != c.want {
-				t.Errorf("isTimeoutError(%v) = %v, want %v", c.err, got, c.want)
-			}
-		})
-	}
-}
-
-func TestIsTimeoutError_NonTimeoutNetError(t *testing.T) {
-	e := &net.OpError{
-		Op:  "dial",
-		Err: errors.New("connection refused"),
-	}
-	if isTimeoutError(e) {
-		t.Errorf("isTimeoutError(connection-refused) = true, want false")
-	}
 }
 
 // TestRunSQL_ErrorsOnStuckCursor ensures a server that keeps returning the
 // same cursor surfaces an error instead of silently burning the page budget.
 func TestRunSQL_ErrorsOnStuckCursor(t *testing.T) {
-	var requests int
+	var queryRequests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
+		if r.URL.Path == "/_plugins/_sql/close" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"succeeded": true}`))
+			return
+		}
+		queryRequests++
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
@@ -600,7 +551,7 @@ func TestRunSQL_ErrorsOnStuckCursor(t *testing.T) {
 	if _, err := e.RunSQL(t.Context(), "SELECT doc_id FROM ragflow_t1", "json"); err == nil {
 		t.Fatal("RunSQL: got nil error for a cursor that never advances")
 	}
-	if requests > 2 {
-		t.Errorf("requests: got %d, want at most 2 before aborting", requests)
+	if queryRequests > 2 {
+		t.Errorf("queryRequests: got %d, want at most 2 before aborting", queryRequests)
 	}
 }

@@ -1,8 +1,12 @@
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from '@/hooks/use-llm-request';
 import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { cn } from '@/lib/utils';
-import { OwnerTenantIdContext } from '@/pages/agent/context';
+import { ResourceTenantIdContext } from '@/pages/agent/context';
 import { KnowledgeBaseProvider } from '@/pages/dataset/contexts/knowledge-base-context';
 import { Routes } from '@/routes';
 import { useCallback, useEffect } from 'react';
@@ -40,29 +44,35 @@ export default function DatasetWrapper() {
   }, [setCollapsed, collapsePrimarySidebar]);
 
   return (
-    <OwnerTenantIdContext.Provider value={data?.tenant_id ?? ''}>
-      <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
-        <article
-          className={cn(
-            'grid size-full grid-rows-1',
-            collapsed
-              ? 'grid-cols-[minmax(0,1fr)]'
-              : 'grid-cols-[auto_minmax(0,1fr)]',
-          )}
-        >
-          {!collapsed && (
-            <SideBar
-              dataset={data}
-              onCollapse={collapseSidebars}
-              onMenuSelect={collapsePrimarySidebar}
-            />
-          )}
+    <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
+      <ModelResourceAccessUserIdContext.Provider
+        value={loading ? null : (data?.user_id ?? null)}
+      >
+        <ResourceTenantIdContext.Provider value={data?.tenant_id ?? ''}>
+          <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
+            <article
+              className={cn(
+                'grid size-full grid-rows-1',
+                collapsed
+                  ? 'grid-cols-[minmax(0,1fr)]'
+                  : 'grid-cols-[auto_minmax(0,1fr)]',
+              )}
+            >
+              {!collapsed && (
+                <SideBar
+                  dataset={data}
+                  onCollapse={collapseSidebars}
+                  onMenuSelect={collapsePrimarySidebar}
+                />
+              )}
 
-          <div className="min-h-0 min-w-0 pt-3">
-            <Outlet />
-          </div>
-        </article>
-      </KnowledgeBaseProvider>
-    </OwnerTenantIdContext.Provider>
+              <div className="min-h-0 min-w-0 pt-2.5">
+                <Outlet />
+              </div>
+            </article>
+          </KnowledgeBaseProvider>
+        </ResourceTenantIdContext.Provider>
+      </ModelResourceAccessUserIdContext.Provider>
+    </ModelResourceTenantIdContext.Provider>
   );
 }

@@ -90,6 +90,13 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      infoFields: {
+        name: '檔案名稱',
+        size: '大小',
+        type: '類型',
+        create_time: '建立時間',
+        update_time: '更新時間',
+      },
       reselectParserAfterUploadHint:
         '可繼續上傳，系統將自動切換至支援這些檔案類型的內建解析配置。',
       dataset: '數據集',
@@ -600,6 +607,8 @@ export default {
       firecrawlApiKeyTip:
         '選擇 Firecrawl 後，將使用其搜尋結果補充知識庫檢索。只取搜尋摘要，不抓取整頁。',
       firecrawlApiKeyMessage: '請輸入你的 Firecrawl API Key',
+      keirolabsApiKeyTip: '選擇 Keirolabs 後，將使用其搜尋結果補充知識庫檢索。',
+      keirolabsApiKeyMessage: '請輸入你的 Keirolabs API Key',
       linkupApiKeyTip: '選擇 Linkup 後，將使用其搜尋結果補充知識庫檢索。',
       linkupApiKeyMessage: '請輸入你的 Linkup API Key',
       parallelApiKeyTip: '選擇 Parallel 後，將使用其搜尋摘錄補充知識庫檢索。',
@@ -627,7 +636,6 @@ export default {
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
-      dingtalkAITableDescription: '連接釘釘AI表格，同步指定表格中的記錄。',
       gitlabDescription:
         '連接 GitLab，同步儲存庫、Issue、合併請求（MR）及相關文件內容。',
       bedrockCredentialsHint:
@@ -717,6 +725,7 @@ export default {
       workspace: '工作空間',
       upgrade: '升級',
       addLlmTitle: '添加Llm',
+      noChangesToSave: '沒有修改，無需保存',
       modelName: '模型名稱',
       modelID: '模型ID',
       modelUid: '模型uid',
@@ -951,6 +960,14 @@ export default {
       retrievalDescription: `此元件用於從知識庫中檢索相關資訊。選擇知識庫。如果沒有檢索到任何內容，將傳回「空響應」。`,
       generateDescription: `此元件用於呼叫LLM生成文本，請注意提示的設定。`,
       categorizeDescription: `此組件用於對文字進行分類。請指定類別的名稱、描述和範例。每個類別都指向不同的下游組件。`,
+      scoredSwitchQuestionRequired: '每個附加問題都需要說明',
+      scoredSwitchLevelMinimum: '至少添加兩個等級',
+      scoredSwitchFieldMinimum: '至少添加一個欄位',
+      scoredSwitchFieldNameInvalid: '欄位名稱必須以字母或底線開頭',
+      scoredSwitchListItemsRequired: '清單需要項目類型',
+      scoredSwitchEstimateBoundsRequired: '估計需要最小值和最大值',
+      scoredSwitchForecastRequired: '預測需要步數和間隔',
+      scoredSwitchDecimalsRange: '小數位數必須在 0 到 6 之間',
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
       rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:

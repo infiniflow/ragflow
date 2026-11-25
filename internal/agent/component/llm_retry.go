@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — retry decorator for ChatInvoker.
 //
 // retryInvoker wraps any ChatInvoker and retries it on error with
@@ -27,6 +43,7 @@ import (
 	"time"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 
 	"gorm.io/gorm"
@@ -123,10 +140,19 @@ func (r *retryInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRe
 		return nil, fmt.Errorf("component: retryInvoker: nil inner")
 	}
 	var resp *ChatInvokeResponse
-	err := common.RetryWithBackoff(ctx, r.maxRetries, r.initialDelay, func() error {
-		r, e := r.inner.Invoke(ctx, db, req)
-		resp = r
-		return e
+	var attempt uint32
+	err := common.RetryWithBackoff(ctx, r.maxRetries, r.initialDelay, func() (attemptErr error) {
+		attempt++
+		attemptCtx, finish := runtime.ObserveAgentNode(ctx, "model:"+req.ModelName, req.ModelName, "ModelCall", attempt, map[string]any{"model": req.ModelName, "driver": req.Driver})
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				finish(nil, fmt.Errorf("model panic: %v", recovered))
+				panic(recovered)
+			}
+			finish(agentModelCallOutput(resp), attemptErr)
+		}()
+		resp, attemptErr = r.inner.Invoke(attemptCtx, db, req)
+		return attemptErr
 	})
 	// On failure, return nil (not the last partial response) so callers
 	// that check err first never dereference a half-formed resp.
@@ -170,10 +196,20 @@ func (r *retryInvoker) Stream(ctx context.Context, db *gorm.DB, req ChatInvokeRe
 	var resp *ChatInvokeResponse
 	var callbackErr error
 	emitted := false
-	err := common.RetryWithBackoff(ctx, r.maxRetries, r.initialDelay, func() error {
+	var attempt uint32
+	err := common.RetryWithBackoff(ctx, r.maxRetries, r.initialDelay, func() (attemptErr error) {
+		attempt++
+		attemptCtx, finish := runtime.ObserveAgentNode(ctx, "model:"+req.ModelName, req.ModelName, "ModelCall", attempt, map[string]any{"model": req.ModelName, "driver": req.Driver})
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				finish(nil, fmt.Errorf("model panic: %v", recovered))
+				panic(recovered)
+			}
+			finish(agentModelCallOutput(resp), attemptErr)
+		}()
 		callbackErr = nil
 		var streamErr error
-		resp, streamErr = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+		resp, streamErr = streamer.Stream(attemptCtx, db, req, func(delta string, isThink bool) error {
 			if delta != "" {
 				emitted = true
 			}
@@ -197,3 +233,26 @@ func (r *retryInvoker) Stream(ctx context.Context, db *gorm.DB, req ChatInvokeRe
 }
 
 var _ chat.StreamingInvoker = (*retryInvoker)(nil)
+
+// agentModelCallOutput keeps provider results compatible with bounded event snapshots.
+func agentModelCallOutput(resp *ChatInvokeResponse) any {
+	if resp == nil {
+		return nil
+	}
+	output := map[string]any{"content": resp.Content, "thinking": resp.Thinking, "model": resp.Model, "stopped": resp.Stopped, "tokens": resp.Tokens}
+	if resp.Usage != nil {
+		output["usage"] = map[string]any{"prompt_tokens": resp.Usage.PromptTokens, "completion_tokens": resp.Usage.CompletionTokens, "total_tokens": resp.Usage.TotalTokens}
+	}
+	if len(resp.ToolCalls) > 0 {
+		calls := make([]any, 0, min(len(resp.ToolCalls), 64))
+		for i, call := range resp.ToolCalls {
+			if i >= 64 {
+				output["tool_calls_truncated"] = true
+				break
+			}
+			calls = append(calls, map[string]any{"id": call.ID, "name": call.Name, "arguments": call.Arguments})
+		}
+		output["tool_calls"] = calls
+	}
+	return output
+}

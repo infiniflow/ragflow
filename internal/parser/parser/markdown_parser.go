@@ -21,8 +21,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	markdownlib "github.com/gomarkdown/markdown"
@@ -42,51 +42,9 @@ const dataURIPrefix = "data:image/"
 // GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
 
-// markdownTOCHeadingPattern matches a Markdown TOC heading. Standalone
-// front/back-matter headings such as 致谢/Acknowledgments are sections, not
-// TOCs, so they stay out of the pattern even though plain-text items match them.
-var markdownTOCHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
-
-// markdownListMarkerPattern matches the unordered (*, -, +) or ordered (1., 1))
-// list markers a Markdown TOC entry carries.
-var markdownListMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
-
-// markdownTOCText strips ATX heading markers (#) and list markers so a Markdown
-// TOC heading, its entries and the body headings that end the TOC match on
-// their core text.
-func markdownTOCText(s string) string {
-	s = strings.TrimLeft(strings.TrimSpace(s), "# \t")
-	for {
-		loc := markdownListMarkerPattern.FindStringIndex(s)
-		if loc == nil {
-			return s
-		}
-		s = strings.TrimSpace(s[loc[1]:])
-	}
-}
-
-// markdownTOCEntry reports whether a Markdown item is a TOC entry: a list item
-// (*, -, +, 1., 1)) or a bare link line.
-func markdownTOCEntry(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	if markdownListMarkerPattern.MatchString(trimmed) {
-		return true
-	}
-	return strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "](")
-}
-
-// markdownTOCRules adapts TOC removal to Markdown item text.
-var markdownTOCRules = tocRules{
-	clean:      markdownTOCText,
-	heading:    markdownTOCHeadingPattern,
-	asciiExtra: "#*+_",
-	entry:      markdownTOCEntry,
-}
-
 type MarkdownParser struct {
 	libType     string
 	ParseMethod string
-	RemoveTOC   bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
@@ -118,9 +76,6 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
-	}
-	if v, ok := setup["remove_toc"].(bool); ok {
-		p.RemoveTOC = v
 	}
 }
 
@@ -228,9 +183,6 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
-	if p.RemoveTOC {
-		items = removeContentsTable(items, isEnglishItems(items, markdownTOCRules.asciiExtra), markdownTOCRules)
-	}
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -252,6 +204,24 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 
 func (p *MarkdownParser) String() string {
 	return "MarkdownParser"
+}
+
+// markdownRendererPool reuses HTML renderer instances across table renders.
+// Each call takes and returns its own instance, so concurrent parses never
+// share one renderer (RenderNode mutates per-instance counters). A recycled
+// renderer carries heading-ID, front-matter and last-output-length counters,
+// but table node trees contain no headings, front matter, or leading soft
+// breaks, so those counters cannot change the produced markup.
+var markdownRendererPool = sync.Pool{
+	New: func() any {
+		return mdhtml.NewRenderer(mdhtml.RendererOptions{})
+	},
+}
+
+func renderMarkdownNode(n ast.Node) []byte {
+	r := markdownRendererPool.Get().(*mdhtml.Renderer)
+	defer markdownRendererPool.Put(r)
+	return markdownlib.Render(n, r)
 }
 
 // markdownNew is a thin constructor so the extension set is owned
@@ -575,7 +545,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 
 		switch n := child.(type) {
 		case *ast.Table:
-			markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
+			markup := renderMarkdownNode(n)
 			tableDoc, _ := html.Parse(bytes.NewReader(markup))
 			walkHTMLBlocksWithState(tableDoc, out, htmlState)
 			continue
@@ -585,7 +555,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			docTypeKwd = "text"
 		case *ast.Paragraph:
 			if containsMarkdownTable(n) {
-				markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
+				markup := renderMarkdownNode(n)
 				doc, _ := html.Parse(bytes.NewReader(markup))
 				walkHTMLBlocksWithState(doc, out, htmlState)
 				continue
@@ -649,6 +619,9 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		}
 		if layout != "" {
 			item["layout"] = layout
+		}
+		if nHeading, ok := child.(*ast.Heading); ok && nHeading.Level > 0 {
+			item["heading_level"] = nHeading.Level
 		}
 
 		// Resolve Markdown images from the AST node of THIS block only, so
@@ -910,6 +883,24 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 		for _, c := range t.GetChildren() {
 			walkLeaf(c, buf)
 		}
+		buf.WriteString("](")
+		buf.Write(t.Destination)
+		buf.WriteByte(')')
+	case *ast.Link:
+		// gomarkdown keeps the URL on Destination, not in a child Text node, so
+		// the default branch dropped it. Keep the Markdown form, as for images.
+		// An autolink's text already is its URL.
+		var label bytes.Buffer
+		for _, c := range t.GetChildren() {
+			walkLeaf(c, &label)
+		}
+		dest := bytes.TrimPrefix(t.Destination, []byte("mailto:"))
+		if len(dest) == 0 || bytes.Equal(label.Bytes(), dest) {
+			buf.Write(label.Bytes())
+			return
+		}
+		buf.WriteByte('[')
+		buf.Write(label.Bytes())
 		buf.WriteString("](")
 		buf.Write(t.Destination)
 		buf.WriteByte(')')

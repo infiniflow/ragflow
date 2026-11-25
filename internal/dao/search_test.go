@@ -42,9 +42,9 @@ var searchOrderExpressions = []string{
 func seedOrderableSearches(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	searches := []entity.Search{
-		{ID: "s-1", TenantID: "t1", Name: "zulu", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
-		{ID: "s-2", TenantID: "t1", Name: "mike", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
-		{ID: "s-3", TenantID: "t1", Name: "alpha", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
+		{ID: "s-1", UserID: "t1", TenantID: "t1", Name: "zulu", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
+		{ID: "s-2", UserID: "t1", TenantID: "t1", Name: "mike", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
+		{ID: "s-3", UserID: "t1", TenantID: "t1", Name: "alpha", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
 	}
 	for i := range searches {
 		if err := db.Create(&searches[i]).Error; err != nil {
@@ -160,6 +160,7 @@ func seedSearchRowsWithCreateTime(t *testing.T, db *gorm.DB, tenantID string, co
 		createTime := int64(i * 100)
 		search := entity.Search{
 			ID:           fmt.Sprintf("s-%d", i),
+			UserID:       tenantID,
 			TenantID:     tenantID,
 			Name:         fmt.Sprintf("search-%d", i),
 			CreatedBy:    tenantID,
@@ -244,22 +245,28 @@ func TestSearchDAOListByResourceIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testi
 	}
 }
 
-// TestSearchDAOListByResourceIDsKeepsOwnerFilter pins the owner_ids filter: a
-// search owned by the requesting user is still excluded when its tenant_id is
-// not among ownerIDs, even when it is included in the authorized resource IDs.
+// TestSearchDAOListByResourceIDsKeepsOwnerFilter pins owner_ids to the search
+// owner's user_id, independently of the tenant that contains the search.
 func TestSearchDAOListByResourceIDsKeepsOwnerFilter(t *testing.T) {
 	db := setupSearchDetailDAOTestDB(t)
 	pushDB(t, db)
 	ctx := t.Context()
 	d := NewSearchDAO()
 
-	for _, tenantID := range []string{"t1", "u-self"} {
+	for _, test := range []struct {
+		id     string
+		userID string
+	}{
+		{id: "search-user-1", userID: "user-1"},
+		{id: "search-user-2", userID: "user-2"},
+	} {
 		createTime := int64(100)
 		search := entity.Search{
-			ID:           "search-" + tenantID,
-			TenantID:     tenantID,
-			Name:         "search " + tenantID,
-			CreatedBy:    tenantID,
+			ID:           test.id,
+			UserID:       test.userID,
+			TenantID:     "t1",
+			Name:         "search " + test.userID,
+			CreatedBy:    test.userID,
 			SearchConfig: entity.JSONMap{},
 			Status:       stringPtr("1"),
 			BaseModel:    entity.BaseModel{CreateTime: &createTime},
@@ -269,14 +276,14 @@ func TestSearchDAOListByResourceIDsKeepsOwnerFilter(t *testing.T) {
 		}
 	}
 
-	rows, total, err := d.ListByResourceIDs(ctx, db, []string{"search-t1", "search-u-self"}, []string{"t1"}, 0, 0, nil, "")
+	rows, total, err := d.ListByResourceIDs(ctx, db, []string{"search-user-1", "search-user-2"}, []string{"user-1"}, 0, 0, nil, "")
 	if err != nil {
 		t.Fatalf("ListByResourceIDs: %v", err)
 	}
 	if total != 1 {
-		t.Fatalf("total = %d, want 1: only the t1 search has a tenant_id in ownerIDs", total)
+		t.Fatalf("total = %d, want 1: only the user-1 search has a user_id in ownerIDs", total)
 	}
-	assertSearchIDs(t, rows, []string{"search-t1"}, "owner filter")
+	assertSearchIDs(t, rows, []string{"search-user-1"}, "owner filter")
 }
 
 // TestSearchDAODeleteByIDRemovesRow pins the delete semantics against Python:

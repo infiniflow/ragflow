@@ -199,7 +199,7 @@ const emitIngestLogTimeout = 3 * time.Second
 // inside it (slow sink, DB error, panic). The caller snapshots the identity
 // scalars and returns immediately; enrichment + emit run on a detached,
 // panic-recovered goroutine.
-func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, typ, status, errorInfo string) {
+func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, status, errorInfo string) {
 	if s.eventEmitter == nil || task == nil {
 		return
 	}
@@ -218,7 +218,6 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 		userID:        task.UserID,
 		datasetID:     task.DatasetID,
 		pipelineLogID: task.PipelineLogID,
-		typ:           typ,
 		status:        status,
 		errorInfo:     errorInfo,
 	}
@@ -235,7 +234,6 @@ type ingestEventSnapshot struct {
 	userID        string
 	datasetID     string
 	pipelineLogID *string
-	typ           string
 	status        string
 	errorInfo     string
 }
@@ -280,7 +278,9 @@ func (s *IngestionTaskService) emitLifecycleEventAsync(parentCtx context.Context
 		run, _ = s.pipelineLogDAO.GetByID(ctx, db, *logID)
 	}
 	ctx = s.enrichIngestIdentity(ctx, db, task, doc)
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, snap.typ, snap.status, snap.errorInfo))
+	// event_type now carries the event scope, which for lifecycle events is
+	// always "task"; the lifecycle state itself is carried by status.
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, "task", snap.status, snap.errorInfo))
 }
 
 // enrichIngestIdentity attaches the owning user and tenant display names to the
@@ -434,7 +434,7 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		// close the open row. Close it here or it stays RUNNING forever.
 		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, task, "Task stopped by user.")
-		s.emitLifecycleEvent(ctx, task, "stopped", common.STOPPED, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, task, common.STOPPED, "Task stopped by user.")
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -465,7 +465,7 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 	// reflect this run rather than a zero or previous-run value. Emitting here
 	// (guarded by a successful claim in the caller) keeps one running event per
 	// actual run start.
-	s.emitLifecycleEvent(ctx, task, "running", common.RUNNING, "")
+	s.emitLifecycleEvent(ctx, task, common.RUNNING, "")
 }
 
 // ErrTaskNotInScope indicates RequestStopScoped was asked to stop a task whose
@@ -500,7 +500,7 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 		// CANCEL here, otherwise the detail page keeps a queued entry.
 		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
-		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
 		task, err := s.transition(ctx, task.ID, common.STOPPING)
@@ -570,7 +570,7 @@ func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskI
 		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel, terminalMessage); err != nil {
 			return nil, err
 		}
-		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, terminalMessage)
+		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, terminalMessage)
 		return stopped, nil
 	case common.RUNNING, common.STOPPING:
 		return nil, fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
@@ -629,7 +629,7 @@ func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string)
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "completed", common.COMPLETED, "")
+	s.emitLifecycleEvent(ctx, updated, common.COMPLETED, "")
 	return nil
 }
 
@@ -657,7 +657,7 @@ func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason st
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "failed", common.FAILED, reason)
+	s.emitLifecycleEvent(ctx, updated, common.FAILED, reason)
 	return nil
 }
 
@@ -676,7 +676,7 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "stopped", common.STOPPED, "")
+	s.emitLifecycleEvent(ctx, updated, common.STOPPED, "")
 	return nil
 }
 
@@ -919,34 +919,26 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
+			s.emitLifecycleEvent(ctx, existing, common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
 			}
 			return s.markScheduledAfterPublish(ctx, existing.ID)
 		case common.FAILED, common.STOPPED:
-			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, common.CREATED)
+			boundLogID, err := s.retryWithFreshRunIdentity(ctx, existing, kbCache)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("retry run identity for task %s: %w", existing.ID, err)
 			}
-			if err = s.ingestionTaskDAO.ClearPipelineLogID(ctx, dao.DB, existing.ID); err != nil {
-				return nil, fmt.Errorf("clear previous run identity for task %s: %w", existing.ID, err)
-			}
-			existing.PipelineLogID = nil
+			existing.PipelineLogID = &boundLogID
+			existing.Status = common.CREATED
 			// The previous run is terminal, so any leftover Redis cancel flag
 			// is stale: a genuine cancel of the new run can only come through
-			// RequestStop once the task is RUNNING again. Clear it so the
-			// re-queued task is not cancelled at the worker's pre-start check.
+			// RequestStop once the task is RUNNING again. Clear it after the
+			// run identity commits so the re-queued task is not cancelled at
+			// the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
-			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("ensure run identity for task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
-				}
-				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
-			}
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
+			s.emitLifecycleEvent(ctx, existing, common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -967,7 +959,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		}
 		return nil, fmt.Errorf("ensure run identity for task %s: %w", created.ID, err)
 	}
-	s.emitLifecycleEvent(ctx, created, "created", common.CREATED, "")
+	s.emitLifecycleEvent(ctx, created, common.CREATED, "")
 	if err = s.enqueueTask(ctx, created, kbCache); err != nil {
 		s.settlePublishFailure(ctx, created)
 		return nil, err
@@ -975,15 +967,66 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 	return s.markScheduledAfterPublish(ctx, created.ID)
 }
 
-func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
+// retryWithFreshRunIdentity reopens a terminal task for a new run. The status
+// transition, old-binding release, and new-run creation/binding all commit in
+// one short transaction, so an external observer never sees a runnable task
+// whose replacement run identity is not ready yet. On any failure the whole
+// transaction rolls back, leaving the task terminal with its prior binding and
+// run count intact.
+func (s *IngestionTaskService) retryWithFreshRunIdentity(ctx context.Context, task *entity.IngestionTask, kbCache map[string]*entity.Knowledgebase) (string, error) {
+	if task == nil || task.ID == "" || task.DocumentID == "" || s.pipelineLogDAO == nil {
+		return "", errors.New("run identity requires a task, document, and pipeline log DAO")
+	}
+	input, err := s.buildOpenLogInput(ctx, task, kbCache)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if !updated {
-		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
+	input.OperationStatus = string(entity.TaskStatusUnstart)
+	var boundLogID string
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		lockedDocument, err := s.documentDAO.GetByIDForUpdate(ctx, tx, task.DocumentID)
+		if err != nil {
+			return err
+		}
+		lockedTask, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
+		if err != nil {
+			return err
+		}
+		if lockedTask.DocumentID != lockedDocument.ID || lockedTask.DatasetID != input.KbID {
+			return fmt.Errorf("task %s no longer matches document or dataset", lockedTask.ID)
+		}
+		if !statusInSet(lockedTask.Status, []string{common.FAILED, common.STOPPED}) {
+			return &TaskStatusConflictError{TaskID: task.ID, ExpectedFrom: "FAILED/STOPPED", AttemptedTo: common.CREATED, ActualCurrent: lockedTask.Status}
+		}
+		if err := s.ingestionTaskDAO.ClearPipelineLogID(ctx, tx, lockedTask.ID); err != nil {
+			return err
+		}
+		updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, tx, lockedTask.ID, []string{common.FAILED, common.STOPPED}, common.CREATED)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			return &TaskStatusConflictError{TaskID: task.ID, ExpectedFrom: "FAILED/STOPPED", AttemptedTo: common.CREATED, ActualCurrent: lockedTask.Status}
+		}
+		runCount, err := s.pipelineLogDAO.NextRunCount(ctx, tx, lockedTask.DocumentID)
+		if err != nil {
+			return err
+		}
+		input.RunCount = runCount
+		log, err := s.pipelineLogDAO.CreateOpenLog(ctx, tx, input)
+		if err != nil {
+			return err
+		}
+		if err := s.ingestionTaskDAO.UpdatePipelineLogID(ctx, tx, lockedTask.ID, log.ID); err != nil {
+			return err
+		}
+		boundLogID = log.ID
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
-	return nil
+	return boundLogID, nil
 }
 
 func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID string) error {
@@ -1007,7 +1050,7 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		}
 		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
 		s.recordRunMessage(ctx, task, "Task is queued...")
-		s.emitLifecycleEvent(ctx, task, "scheduled", common.SCHEDULED, "")
+		s.emitLifecycleEvent(ctx, task, common.SCHEDULED, "")
 		return task, nil
 	}
 
@@ -1359,9 +1402,10 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
-// RecordTerminal writes the terminal explanation associated with a run.
-func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
-	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
+// RecordTerminal writes a run's terminal explanation and classifies any supplied causes.
+func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string, causes ...error) error {
+	errorCode := ingestionErrorCode(errors.Join(causes...))
+	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message, errorCode); err != nil {
 		return err
 	}
 	foldContext := context.WithoutCancel(ctx)
@@ -1389,7 +1433,7 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 // ensureTerminalEvent serializes terminal writers on the run row and inserts
 // the terminal event only when one is not already present. This makes retrying
 // settlement safe after the operation status has already advanced.
-func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message string) error {
+func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message, errorCode string) error {
 	if dao.DB == nil {
 		return errors.New("ingestion task: nil database")
 	}
@@ -1408,7 +1452,7 @@ func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipeline
 		if count > 0 {
 			return nil
 		}
-		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message)
+		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message, errorCode)
 	})
 }
 
@@ -1423,10 +1467,10 @@ func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error
 }
 
 func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
-	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message)
+	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message, "")
 }
 
-func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
+func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message, errorCode string) error {
 	if pipelineLogID == "" {
 		return rejectIngestionEvent("missing_pipeline_log_id", pipelineLogID, taskID, errors.New("ingestion event requires a pipeline log id"))
 	}
@@ -1454,6 +1498,10 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 		phase = 0
 	}
 	message = s.truncateIngestionEventMessage(message)
+	checkpoint := entity.JSONMap{}
+	if errorCode != "" {
+		checkpoint["error_code"] = errorCode
+	}
 	now := time.Now().Local()
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;
@@ -1461,7 +1509,7 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 	return db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
 		"task_id":         taskID,
 		"pipeline_log_id": pipelineLogID,
-		"checkpoint":      entity.JSONMap{},
+		"checkpoint":      checkpoint,
 		"phase":           phase,
 		"event_type":      eventType,
 		"component":       component,

@@ -14,7 +14,9 @@
  *  limitations under the License.
  */
 
-import { IAddedModel } from '@/interfaces/database/llm';
+import { addModelGroupTenantParams } from '@/ee/utils/add-model-group-tenant-params';
+import { FieldToModelType } from '@/constants/llm';
+import { IAddedModel, IDefaultModel } from '@/interfaces/database/llm';
 import { getCachedLlmList } from './llm-cache';
 
 // The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
@@ -60,6 +62,16 @@ export function buildModelValue(model: {
 }) {
   const value = `${model.model_name}@${model.model_instance}@${model.model_provider}`;
   return model.tenant_id ? `${value}#${model.tenant_id}` : value;
+}
+
+export function getDefaultModelIdByField(
+  defaultModels: IDefaultModel[],
+  modelField: string,
+) {
+  const modelType = FieldToModelType[modelField];
+  const model = defaultModels.find((item) => item.model_type === modelType);
+  if (!model?.enable) return '';
+  return model.model_id || buildModelValue(model);
 }
 
 /**
@@ -203,10 +215,9 @@ const modelParamMap: ModelParamMap = {
   rerank_id: 'tenant_rerank_id',
 };
 
-// API endpoint whitelist - only these endpoints will have tenant parameters added
-// Note: /api/v1/chats is intentionally absent — the chats API normalizes the
-// model name/id pair server-side, so the frontend submits only llm_id /
-// rerank_id and must not have a stale tenant_* id injected back in here.
+// API endpoint whitelist for direct-model tenant id lookup. Group references
+// are mapped before this whitelist; /api/v1/chats remains excluded here so a
+// direct model never gets a stale tenant_* id injected by the legacy lookup.
 const API_WHITELIST = [
   '/api/v1/users/me/models',
   '/v1/canvas/set',
@@ -224,12 +235,16 @@ export function isUrlInWhitelist(url: string): boolean {
 
 // Add tenant model ID parameters to request data
 export function addTenantParams(data: any, url?: string): any {
+  return addDirectModelTenantParams(addModelGroupTenantParams(data), url);
+}
+
+function addDirectModelTenantParams(data: any, url?: string): any {
   if (!data || typeof data !== 'object') return data;
 
   // Handle arrays
   if (Array.isArray(data)) {
     if (url && !isUrlInWhitelist(url)) return data;
-    return data.map((item) => addTenantParams(item, url));
+    return data.map((item) => addDirectModelTenantParams(item, url));
   }
 
   const newData = { ...data };
@@ -268,7 +283,7 @@ export function addTenantParams(data: any, url?: string): any {
   // Recursively process nested objects
   for (const [key, value] of Object.entries(newData)) {
     if (value && typeof value === 'object' && !modelParamMap[key]) {
-      newData[key] = addTenantParams(value, url);
+      newData[key] = addDirectModelTenantParams(value, url);
     }
   }
 

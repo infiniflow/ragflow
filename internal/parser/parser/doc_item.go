@@ -17,6 +17,7 @@ package parser
 import (
 	"encoding/json"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -556,27 +557,9 @@ func rowColumnBoxesFromAny(v [][]any) Positions {
 }
 
 func positionFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	default:
-		return 0, false
-	}
+	return common.ToFloat(v)
 }
 
 func toInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		return int(n), true
-	default:
-		return 0, false
-	}
+	return common.ToIntNum(v)
 }

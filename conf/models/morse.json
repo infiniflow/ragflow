@@ -1,0 +1,83 @@
+{
+  "name": "Morse",
+  "url": {
+    "default": "https://inference.trymorse.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "morse",
+  "models": [
+    {
+      "name": "z-ai/glm-5.3-flash",
+      "context_length": 1048576,
+      "max_output": 1048575,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k3.1-pro",
+      "context_length": 1048576,
+      "max_output": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4.1-flash",
+      "context_length": 1048576,
+      "max_output": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3",
+      "context_length": 1048576,
+      "max_output": 1048575,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro-0813",
+      "context_length": 1048576,
+      "max_output": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.7-code",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

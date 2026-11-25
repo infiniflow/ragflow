@@ -2538,8 +2538,8 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 // TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
 // template group owned by the caller appears in the merged /agents list
 // (no canvas_category filter), carrying the "compilation_template_group" type
-// discriminator and its title = name. Groups without the caller's tenant
-// ownership must NOT leak in.
+// discriminator and its title = name. Groups owned by another user or tenant
+// must NOT leak in.
 func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -2551,14 +2551,27 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// Agent updated most recently (canvasUpdate > groupUpdate).
 	if err := dao.DB.Create(&entity.UserCanvas{
-		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
+		ID: "canvas-1", UserID: "user-1", TenantID: sptr("tenant-1"), Title: sptr("Agent canvas"),
 		CanvasCategory: "agent_canvas",
 		BaseModel:      entity.BaseModel{CreateTime: &canvasUpdate, UpdateTime: &canvasUpdate},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
+	if err := dao.DB.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("failed to migrate Tenant: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1", Status: &valid}).Error; err != nil {
+		t.Fatalf("failed to seed tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "agent-list-owner-membership", UserID: "user-1", TenantID: "tenant-1",
+		Role: string(permission.RoleOwner), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed owner membership: %v", err)
+	}
 	// The caller's own group (must appear), updated before the canvas.
-	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
+	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", "tenant-1", groupUpdate)
 	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
@@ -2567,7 +2580,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 		t.Fatalf("failed to seed builtin group: %v", err)
 	}
 
-	resp, code, err := NewAgentService().ListAgents(serviceTestContext(t, "user-1", "user-1"), "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(serviceTestContext(t, "user-1", "tenant-1"), "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -2663,10 +2676,10 @@ func TestSlicePage_NoOverflowPanic(t *testing.T) {
 	}
 }
 
-func createAgentSessionTestCompilationGroup(t *testing.T, id, tenantID string, now int64) {
+func createAgentSessionTestCompilationGroup(t *testing.T, id, ownerUserID, tenantID string, now int64) {
 	t.Helper()
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
-		ID: id, TenantID: tenantID, Name: "own-group", Scope: "file",
+		ID: id, UserID: ownerUserID, TenantID: tenantID, Name: "own-group", Scope: "file",
 		BaseModel: entity.BaseModel{CreateTime: &now, UpdateTime: &now},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed group %s: %v", id, err)

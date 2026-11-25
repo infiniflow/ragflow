@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -559,23 +560,7 @@ func (m *bpeModel) memoPut(piece string, count int) {
 
 // trimToLimit returns the longest rune prefix with at most limit tokens.
 func (m *bpeModel) trimToLimit(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if m.countTokens(text) <= limit {
-		return text
-	}
-	runes := []rune(text)
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		if m.countTokens(string(runes[:mid])) <= limit {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return string(runes[:lo])
+	return trimToRuneLimitByCount(text, limit, m.countTokens)
 }
 
 // ---------------------------------------------------------------------------
@@ -836,7 +821,7 @@ func buildByteToRune() [256]rune {
 	cs = append(cs, bs...)
 	extra := 0
 	for b := 0; b < 256; b++ {
-		if containsInt(bs, b) {
+		if slices.Contains(bs, b) {
 			continue
 		}
 		bs = append(bs, b)
@@ -848,15 +833,6 @@ func buildByteToRune() [256]rune {
 		table[bs[i]] = rune(cs[i])
 	}
 	return table
-}
-
-func containsInt(xs []int, v int) bool {
-	for _, x := range xs {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 // ---------------------------------------------------------------------------

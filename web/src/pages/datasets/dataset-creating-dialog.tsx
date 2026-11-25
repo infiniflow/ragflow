@@ -1,3 +1,4 @@
+import { useDatasetCreatingParserConfig } from '@/ee/pages/datasets/use-dataset-creating-parser-config';
 import { ParserTreeSelect } from '@/components/parser-tree-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
@@ -32,7 +33,7 @@ import { EmbeddingModelItem } from '../dataset/setting/common-item';
 
 const FormId = 'dataset-creating-form';
 
-export function InputForm({ onOk }: IModalProps<any>) {
+export function InputForm({ onOk, loading }: IModalProps<any>) {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary(true);
 
@@ -54,6 +55,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
       parser_id: z.string().optional(),
       pipeline_id: z.string().optional(),
       pipeline_version_id: z.string().optional(),
+      parser_config: z.record(z.string(), z.any()).optional(),
     })
     .superRefine((data, ctx) => {
       // When parse_type === BuiltIn, parser_id is required
@@ -103,13 +105,26 @@ export function InputForm({ onOk }: IModalProps<any>) {
     name: 'pipeline_version_id',
   });
 
+  const { parserConfig, loading: parserConfigLoading } =
+    useDatasetCreatingParserConfig({
+      parseType,
+      parserId,
+      pipelineId,
+      pipelineVersionId,
+    });
+
   const handleParserSelect = useParserSelectHandler(form);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
+    if (parserConfigLoading) return;
+
     const nextData =
       parseType === ParseType.BuiltIn
         ? omit(data, ['pipeline_id', 'pipeline_version_id'])
         : omit(data, ['parser_id']);
+    if (parserConfig) {
+      nextData.parser_config = parserConfig;
+    }
     onOk?.(nextData);
   }
 
@@ -122,52 +137,63 @@ export function InputForm({ onOk }: IModalProps<any>) {
   }, [defaultModelDictionary, form]);
 
   return (
-    <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit(onSubmit, (errors) => {
-          console.warn(errors);
-        })}
-        className="space-y-6"
-        id={FormId}
-      >
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem className="space-y-1">
-              <FormLabel required>{t('knowledgeList.name')}</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder={t('knowledgeList.namePlaceholder')}
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+    <>
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit(onSubmit, (errors) => {
+            console.warn(errors);
+          })}
+          className="space-y-6"
+          id={FormId}
+        >
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem className="space-y-1">
+                <FormLabel required>{t('knowledgeList.name')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t('knowledgeList.namePlaceholder')}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <EmbeddingModelItem line={2} isEdit={false} />
-        <FormField
-          control={form.control}
-          name={parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'}
-          render={() => (
-            <FormItem>
-              <ParserTreeSelect
-                value={buildParserSelectValue({
-                  parseType,
-                  parserId,
-                  pipelineId,
-                  pipelineVersionId,
-                })}
-                onChange={handleParserSelect}
-              />
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </form>
-    </Form>
+          <EmbeddingModelItem line={2} isEdit={false} />
+          <FormField
+            control={form.control}
+            name={parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'}
+            render={() => (
+              <FormItem>
+                <ParserTreeSelect
+                  value={buildParserSelectValue({
+                    parseType,
+                    parserId,
+                    pipelineId,
+                    pipelineVersionId,
+                  })}
+                  onChange={handleParserSelect}
+                />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </form>
+      </Form>
+      <DialogFooter>
+        <ButtonLoading
+          type="submit"
+          form={FormId}
+          loading={loading || parserConfigLoading}
+        >
+          {t('common.save')}
+        </ButtonLoading>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -194,12 +220,7 @@ export function DatasetCreatingDialog({
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>
         <DialogDescription></DialogDescription>
-        <InputForm onOk={onOk}></InputForm>
-        <DialogFooter>
-          <ButtonLoading type="submit" form={FormId} loading={loading}>
-            {t('common.save')}
-          </ButtonLoading>
-        </DialogFooter>
+        <InputForm onOk={onOk} loading={loading}></InputForm>
       </DialogContent>
     </Dialog>
   );

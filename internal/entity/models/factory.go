@@ -167,6 +167,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 	case "monkeyocr":
 		// MonkeyOCR's RAGFlow adapter uses the same /file_parse ZIP protocol as MinerU.
 		return NewMonkeyOCRModel(baseURL, urlSuffix), nil
+	case "unlimited_ocr", "unlimited-ocr-2":
+		return NewUnlimitedOCRModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":
@@ -226,6 +228,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHostingerRouterModel(baseURL, urlSuffix), nil
 	case "wally":
 		return NewWallyModel(baseURL, urlSuffix), nil
+	case "onomeo":
+		return NewOnomeoModel(baseURL, urlSuffix), nil
 	case "synap":
 		return NewSynapModel(baseURL, urlSuffix), nil
 	case "wiro ai":
@@ -234,6 +238,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCrusoeModel(baseURL, urlSuffix), nil
 	case "hopbase":
 		return NewHopBaseModel(baseURL, urlSuffix), nil
+	case "greennode":
+		return NewGreenNodeModel(baseURL, urlSuffix), nil
+	case "morse":
+		return NewMorseModel(baseURL, urlSuffix), nil
+	case "teamorouter":
+		return NewTeamoRouterModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

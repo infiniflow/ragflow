@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
@@ -167,6 +168,14 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		}
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
+	}
+	permissionMask, permissionErr := documentOperatorPermission(ctx, documentID)
+	if permissionErr != nil {
+		respondPermissionError(c, permissionErr, false)
+		return
+	}
+	if resp.Doc != nil {
+		resp.Doc["operator_permission"] = permissionMask
 	}
 
 	common.RespondSuccess(c, resp, "success")
@@ -350,6 +359,22 @@ func parseAvailableBody(rawBody map[string]interface{}) (int, error) {
 	return 0, fmt.Errorf("`available_int` or `available` is required")
 }
 
+// optionalBodyVersion reads the optional optimistic-lock token. Absent means
+// "no lock"; anything that is not a non-negative integer is a bad request, so
+// a client cannot believe it sent a lock the server dropped.
+func optionalBodyVersion(rawBody map[string]interface{}) (*int, error) {
+	raw, ok := rawBody["expected_version"]
+	if !ok {
+		return nil, nil
+	}
+	number, ok := raw.(float64)
+	if !ok || number != math.Trunc(number) || number < 0 {
+		return nil, errors.New("`expected_version` must be a non-negative integer")
+	}
+	version := int(number)
+	return &version, nil
+}
+
 // optionalBodyString reads an optional string field. A present field of another
 // JSON type is rejected instead of being silently ignored, so a client cannot
 // believe it sent an image that the server dropped.
@@ -422,10 +447,11 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"image_update_mode":  true,
 		"tag_kwd":            true,
 		"tag_feas":           true,
+		"expected_version":   true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.Respond(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas")
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas, expected_version")
 			return
 		}
 	}
@@ -480,6 +506,12 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	req.ImageBase64 = imageBase64
 	req.ImageUpdateMode = imageUpdateMode
+	expectedVersion, err := optionalBodyVersion(rawBody)
+	if err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.ExpectedVersion = expectedVersion
 
 	// Set path parameters
 	req.DatasetID = datasetID
@@ -499,6 +531,9 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 			switch coded.Code() {
 			case common.CodeArgumentError, common.CodeBadRequest, common.CodeDataError:
 				common.Respond(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
+				return
+			case common.CodeConflict:
+				common.Respond(c, http.StatusConflict, coded.Code(), nil, err.Error())
 				return
 			}
 		}

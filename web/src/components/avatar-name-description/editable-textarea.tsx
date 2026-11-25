@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { LucidePencil } from 'lucide-react';
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 export interface EditableTextareaProps {
@@ -56,6 +57,9 @@ export function EditableTextarea({
   maxRows = 3,
 }: EditableTextareaProps) {
   const { t } = useTranslation();
+  const {
+    formState: { disabled: formDisabled },
+  } = useFormContext();
   const [isEditing, setIsEditing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -100,7 +104,7 @@ export function EditableTextarea({
         className={cn(isEditing ? 'flex-1 w-full' : 'w-auto min-w-0')}
       >
         {(field) =>
-          isEditing ? (
+          isEditing && !field.disabled ? (
             <Textarea
               ref={textareaRef}
               name={field.name}
@@ -128,25 +132,29 @@ export function EditableTextarea({
                 !field.value && 'italic',
                 displayClassName,
               )}
-              onClick={handleEnterEdit}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  handleEnterEdit();
-                }
-              }}
+              onClick={field.disabled ? undefined : handleEnterEdit}
+              role={field.disabled ? undefined : 'button'}
+              tabIndex={field.disabled ? undefined : 0}
+              onKeyDown={
+                field.disabled
+                  ? undefined
+                  : (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleEnterEdit();
+                      }
+                    }
+              }
             >
               {field.value || finalPlaceholder}
             </p>
           )
         }
       </RAGFlowFormItem>
-      {!isEditing && showEditIcon && (
+      {!isEditing && showEditIcon && !formDisabled && (
         <button
           type="button"
-          onClick={handleEnterEdit}
+          onClick={formDisabled ? undefined : handleEnterEdit}
           className="p-1 text-text-secondary hover:text-text-primary transition-colors focus:outline-none focus:ring-1 focus:ring-accent-primary rounded shrink-0 opacity-0 group-hover:opacity-100"
           aria-label={ariaLabel ? `Edit ${ariaLabel}` : 'Edit'}
         >

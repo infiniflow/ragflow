@@ -403,14 +403,14 @@ func (s *BotService) ChatbotCompletion(
 	kwargs := map[string]interface{}{
 		"quote": req.Quote != nil && *req.Quote,
 	}
-	// Pass the raw reasoning level (0..4) straight through to the pipeline.
+	// Pass the raw reasoning level (0..6) straight through to the pipeline.
 	// The previous normalizeBotBoolFlag coercion only accepted a bool or 0/1,
-	// silently dropping medium/high/ultra agentic-RAG levels (2/3/4) so the
-	// new-tab/embed chat fell back to plain RAG. resolveReasoningLevel
-	// (chat_pipeline.go) reads this value first and tolerates float64/int/bool/
-	// string/json.Number via asInt64, then falls back to the dialog's
-	// prompt_config when the key is absent — so omitting it keeps the old
-	// default behaviour.
+	// silently dropping the depth levels (2/3/4) and the engine-selecting ones
+	// (5, 6) so the new-tab/embed chat fell back to plain RAG.
+	// resolveReasoningLevel (chat_pipeline.go) reads this value first and
+	// tolerates float64/int/bool/string/json.Number via asInt64, then falls back
+	// to the dialog's prompt_config when the key is absent — so omitting it keeps
+	// the old default behaviour.
 	if req.Reasoning != nil {
 		kwargs["reasoning"] = req.Reasoning
 	}
@@ -424,6 +424,7 @@ func (s *BotService) ChatbotCompletion(
 	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
 		return nil, common.CodeServerError, err
 	}
+	ctx = common.WithSessionID(ctx, session.ID)
 	results, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -449,18 +450,14 @@ func (s *BotService) ChatbotCompletion(
 //     reference object; only the final frame carries the retrieval
 //     reference.
 //   - The final frame's `answer` is empty whenever text was already
-//     streamed as deltas (python async_chat sets final["answer"] = ""),
-//     so accumulating consumers do not double the text. The full text
-//     is sent when nothing was streamed (single-shot results such as
-//     the structured-SQL path) and on error finals, so a mid-stream
-//     pipeline failure still reaches the wire after partial deltas.
-//   - The persisted assistant turn is the raw streamed text, NOT the
-//     decorated final answer. The decorated text carries server-side
-//     [ID:n] citation markers; persisting it feeds fabricated markers
-//     back into the next turn's prompt, and models that imitate the
-//     history format then emit markers for turns whose retrieval
-//     returned nothing — which the widget renders as a citation icon
-//     with "Reference unavailable".
+//     streamed as deltas, so accumulating consumers do not double the
+//     text. Authoritative final results are the exception: they contain
+//     the compacted answer that must replace the streamed text. The full
+//     text is also sent when nothing was streamed and on error finals.
+//   - Ordinary turns persist the raw streamed text because decorated
+//     answers carry server-side [ID:n] citation markers. Authoritative
+//     results are already the canonical, compacted answer, so that final
+//     answer is persisted instead.
 func (s *BotService) streamChatbotTurn(
 	ctx context.Context,
 	session *entity.API4Conversation,
@@ -509,7 +506,7 @@ func (s *BotService) streamChatbotTurn(
 				// Save the completed answer before delivering the final SSE frame.
 				if !errored {
 					persisted := rawAnswer
-					if persisted == "" {
+					if persisted == "" || res.AnswerIsAuthoritative {
 						persisted = fullAnswer
 					}
 					saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -519,7 +516,7 @@ func (s *BotService) streamChatbotTurn(
 					cancel()
 				}
 				finalData := ""
-				if rawAnswer == "" || errored {
+				if rawAnswer == "" || errored || res.AnswerIsAuthoritative {
 					// The final frame is the only carrier of the text
 					// when nothing was streamed as deltas; on a
 					// pipeline-level error it must still carry the

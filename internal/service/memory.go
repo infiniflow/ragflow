@@ -432,7 +432,10 @@ func (s *MemoryService) ListMemoryFilters(ctx context.Context) (*MemoryFiltersRe
 	typeCounts := map[string]int64{}
 	storageCounts := map[string]int64{}
 	for _, memory := range memories {
-		owner := memory.TenantID
+		owner := memory.UserID
+		if owner == "" {
+			owner = memory.TenantID
+		}
 		label := owner
 		if memory.OwnerName != nil && *memory.OwnerName != "" {
 			label = *memory.OwnerName
@@ -627,7 +630,17 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 //	resp, err := service.UpdateMemory(ctx, "memory456", req)
 func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
-	if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, permission.OperationUpdate); err != nil {
+	checker := permission.NewDatabaseChecker(s.db)
+	if err := checker.CheckFeature(ctx, "memory", permission.ActionWrite); err != nil {
+		return nil, err
+	}
+	memoryRef := permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}
+	if err := checker.CheckResourcePermission(ctx, memoryRef, permission.ResourcePermissionManage); err != nil {
+		if ownerErr := checker.CheckResourcePermission(ctx, memoryRef, permission.ResourcePermissionOwner); ownerErr != nil {
+			return nil, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -664,7 +677,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
 		}
 		if strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
-			if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, permission.OperationShare); err != nil {
+			if err := checker.CheckResource(ctx, memoryRef, permission.OperationShare); err != nil {
 				return nil, err
 			}
 		}
@@ -1673,15 +1686,16 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, memoryID string, o
 }
 
 // ListMemories retrieves a paginated list of memories visible to the caller,
-// then applies optional tenant and business filters.
+// then applies optional owner and business filters.
 //
 // Parameters:
-//   - tenantIDs: Optional tenant IDs to filter the caller's authorized memories by
+//   - ownerIDs: Optional resource owner user IDs to filter the caller's authorized memories by
 //   - memoryTypes: Array of memory type names to filter by (empty means all types)
 //   - storageType: Storage type to filter by (empty means all types)
 //   - keywords: Keywords to search in memory names (empty means no keyword filter)
 //   - page: Page number (1-based)
 //   - pageSize: Number of items per page
+//   - accessUserID: Optional resource owner whose permissions must also allow access
 //
 // Returns:
 //   - *ListMemoryResponse: Contains memory list and total count
@@ -1690,31 +1704,23 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, memoryID string, o
 // Example:
 //
 //	resp, err := service.ListMemories(ctx, []string{}, []string{"semantic"}, "table", "test", 1, 10, "")
-func (s *MemoryService) ListMemories(ctx context.Context, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int, canvasID string) (*ListMemoryResponse, error) {
-	canvasID = strings.TrimSpace(canvasID)
-	query := permission.ScopeQuery{
+func (s *MemoryService) ListMemories(ctx context.Context, ownerIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int, accessUserID string) (*ListMemoryResponse, error) {
+	scope, err := queryScopeForAccessUser(ctx, permission.NewDatabaseChecker(s.db), permission.ScopeQuery{
 		Kind:      permission.ResourceKindMemory,
 		Operation: permission.OperationRead,
-	}
-	if canvasID != "" {
-		canvasRef := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
-		query.Operation = permission.OperationUse
-		query.Entry = &canvasRef
-		query.EntryOp = permission.OperationRun
-	}
-	memoryScope, err := permission.NewDatabaseChecker(s.db).Scope(ctx, query)
+	}, accessUserID)
 	if err != nil {
 		return nil, err
 	}
-	memoryIDs := memoryScope.ResourceIDs
-	if memoryScope.Mode != permission.ScopeIDs {
-		memoryIDs = []string{}
+	var memoryIDs []string
+	if err := scope.Apply(s.db.WithContext(ctx).Model(&entity.Memory{})).Pluck("memory.id", &memoryIDs).Error; err != nil {
+		return nil, fmt.Errorf("list accessible memories: %w", err)
 	}
 	if len(memoryIDs) == 0 {
 		return &ListMemoryResponse{MemoryList: []map[string]interface{}{}}, nil
 	}
 
-	memories, total, err := s.memoryDAO.GetByFilter(ctx, s.db, memoryIDs, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	memories, total, err := s.memoryDAO.GetByFilter(ctx, s.db, memoryIDs, ownerIDs, memoryTypes, storageType, keywords, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1735,14 +1741,19 @@ func (s *MemoryService) ListMemories(ctx context.Context, tenantIDs []string, me
 		if resp.CreateTime != nil {
 			createDateStr = formatDateToString(*resp.CreateTime)
 		}
+		nickname := ""
+		if resp.OwnerName != nil {
+			nickname = *resp.OwnerName
+		}
 		memoryMap := map[string]interface{}{
 			"id":                  resp.ID,
+			"user_id":             resp.UserID,
 			"llm_id":              ResolveTenantModelDisplayName(ctx, s.db, ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
 			"embd_id":             ResolveTenantModelDisplayName(ctx, s.db, ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":                resp.Name,
 			"avatar":              resp.Avatar,
 			"tenant_id":           resp.TenantID,
-			"owner_name":          resp.OwnerName,
+			"nickname":            nickname,
 			"memory_type":         resp.MemoryType,
 			"storage_type":        resp.StorageType,
 			"permissions":         resp.Permissions,

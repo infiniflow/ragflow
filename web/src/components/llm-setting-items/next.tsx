@@ -60,7 +60,7 @@ interface LlmSettingFieldItemsProps {
   showCollapse?: boolean;
   collapseOpen?: boolean;
   onCollapseOpenChange?: (open: boolean) => void;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
   llmRequired?: boolean;
 }
 
@@ -110,7 +110,7 @@ export function LlmSettingFieldItems({
   showCollapse = false,
   collapseOpen,
   onCollapseOpenChange,
-  ownerTenantId,
+  resourceTenantId,
   llmRequired = false,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
@@ -186,6 +186,7 @@ export function LlmSettingFieldItems({
             <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
               <Select
+                disabled={field.disabled}
                 value={field.value}
                 onValueChange={(val) => {
                   handleChange(val);
@@ -284,7 +285,8 @@ export function LlmSettingFieldItems({
               </FormLabel>
               <FormControl>
                 <Select
-                  value={field.value ?? 'default'}
+                  disabled={field.disabled}
+                  value={field.value ?? 'disabled'}
                   onValueChange={field.onChange}
                 >
                   <SelectTrigger className="flex-1 !m-0">
@@ -318,7 +320,7 @@ export function LlmSettingFieldItems({
         name={llmId ?? getFieldWithPrefix('llm_id')}
         testId={llmSelectTestId}
         optionTestIdPrefix={llmOptionTestIdPrefix}
-        ownerTenantId={ownerTenantId}
+        resourceTenantId={resourceTenantId}
         required={llmRequired}
       ></LLMFormField>
       {showCollapse ? (

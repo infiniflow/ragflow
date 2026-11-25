@@ -19,6 +19,7 @@ package router
 import (
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/mcp"
 
 	"github.com/gin-gonic/gin"
 )
@@ -151,6 +152,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
+	// mode 8 Codex MCP bridge. Authenticated by the per-thread ticket carried in the
+	// path, not by a user token: the shared Codex server (not a browser) calls this, and
+	// the ticket scopes every call to one tenant + knowledge-base set. See
+	// docs/develop/mode-8-codex-mcp-agent.md.
+	engine.Any("/mcp/codex/:token", gin.WrapH(mcp.NewCodexHandler(mcp.DefaultCodexTickets())))
+
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
@@ -215,11 +222,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
 		apiBetaAuth.GET("/agents/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
-
-		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
-		// Uses BetaAuthMiddleware to resolve the user from the
-		// Authorization header.
-		apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
 	}
 
 	// Protected routes
@@ -231,6 +233,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
+			// Doc-analyzer availability: which PDF structure/table engines this
+			// deployment can actually serve. Requires auth so the availability
+			// of internal backends is not exposed to anonymous clients.
+			v1.GET("/system/doc-analyzers", r.systemHandler.DocAnalyzers)
+
 			// Auth routes
 			auth := v1.Group("/auth")
 			{
@@ -366,6 +373,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id/progress", r.datasetsHandler.GetIngestionProgress)
 				datasets.GET("/:dataset_id/ingestions/:log_id/messages", r.datasetsHandler.ListIngestionMessages)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
@@ -562,12 +570,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 
-				model.POST("/groups", r.providerHandler.CreateModelGroup)                  // CREATE MODEL GROUP
-				model.GET("/groups", r.providerHandler.ListModelGroups)                    // LIST MODEL GROUPS
-				model.GET("/groups/:group_name", r.providerHandler.ShowModelGroup)         // SHOW MODEL GROUP
-				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)    // DELETE MODEL GROUP
-				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup) // ADD MODEL TO GROUP
-				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup)
+				model.POST("/groups", r.providerHandler.CreateModelGroup)                // CREATE MODEL GROUP
+				model.GET("/groups", r.providerHandler.ListModelGroups)                  // LIST MODEL GROUPS
+				model.GET("/groups/:group_id", r.providerHandler.ShowModelGroup)         // SHOW MODEL GROUP
+				model.DELETE("/groups/:group_id", r.providerHandler.DeleteModelGroup)    // DELETE MODEL GROUP
+				model.POST("/groups/:group_id/model", r.providerHandler.AddModelToGroup) // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_id/model", r.providerHandler.RemoveModelFromGroup)
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())
@@ -633,6 +641,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.POST("/:connector_id/resume-failed-sync", r.connectorHandler.ResumeFailedSync)
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
+
+			// MCP endpoint exposing RAGFlow capabilities as MCP tools. Its
+			// tools act with the caller's full identity, so it sits behind the
+			// strict middleware: the beta token embedded in share links must
+			// not reach it.
+			v1.POST("/mcp", r.mcpServerHandler.HandleMCP)
 
 			// MCP server routes.
 			mcp := v1.Group("/mcp")

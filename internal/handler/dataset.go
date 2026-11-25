@@ -29,8 +29,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -131,6 +133,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	parserID := c.Query("parser_id")
+	accessUserID := strings.TrimSpace(c.Query("access_user_id"))
 	var ownerIDs []string
 	for _, item := range c.QueryArray("owner_ids") {
 		for _, ownerID := range strings.Split(item, ",") {
@@ -191,6 +194,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		terms,
 		keywords,
 		ownerIDs,
+		accessUserID,
 		parserID,
 		ids,
 		c.Query("canvas_id"),
@@ -396,7 +400,7 @@ func pythonJSONTypeName(v interface{}) string {
 var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
-	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
+	"keywords": true, "owner_ids": true, "access_user_id": true, "parser_id": true, "type": true,
 	"canvas_id": true,
 }
 
@@ -625,6 +629,22 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 		return
 	}
 
+	common.RespondSuccess(c, result, "success")
+}
+
+// GetIngestionProgress handles GET
+// /api/v1/datasets/:dataset_id/ingestions/:log_id/progress.
+func (h *DatasetsHandler) GetIngestionProgress(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.RespondError(c, errorCode, errorMessage)
+		return
+	}
+	result, code, err := h.datasetsService.GetIngestionProgress(c.Request.Context(), c.Param("dataset_id"), c.Param("log_id"))
+	if err != nil {
+		common.RespondError(c, code, err.Error())
+		return
+	}
 	common.RespondSuccess(c, result, "success")
 }
 
@@ -994,6 +1014,27 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	common.RespondSuccess(c, st, "success")
 }
 
+// checkDatasetsReadable verifies read access to every requested dataset with
+// one shared resource load instead of one authorization round-trip per dataset.
+func checkDatasetsReadable(ctx context.Context, db *gorm.DB, datasetIDs []string) error {
+	if len(datasetIDs) == 0 {
+		return nil
+	}
+	refs := make([]permission.ResourceRef, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	for _, id := range datasetIDs {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return permission.CheckResources(ctx, permission.NewDatabaseChecker(db), refs, permission.OperationRead)
+}
+
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
 // @Summary List flattened metadata for datasets
 // @Description Get flattened metadata for multiple datasets
@@ -1025,12 +1066,9 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	// Check access for each dataset
-	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
-			respondPermissionError(c, err, false)
-			return
-		}
+	if err := checkDatasetsReadable(ctx, dao.DB, datasetIDs); err != nil {
+		respondPermissionError(c, err, false)
+		return
 	}
 
 	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(ctx, datasetIDs)
@@ -1143,6 +1181,10 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
+		return
+	}
 
 	searchService := h.searchDatasetsService
 	if searchService == nil {
@@ -1207,6 +1249,10 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 	}
 	if err := validateSearchDatasetRequest(&req); err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
 		return
 	}
 

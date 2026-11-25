@@ -153,7 +153,7 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **Tencent (Hunyuan)** | Decimal (32K, 131K, 262K) | Decimal (8K, 64K) | [Tencent Cloud Docs](https://cloud.tencent.com/document/product/1759) |
 | **Xiaomi (MiMo)** | Binary (1M) | Binary (8K) | [MiMo Docs](https://huggingface.co/XiaomiMiMo) |
 | **HuggingFace** | Varies (hosted models) | Varies | [HuggingFace Model Cards](https://huggingface.co/docs/hub/model-cards) |
-| **Nace (Drex)** | Binary (262,144 = the state plus one question, per question; decision models only) | None — answers are probabilities, not generated tokens | [Nace Docs](https://console.nace.ai/docs/drex/reference/limits) |
+| **Nace (Drex, NDI)** | Binary (262,144 = the state plus one question, per question) for decision models; no token context limit for the NDI OCR models (`ndi-parse-*`), which take PDF pages (see Parse for page limits). A page selection over one parse's limits (200 ranges, 500 pages), or one that NDI fails with `ocr_failed` "No renderable pages" (a range far past the last page), is served by one parse of the whole document, filtered to the selection; the whole document is billed. Any other failure of a page selection is returned without a second parse. Zero retention refuses the standalone upload grant these models use, so such accounts cannot parse uploaded PDFs with them | None — answers are probabilities, and OCR models return parsed documents | [Drex limits](https://console.nace.ai/docs/drex/reference/limits), [Parse](https://console.nace.ai/docs/perception/parse), [Data retention](https://console.nace.ai/docs/perception/data-retention) |
 
 ### Key Takeaways
 
@@ -186,15 +186,18 @@ The following providers are **aggregators** — they host models from multiple u
 | **EmpirioLabs AI** | AI inference provider |
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
+| **GreenNode** | VNG Cloud model-as-a-service: OpenAI-compatible chat, embedding and rerank for self-hosted (GLM, Qwen, Gemma) and third-party (DeepSeek, MiniMax, Kimi, Claude, GPT, etc.) models, with a 10 requests/minute default account limit |
 | **GreenPT** | GLM-based models |
 | **HopBase** | Enterprise AI gateway: one OpenAI-compatible key for Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi and more, with high-concurrency routing and automatic failover |
 | **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
 | **LongCat** | Meituan's model platform |
+| **Morse** | Private, OpenAI-compatible inference: 80+ open-weight models at a privacy tier chosen per request (Private, TEE or E2EE), from an open-source, attestable enclave |
 | **N1N** | Multi-provider aggregator |
 | **Novita** | Open-source model hosting |
 | **Obscurify.ai** | Privacy-focused OpenAI-compatible API, 200+ models |
+| **onomeo** | OpenAI-compatible gateway for Claude, GPT, DeepSeek and other models |
 | **OpenRouter** | Multi-provider router |
 | **OrcaRouter** | Auto-routing layer |
 | **PPIO** | Edge AI platform |
@@ -203,6 +206,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
 | **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
+| **TeamoRouter** | OpenAI-compatible gateway: one key for GLM, Kimi, DeepSeek, Qwen, Claude, GPT and Gemini |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |

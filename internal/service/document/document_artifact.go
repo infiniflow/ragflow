@@ -298,6 +298,25 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, ErrPreviewDocumentNotFound
 	}
 
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	// Preview artifacts generated during ingestion are served as-is. A handled
+	// type must not fall back to its raw source when the generated
+	// representation is unavailable.
+	if previewData, previewType, handled, perr := preparePreviewPresentation(ctx, doc, fileName); handled {
+		if perr != nil {
+			return nil, perr
+		}
+		return &DocumentPreview{
+			Data:        previewData,
+			ContentType: previewType,
+			FileName:    previewFileName(fileName),
+		}, nil
+	}
+
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
 		return nil, fmt.Errorf("resolve storage address for document %s: %w", docID, err)
@@ -316,11 +335,6 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, ErrPreviewFileEmpty
 	}
 
-	fileName := ""
-	if doc.Name != nil {
-		fileName = *doc.Name
-	}
-
 	ext := utility.GetFileExtension(fileName)
 	contentType := utility.GetContentType(ext, doc.Type)
 
@@ -330,6 +344,8 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
 			data = []byte(text)
 			contentType = "text/plain; charset=utf-8"
+		} else if errors.Is(cerr, utility.ErrFeatureDisabled) {
+			return nil, cerr
 		}
 	}
 
@@ -377,4 +393,30 @@ func docPreviewText(res parser.ParseResult) (string, error) {
 		}
 	}
 	return strings.Join(parts, "\n"), nil
+}
+
+// preparePreviewPresentation lets the enterprise edition serve a generated
+// preview artifact for its own file types. The community stub returns
+// handled=false and the original bytes are served unchanged.
+func preparePreviewPresentation(ctx context.Context, doc *entity.Document, fileName string) ([]byte, string, bool, error) {
+	return preparePreviewPresentationEE(ctx, doc, fileName)
+}
+
+// cleanupPreviewArtifacts lets the enterprise edition remove generated preview
+// artifacts together with the document that owns them.
+func cleanupPreviewArtifacts(ctx context.Context, doc *entity.Document) {
+	cleanupPreviewArtifactsEE(ctx, doc)
+}
+
+// previewFileName keeps the original stem but advertises the generated PDF
+// extension so Content-Disposition stays consistent with the payload.
+func previewFileName(fileName string) string {
+	if strings.TrimSpace(fileName) == "" {
+		return "preview.pdf"
+	}
+	ext := filepath.Ext(fileName)
+	if ext == "" {
+		return fileName + ".pdf"
+	}
+	return strings.TrimSuffix(fileName, ext) + ".pdf"
 }

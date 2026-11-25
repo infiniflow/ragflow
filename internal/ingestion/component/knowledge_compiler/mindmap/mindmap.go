@@ -70,7 +70,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	batches := packMindmapBatches(inputs.Chunks, deps.Tokenizer)
 	results := make([]mindmapBatchResult, len(batches))
 	jobs := make([]func() error, 0, len(batches))
-	generated := deps.Progress.Sub(0, 3).Counter(ctx, len(batches))
+	generated := deps.Progress.Sub(0, 3).WithPhase("batch:generate").Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -163,7 +163,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 //
 // The entity/relation discriminator is carried in Meta["kind"] so the consumer's
 // mergeStructureDataset buckets entities by (name,type) and relations by
-// (from,type,to), matching graph/timeline.
+// (from,type,to), matching graph.
 func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceChunkIDs []string) []common.Product {
 	var out []common.Product
 	if root == nil || root.ID == "" {

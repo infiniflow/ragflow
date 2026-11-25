@@ -16,6 +16,11 @@
 package permission
 
 import (
+	"context"
+	"strings"
+
+	"ragflow/internal/entity"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -40,6 +45,76 @@ func (s QueryScope) Apply(query *gorm.DB) *gorm.DB {
 		return query.Where("1 = 0")
 	}
 	return s.apply(query)
+}
+
+// Intersect returns a scope that admits only rows allowed by both scopes.
+func (s QueryScope) Intersect(other QueryScope) QueryScope {
+	return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+		return other.Apply(s.Apply(query))
+	}}
+}
+
+// ListReadableDocumentIDs returns the requested documents visible to the
+// current user in the given datasets. A nil candidate list means all readable
+// documents; a non-nil empty list matches no documents.
+func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candidateIDs []string) ([]string, error) {
+	checker := NewDatabaseChecker(db)
+	if candidateIDs != nil && len(candidateIDs) == 0 {
+		seen := make(map[string]struct{}, len(datasetIDs))
+		for _, datasetID := range datasetIDs {
+			datasetID = strings.TrimSpace(datasetID)
+			if datasetID == "" {
+				continue
+			}
+			if _, ok := seen[datasetID]; ok {
+				continue
+			}
+			seen[datasetID] = struct{}{}
+			if err := checker.CheckResource(ctx, ResourceRef{Kind: ResourceKindDataset, ID: datasetID}, OperationRead); err != nil {
+				return nil, err
+			}
+		}
+		return []string{}, nil
+	}
+	seenDatasets := make(map[string]struct{}, len(datasetIDs))
+	seenDocuments := make(map[string]struct{})
+	var documentIDs []string
+	for _, datasetID := range datasetIDs {
+		datasetID = strings.TrimSpace(datasetID)
+		if datasetID == "" {
+			continue
+		}
+		if _, exists := seenDatasets[datasetID]; exists {
+			continue
+		}
+		seenDatasets[datasetID] = struct{}{}
+
+		scope, err := checker.QueryScope(ctx, ScopeQuery{
+			Kind:      ResourceKindDocument,
+			Parent:    ResourceRef{Kind: ResourceKindDataset, ID: datasetID},
+			Operation: OperationRead,
+		})
+		if err != nil {
+			return nil, err
+		}
+		query := db.WithContext(ctx).Table("document").Select("document.id").
+			Where("document.kb_id = ? AND document.status = ?", datasetID, string(entity.StatusValid))
+		if candidateIDs != nil {
+			query = query.Where("document.id IN ?", candidateIDs)
+		}
+		var accessibleIDs []string
+		if err := scope.Apply(query).Pluck("document.id", &accessibleIDs).Error; err != nil {
+			return nil, err
+		}
+		for _, id := range accessibleIDs {
+			if _, exists := seenDocuments[id]; exists {
+				continue
+			}
+			seenDocuments[id] = struct{}{}
+			documentIDs = append(documentIDs, id)
+		}
+	}
+	return documentIDs, nil
 }
 
 func queryScopeForIDs(kind ResourceKind, ids []string) QueryScope {

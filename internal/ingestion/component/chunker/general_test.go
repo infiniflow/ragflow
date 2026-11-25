@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
 	parserlib "ragflow/internal/parser/parser"
@@ -363,6 +364,54 @@ func TestGeneralChunkerPreservesSingleParserUnit(t *testing.T) {
 	}
 	if chunks[0]["text"] != "alpha" || chunks[0]["source_order"] != float64(3) || chunks[0]["heading_level"] != float64(2) {
 		t.Errorf("single parser unit was not preserved: %#v", chunks[0])
+	}
+}
+
+func TestGeneralChunkerDoclingJSON(t *testing.T) {
+	p, err := component.NewParserComponent(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.Invoke(t.Context(), nil, map[string]any{
+		"name": "report.json",
+		"binary": `{
+			"schema_name": "DoclingDocument",
+			"body": {"children": [{"$ref": "#/texts/1"}, {"$ref": "#/texts/0"}]},
+			"texts": [
+				{"text": "The experiment succeeded.", "prov": [
+					{"page_no": 2, "bbox": {"l": 1, "t": 4, "r": 5, "b": 6}}
+				]},
+				{"text": "Results", "label": "section_header", "level": 2, "prov": [
+					{"page_no": 1, "bbox": {"l": 1, "t": 2, "r": 5, "b": 4}}
+				]}
+			]
+		}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunker, err := NewGeneralChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err = chunker.Invoke(t.Context(), nil, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected one chunk, got %#v", out["chunks"])
+	}
+	chunk := chunks[0]
+	if chunk["text"] != "Results\nThe experiment succeeded.\n" || chunk["heading_level"] != float64(2) {
+		t.Errorf("chunk did not preserve the heading and paragraph: %#v", chunk)
+	}
+	wantPositions := [][]any{
+		{1.0, 1.0, 5.0, 2.0, 4.0},
+		{2.0, 1.0, 5.0, 4.0, 6.0},
+	}
+	if got := parserlib.PDFPositionRows(chunk["_pdf_positions"]); !reflect.DeepEqual(got, wantPositions) {
+		t.Errorf("chunk positions = %v, want %v", got, wantPositions)
 	}
 }
 
@@ -906,6 +955,33 @@ func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing
 	}
 	if strings.Contains(texts[1], "问：") || !strings.Contains(texts[1], "second question") || !strings.Contains(texts[1], "答：second answer") {
 		t.Fatalf("second record = %q", texts[1])
+	}
+}
+
+func TestGeneralChunkerDOCXGroupsParagraphsBeforeFirstCustomDelimiter(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`问：`"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "前言一", "doc_type_kwd": "text"},
+			{"text": "前言二", "doc_type_kwd": "text"},
+			{"text": "问：Q1", "doc_type_kwd": "text"},
+			{"text": "答：A1", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := outputTexts(t, out), []string{"前言一\n前言二", "Q1\n答：A1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("chunks = %q, want %q", got, want)
 	}
 }
 
@@ -1631,6 +1707,63 @@ func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
 				t.Fatalf("context = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGeneralContextSourceTextSkipsHeaderOnlyTableWithoutPanicking(t *testing.T) {
+	// An all-empty table parses into a nil grid while BuildTableData keeps
+	// HeaderRows==1, so headerCount exceeds the row count.
+	td, err := tableutil.ParseTableHTML("<table><tr></tr></table>")
+	if err != nil {
+		t.Fatalf("ParseTableHTML: %v", err)
+	}
+	if td.HeaderRows <= len(td.Grid) {
+		t.Fatalf("test setup: HeaderRows=%d, grid rows=%d, want header past the grid", td.HeaderRows, len(td.Grid))
+	}
+	got, ok := generalContextSourceText(schema.ChunkDoc{
+		DocType:   "table",
+		Sheet:     "Sheet1",
+		TableData: td,
+	})
+	if ok || got != "" {
+		t.Fatalf("generalContextSourceText = (%q, %v), want (\"\", false)", got, ok)
+	}
+}
+
+func TestGeneralChunkerSpreadsheetEmptySegmentDoesNotPanicMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   100,
+		"table_context_size": 8,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	empty := map[string]any{
+		"table":        map[string]any{"grid": [][]entity.TableCell{}, "header_rows": 1, "caption": "Sheet1"},
+		"text":         "",
+		"doc_type_kwd": "table",
+		"sheet_index":  1,
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "workbook.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			empty,
+			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Revenue"}}, 1, 2),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var sawData bool
+	for _, chunk := range outputChunks(t, out) {
+		if text, _ := chunk["text"].(string); strings.Contains(text, "Revenue") {
+			sawData = true
+		}
+	}
+	if !sawData {
+		t.Fatalf("chunks = %#v, want the data segment preserved", outputChunks(t, out))
 	}
 }
 

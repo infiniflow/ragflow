@@ -69,6 +69,7 @@ type documentServiceIface interface {
 	GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
+	GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
@@ -306,6 +307,9 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	ctx := c.Request.Context()
 	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, document.ErrPreviewDocumentNotFound):
 			common.RespondError(c, common.CodeDataError, "document not found")
@@ -364,7 +368,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		}
 		return
 	}
-	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentManage(ctx, doc.ID, doc.KbID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -599,7 +603,8 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	accessScope, err := documentReadAccessScope(ctx, datasetID)
+	if err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -609,6 +614,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
+	opts.AccessScope = &accessScope
 	opts, errMsg = h.applyDocumentMetadataFilter(c, opts)
 	if errMsg != "" {
 		common.RespondError(c, common.CodeDataError, errMsg)
@@ -656,6 +662,11 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	docs := make([]map[string]interface{}, 0, len(documents))
+	operatorPermissions, permissionErr := documentOperatorPermissions(ctx, documents)
+	if permissionErr != nil {
+		common.RespondError(c, common.CodeServerError, "failed to resolve document permissions: "+permissionErr.Error())
+		return
+	}
 	runIDs := make([]string, 0, len(documents))
 	for _, doc := range documents {
 		if doc != nil && doc.PipelineLogID != nil && *doc.PipelineLogID != "" {
@@ -671,6 +682,10 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			latestEventsByRun = map[string]*service.IngestionEventItem{}
 		}
 	}
+	// Apply the post-query time filters first, then read metadata for the
+	// surviving documents in a single batch instead of one query per document.
+	eligibleDocs := make([]*entity.DocumentListItem, 0, len(documents))
+	docIDs := make([]string, 0, len(documents))
 	for _, doc := range documents {
 		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
 			continue
@@ -678,8 +693,18 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		if opts.CreateTimeTo > 0 && doc.CreateTime != nil && *doc.CreateTime > opts.CreateTimeTo {
 			continue
 		}
-		metaFields, err := h.documentService.GetDocumentMetadataByID(ctx, doc.ID)
-		if err != nil {
+		eligibleDocs = append(eligibleDocs, doc)
+		if doc != nil {
+			docIDs = append(docIDs, doc.ID)
+		}
+	}
+	var metaByDoc map[string]map[string]interface{}
+	if len(docIDs) > 0 {
+		metaByDoc, _ = h.documentService.GetDocumentMetadataByIDs(ctx, datasetID, docIDs)
+	}
+	for _, doc := range eligibleDocs {
+		metaFields := metaByDoc[doc.ID]
+		if metaFields == nil {
 			metaFields = make(map[string]interface{})
 		}
 
@@ -687,7 +712,9 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		if doc.PipelineLogID != nil {
 			latestEvent = latestEventsByRun[*doc.PipelineLogID]
 		}
-		docs = append(docs, mapDocumentListItem(doc, metaFields, latestEvent))
+		item := mapDocumentListItem(doc, metaFields, latestEvent)
+		item["operator_permission"] = operatorPermissions[doc.ID]
+		docs = append(docs, item)
 	}
 
 	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
@@ -698,6 +725,19 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		hasActiveTasks = true
 	}
 	common.RespondSuccess(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
+}
+
+func documentReadAccessScope(ctx context.Context, datasetID string) (permission.QueryScope, error) {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	datasetRef := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+	if err := checker.CheckResource(ctx, datasetRef, permission.OperationRead); err != nil {
+		return permission.QueryScope{}, err
+	}
+	return checker.QueryScope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindDocument,
+		Parent:    datasetRef,
+		Operation: permission.OperationRead,
+	})
 }
 
 func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
@@ -1058,12 +1098,12 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	}
 	ctx := c.Request.Context()
 	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, files, c.PostForm("parent_path"), override)
-	if len(errMsgs) > 0 {
-		common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
-		return
-	}
 	if len(data) == 0 {
-		common.RespondError(c, common.CodeDataError, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
+		if len(errMsgs) > 0 {
+			common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
+		} else {
+			common.RespondError(c, common.CodeDataError, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
+		}
 		return
 	}
 
@@ -1074,15 +1114,18 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 	common.SetOperationResource(c, "result_ids", ids)
-	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
-		common.RespondSuccessList(c, data, "success")
+	if !strings.EqualFold(c.Query("return_raw_files"), "true") {
+		mapped := make([]map[string]interface{}, len(data))
+		for i, d := range data {
+			mapped[i] = mapDocKeysWithRunStatus(d)
+		}
+		data = mapped
+	}
+	if len(errMsgs) > 0 {
+		common.Respond(c, http.StatusOK, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
 		return
 	}
-	mapped := make([]map[string]interface{}, len(data))
-	for i, d := range data {
-		mapped[i] = mapDocKeysWithRunStatus(d)
-	}
-	common.RespondSuccessList(c, mapped, "success")
+	common.RespondSuccessList(c, data, "success")
 }
 
 func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase) {
@@ -1441,13 +1484,12 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
 
 	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
@@ -1479,6 +1521,9 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	parseResult, err := h.documentService.StopIngestionTasks(ctx, req.Tasks)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
 	}
@@ -1529,13 +1574,11 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
-
 	parseResult, err := h.documentService.ParseDocuments(ctx, datasetID, req.Documents)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
@@ -1586,10 +1629,6 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
 
 	if req.CancelAll {
 		for _, s := range req.RunStatuses {
@@ -1600,6 +1639,9 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		}
 		result, err := h.documentService.StopParseDocumentsAll(ctx, datasetID, req.RunStatuses)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, false) {
+				return
+			}
 			common.RespondError(c, common.CodeExceptionError, err.Error())
 			return
 		}
@@ -1614,6 +1656,9 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	result, err := h.documentService.StopParseDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
@@ -1628,7 +1673,8 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	accessScope, err := documentReadAccessScope(ctx, datasetID)
+	if err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1637,8 +1683,21 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	if docIDsParam := c.Query("doc_ids"); docIDsParam != "" {
 		docIDS = strings.Split(docIDsParam, ",")
 	}
+	query := accessScope.Apply(dao.DB.WithContext(ctx).Table("document")).Where("document.kb_id = ?", datasetID)
+	if len(docIDS) > 0 {
+		query = query.Where("document.id IN ?", docIDS)
+	}
+	var accessibleDocIDs []string
+	if err := query.Pluck("document.id", &accessibleDocIDs).Error; err != nil {
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
+		return
+	}
+	if len(accessibleDocIDs) == 0 {
+		common.RespondSuccess(c, gin.H{"summary": map[string]interface{}{}}, "success")
+		return
+	}
 
-	summary, err := h.documentService.GetMetadataSummary(ctx, datasetID, docIDS)
+	summary, err := h.documentService.GetMetadataSummary(ctx, datasetID, accessibleDocIDs)
 	if err != nil {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
 		return
@@ -1853,10 +1912,6 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
@@ -1964,8 +2019,13 @@ func parseMetadataUpdates(raw interface{}) ([]document.MetadataUpdate, string) {
 		if key == "" {
 			return nil, "Each update requires key and value."
 		}
-		value := m["value"]
-		updates = append(updates, document.MetadataUpdate{Key: key, Value: value})
+		valueType, _ := m["valueType"].(string)
+		updates = append(updates, document.MetadataUpdate{
+			Key:       key,
+			Value:     m["value"],
+			Match:     m["match"],
+			ValueType: valueType,
+		})
 	}
 	return updates, ""
 }
@@ -1988,7 +2048,7 @@ func parseMetadataDeletes(raw interface{}) ([]document.MetadataDelete, string) {
 		if key == "" {
 			return nil, "Each delete requires key."
 		}
-		deletes = append(deletes, document.MetadataDelete{Key: key})
+		deletes = append(deletes, document.MetadataDelete{Key: key, Value: m["value"]})
 	}
 	return deletes, ""
 }

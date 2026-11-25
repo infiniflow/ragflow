@@ -321,7 +321,7 @@ const AgentLogPage: React.FC = () => {
         <div className="border rounded-md overflow-auto">
           {/* <div className="max-h-[500px] overflow-y-auto w-full"> */}
           <Table rootClassName="max-h-[calc(100vh-200px)]">
-            <TableHeader className="sticky top-0 bg-bg-title z-10 shadow-sm">
+            <TableHeader className="sticky top-0 z-10 shadow-sm">
               <TableRow>
                 {columns.map((column) => (
                   <TableHead

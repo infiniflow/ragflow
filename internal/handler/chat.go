@@ -346,7 +346,9 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// The service already returns GetChatResponse with DatasetIDs and KBNames
 	result := map[string]interface{}{
 		"id":                         chat.ID,
+		"user_id":                    chat.UserID,
 		"tenant_id":                  chat.TenantID,
+		"operator_permission":        chat.OperatorPermission,
 		"name":                       chat.Name,
 		"description":                chat.Description,
 		"icon":                       chat.Icon,

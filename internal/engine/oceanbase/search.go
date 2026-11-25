@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,7 +60,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
-	tableNames := uniqueStrings(req.IndexNames)
+	tableNames := common.Deduplicate(req.IndexNames)
 	mergeTables := len(tableNames) > 1
 	candidateLimit := globalSearchCandidateLimit(req)
 	effectivePlan := plan
@@ -90,7 +91,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				effectiveReq.SelectFields = append(effectiveReq.SelectFields, field)
 			}
 		}
-		if kind == "memory" && containsString(effectiveReq.SelectFields, "content_embed") {
+		if kind == "memory" && slices.Contains(effectiveReq.SelectFields, "content_embed") {
 			expectedVectorColumn := ""
 			if plan.dense != nil {
 				expectedVectorColumn = plan.dense.VectorColumnName
@@ -123,7 +124,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			condition["kb_id"] = req.KbIDs
 		}
 
-		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) {
+		var schema chunkTableSchema
+		if kind == "chunk" && (chunkSelectionNeedsSchema(effectiveReq.SelectFields) ||
+			chunkFilterUsesExtra(condition, nil) || chunkOrderUsesExtra(effectiveReq.OrderBy, nil)) {
+			schema, err = e.loadChunkTableSchema(ctx, tableName)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) &&
+			(kind != "chunk" || (!chunkFilterUsesExtra(condition, schema.columns) &&
+				!chunkOrderUsesExtra(effectiveReq.OrderBy, schema.columns))) {
 			chunks, used, hybridErr := e.searchWithDBMS(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
 			if hybridErr != nil {
 				if !isHybridUnavailableError(hybridErr) {
@@ -138,7 +149,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 		}
 
-		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
+		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan, schema)
 		if err != nil {
 			return nil, err
 		}
@@ -159,27 +170,20 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	return result, nil
 }
 
-func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan) ([]map[string]interface{}, int64, error) {
-	var tableColumns map[string]bool
-	if kind == "chunk" && chunkSelectionNeedsSchema(req.SelectFields) {
-		var err error
-		tableColumns, err = e.tableColumns(ctx, tableName)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
+func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan, schema chunkTableSchema) ([]map[string]interface{}, int64, error) {
+	tableColumns := schema.columns
 	fieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "", tableColumns)
 	if err != nil {
 		return nil, 0, err
 	}
 	var extra *chunkExtraSelection
-	if tableColumns != nil {
+	if tableColumns != nil && chunkSelectionNeedsSchema(req.SelectFields) {
 		extra = &chunkExtraSelection{
 			fields:    chunkFieldsFromExtra(req.SelectFields, tableColumns),
-			keepExtra: containsString(req.SelectFields, "extra"),
+			keepExtra: slices.Contains(req.SelectFields, "extra"),
 		}
 	}
-	filterSQL, filterArgs, err := buildFilter(condition, kind)
+	filterSQL, filterArgs, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -205,7 +209,7 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 		if err != nil || count == 0 {
 			return []map[string]interface{}{}, count, err
 		}
-		orderSQL, err := buildOrderBy(req.OrderBy, kind)
+		orderSQL, err := buildOrderBy(req.OrderBy, kind, schema)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -225,7 +229,7 @@ func (e *Engine) searchFullTextSQL(ctx context.Context, tableName, kind, fieldsS
 		return []map[string]interface{}{}, count, err
 	}
 	query := fmt.Sprintf("SELECT %s%s, %s AS _score FROM %s WHERE %s AND %s ORDER BY _score DESC LIMIT %d, %d",
-		hint, fieldsSQL, scoreExpr, quoteIdentifier(tableName), filterSQL, filterExpr, offset, minPositive(limit, text.TopN))
+		hint, fieldsSQL, scoreExpr, quoteIdentifier(tableName), filterSQL, filterExpr, offset, common.MinPositive(limit, text.TopN))
 	args := appendCopy(scoreArgs, filterArgs...)
 	args = append(args, filterTextArgs...)
 	rows, err := e.queryRows(ctx, query, args...)
@@ -250,7 +254,7 @@ func (e *Engine) searchVectorSQL(ctx context.Context, tableName, kind, fieldsSQL
 		return []map[string]interface{}{}, count, err
 	}
 	query := fmt.Sprintf("SELECT %s, %s AS _score FROM %s WHERE %s AND %s >= ? ORDER BY COSINE_DISTANCE(%s, ?) APPROXIMATE LIMIT %d OFFSET %d",
-		fieldsSQL, scoreExpr, quoteIdentifier(tableName), filterSQL, scoreExpr, column, minPositive(limit, dense.TopN), offset)
+		fieldsSQL, scoreExpr, quoteIdentifier(tableName), filterSQL, scoreExpr, column, common.MinPositive(limit, dense.TopN), offset)
 	args := []interface{}{vector}
 	args = append(args, filterArgs...)
 	args = append(args, vector, threshold, vector)
@@ -272,7 +276,7 @@ func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL
 	textWeight := 1 - vectorWeight
 	vectorColumn := quoteIdentifier(plan.dense.VectorColumnName)
 	vectorScore := "(1 - COSINE_DISTANCE(" + vectorColumn + ", ?))"
-	candidates := positiveOr(plan.text.TopN, limit) + positiveOr(plan.dense.TopN, limit)
+	candidates := common.PositiveOr(plan.text.TopN, limit) + common.PositiveOr(plan.dense.TopN, limit)
 	hint := e.fullTextHint(tableName, kind)
 
 	if !e.flags.useFullTextFirstFusionSearch {
@@ -305,8 +309,8 @@ func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL
 }
 
 func (e *Engine) searchSymmetricFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit, candidates int, hint, textFilter string, textFilterArgs []interface{}, textScore string, textScoreArgs []interface{}, vector, vectorColumn, vectorScore string, threshold, textWeight, vectorWeight float64, plan searchPlan, extra *chunkExtraSelection) ([]map[string]interface{}, int64, error) {
-	fullTextLimit := positiveOr(plan.text.TopN, candidates)
-	vectorLimit := positiveOr(plan.dense.TopN, candidates)
+	fullTextLimit := common.PositiveOr(plan.text.TopN, candidates)
+	vectorLimit := common.PositiveOr(plan.dense.TopN, candidates)
 	pagerankColumn := ""
 	if kind == "chunk" {
 		pagerankColumn = ", pagerank_fea"
@@ -422,7 +426,20 @@ func (e *Engine) fullTextHint(tableName, kind string) string {
 	return fmt.Sprintf("/*+ UNION_MERGE(%s %s) */ ", tableName, strings.Join(indexes, " "))
 }
 
-func buildOrderBy(orderBy *types.OrderByExpr, kind string) (string, error) {
+// A nil schema means an optional sort field could reside in extra.
+func chunkOrderUsesExtra(orderBy *types.OrderByExpr, tableColumns map[string]bool) bool {
+	if orderBy != nil {
+		for _, order := range orderBy.Fields {
+			column := mapChunkField(order.Field)
+			if isOptionalChunkColumn(column) && !tableColumns[column] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func buildOrderBy(orderBy *types.OrderByExpr, kind string, schema chunkTableSchema) (string, error) {
 	if orderBy == nil || len(orderBy.Fields) == 0 {
 		return "", nil
 	}
@@ -432,15 +449,20 @@ func buildOrderBy(orderBy *types.OrderByExpr, kind string) (string, error) {
 		if kind == "memory" {
 			column = mapMemoryField(column)
 		}
-		if kind == "chunk" && column == "chunk_order_int" {
-			column = "_order_id"
+		if kind == "chunk" {
+			column = mapChunkField(column)
 		}
 		if !validColumns(kind)[column] {
 			return "", fmt.Errorf("unknown order field: %s", order.Field)
 		}
-		expression := quoteIdentifier(column)
+		var expression string
 		if kind == "chunk" && arrayColumns[column] {
-			expression = "ARRAY_AVG(" + expression + ")"
+			if chunkFieldInExtra(column, schema.columns) {
+				return "", fmt.Errorf("cannot sort by string array field %s", order.Field)
+			}
+			expression = "ARRAY_AVG(" + quoteIdentifier(column) + ")"
+		} else {
+			expression = schema.filterColumn(kind, column, true)
 		}
 		direction := "ASC"
 		if order.Type == types.SortDesc {
@@ -530,23 +552,6 @@ func decodeRowsWithSelection(rows []map[string]interface{}, kind string, extra *
 
 func formatFloat(value float64) string { return strconv.FormatFloat(value, 'g', -1, 64) }
 
-func minPositive(first, second int) int {
-	if first <= 0 {
-		return second
-	}
-	if second <= 0 || first < second {
-		return first
-	}
-	return second
-}
-
-func positiveOr(value, fallback int) int {
-	if value > 0 {
-		return value
-	}
-	return fallback
-}
-
 func appendCopy(values []interface{}, extra ...interface{}) []interface{} {
 	result := make([]interface{}, 0, len(values)+len(extra))
 	result = append(result, values...)
@@ -554,20 +559,8 @@ func appendCopy(values []interface{}, extra ...interface{}) []interface{} {
 	return result
 }
 
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
 func globalSearchCandidateLimit(req *types.SearchRequest) int {
-	return max(req.Offset, 0) + positiveOr(req.Limit, 30)
+	return max(req.Offset, 0) + common.PositiveOr(req.Limit, 30)
 }
 
 func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
@@ -586,12 +579,12 @@ func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
 }
 
 func searchHiddenSortFields(req *types.SearchRequest, mergeTables bool) []string {
-	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || containsString(req.SelectFields, "*") {
+	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || slices.Contains(req.SelectFields, "*") {
 		return nil
 	}
 	fields := make([]string, 0, len(req.OrderBy.Fields))
 	for _, order := range req.OrderBy.Fields {
-		if order.Field == "_score" || containsString(req.SelectFields, order.Field) || containsString(fields, order.Field) {
+		if order.Field == "_score" || slices.Contains(req.SelectFields, order.Field) || slices.Contains(fields, order.Field) {
 			continue
 		}
 		fields = append(fields, order.Field)
@@ -620,7 +613,7 @@ func mergeSearchChunks(chunks []map[string]interface{}, req *types.SearchRequest
 		})
 	}
 	offset := min(max(req.Offset, 0), len(chunks))
-	limit := positiveOr(req.Limit, 30)
+	limit := common.PositiveOr(req.Limit, 30)
 	end := min(offset+limit, len(chunks))
 	return chunks[offset:end]
 }
@@ -775,12 +768,12 @@ func buildDBMSBody(kind string, condition map[string]interface{}, req *types.Sea
 	body := map[string]interface{}{
 		"query": map[string]interface{}{"bool": boolQuery},
 		"knn": map[string]interface{}{
-			"field": plan.dense.VectorColumnName, "k": positiveOr(plan.dense.TopN, req.Limit),
-			"num_candidates": positiveOr(plan.dense.TopN, req.Limit) * 2,
+			"field": plan.dense.VectorColumnName, "k": common.PositiveOr(plan.dense.TopN, req.Limit),
+			"num_candidates": common.PositiveOr(plan.dense.TopN, req.Limit) * 2,
 			"query_vector":   plan.dense.EmbeddingData, "filter": map[string]interface{}{"bool": boolQuery},
 			"similarity": denseSimilarity(plan.dense),
 		},
-		"from": max(req.Offset, 0), "size": positiveOr(req.Limit, 30),
+		"from": max(req.Offset, 0), "size": common.PositiveOr(req.Limit, 30),
 	}
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
 		sorts := make([]interface{}, 0, len(req.OrderBy.Fields))

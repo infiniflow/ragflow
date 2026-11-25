@@ -77,6 +77,8 @@ func InitDocEngine(ctx context.Context) error {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return
 		}
+		registerChunkHistory(globalEngine)
+		registerMetadataHistory(globalEngine)
 		common.Info("Doc engine initialized", zap.String("type", engineType))
 	})
 	return initErr

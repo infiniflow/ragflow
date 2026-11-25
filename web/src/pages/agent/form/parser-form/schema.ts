@@ -1,4 +1,5 @@
 import { FileType } from '@/constants/file';
+import { additionalParserGlobalOptions } from '@/ee/utils/parser-global-options';
 import i18n from '@/locales/config';
 import { z } from 'zod';
 
@@ -10,6 +11,9 @@ export const SetupSchema = z
     mineru_lang: z.string().optional(),
     mineru_formula_enable: z.boolean().optional(),
     mineru_table_enable: z.boolean().optional(),
+    unlimited_ocr_crop_mode: z.string().optional(),
+    unlimited_ocr_no_repeat_ngram_size: z.number().int().positive().optional(),
+    unlimited_ocr_page_guard: z.boolean().optional(),
     // Image OCR runs independently of the global vision-enhancement switch.
     // The dropdown used to encode this choice in parse_method; ocr_enabled is
     // the new boolean contract. Legacy setups may still carry a parse_method
@@ -79,6 +83,7 @@ export const FormSchema = z
       })
       .optional(),
     enable_vision_enhancement: z.boolean().optional(),
+    ...additionalParserGlobalOptions.shape,
   })
   .superRefine((values, ctx) => {
     // An image needs at least one text source: local OCR or the global vision

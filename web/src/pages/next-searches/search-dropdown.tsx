@@ -25,7 +25,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SearchDropdownGuard } from '@/ee/pages/next-searches/search-dropdown-guard';
+import {
+  SearchDropdownGuard,
+  shouldShowSearchDropdown,
+} from '@/ee/pages/next-searches/search-dropdown-guard';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -55,6 +58,10 @@ export function SearchDropdown({
     deleteSearch({ search_id: dataset.id });
   }, [dataset.id, deleteSearch]);
 
+  if (!shouldShowSearchDropdown(dataset)) {
+    return null;
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
@@ -63,8 +70,11 @@ export function SearchDropdown({
           dataset={dataset}
           showPrivilegeModal={showPrivilegeModal}
           manageItems={
-            <DropdownMenuItem onClick={handleShowChatRenameModal}>
-              {t('common.rename')} <PenLine />
+            <DropdownMenuItem
+              justifyBetween={false}
+              onClick={handleShowChatRenameModal}
+            >
+              <PenLine /> {t('common.rename')}
             </DropdownMenuItem>
           }
           deleteItems={
@@ -83,6 +93,7 @@ export function SearchDropdown({
                 }}
               >
                 <DropdownMenuItem
+                  justifyBetween={false}
                   className="text-state-error"
                   onSelect={(e) => {
                     e.preventDefault();
@@ -91,7 +102,7 @@ export function SearchDropdown({
                     e.stopPropagation();
                   }}
                 >
-                  {t('common.delete')} <Trash2 />
+                  <Trash2 /> {t('common.delete')}
                 </DropdownMenuItem>
               </ConfirmDeleteDialog>
             </>

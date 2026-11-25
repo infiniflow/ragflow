@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package canvas — eino Workflow topology builder.
 //
 // BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow. The
@@ -122,7 +138,7 @@ func isKnownPrimitive(name string) bool {
 		return true
 	}
 	switch strings.ToLower(name) {
-	case "begin", "message", "llm", "categorize", "switch",
+	case "begin", "message", "llm", "categorize", "scoredswitch", "switch",
 		"agent", "invoke", "dataoperations", "listoperations",
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
@@ -242,17 +258,6 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	return out, nil
 }
 
-// emitEventFromCtx reads the events channel from the RunMeta attached to
-// ctx (via WithRunMeta) and pushes the event. No-op when no metadata is
-// present (test paths without a full service harness).
-func emitEventFromCtx(ctx context.Context, ev RunEvent) {
-	meta := GetRunMeta(ctx)
-	if meta == nil || meta.Events == nil {
-		return
-	}
-	PushEvent(ctx, meta.Events, ev)
-}
-
 func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 	if len(inputs) == 0 {
 		return map[string]any{}
@@ -274,18 +279,21 @@ func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 // node_started RunEvent. Called from the per-node statePre wrapper.
 // Metadata (message/session ids) is read from ctx via RunMeta.
 func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, inputs map[string]any) {
+	startAgentNode(ctx, state, cpnID, componentName, componentType, inputs)
 	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
-	if state == nil {
+	meta := GetRunMeta(ctx)
+	if state == nil || meta == nil || meta.Events == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 
+	inputs = sanitizeNodeInputs(inputs)
 	state.MergeNamespaces(map[string]any{
 		"_node_start_" + cpnID:  now,
-		"_node_inputs_" + cpnID: sanitizeNodeInputs(inputs),
+		"_node_inputs_" + cpnID: inputs,
 	}, nil, nil)
 	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
-		Inputs:        sanitizeNodeInputs(inputs),
+		Inputs:        inputs,
 		CreatedAt:     now,
 		ComponentID:   cpnID,
 		ComponentName: componentName,
@@ -301,23 +309,22 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		nsData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
 			cpnID, componentName, componentType))
 	}
-	meta := GetRunMeta(ctx)
-	msgID, sessionID := "", ""
-	if meta != nil {
-		msgID, sessionID = meta.MessageID, meta.SessionID
-	}
-	emitEventFromCtx(ctx, RunEvent{
+	PushEvent(ctx, meta.Events, RunEvent{
 		Type: "node_started", Data: string(nsData),
-		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		SessionID: sessionID,
+		MessageID: meta.MessageID, CreatedAt: time.Now().Unix(),
+		SessionID: meta.SessionID,
 	})
 }
 
 // nodeFinishedNow emits a node_finished RunEvent. Called from the per-node
 // statePost wrapper. The elapsed time is computed from the time recorded
 // by nodeStartedAt. Metadata is read from ctx via RunMeta.
-func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, nodeErr error) {
-	if state == nil {
+func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, nodeErr error, current ...map[string]any) {
+	finishAgentNode(ctx, state, cpnID, nodeErr, current...)
+	// Ingestion persists its progress separately and has no canvas event stream.
+	// Skip snapshots and JSON encoding of the full chunk and vector payload.
+	meta := GetRunMeta(ctx)
+	if state == nil || meta == nil || meta.Events == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
@@ -374,15 +381,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		nfData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
 			cpnID, componentName, componentType))
 	}
-	meta := GetRunMeta(ctx)
-	msgID, sessionID := "", ""
-	if meta != nil {
-		msgID, sessionID = meta.MessageID, meta.SessionID
-	}
-	emitEventFromCtx(ctx, RunEvent{
+	PushEvent(ctx, meta.Events, RunEvent{
 		Type: "node_finished", Data: string(nfData),
-		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		SessionID: sessionID,
+		MessageID: meta.MessageID, CreatedAt: time.Now().Unix(),
+		SessionID: meta.SessionID,
 	})
 }
 
@@ -404,6 +406,8 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	if c == nil {
 		return nil, fmt.Errorf("agent: nil canvas")
 	}
+
+	registerAgentNodes(ctx, c)
 	if len(c.Components) == 0 {
 		return nil, fmt.Errorf("agent: no components")
 	}
@@ -506,6 +510,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			}
 			macroNodes[cpnID] = node
 			for m := range exp.Members {
+				setAgentNodeParent(ctx, m, cpnID)
 				macroMembers[m] = true
 			}
 		case strings.EqualFold(comp.Obj.ComponentName, "Parallel"):
@@ -521,12 +526,13 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}),
 				compose.WithStatePostHandler[map[string]any, *CanvasState](func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
 					result, postErr := statePost(ctx, out, state)
-					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, postErr)
+					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, postErr, result)
 					return result, postErr
 				}),
 			)
 			macroNodes[cpnID] = node
 			for m := range exp.Members {
+				setAgentNodeParent(ctx, m, cpnID)
 				macroMembers[m] = true
 			}
 		}
@@ -599,13 +605,13 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 					nodeFinishedNow(ctx, targetState, cpnID, componentName, componentName, nodeErr)
 				})
 			} else {
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr, result)
 			}
 			return result, postErr
 		}
 		// Eino skips statePost on errors, so persist failed node outputs here.
 		nodeBody := func(ctx context.Context, in map[string]any) (map[string]any, error) {
-			out, invokeErr := body(ctx, in)
+			out, invokeErr := body(withAgentNodeParent(ctx, cpnID), in)
 			if invokeErr == nil || IsInterruptError(invokeErr) {
 				return out, invokeErr
 			}
@@ -615,7 +621,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			out["__cpn_id__"] = cpnID
 			stateErr := compose.ProcessState(ctx, func(ctx context.Context, state *CanvasState) error {
 				_, postErr := statePost(ctx, out, state)
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, invokeErr)
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, invokeErr, out)
 				return postErr
 			})
 			return out, errors.Join(invokeErr, stateErr)

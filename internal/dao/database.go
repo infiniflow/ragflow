@@ -298,9 +298,13 @@ func autoMigrateModels() []interface{} {
 		// from these tables at runtime, so the Go side must guarantee they exist.
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
+	dataModels = append(dataModels, chunkVersionDataModelsEE()...)
+	dataModels = append(dataModels, datasetVersionDataModelsEE()...)
 	return dataModels
 }
 
@@ -456,12 +460,23 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
+		// The version columns are written by every versioned change - a chunk
+		// edit, an upload, a dataset configuration change, a content restore - and
+		// only the full --migrate path creates them. Fail here, while the operator
+		// is watching the start, instead of at the first write with an
+		// unknown-column error.
+		if err = requireDatasetVersionColumnEE(ctx, DB); err != nil {
+			return err
+		}
 		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
 		// performed by the standalone --migrate action, so a server-mode process
 		// only converges the tables it needs itself.
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
+	}
+	if err = ensureLastLoginTenantColumn(ctx, DB); err != nil {
+		return fmt.Errorf("failed to ensure user.last_login_tenant: %w", err)
 	}
 	if err = SeedSystemSettings(ctx, DB); err != nil {
 		return fmt.Errorf("failed to seed system settings: %w", err)
@@ -498,6 +513,14 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	common.Info("Model providers loaded successfully")
 
 	return nil
+}
+
+func ensureLastLoginTenantColumn(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&entity.User{}) || migrator.HasColumn(&entity.User{}, "LastLoginTenant") {
+		return nil
+	}
+	return migrator.AddColumn(&entity.User{}, "LastLoginTenant")
 }
 
 // GetDB get database instance
@@ -588,7 +611,18 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.API4ConversationMessage{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
+	// Edition-specific runtime tables: the chunk edit history and the dataset
+	// history are written on every chunk and dataset mutation, but the
+	// data-model migrations only run as the standalone --migrate action.
+	// Without them a server started against a database that never ran the new
+	// --migrate would lose that history silently (the writes are best-effort
+	// and only log).
+	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, permissionRuntimeModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
 			tableName := fmt.Sprintf("%T", m)

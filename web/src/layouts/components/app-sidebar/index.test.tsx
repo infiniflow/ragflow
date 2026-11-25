@@ -5,20 +5,18 @@ import { AppSidebar } from './index';
 const mockToggleDatasetSidebar = jest.fn();
 const mockToggleAgentSidebar = jest.fn();
 const mockToggleChatSidebar = jest.fn();
+const mockToggleSearchSidebar = jest.fn();
 const mockToggleCompilationTemplateSidebar = jest.fn();
 const mockTogglePrimarySidebar = jest.fn();
 let mockPrimarySidebarCollapsed = false;
 let mockDatasetSidebarCollapsed = false;
 let mockAgentSidebarCollapsed = false;
 let mockChatSidebarCollapsed = false;
+let mockSearchSidebarCollapsed = false;
 let mockCompilationTemplateSidebarCollapsed = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-jest.mock('@/ee/layouts/components/header-enterprise', () => ({
-  EnterpriseHeaderUpgradeBadge: () => null,
 }));
 
 jest.mock('@/hooks/use-dataset-sidebar-collapse', () => ({
@@ -42,6 +40,13 @@ jest.mock('@/hooks/use-chat-sidebar-collapse', () => ({
   }),
 }));
 
+jest.mock('@/hooks/use-search-sidebar-collapse', () => ({
+  useSearchSidebarCollapse: () => ({
+    collapsed: mockSearchSidebarCollapsed,
+    toggleCollapsed: mockToggleSearchSidebar,
+  }),
+}));
+
 jest.mock('@/hooks/use-compilation-template-sidebar-collapse', () => ({
   useCompilationTemplateSidebarCollapse: () => ({
     collapsed: mockCompilationTemplateSidebarCollapsed,
@@ -56,9 +61,19 @@ jest.mock('./use-sidebar-collapse', () => ({
   }),
 }));
 
+jest.mock('@/ee/hooks/use-visible-nav-items', () => ({
+  useVisibleNavItems: (items: unknown[]) => items,
+}));
+
+jest.mock('@/ee/layouts/components/app-sidebar/organization-nav-group', () => ({
+  OrganizationNavGroup: () => null,
+}));
+
 jest.mock('./nav-item', () => ({
-  IntegrationsNavGroup: () => null,
-  NavItemLink: () => null,
+  IntegrationsNavGroup: () => <span data-testid="integrations-nav" />,
+  NavItemLink: ({ item }: { item: { key: string } }) => (
+    <span data-testid={`nav-item-${item.key}`} />
+  ),
 }));
 
 jest.mock('./user-footer', () => ({
@@ -73,6 +88,19 @@ function renderAppSidebar(path: string) {
   );
 }
 
+describe('AppSidebar navigation order', () => {
+  it('places Team immediately after Integrations', () => {
+    renderAppSidebar('/team');
+
+    const integrations = screen.getByTestId('integrations-nav');
+    const team = screen.getByTestId('nav-item-team');
+
+    expect(integrations.parentElement?.nextElementSibling).toContainElement(
+      team,
+    );
+  });
+});
+
 describe('AppSidebar secondary sidebar expansion', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -80,6 +108,7 @@ describe('AppSidebar secondary sidebar expansion', () => {
     mockDatasetSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
+    mockSearchSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
   });
 
@@ -131,6 +160,18 @@ describe('AppSidebar secondary sidebar expansion', () => {
     expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
   });
 
+  it('expands the search secondary sidebar on search detail routes', () => {
+    mockSearchSidebarCollapsed = true;
+    renderAppSidebar('/search/search-1');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockToggleSearchSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleChatSidebar).not.toHaveBeenCalled();
+  });
+
   it('does not show a secondary sidebar expander on built-in pipeline routes', () => {
     mockAgentSidebarCollapsed = true;
     renderAppSidebar('/pipeline/general');
@@ -177,5 +218,51 @@ describe('AppSidebar secondary sidebar expansion', () => {
       screen.queryByRole('button', { name: 'sidebar.collapseSidebar' }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
+  });
+});
+
+describe('AppSidebar primary sidebar border', () => {
+  beforeEach(() => {
+    mockPrimarySidebarCollapsed = true;
+    mockDatasetSidebarCollapsed = false;
+    mockAgentSidebarCollapsed = false;
+    mockChatSidebarCollapsed = false;
+    mockSearchSidebarCollapsed = false;
+    mockCompilationTemplateSidebarCollapsed = false;
+  });
+
+  it('is hidden on list pages without a secondary sidebar', () => {
+    renderAppSidebar('/agents');
+
+    expect(screen.getByRole('complementary')).not.toHaveClass('border-r');
+  });
+
+  it('is shown when the agent secondary sidebar is visible', () => {
+    renderAppSidebar('/agent/agent-1');
+
+    expect(screen.getByRole('complementary')).toHaveClass(
+      'border-r',
+      'border-border-button',
+    );
+  });
+
+  it('is shown when the agent secondary sidebar is collapsed', () => {
+    mockAgentSidebarCollapsed = true;
+    renderAppSidebar('/agent/agent-1');
+
+    expect(screen.getByRole('complementary')).toHaveClass('border-r');
+  });
+
+  it('is shown on memory detail routes with a secondary sidebar', () => {
+    renderAppSidebar('/memory/memory-message/memory-1');
+
+    expect(screen.getByRole('complementary')).toHaveClass('border-r');
+  });
+
+  it('is hidden when the primary sidebar is expanded', () => {
+    mockPrimarySidebarCollapsed = false;
+    renderAppSidebar('/agent/agent-1');
+
+    expect(screen.getByRole('complementary')).not.toHaveClass('border-r');
   });
 });

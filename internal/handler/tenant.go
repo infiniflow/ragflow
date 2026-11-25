@@ -22,19 +22,17 @@ import (
 	"net/http"
 	"net/mail"
 	"net/smtp"
-
-	"ragflow/internal/permission"
-	"ragflow/internal/server"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/service"
-	dataset "ragflow/internal/service/dataset"
-
-	"go.uber.org/zap"
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
+	"ragflow/internal/server"
+	"ragflow/internal/service"
+	"ragflow/internal/service/dataset"
 )
 
 // TenantHandler tenant handler

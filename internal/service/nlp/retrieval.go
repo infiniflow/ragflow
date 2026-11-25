@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -32,6 +33,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -50,24 +52,26 @@ func NewRetrievalService(docEngine engine.DocEngine, documentDAO *dao.DocumentDA
 
 // RetrievalRequest request for retrieval search
 type RetrievalRequest struct {
-	Question               string
-	TenantIDs              []string
-	KbIDs                  []string
-	DocIDs                 []string
-	Page                   int
-	PageSize               int
-	RerankCandidatesCount  *int
-	KNNTopK                *int
-	KNNNumCandidates       *int
-	SimilarityThreshold    *float64
-	VectorSimilarityWeight *float64
-	RankFeature            *map[string]float64
-	RerankModel            *models.RerankModel
-	EmbeddingModel         *models.EmbeddingModel
-	Aggs                   *bool
-	Highlight              *bool
-	AllowDenseFallback     *bool
-	Filter                 map[string]interface{}
+	Question  string
+	TenantIDs []string
+	KbIDs     []string
+	DocIDs    []string
+	// DocumentPermissionsChecked indicates the caller already scoped DocIDs.
+	DocumentPermissionsChecked bool
+	Page                       int
+	PageSize                   int
+	RerankCandidatesCount      *int
+	KNNTopK                    *int
+	KNNNumCandidates           *int
+	SimilarityThreshold        *float64
+	VectorSimilarityWeight     *float64
+	RankFeature                *map[string]float64
+	RerankModel                *models.RerankModel
+	EmbeddingModel             *models.EmbeddingModel
+	Aggs                       *bool
+	Highlight                  *bool
+	AllowDenseFallback         *bool
+	Filter                     map[string]interface{}
 	// VectorOnly, when true, runs the dense leg alone: no text match expression
 	// and no fusion expression reach the engine, so the search is a pure kNN
 	// whose filter is the scope conditions only. Set by callers that need to
@@ -77,6 +81,53 @@ type RetrievalRequest struct {
 	// Language is the dataset language ("" = English); diacritic-folding
 	// languages (Slovak, Czech) fold the query so its tokens match index tokens.
 	Language string
+}
+
+// SplitRetrievalDocIDs separates explicitly selected dataset products from
+// ordinary document IDs. An empty document selection includes each selected
+// dataset's products alongside its readable documents.
+func SplitRetrievalDocIDs(datasetIDs, requestedIDs []string) (documentIDs, datasetProductIDs []string) {
+	datasetSet := make(map[string]struct{}, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		if datasetID != "" {
+			datasetSet[datasetID] = struct{}{}
+		}
+	}
+
+	if len(requestedIDs) == 0 {
+		seenProducts := make(map[string]struct{}, len(datasetIDs))
+		for _, datasetID := range datasetIDs {
+			if datasetID == "" {
+				continue
+			}
+			if _, seen := seenProducts[datasetID]; !seen {
+				datasetProductIDs = append(datasetProductIDs, datasetID)
+				seenProducts[datasetID] = struct{}{}
+			}
+		}
+		return nil, datasetProductIDs
+	}
+
+	documentIDs = make([]string, 0, len(requestedIDs))
+	seenDocuments := make(map[string]struct{}, len(requestedIDs))
+	seenProducts := make(map[string]struct{}, len(requestedIDs))
+	for _, requestedID := range requestedIDs {
+		if requestedID == "" {
+			continue
+		}
+		if _, isDatasetProduct := datasetSet[requestedID]; isDatasetProduct {
+			if _, seen := seenProducts[requestedID]; !seen {
+				datasetProductIDs = append(datasetProductIDs, requestedID)
+				seenProducts[requestedID] = struct{}{}
+			}
+			continue
+		}
+		if _, seen := seenDocuments[requestedID]; !seen {
+			documentIDs = append(documentIDs, requestedID)
+			seenDocuments[requestedID] = struct{}{}
+		}
+	}
+	return documentIDs, datasetProductIDs
 }
 
 // RetrievalResult result from retrieval search
@@ -113,6 +164,17 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	common.InfoCtx(ctx, "Retrieval START", zap.String("question", req.Question), zap.Int("page", req.Page), zap.Int("pageSize", req.PageSize))
 	if req.Question == "" {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
+	}
+	if !req.DocumentPermissionsChecked && permission.UserIDFromContext(ctx) != "" && len(req.KbIDs) > 0 {
+		candidateDocIDs, datasetProductIDs := SplitRetrievalDocIDs(req.KbIDs, req.DocIDs)
+		readableDocIDs, err := permission.ListReadableDocumentIDs(ctx, dao.DB, req.KbIDs, candidateDocIDs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve readable documents: %w", err)
+		}
+		req.DocIDs = append(readableDocIDs, datasetProductIDs...)
+		if len(req.DocIDs) == 0 {
+			return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
+		}
 	}
 
 	// Apply default values
@@ -326,7 +388,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["kb_id"]; ok {
 			resultChunk["kb_id"] = v
 		}
-		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
+		if kind := common.FirstEngineString(chunk["compile_kwd"]); kind != "" {
 			resultChunk["compile_kwd"] = kind
 		}
 		if v, ok := chunk["important_kwd"]; ok {
@@ -1203,6 +1265,13 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			"positions":           parentMap["position_int"],
 			"doc_type_kwd":        docTypeKwd,
 		}
+		childMaps := make([]map[string]interface{}, 0, len(childList))
+		for _, child := range childList {
+			childMaps = append(childMaps, child.chunk)
+		}
+		if hl := parentHighlight(parentMap, childMaps); hl != "" {
+			aggregated["highlight"] = hl
+		}
 
 		// Get vector from first child if available
 	childVecLoop:
@@ -1248,7 +1317,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		if len(chunk) == 0 || isDatasetCompilationChunk(chunk) {
 			continue
 		}
-		if docID := strings.TrimSpace(firstStringValue(chunk["doc_id"])); docID != "" {
+		if docID := strings.TrimSpace(common.FirstEngineString(chunk["doc_id"])); docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
 	}
@@ -1287,7 +1356,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 			continue
 		}
 		if !isDatasetCompilationChunk(chunk) {
-			docID := strings.TrimSpace(firstStringValue(chunk["doc_id"]))
+			docID := strings.TrimSpace(common.FirstEngineString(chunk["doc_id"]))
 			if _, docExists := existingDocIDs[docID]; docID == "" || !docExists {
 				removed++
 				continue
@@ -1430,4 +1499,169 @@ func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []str
 	}
 
 	return out, nil
+}
+
+var emTermPattern = regexp.MustCompile(`(?i)<em>([^<]+)</em>`)
+
+func parentHighlight(parent map[string]interface{}, children []map[string]interface{}) string {
+	if hl, ok := parent["highlight"].(string); ok && strings.Contains(strings.ToLower(hl), "<em>") {
+		return hl
+	}
+	content, _ := parent["content_with_weight"].(string)
+	return markKnownTerms(content, emTerms(children))
+}
+
+func emTerms(chunks []map[string]interface{}) []string {
+	seen := map[string]struct{}{}
+	var terms []string
+	for _, chunk := range chunks {
+		hl, _ := chunk["highlight"].(string)
+		for _, match := range emTermPattern.FindAllStringSubmatch(hl, -1) {
+			term := strings.TrimSpace(match[1])
+			if term == "" {
+				continue
+			}
+			key := strings.ToLower(term)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+func markKnownTerms(content string, terms []string) string {
+	if content == "" || len(terms) == 0 {
+		return ""
+	}
+	ordered := append([]string(nil), terms...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return len(ordered[i]) > len(ordered[j])
+	})
+	parts := make([]string, 0, len(ordered))
+	for _, term := range ordered {
+		if strings.TrimSpace(term) == "" {
+			continue
+		}
+		parts = append(parts, regexp.QuoteMeta(term))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	pattern := regexp.MustCompile(`(?i)(?:` + strings.Join(parts, "|") + `)`)
+	spans := pattern.FindAllStringIndex(content, -1)
+	if len(spans) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	cursor := 0
+	lastEnd := 0
+	accepted := false
+	for _, span := range spans {
+		if span[0] < lastEnd || !matchIsUnmarkedText(content, span[0], span[1]) {
+			continue
+		}
+		accepted = true
+		b.WriteString(content[cursor:span[0]])
+		b.WriteString("<em>")
+		b.WriteString(content[span[0]:span[1]])
+		b.WriteString("</em>")
+		cursor = span[1]
+		lastEnd = span[1]
+	}
+	if !accepted && !emTermPattern.MatchString(content) {
+		return ""
+	}
+	b.WriteString(content[cursor:])
+	return b.String()
+}
+
+func matchIsUnmarkedText(content string, start, end int) bool {
+	inTag, emDepth := markupState(content, start)
+	if inTag || emDepth > 0 {
+		return false
+	}
+	inTag, _ = markupState(content, end)
+	return !inTag
+}
+
+func markupState(content string, pos int) (bool, int) {
+	emDepth := 0
+	for i := 0; i < pos; {
+		if content[i] != '<' {
+			i++
+			continue
+		}
+		tagEnd := htmlTagEnd(content, i)
+		if tagEnd < 0 {
+			if i+1 >= len(content) || isTagStart(content[i+1]) {
+				return true, emDepth
+			}
+			i++
+			continue
+		}
+		if tagEnd >= pos {
+			return true, emDepth
+		}
+		switch htmlTagName(content, i, tagEnd) {
+		case "em":
+			emDepth++
+		case "/em":
+			if emDepth > 0 {
+				emDepth--
+			}
+		}
+		i = tagEnd + 1
+	}
+	return false, emDepth
+}
+
+func isTagStart(next byte) bool {
+	return (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '/' || next == '!'
+}
+
+func htmlTagEnd(content string, start int) int {
+	if start+1 >= len(content) {
+		return -1
+	}
+	next := content[start+1]
+	if !isTagStart(next) {
+		return -1
+	}
+	quote := byte(0)
+	for i := start + 1; i < len(content); i++ {
+		ch := content[i]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			quote = ch
+			continue
+		}
+		if ch == '>' {
+			return i
+		}
+	}
+	return -1
+}
+
+func htmlTagName(content string, start, tagEnd int) string {
+	body := strings.TrimSpace(strings.ToLower(content[start+1 : tagEnd]))
+	if strings.HasPrefix(body, "/") {
+		body = "/" + strings.TrimLeft(body[1:], " \t")
+	}
+	var name strings.Builder
+	for _, ch := range body {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '/' {
+			name.WriteRune(ch)
+			continue
+		}
+		break
+	}
+	return name.String()
 }

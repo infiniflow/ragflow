@@ -36,7 +36,6 @@ func TestBm25Adapter_TextOnlyMatchExpr(t *testing.T) {
 	adapter := NewBm25Adapter(fe)
 
 	_, err := adapter.SearchBm25(context.Background(), runtime.Bm25Request{
-		TenantID:   "t",
 		Queries:    []string{"alpha beta", "gamma"},
 		DatasetIDs: []string{"kb1"},
 	})
@@ -82,7 +81,7 @@ func TestBm25Adapter_MergesDedupesSkipsGraph(t *testing.T) {
 	adapter := NewBm25Adapter(&fakeTwoResultEngine{grepFakeEngine: base})
 
 	chunks, err := adapter.SearchBm25(context.Background(), runtime.Bm25Request{
-		TenantID: "t", Queries: []string{"q1", "q2"}, DatasetIDs: []string{"kb1"},
+		Queries: []string{"q1", "q2"}, DatasetIDs: []string{"kb1"},
 	})
 	if err != nil {
 		t.Fatalf("SearchBm25: %v", err)
@@ -120,7 +119,7 @@ func TestSearchBm25ChunksTool_ArgsBounds(t *testing.T) {
 	stub := &bm25StubService{}
 	runtime.SetBm25Service(stub)
 	defer runtime.SetBm25Service(nil)
-	tool := NewSearchBm25ChunksTool("t", []string{"kb1"})
+	tool := NewSearchBm25ChunksTool([]string{"kb1"})
 
 	// Empty queries -> <tool_error> result (the loop keeps running; the
 	// model reads the reason and can fix its arguments).
@@ -244,7 +243,6 @@ func TestBm25Adapter_TokenizedMatchExpr(t *testing.T) {
 	adapter.SetQueryBuilder(&fakeQueryTokenizer{})
 
 	if _, err := adapter.SearchBm25(context.Background(), runtime.Bm25Request{
-		TenantID:   "t",
 		Queries:    []string{"mineralizer"},
 		DatasetIDs: []string{"kb1"},
 	}); err != nil {
@@ -278,7 +276,6 @@ func TestBm25Adapter_TokenizesWithDatasetLanguage(t *testing.T) {
 	adapter := NewBm25Adapter(&grepFakeEngine{})
 	adapter.SetQueryBuilder(qt)
 	if _, err := adapter.SearchBm25(context.Background(), runtime.Bm25Request{
-		TenantID:   "t",
 		Queries:    []string{"škola"},
 		DatasetIDs: []string{"kb1"},
 	}); err != nil {

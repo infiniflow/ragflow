@@ -78,6 +78,7 @@ export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
   LLMFactory.DaoXE,
   LLMFactory.RadeonCloud,
   LLMFactory.DemonRoute,
+  LLMFactory.WorldRouter,
 ];
 
 // ---------------------------------------------------------------------------
@@ -1087,6 +1088,13 @@ interface UseModelEditArgs {
   instanceName: string;
   isModelAdded: (name: string) => boolean;
   isDraftInstance?: boolean;
+  /**
+   * Default tool-calling state for models without an explicit
+   * `extra.is_tools`. Draft instances persist tool calling enabled for
+   * every model (see `buildModelInfo`), so the edit dialog must mirror
+   * that default instead of showing the switch off.
+   */
+  defaultToolsEnabled?: boolean;
   updateCatalogModel: (name: string, item: IProviderModelItem) => void;
   clearCatalogOverride: (name: string) => void;
   updateDraftModel?: (item: IProviderModelItem) => void;
@@ -1097,6 +1105,7 @@ export function useModelEdit({
   instanceName,
   isModelAdded,
   isDraftInstance,
+  defaultToolsEnabled = false,
   updateCatalogModel,
   clearCatalogOverride,
   updateDraftModel,
@@ -1159,6 +1168,12 @@ export function useModelEdit({
         }
       }
     }
+    // Mirror the persisted default for models that carry no explicit
+    // `extra.is_tools` flag - otherwise the switch reads "off" here but
+    // turns on as soon as the instance is saved.
+    if (defaultToolsEnabled && !featureBooleans.has('is_tools')) {
+      features.push('is_tools');
+    }
     // Remaining extra fields (non-feature: element-format selects, etc.).
     const remainingExtra = Object.fromEntries(
       Object.entries(extra).filter(([k]) => !featureBooleans.has(k)),
@@ -1170,7 +1185,7 @@ export function useModelEdit({
       features,
       ...remainingExtra,
     };
-  }, [editingModel, providerFeatureKeys]);
+  }, [editingModel, providerFeatureKeys, defaultToolsEnabled]);
 
   // Persist edits to an existing model. For drafts the backend has no
   // instance yet, so we update the local `draftModels` list instead of

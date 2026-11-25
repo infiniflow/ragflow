@@ -86,11 +86,18 @@ export type SearchSettingFormData = z.infer<typeof SearchSettingFormSchema>;
  * list: a persisted value may reference a model that has since been deleted.
  * Only validate selected models when their corresponding feature is enabled.
  */
-export const useSearchSettingFormSchema = () => {
+export const useSearchSettingFormSchema = (
+  resourceTenantId?: string,
+  accessUserId?: string | null,
+) => {
   const { t } = useTranslation();
   const { validIds: validRerankIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.rerank_id);
-  const { validIds: validLlmIds } = useModelValidIds(ModelTypeMap.llm_id);
+    useModelValidIds(ModelTypeMap.rerank_id, resourceTenantId, accessUserId);
+  const { validIds: validLlmIds } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    resourceTenantId,
+    accessUserId,
+  );
 
   const formSchema = useMemo(
     () =>

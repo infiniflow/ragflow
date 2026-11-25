@@ -18,6 +18,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -143,10 +144,10 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 		if err != nil {
 			return fmt.Errorf("Wiki dirty compile document %s: %w", request.DocumentID, err)
 		}
+		if len(states) != 1 {
+			return fmt.Errorf("Wiki dirty compile document %s: template %s returned no complete active plan", request.DocumentID, templateID)
+		}
 		activeStates = append(activeStates, states...)
-	}
-	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
-		return persistDirtyWikiActiveStates(ctx, request, activeStates)
 	}
 	return replaceDirtyWikiProducts(ctx, request, compiled, appcommon.DeduplicateTrimmed(affectedSlugs), appcommon.DeduplicateTrimmed(removedSlugs), activeStates, false)
 }
@@ -266,6 +267,8 @@ func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiD
 			if strings.TrimSpace(anyString(row["compile_kwd"])) != "" {
 				continue
 			}
+			// Stored chunks use content_with_weight; the component accepts text.
+			row["text"] = row["content_with_weight"]
 			chunks = append(chunks, row)
 		}
 		if len(result.Chunks) == 0 || int64(offset+len(result.Chunks)) >= result.Total {
@@ -294,15 +297,48 @@ func wikiCompiledRows(output map[string]any) []map[string]any {
 }
 
 func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
-	var dirty entity.WikiDocumentDirty
-	if err := kcWiringDeps.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	current := false
+	err := kcWiringDeps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A no-op row write serializes this window with dirty marking and
+		// other reconcilers, including SQLite where SELECT FOR UPDATE is ignored.
+		if err := tx.Model(&entity.WikiDocumentDirty{}).Where("document_id = ?", request.DocumentID).
+			UpdateColumn("revision", gorm.Expr("revision")).Error; err != nil {
+			return err
+		}
+		var dirty entity.WikiDocumentDirty
+		if err := tx.Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		if dirty.TenantID != request.TenantID || dirty.DatasetID != request.DatasetID {
+			return fmt.Errorf("Wiki dirty compile: request does not match dirty document scope")
+		}
+		if dirty.Revision != request.Revision {
 			return nil
 		}
+		current = true
+		return replaceLockedDirtyWikiProducts(ctx, request, rows, affectedSlugs, removedSlugs, activeStates, fullReplace)
+	})
+	if err != nil || !current {
 		return err
 	}
-	if dirty.Revision != request.Revision {
-		return nil
+	// The durable dirty row remains until the worker observes successful
+	// publication. Publish on unchanged retries too: earlier product writes may
+	// already have persisted before a publication failure. Unlock first because
+	// the scheduler writes its own durable backlog using another DB transaction.
+	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
+}
+
+func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
+	var plannedSlugs map[string]struct{}
+	if !fullReplace {
+		var err error
+		plannedSlugs, err = dirtyWikiPlannedSlugs(request, activeStates)
+		if err != nil {
+			return err
+		}
 	}
 	docEngine := kcWiringDeps.Engine
 	if docEngine == nil {
@@ -313,7 +349,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		IndexNames:   []string{indexName},
 		KbIDs:        []string{request.DatasetID},
 		Limit:        10000,
-		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_id"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "slug_kwd", "parent_kwd"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
 			"type_kwd":      []string{"wiki_page", "wiki_section"},
@@ -323,10 +359,23 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if err != nil {
 		return err
 	}
+	// Both incremental and full replacement need a complete persisted product
+	// search before deleting rows, clearing active state, or publishing success.
+	if existing != nil && (existing.Total > int64(len(existing.Chunks)) || len(existing.Chunks) >= 10000) {
+		return fmt.Errorf("Wiki dirty compile: persisted product search is incomplete")
+	}
 	newIDs := make(map[string]struct{}, len(rows))
+	newPageSlugs := make(map[string]struct{})
+	newPageIDs := make(map[string]struct{})
 	for _, row := range rows {
 		if id := anyString(row["id"]); id != "" {
 			newIDs[id] = struct{}{}
+		}
+		if enginetypes.CompilationRowType(row) == "wiki_page" {
+			newPageSlugs[anyString(row["slug_kwd"])] = struct{}{}
+			if id := anyString(row["id"]); id != "" {
+				newPageIDs[id] = struct{}{}
+			}
 		}
 	}
 	if len(rows) > 0 {
@@ -334,17 +383,42 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 			return err
 		}
 	}
-	affected := make(map[string]struct{}, len(affectedSlugs)+len(removedSlugs))
+	affected := make(map[string]struct{}, len(affectedSlugs)+len(removedSlugs)+len(newPageSlugs))
+	// Emitted rows use the writer's canonical slug, while affected plan slugs
+	// may still be bare. Regeneration must also retract the old page sections.
+	for slug := range newPageSlugs {
+		affected[slug] = struct{}{}
+	}
+	removed := make(map[string]struct{}, len(removedSlugs))
+	for _, slug := range removedSlugs {
+		removed[slug] = struct{}{}
+	}
 	for _, slug := range append(append([]string(nil), affectedSlugs...), removedSlugs...) {
+		_, stillPlanned := plannedSlugs[slug]
+		_, wasRemoved := removed[slug]
+		_, regenerated := newPageSlugs[slug]
+		if !fullReplace && wasRemoved && stillPlanned && !regenerated {
+			// Another template still owns this unchanged page and emitted no row.
+			continue
+		}
 		affected[slug] = struct{}{}
 	}
 	affectedPageIDs := make(map[string]struct{})
+	currentPageIDs := make(map[string]struct{})
+	for id := range newPageIDs {
+		// A previous partial delete may have removed this regenerated parent.
+		affectedPageIDs[id] = struct{}{}
+		currentPageIDs[id] = struct{}{}
+	}
 	if existing != nil && !fullReplace {
 		for _, row := range existing.Chunks {
 			if enginetypes.CompilationRowType(row) != "wiki_page" {
 				continue
 			}
-			if _, ok := affected[anyString(row["slug_kwd"])]; ok {
+			currentPageIDs[anyString(row["id"])] = struct{}{}
+			slug := anyString(row["slug_kwd"])
+			_, stillPlanned := plannedSlugs[slug]
+			if _, ok := affected[slug]; ok || !stillPlanned {
 				affectedPageIDs[anyString(row["id"])] = struct{}{}
 			}
 		}
@@ -362,8 +436,13 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		for _, row := range existing.Chunks {
 			id := anyString(row["id"])
 			_, pageAffected := affectedPageIDs[id]
-			_, sectionAffected := affectedPageIDs[anyString(row["parent_id"])]
-			inScope := fullReplace || pageAffected || sectionAffected
+			parentID := anyString(row["parent_kwd"])
+			_, sectionAffected := affectedPageIDs[parentID]
+			_, parentExists := currentPageIDs[parentID]
+			// A complete snapshot can also identify sections left behind when
+			// an earlier external delete removed their page before failing.
+			orphanSection := enginetypes.CompilationRowType(row) == "wiki_section" && parentID != "" && !parentExists
+			inScope := fullReplace || pageAffected || sectionAffected || orphanSection
 			if _, keep := newIDs[id]; id != "" && inScope && !keep {
 				staleIDs = append(staleIDs, id)
 			}
@@ -382,13 +461,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if err := putWikiActiveStates(ctx, docEngine, activeStates); err != nil {
 		return err
 	}
-	// Do not wake the dataset consumer when this document never had any Wiki
-	// products and the dirty replacement produced none. A full replacement with
-	// existing products still publishes so the consumer can retract them.
-	if len(rows) == 0 && (existing == nil || len(existing.Chunks) == 0) {
-		return nil
-	}
-	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
+	return nil
 }
 
 func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
@@ -404,25 +477,52 @@ func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, requ
 	return nil
 }
 
-func persistDirtyWikiActiveStates(ctx context.Context, request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) error {
+// The snapshots carry complete plans, including pages omitted by incremental
+// REFINE. Compare their union with stored products after a template changes its
+// cache namespace; the new namespace has no prior plan to report removed slugs.
+func dirtyWikiPlannedSlugs(request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) (map[string]struct{}, error) {
 	if len(states) == 0 {
-		return nil
+		return nil, fmt.Errorf("Wiki dirty compile: complete active plans are required")
 	}
-	var dirty entity.WikiDocumentDirty
-	if err := kcWiringDeps.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil
+	slugs := make(map[string]struct{})
+	for _, state := range states {
+		if state.Key == "" || state.TenantID != request.TenantID || state.DatasetID != request.DatasetID || state.DocumentID != request.DocumentID {
+			return nil, fmt.Errorf("Wiki dirty compile: active plan has invalid scope")
 		}
-		return err
+		var snapshot struct {
+			Plan json.RawMessage `json:"plan"`
+		}
+		if err := json.Unmarshal(state.Payload, &snapshot); err != nil {
+			return nil, fmt.Errorf("Wiki dirty compile: decode active plan: %w", err)
+		}
+		if len(snapshot.Plan) == 0 {
+			return nil, fmt.Errorf("Wiki dirty compile: active snapshot is missing its complete plan")
+		}
+		var pages []struct {
+			Slug     string `json:"slug"`
+			PageType string `json:"page_type"`
+		}
+		if err := json.Unmarshal(snapshot.Plan, &pages); err != nil {
+			return nil, fmt.Errorf("Wiki dirty compile: decode planned pages: %w", err)
+		}
+		for _, page := range pages {
+			if strings.TrimSpace(page.Slug) == "" {
+				return nil, fmt.Errorf("Wiki dirty compile: planned page has no slug")
+			}
+			// Match the chunk writer's full <page_type>/<slug> identity. Plans
+			// already normalize an omitted page type to concept.
+			slug := page.Slug
+			if !strings.Contains(slug, "/") {
+				pageType := strings.TrimSpace(page.PageType)
+				if pageType == "" {
+					pageType = "concept"
+				}
+				slug = pageType + "/" + slug
+			}
+			slugs[slug] = struct{}{}
+		}
 	}
-	if dirty.Revision != request.Revision {
-		return nil
-	}
-	docEngine := kcWiringDeps.Engine
-	if docEngine == nil {
-		return fmt.Errorf("Wiki dirty compile: document engine is unavailable")
-	}
-	return putWikiActiveStates(ctx, docEngine, states)
+	return slugs, nil
 }
 
 func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states []kc.WikiMapActiveState) error {
@@ -640,39 +740,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	// knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
-	var config *models.ChatConfig
-	// Build a provider config only for per-call overrides. In particular, do not
-	// inject the model's configured max_output as max_tokens: call-site or
-	// compiler-node settings may override it, while the model driver remains
-	// responsible for its configured default when neither is set.
-	if req.Temperature != nil || req.TopP != nil || req.PresencePenalty != nil || req.FrequencyPenalty != nil || req.MaxTokens != nil || req.Thinking != nil || req.DisableThinking {
-		config = &models.ChatConfig{}
-		if req.Temperature != nil {
-			config.Temperature = req.Temperature
-		}
-		if req.TopP != nil {
-			config.TopP = req.TopP
-		}
-		if req.PresencePenalty != nil {
-			config.PresencePenalty = req.PresencePenalty
-		}
-		if req.FrequencyPenalty != nil {
-			config.FrequencyPenalty = req.FrequencyPenalty
-		}
-		if req.MaxTokens != nil {
-			config.MaxTokens = req.MaxTokens
-		}
-		// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion
-		// budget on visible COT before the structured reply; compilation should
-		// run with thinking off. MiniMaxModel maps Thinking=false to
-		// `thinking: {"type": "disabled"}` in the request body.
-		if req.Thinking != nil {
-			config.Thinking = req.Thinking
-		} else if req.DisableThinking {
-			off := false
-			config.Thinking = &off
-		}
-	}
+	config := chatConfigForRequest(req)
 	// Retry transient transport/provider failures (HTTP timeout, reset,
 	// connection refused, 5xx, 429) with exponential backoff. A single
 	// external-LLM hiccup must not abort the whole knowledge compile — the reply
@@ -726,6 +794,41 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		content = *resp.Answer
 	}
 	return &kc.ChatResponse{Content: content}, nil
+}
+
+// chatConfigForRequest maps the compiler's per-call settings onto the provider
+// config and returns nil when the call sets nothing, so the driver's configured
+// defaults apply untouched. It deliberately does not inject the model's
+// configured max_output as max_tokens: call-site or compiler-node settings may
+// override it, while the driver keeps its own default when neither is set.
+func chatConfigForRequest(req kc.ChatRequest) *models.ChatConfig {
+	if req.Temperature == nil && req.TopP == nil && req.PresencePenalty == nil &&
+		req.FrequencyPenalty == nil && req.MaxTokens == nil && req.Thinking == nil &&
+		!req.DisableThinking && !req.JSONMode {
+		return nil
+	}
+	config := &models.ChatConfig{
+		Temperature:      req.Temperature,
+		TopP:             req.TopP,
+		PresencePenalty:  req.PresencePenalty,
+		FrequencyPenalty: req.FrequencyPenalty,
+		MaxTokens:        req.MaxTokens,
+	}
+	// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion budget
+	// on visible COT before the structured reply; compilation should run with
+	// thinking off. MiniMaxModel maps Thinking=false to
+	// `thinking: {"type": "disabled"}` in the request body.
+	if req.Thinking != nil {
+		config.Thinking = req.Thinking
+	} else if req.DisableThinking {
+		off := false
+		config.Thinking = &off
+	}
+	if req.JSONMode {
+		on := true
+		config.JSONMode = &on
+	}
+	return config
 }
 
 // kcChatRetryMax bounds how many times a transient LLM transport failure is
@@ -1045,16 +1148,6 @@ func anyStrings(v interface{}) []string {
 }
 
 func anyFloat(v interface{}) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case float32:
-		return float64(x)
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	default:
-		return 0
-	}
+	f, _ := appcommon.ToFloat(v)
+	return f
 }

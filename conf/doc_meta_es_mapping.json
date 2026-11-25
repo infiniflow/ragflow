@@ -22,7 +22,15 @@
       },
       "meta_fields": {
         "type": "object",
-        "dynamic": true
+        "dynamic": true,
+        "properties": {
+          "work_experience_years": {
+            "type": "double"
+          },
+          "highest_degree_level": {
+            "type": "integer"
+          }
+        }
       }
     }
   }

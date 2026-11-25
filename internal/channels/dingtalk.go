@@ -26,13 +26,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/utils"
 	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
@@ -88,6 +92,7 @@ type dingTalkChannel struct {
 	processed       map[string]time.Time
 	inflight        map[string]time.Time
 	workers         map[string]*dingTalkWorker
+	retryAttempts   int
 	tokenMu         sync.Mutex
 	accessToken     string
 	tokenExpiry     time.Time
@@ -129,6 +134,7 @@ func newDingTalkChannel(account dingTalkAccount) (*dingTalkChannel, error) {
 	ch.stream = client.NewStreamClient(
 		client.WithAppCredential(client.NewAppCredentialConfig(account.ClientID, account.ClientSecret)),
 		client.WithProxy(proxyURL),
+		client.WithAutoReconnect(false),
 	)
 	ch.stream.RegisterChatBotCallbackRouter(ch.handleBotCallback)
 	return ch, nil
@@ -240,7 +246,7 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 	return redactURLError(c.postWebhook(ctx, sessionWebhook, p))
 }
 
-// run keeps the DingTalk SDK stream client active until the channel stops.
+// run reconnects the DingTalk stream until the channel stops.
 func (c *dingTalkChannel) run(ctx context.Context) {
 	defer func() {
 		var runCancel context.CancelFunc
@@ -264,9 +270,116 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 		common.Warn("dingtalk: stream client is not initialized", zap.String("account_id", c.account.AccountID))
 		return
 	}
-	if err := c.stream.Start(ctx); err != nil && ctx.Err() == nil {
-		common.Error("dingtalk: stream client exited", err, zap.String("account_id", c.account.AccountID))
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
+	for ctx.Err() == nil {
+		err := c.runStreamSession(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		c.mu.Lock()
+		c.retryAttempts++
+		delay := channelRetryDelay(c.retryAttempts)
+		c.mu.Unlock()
+		if err != nil {
+			common.Error("dingtalk: stream client exited", redactURLError(err), zap.String("account_id", c.account.AccountID), zap.Duration("retry_delay", delay))
+		}
+		if !waitForContext(ctx, delay) {
+			return
+		}
 	}
+}
+
+// runStreamSession uses the SDK's endpoint and frame handlers while owning the
+// connection lifecycle so its detached fixed-delay reconnect loop is never used.
+func (c *dingTalkChannel) runStreamSession(ctx context.Context) error {
+	endpoint, err := c.stream.GetConnectionEndpoint(ctx)
+	if err != nil {
+		return err
+	}
+	gatewayURL, err := url.Parse(endpoint.Endpoint)
+	if err != nil {
+		return err
+	}
+	query := gatewayURL.Query()
+	query.Set("ticket", endpoint.Ticket)
+	gatewayURL.RawQuery = query.Encode()
+	conn, _, err := dialSafeChannelWebSocket(ctx, gatewayURL.String(), nil, c.account.Timeout, channelURLPolicy{exactHosts: []string{"wss-open-connection.dingtalk.com"}})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		<-sessionCtx.Done()
+		_ = conn.Close()
+	}()
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(2 * time.Minute))
+	})
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sessionCtx.Done():
+				return
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
+	for ctx.Err() == nil {
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Minute)); err != nil {
+			return err
+		}
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		frame, err := payload.DecodeDataFrame(data)
+		if err != nil {
+			common.Warn("dingtalk: invalid stream frame", zap.String("account_id", c.account.AccountID), zap.Error(err))
+			continue
+		}
+		if frame.Type == utils.SubscriptionTypeKSystem && frame.GetTopic() == "disconnect" {
+			return errors.New("stream requested reconnect")
+		}
+		handler, err := c.stream.GetHandler(frame.Type, frame.GetTopic())
+		var response *payload.DataFrameResponse
+		if err != nil || handler == nil {
+			response = payload.NewDataFrameResponse(payload.DataFrameResponseStatusCodeKHandlerNotFound)
+		} else {
+			response, err = handler(ctx, frame)
+			if err != nil && response == nil {
+				response = payload.NewErrorDataFrameResponse(err)
+			}
+		}
+		if response == nil {
+			response = payload.NewSuccessDataFrameResponse()
+		}
+		if response.GetHeader(payload.DataFrameHeaderKMessageId) == "" {
+			response.SetHeader(payload.DataFrameHeaderKMessageId, frame.GetMessageId())
+		}
+		if response.GetHeader(payload.DataFrameHeaderKContentType) == "" {
+			response.SetHeader(payload.DataFrameHeaderKContentType, payload.DataFrameContentTypeKJson)
+		}
+		if err := conn.SetWriteDeadline(time.Now().Add(c.account.Timeout)); err != nil {
+			return err
+		}
+		if err := conn.WriteJSON(response); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
 }
 
 // handleBotCallback receives DingTalk bot messages from the official stream SDK.

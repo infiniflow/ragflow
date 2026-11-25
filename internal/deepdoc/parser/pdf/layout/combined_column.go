@@ -60,10 +60,16 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	// column count wins; on a tie the FIRST page's count wins (Python keeps
 	// dict insertion order). Iterate in page order so the result never depends
 	// on Go map iteration order.
+	type pageColumn struct {
+		k     int
+		cents []float64
+	}
+	perPage := make([]pageColumn, len(sortedPages))
 	colCount := map[int]int{}
 	var firstK []int
-	for _, pg := range sortedPages {
-		k, _ := detectColumnCount(boxes, pageGroups[pg])
+	for pi, pg := range sortedPages {
+		k, cents := detectColumnCount(boxes, pageGroups[pg])
+		perPage[pi] = pageColumn{k: k, cents: cents}
 		if colCount[k] == 0 {
 			firstK = append(firstK, k)
 		}
@@ -82,10 +88,10 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 		return result
 	}
 
-	for _, pg := range sortedPages {
+	for pi, pg := range sortedPages {
 		indices := pageGroups[pg]
-		k, cents := detectColumnCount(boxes, indices)
-		assignColIDs(boxes, result, indices, k, cents)
+		cached := perPage[pi]
+		assignColIDs(boxes, result, indices, cached.k, cached.cents)
 	}
 	return result
 }
@@ -299,8 +305,8 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 	effBin, nb := columnHistogramBins(width, binPt)
 	cov := make([]int, nb)
 	for _, b := range lines {
-		i0 := clampInt(int((b.X0-minX0)/effBin), 0, nb-1)
-		i1 := clampInt(int((b.X1-minX0)/effBin), 0, nb-1)
+		i0 := min(max(int((b.X0-minX0)/effBin), 0), nb-1)
+		i1 := min(max(int((b.X1-minX0)/effBin), 0), nb-1)
 		for i := i0; i <= i1; i++ {
 			cov[i]++
 		}
@@ -323,16 +329,6 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 		i = j
 	}
 	return widths
-}
-
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 // gapColumnCount mirrors column_detectors.gap_column_counts: rasterize the
@@ -473,8 +469,8 @@ func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
 		if w <= 0 {
 			w = 1
 		}
-		i0 := clampInt(int((b.X0-minX0)/effBin), 0, nb-1)
-		i1 := clampInt(int((b.X1-minX0)/effBin), 0, nb-1)
+		i0 := min(max(int((b.X0-minX0)/effBin), 0), nb-1)
+		i1 := min(max(int((b.X1-minX0)/effBin), 0), nb-1)
 		for i := i0; i <= i1; i++ {
 			proj[i] += w
 		}

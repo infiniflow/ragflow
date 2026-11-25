@@ -160,6 +160,7 @@ func setupChunkHandlerWithUser(userID string, mock *mockChunkSvc) (*gin.Engine, 
 }
 
 func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
@@ -168,8 +169,8 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		if permission.UserIDFromContext(ctx) != "user-1" {
 			t.Fatalf("context userID = %q, want user-1", permission.UserIDFromContext(ctx))
 		}
-		if req.DatasetID != "kb-1" || req.DocID != "doc-1" {
-			t.Fatalf("req ids = %q/%q, want kb-1/doc-1", req.DatasetID, req.DocID)
+		if req.DatasetID != "kb-owner" || req.DocID != "doc-1" {
+			t.Fatalf("req ids = %q/%q, want kb-owner/doc-1", req.DatasetID, req.DocID)
 		}
 		if req.Page == nil || *req.Page != 2 {
 			t.Fatalf("page = %v, want 2", req.Page)
@@ -195,7 +196,7 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		}, nil
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-owner/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -881,5 +882,67 @@ func TestChunkHandlerAddChunkReturnsServerErrorDetails(t *testing.T) {
 	}
 	if resp["message"] != "encode chunk embedding: connection refused" {
 		t.Fatalf("message = %v, want original error", resp["message"])
+	}
+}
+
+func TestChunkHandlerUpdateChunkForwardsExpectedVersion(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
+		if req.ExpectedVersion == nil || *req.ExpectedVersion != 2 {
+			t.Fatalf("expected_version = %v, want 2", req.ExpectedVersion)
+		}
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"content":"updated","expected_version":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestChunkHandlerUpdateChunkRejectsMalformedExpectedVersion(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
+		t.Fatal("service must not be called for a malformed lock token")
+		return nil
+	}
+
+	for _, body := range []string{`{"expected_version":"2"}`, `{"expected_version":-1}`, `{"expected_version":1.5}`} {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (%s)", body, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestChunkHandlerUpdateChunkConflictAnswers409(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
+		return codedTestError{code: common.CodeConflict, msg: "Chunk was edited by someone else; reload the chunk and retry"}
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"content":"updated","expected_version":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (%s)", w.Code, w.Body.String())
 	}
 }

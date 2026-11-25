@@ -53,7 +53,9 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
         return `bg-accent-primary/10 text-accent-primary`;
       case RunningStatus.CANCEL:
       case RunningStatusOld.CANCEL:
+        return `bg-[rgba(117,120,122,0.1)] text-text-secondary`;
       case RunningStatus.QUEUED:
+      case RunningStatusOld.SCHEDULE:
         return `bg-state-warning/10 text-state-warning`;
       default:
         return 'bg-gray-500/10 text-text-secondary';
@@ -78,7 +80,9 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
         return `bg-accent-primary text-accent-primary`;
       case RunningStatus.CANCEL:
       case RunningStatusOld.CANCEL:
+        return `bg-[rgba(117,120,122,1)] text-text-secondary`;
       case RunningStatus.QUEUED:
+      case RunningStatusOld.SCHEDULE:
         return `bg-state-warning text-state-warning`;
       default:
         return `bg-[rgba(117,120,122,1)] text-text-secondary`;
@@ -87,7 +91,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
 
   return (
     <span
-      className={`inline-flex items-center w-[75px] px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()} ${className}`}
+      className={`inline-flex items-center w-[80px] px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()} ${className}`}
     >
       <div className={`w-1 h-1 mr-1 rounded-full ${getBgStatusColor()}`}></div>
       {name || ''}

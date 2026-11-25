@@ -403,7 +403,7 @@ export const MultiSelect = React.forwardRef<
             id={triggerId}
             onClick={handleTogglePopover}
             className={cn(
-              'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input focus-visible:bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
+              'flex w-full p-1 rounded-2xl border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input focus-visible:bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
               className,
             )}
           >
@@ -452,13 +452,15 @@ export const MultiSelect = React.forwardRef<
                           >
                             {label ?? value}
                           </div>
-                          <XCircle
-                            className="h-4 w-4 cursor-pointer"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              removeValue(value);
-                            }}
-                          />
+                          {!lockedValueSet.has(value) && (
+                            <XCircle
+                              className="h-4 w-4 cursor-pointer"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                removeValue(value);
+                              }}
+                            />
+                          )}
                         </div>
                       </Badge>
                     );
@@ -509,7 +511,7 @@ export const MultiSelect = React.forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-auto min-w-[var(--radix-popover-trigger-width)] p-0"
+          className="rounded-2xl w-auto min-w-[var(--radix-popover-trigger-width)] p-0"
           align="start"
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
           onFocusOutside={(event) => event.preventDefault()}

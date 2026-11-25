@@ -27,7 +27,7 @@ func TestEmitLifecycleEventCarriesContextIdentity(t *testing.T) {
 	// Case 1: no identity on ctx -> empty name/identity fields.
 	rec := &recordingEmitter{}
 	svc := &IngestionTaskService{eventEmitter: rec}
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "")
 
 	if !waitForEmitCount(rec.count, 1) {
 		t.Fatalf("event not emitted (async) within timeout")
@@ -59,7 +59,7 @@ func TestEmitLifecycleEventCarriesContextIdentity(t *testing.T) {
 		NatsQueue:    "tasks.RAGFLOW",
 		WorkerName:   "worker-3",
 	})
-	svc2.emitLifecycleEvent(ctx, task, "running", "RUNNING", "")
+	svc2.emitLifecycleEvent(ctx, task, "RUNNING", "")
 
 	if !waitForEmitCount(rec2.count, 1) {
 		t.Fatalf("event not emitted (async) within timeout")

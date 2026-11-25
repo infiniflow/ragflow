@@ -111,7 +111,7 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		return nil, fmt.Errorf("failed to marshal local PaddleOCR request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, paddleOCRCallTimeout(ocrConfig))
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -134,7 +134,13 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		zap.String("model", model),
 		zap.Int("content_bytes", len(content)))
 
-	resp, err := p.baseModel.httpClient.Do(req)
+	// The service answers only when OCR is done, so a configured timeout must
+	// not be cut short by the shared client's response-header timeout.
+	client := p.baseModel.httpClient
+	if ocrConfig != nil && ocrConfig.Timeout > 0 {
+		client = common.GetSchemeSafeLongCallHTTPClient()
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		common.Error("paddleocr local submit: request failed",
 			err,

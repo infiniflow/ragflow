@@ -16,28 +16,22 @@
 package parser
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
 
-// TestRechunkEmailAttachmentsSingleReturn guards the dead-code cleanup of
-// rechunkEmailAttachments: it must return only the re-parsed attachment items
-// ([]map[string]any) and must no longer build/return a discarded flat-text
-// string. If the second return value is reintroduced, this test fails to
-// compile.
-func TestRechunkEmailAttachmentsSingleReturn(t *testing.T) {
+func TestRechunkEmailAttachmentsItems(t *testing.T) {
 	p := NewEmailParser()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// depth>0 must stop recursion immediately.
-	if got := p.rechunkEmailAttachments(ctx, map[string]any{}, 1); got != nil {
-		t.Fatalf("depth>0 should return nil, got %d items", len(got))
+	if got, err := p.rechunkEmailAttachments(ctx, map[string]any{}, 1); got != nil || err != nil {
+		t.Fatalf("depth>0 should return nil, got %d items, err=%v", len(got), err)
 	}
 
-	// No attachments -> empty, never a nil-panic on a removed return value.
-	if got := p.rechunkEmailAttachments(ctx, map[string]any{}, 0); len(got) != 0 {
-		t.Fatalf("no attachments should yield 0 items, got %d", len(got))
+	// No attachments yield no searchable items.
+	if got, err := p.rechunkEmailAttachments(ctx, map[string]any{}, 0); len(got) != 0 || err != nil {
+		t.Fatalf("no attachments should yield 0 items, got %d, err=%v", len(got), err)
 	}
 
 	// A non-text (image) attachment is skipped, not re-parsed.
@@ -46,8 +40,8 @@ func TestRechunkEmailAttachmentsSingleReturn(t *testing.T) {
 			{"filename": "pic.png", "payload": "binary", "raw": "binary"},
 		},
 	}
-	if got := p.rechunkEmailAttachments(ctx, image, 0); len(got) != 0 {
-		t.Fatalf("image attachment should be skipped, got %d items", len(got))
+	if got, err := p.rechunkEmailAttachments(ctx, image, 0); len(got) != 0 || err != nil {
+		t.Fatalf("image attachment should be skipped, got %d items, err=%v", len(got), err)
 	}
 
 	// A .txt attachment re-parses into a searchable text item.
@@ -56,9 +50,12 @@ func TestRechunkEmailAttachmentsSingleReturn(t *testing.T) {
 			{"filename": "note.txt", "payload": "hello attachment"},
 		},
 	}
-	got := p.rechunkEmailAttachments(ctx, txt, 0)
+	got, err := p.rechunkEmailAttachments(ctx, txt, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 {
-		t.Fatalf("txt attachment should yield 1 item, got %d", len(got))
+		t.Fatalf("txt attachment should yield 1 item, got %d, err=%v", len(got), err)
 	}
 	if got[0]["doc_type_kwd"] != "text" {
 		t.Errorf("item doc_type_kwd = %v, want text", got[0]["doc_type_kwd"])

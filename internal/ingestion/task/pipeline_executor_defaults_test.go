@@ -126,7 +126,22 @@ func loadTemplateDefaults(t *testing.T, ref string) (got, want map[string]map[st
 	if err != nil {
 		t.Fatalf("ComponentParamsDefaults %q: %v", ref, err)
 	}
+	// The golden table pins the shared template JSON. A build may add its own
+	// load-time defaults, so ignore params the golden does not declare.
+	stripBuildTemplateDefaults(got, want)
 	return
+}
+
+// stripBuildTemplateDefaults drops params the golden table does not declare,
+// keeping the comparison focused on the shared template JSON.
+func stripBuildTemplateDefaults(got, want map[string]map[string]any) {
+	for cpnID, component := range got {
+		for key := range component {
+			if _, ok := want[cpnID][key]; !ok {
+				delete(component, key)
+			}
+		}
+	}
 }
 
 func assertComponentsMatch(t *testing.T, label string, got, want map[string]map[string]any) {
@@ -306,5 +321,17 @@ func TestBuiltInMetadataFromParserConfig_MapSliceBuiltIn(t *testing.T) {
 	item, ok := cfg[0].(map[string]any)
 	if !ok || item["key"] != "update_time" {
 		t.Fatalf("expected update_time item, got %#v", cfg[0])
+	}
+}
+
+func TestCollectManagedMetadataKeys_DeduplicatesBothSliceForms(t *testing.T) {
+	chunks := []map[string]any{
+		{"_managed_metadata_keys": []string{"highest_degree", "work_experience_years"}},
+		{"_managed_metadata_keys": []any{"work_experience_years", "skills", " "}},
+	}
+	got := collectManagedMetadataKeys(chunks)
+	want := []string{"highest_degree", "work_experience_years", "skills"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("collectManagedMetadataKeys = %#v, want %#v", got, want)
 	}
 }

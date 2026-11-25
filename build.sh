@@ -28,6 +28,22 @@ source "${SCRIPT_DIR}/tools/scripts/ort_stamp.sh"
 # is already in the version+platform-keyed user cache (Fix: version/platform
 # aware presence gate).
 source "${SCRIPT_DIR}/tools/scripts/ort_present.sh"
+# ort_variant.sh: pure helper mapping DEEPDOC_ORT_VARIANT to an archive-dir glob
+# suffix so a variant build (e.g. CUDA/full) selects exactly one ORT archive
+# instead of letting `find` order pick between coexisting minimal/full dirs.
+source "${SCRIPT_DIR}/tools/scripts/ort_variant.sh"
+
+# Actionable diagnostic for a gpu/full build that cannot find the -full ORT
+# archive. The bundled downloader only produces the minimal (-glibc2_28)
+# archive, so a full/CUDA-capable build must have it pre-staged manually.
+# Called from BOTH the early presence gate and the post-download failure branch
+# so the user sees the real fix regardless of which path fails.
+ort_full_archive_hint() {
+    [ "${DEEPDOC_ORT_VARIANT:-cpu}" = "cpu" ] && return 0
+    echo "  A ${DEEPDOC_ORT_VARIANT} build needs the -full ONNX Runtime archive," >&2
+    echo "  which the bundled downloader does not produce. Pre-stage it manually at:" >&2
+    echo "    ${ONNXRUNTIME_STATIC_PREFIX}/onnxruntime-linux-*-static_lib-*-full/lib/libonnxruntime.a" >&2
+}
 
 # Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
 # CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
@@ -229,7 +245,15 @@ _native_libs_present() {
     local ort_version ort_dir_prefix
     ort_version="$(deepdoc_ort_version "$PROJECT_ROOT")" || return 1
     ort_dir_prefix="$(ort_static_lib_prefix)"
-    ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" || return 1
+    # Pass the variant suffix so a gpu/full build is not fooled into "present"
+    # by a minimal (-glibc2_28) archive in a shared cache. The 4th arg is
+    # optional; the OSS/CPU path (no variant) still uses the legacy wildcard.
+    # Resolve the suffix into its own guarded statement: an inlined `cmd "$(f)"`
+    # swallows f's non-zero exit, which would pass an empty 4th arg that
+    # ragflow_ort_present treats as the wildcard — defeating the fail-fast.
+    local ort_variant_suffix_value
+    ort_variant_suffix_value="$(ort_variant_suffix)" || return 1
+    ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" "$ort_variant_suffix_value" || return 1
     return 0
 }
 
@@ -239,6 +263,11 @@ _native_libs_present() {
 # when the cache is still incomplete afterwards (a locked-down host with no
 # network and no pre-placed libs).
 _ensure_native_libs_installed() {
+    # Validate the variant config BEFORE the presence gate. An invalid variant
+    # makes _native_libs_present return 1, which would otherwise be mistaken for
+    # "libs missing" and trigger a pointless full downloader run. Fail fast on
+    # the real cause instead.
+    ort_variant_suffix >/dev/null || return 1
     _native_libs_present && return 0
     echo "One or more native static libraries are missing from the user cache;"
     echo "  running downloader: uv run tools/scripts/download_dev_deps.py"
@@ -250,6 +279,7 @@ _ensure_native_libs_installed() {
         return 0
     fi
     echo -e "${RED}Error: native static libraries still missing after download.${NC}" >&2
+    ort_full_archive_hint
     echo "  Pre-place the version-keyed dirs manually on a locked-down host:" >&2
     echo "    ${OFFICE_OXIDE_PREFIX}" >&2
     echo "    ${PDFIUM_STATIC_PREFIX}" >&2
@@ -373,9 +403,49 @@ check_pcre2() {
     return 1
 }
 
+# A toolchain that is no longer installed must not poison the build. A removed
+# Homebrew LLVM, for example, leaves CC/CXX and -I/-L/LIBRARY_PATH entries
+# behind, and both cmake and cgo honour them — every compiler probe then fails
+# with an error that names neither the cause nor the fix. Drop what points at a
+# path that does not exist; a missing entry can never contribute anything.
+drop_stale_toolchain_env() {
+    local var value dir
+    for var in CC CXX; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        command -v "$value" >/dev/null 2>&1 && continue
+        echo -e "${YELLOW}Warning: $var=$value does not exist; falling back to the default compiler${NC}"
+        unset "$var"
+    done
+    for var in CPPFLAGS CFLAGS CXXFLAGS LDFLAGS; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        for dir in $(printf '%s\n' "$value" | tr ' ' '\n' | sed -nE 's/^-[IL](.*)$/\1/p'); do
+            [ -z "$dir" ] && continue
+            [ -e "$dir" ] && continue
+            echo -e "${YELLOW}Warning: $var points at the missing path $dir; ignoring $var${NC}"
+            unset "$var"
+            break
+        done
+    done
+    for var in LIBRARY_PATH CPATH; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        for dir in $(printf '%s' "$value" | tr ':' ' '); do
+            [ -z "$dir" ] && continue
+            [ -e "$dir" ] && continue
+            echo -e "${YELLOW}Warning: $var points at the missing path $dir; ignoring $var${NC}"
+            unset "$var"
+            break
+        done
+    done
+}
+
 # Check dependencies
 check_cpp_deps() {
     print_section "Checking c++ dependencies"
+
+    drop_stale_toolchain_env
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
     command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
@@ -398,6 +468,7 @@ check_cpp_deps() {
 check_go_deps() {
     print_section "Checking go dependencies"
 
+    drop_stale_toolchain_env
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
@@ -484,21 +555,26 @@ check_onnxruntime_deps() {
     # populates and CI mounts in). There is no /opt pre-bake to reseed from; an
     # incomplete cache is filled by the controlled auto-download in setup_cgo_env.
 
-    local ort_dir_prefix
+    local ort_dir_prefix ort_variant_suffix_value
     ort_dir_prefix="$(ort_static_lib_prefix)"
+    # Propagate the exit status: `local x="$(f)"` swallows f's non-zero exit,
+    # which would leave the suffix empty and silently fall back to the wildcard.
+    ort_variant_suffix_value="$(ort_variant_suffix)" || return 1
     while IFS= read -r f; do
         case "$(basename "$f")" in
             *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
         esac
         case "$f" in
-            # Only collect .a from the dir matching both the target
-            # platform and the required version: ${ort_dir_prefix} pins
-            # OS/arch (a shared cache can also hold ORT built for another
-            # platform), ${ort_version} pins DeepDocORTVersion (the Python
-            # side legitimately keeps another ORT version in the same
-            # prefix). Matching both is why coexisting version dirs no
-            # longer need a fail-fast guard here.
-            */${ort_dir_prefix}${ort_version}*/lib/*.a)
+            # Only collect .a from the dir matching the target platform, the
+            # required version, AND the requested variant suffix.
+            #   ${ort_dir_prefix} pins OS/arch (a shared cache can hold ORT for
+            #     another platform);
+            #   ${ort_version} pins DeepDocORTVersion;
+            #   ${ort_variant_suffix_value} is "*" by default (legacy: any dir)
+            #     or "-full" for a gpu/full build, so a cache holding both a
+            #     minimal (-glibc2_28) and full (-full) archive resolves to
+            #     exactly one dir instead of depending on `find` traversal order.
+            */${ort_dir_prefix}${ort_version}${ort_variant_suffix_value}/lib/*.a)
                 ORT_A_FILES="$ORT_A_FILES $f"
                 [ -z "$primary" ] && primary="$f"
                 case "$(basename "$f")" in
@@ -511,8 +587,12 @@ check_onnxruntime_deps() {
     if [ -z "$ORT_A_FILES" ]; then
         local avail
         avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
-            -name "${ort_dir_prefix}*" -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            -name "${ort_dir_prefix}${ort_version}*" -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
+        if [ "${DEEPDOC_ORT_VARIANT:-cpu}" != "cpu" ]; then
+            echo "  requested variant: ${DEEPDOC_ORT_VARIANT} (archive dir suffix '${ort_variant_suffix_value}')" >&2
+            ort_full_archive_hint
+        fi
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
         echo "    uv run tools/scripts/download_dev_deps.py" >&2
@@ -776,15 +856,72 @@ strip_tokenizer_linker_options() {
     echo -e "${GREEN}✓ Removed LLVM .linker-options sections from librag_tokenizer_c_api.a${NC}"
 }
 
+# Rewrite symbol names in a static archive from an "old new" map (objcopy's
+# --redefine-syms format). Linux uses GNU objcopy; macOS has no objcopy in the
+# base toolchain (llvm-objcopy ships only with a Homebrew LLVM install) and ld64
+# has no --allow-multiple-definition, so the same rename runs through the
+# in-tree Go rewriter instead — no LLVM toolchain required.
+rename_archive_symbols() {
+    local archive="$1" map="$2"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        # Progress goes to stderr: callers capture this function's stdout as the
+        # archive path.
+        ( cd "$PROJECT_ROOT" && go run ./tools/machorename --redefine-syms="$map" "$archive" ) >&2
+        return
+    fi
+    local objcopy_bin=""
+    if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    else
+        echo -e "${RED}Error: objcopy not found; install binutils.${NC}" >&2
+        return 1
+    fi
+    "$objcopy_bin" --redefine-syms="$map" "$archive"
+}
+
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
 
+    # A cache left behind by a compiler that has since been removed (e.g. a
+    # purged Homebrew LLVM) makes cmake abort before it can reconfigure itself.
+    # Start over in that case: a full rebuild is the only correct answer.
+    local cache="$BUILD_DIR/CMakeCache.txt" cached_compiler
+    if [ -f "$cache" ]; then
+        for cached_compiler in $(sed -nE 's/^CMAKE_(C|CXX)_COMPILER:FILEPATH=(.*)$/\2/p' "$cache"); do
+            if ! command -v "$cached_compiler" >/dev/null 2>&1; then
+                echo -e "${YELLOW}Warning: CMake cache points at a missing compiler ($cached_compiler); reconfiguring${NC}"
+                rm -rf "$BUILD_DIR"
+                break
+            fi
+        done
+    fi
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
 
+    # The tokenizer archive is linked into the Go binary, so it has to be built
+    # for the architecture Go produces. Deriving it from `go env GOARCH` keeps
+    # the two in step even when the shell runs under Rosetta (uname reports
+    # x86_64) or cmake itself is an Intel-only Homebrew build.
+    local cmake_args=(-DCMAKE_BUILD_TYPE=Release)
+    if [ "$(uname -s)" = "Darwin" ]; then
+        local goarch
+        goarch="$(go env GOARCH 2>/dev/null)"
+        [ -n "$goarch" ] && cmake_args+=("-DCMAKE_OSX_ARCHITECTURES=${goarch}")
+    fi
+    # Extra arguments for the C++ configure step, e.g. to point pcre2 at a
+    # specific static archive:
+    #   RAGFLOW_CMAKE_ARGS=-DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a bash build.sh
+    if [ -n "${RAGFLOW_CMAKE_ARGS:-}" ]; then
+        # shellcheck disable=SC2206 # deliberate word splitting of the flag list
+        cmake_args+=(${RAGFLOW_CMAKE_ARGS})
+    fi
+
     echo "Running cmake..."
-    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake .. "${cmake_args[@]}"
 
     echo "Building librag_tokenizer_c_api.a..."
     local jobs
@@ -812,26 +949,20 @@ build_cpp() {
     # Renaming the tokenizer's re2 symbols into a private prefix gives each copy
     # its own namespace, so the tokenizer calls its own ABI-compatible re2 and
     # onnxruntime keeps calling its own. Verified to eliminate the crash.
+    #
+    # Both desktop linkers reject the duplicate symbols the two copies define
+    # (GNU ld only on request, ld64 never), so this rename is required on every
+    # platform: rename_archive_symbols() picks objcopy on Linux and the in-tree
+    # Go rewriter on macOS.
     local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
     local rename_map="$BUILD_DIR/re2_rename.map"
-    # GNU objcopy is standard on Linux; on macOS it is provided by LLVM as
-    # llvm-objcopy (brew install llvm). Prefer whichever is available.
-    local objcopy_bin=""
-    if command -v objcopy >/dev/null 2>&1; then
-        objcopy_bin=objcopy
-    elif command -v llvm-objcopy >/dev/null 2>&1; then
-        objcopy_bin=llvm-objcopy
-    fi
-    if [ -n "$objcopy_bin" ]; then
-        nm "$tok_a" \
-            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
-            | sort -u > "$rename_map"
-        if [ -s "$rename_map" ]; then
-            "$objcopy_bin" --redefine-syms="$rename_map" "$tok_a"
-            echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
-        fi
-    else
-        echo -e "${YELLOW}Warning: objcopy/llvm-objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
+    # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
+    nm "$tok_a" \
+        | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
+        | sort -u > "$rename_map"
+    if [ -s "$rename_map" ]; then
+        rename_archive_symbols "$tok_a" "$rename_map" || exit 1
+        echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
     fi
 
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
@@ -946,10 +1077,50 @@ build_go() {
     echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
 }
 
+# Print the path of a libpdf_oxide.a that links next to liboffice_oxide.a on
+# macOS. pdf_oxide bundles its own office_oxide and Rust runtime, and ld64 has
+# no --allow-multiple-definition, so the symbols both archives define are
+# renamed in a cached copy of pdf_oxide. Renaming covers definitions and
+# references alike, so pdf_oxide keeps calling its own copies.
+darwin_pdf_oxide_archive() {
+    local src="$1/libpdf_oxide.a"
+    local office_a="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    local out_dir="${PROJECT_ROOT}/.cache/pdf_oxide/$(basename "$PDF_OXIDE_PREFIX")-office-$(basename "$OFFICE_OXIDE_PREFIX")/${TARGET_OS}_${TARGET_ARCH}"
+    local out="$out_dir/libpdf_oxide.a"
+    if [ -f "$out" ] && [ "$out" -nt "$src" ] && [ "$out" -nt "$office_a" ]; then
+        echo "$out"
+        return 0
+    fi
+    mkdir -p "$out_dir"
+    # liboffice_oxide.a holds Rust LLVM bitcode that nm cannot always read, so
+    # the shared set is taken from pdf_oxide alone: office_oxide's C API
+    # (office_*) and the Rust personality routine.
+    local rename_map="$out_dir/rename.map"
+    nm -g --defined-only "$src" 2>/dev/null \
+        | awk 'NF == 3 && ($3 ~ /^_office_/ || $3 == "_rust_eh_personality") { print $3" pdfoxide_"$3 }' \
+        | sort -u > "$rename_map"
+    cp "$src" "$out.tmp"
+    rename_archive_symbols "$out.tmp" "$rename_map" || { rm -f "$out.tmp"; return 1; }
+    mv "$out.tmp" "$out"
+    echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") pdf_oxide symbols shared with office_oxide${NC}" >&2
+    echo "$out"
+}
+
 # Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
 # All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
     detect_target_platform
+
+    # macOS links pcre2 from the static archive the CMake build stages next to
+    # the tokenizer archive (see the cgo directives in internal/binding): cgo
+    # cannot search library paths, so the path has to be a build artifact
+    # instead of a machine-specific Homebrew prefix.
+    if [ "$TARGET_OS" = "darwin" ] && [ ! -f "${BUILD_DIR}/libpcre2-8.a" ]; then
+        echo -e "${RED}Error: ${BUILD_DIR}/libpcre2-8.a is missing.${NC}" >&2
+        echo "  The macOS Go link takes pcre2 from the C++ build dir." >&2
+        echo "  Run 'bash build.sh --cpp' so CMake stages it there." >&2
+        return 1
+    fi
 
     # --test/--go reuse the existing librag_tokenizer_c_api.a without rebuilding
     # the C++ library. --cpp strips the clang-20 .linker-options section right
@@ -1017,7 +1188,11 @@ setup_cgo_env() {
     # (${PDF_OXIDE_PREFIX} = .../pdf_oxide/v<version>), so the linked path
     # carries the version and Go's build cache relinks on a version bump.
     local pdf_oxide_lib_dir="${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}"
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_lib_dir}/libpdf_oxide.a"
+    local pdf_oxide_a="${pdf_oxide_lib_dir}/libpdf_oxide.a"
+    if [ "$TARGET_OS" = "darwin" ]; then
+        pdf_oxide_a="$(darwin_pdf_oxide_archive "$pdf_oxide_lib_dir")" || return 1
+    fi
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_a}"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # Statically link libonnxruntime*.a into the binary. The org Go binding
@@ -1115,6 +1290,11 @@ setup_cgo_env() {
     # table on Linux via --dynamic-list (above) — or, on macOS, via
     # -export_dynamic — which is what the binding's dlopen(NULL)+dlsym
     # lookup needs at runtime.
+
+    # Optional build extension hook (no-op unless defined by build_ee.sh).
+    if declare -F setup_ee_cgo_env >/dev/null 2>&1; then
+        setup_ee_cgo_env || return 1
+    fi
 
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
@@ -1276,30 +1456,8 @@ run() {
 
     cd "$PROJECT_ROOT"
 
-    # admin_server must be running before ragflow_server, otherwise ragflow_server's
-    # heartbeats to admin will error out (see internal/development.md).
-    print_section "Starting admin server (background)"
-    "$RAGFLOW_SERVER_BINARY" --admin &
-    ADMIN_PID=$!
-    # One trap for both background services: a second `trap ... EXIT INT TERM`
-    # would replace this one rather than add to it, leaving admin_server holding
-    # port 9381 after the foreground server exits. INGESTOR_PID is cleared first
-    # so a value inherited from the environment cannot be signalled during the
-    # window before the ingestor starts.
-    INGESTOR_PID=""
-    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
-
-    # Give admin_server a moment to bind its listening port (9381) before
-    # ragflow_server starts sending heartbeats to it.
-    sleep 1
-
-    print_section "Starting ingestor (background)"
-    "$RAGFLOW_SERVER_BINARY" --ingestor &
-    INGESTOR_PID=$!
-    sleep 1
-
-    print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY" --api
+    print_section "Starting RAGFlow server"
+    "$RAGFLOW_SERVER_BINARY" "$@"
 }
 
 # Show help
@@ -1370,6 +1528,11 @@ DEPENDENCIES:
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
         - macOS (Homebrew): pcre2
+
+ENVIRONMENT:
+    RAGFLOW_GO_TAGS=ee      # build the enterprise sources
+    RAGFLOW_CMAKE_ARGS=...  # extra arguments for the C++ configure step, e.g.
+                            # -DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a
 EOF
 }
 
@@ -1483,7 +1646,7 @@ main() {
             check_go_deps
             build_cpp
             build_go
-            run
+            run "${args[@]:1}"
             ;;
         --help|-h)
             show_help

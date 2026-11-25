@@ -57,7 +57,7 @@ func TestMetadataPushdownSearchesAllTenantIndices(t *testing.T) {
 		{name: "both tenants", total: 2},
 		{name: "overflow falls back", total: metaPushdownMaxSize + 1},
 		{name: "missing index falls back", missingIndex: true},
-		{name: "missing dataset falls back", missingKB: true},
+		{name: "missing dataset is skipped", missingKB: true, total: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var searches atomic.Int32
@@ -80,14 +80,14 @@ func TestMetadataPushdownSearchesAllTenantIndices(t *testing.T) {
 				kbIDs = append(kbIDs, "missing")
 			}
 			got := newTestEngine(t, srv.URL).FilterDocIdsByMetaPushdown(t.Context(), db, kbIDs, conditions, "and")
-			if tc.missingIndex || tc.missingKB || tc.total > metaPushdownMaxSize {
+			if tc.missingIndex || tc.total > metaPushdownMaxSize {
 				if got != nil {
 					t.Fatalf("partial result = %v, want fallback", got)
 				}
 			} else if !reflect.DeepEqual(got, []string{"doc-a", "doc-b"}) {
 				t.Fatalf("doc IDs = %v, want both tenants' documents", got)
 			}
-			if (tc.missingIndex || tc.missingKB) && searches.Load() != 0 {
+			if tc.missingIndex && searches.Load() != 0 {
 				t.Fatal("searched despite incomplete tenant scope")
 			}
 		})

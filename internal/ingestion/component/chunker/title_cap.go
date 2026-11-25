@@ -93,8 +93,9 @@ func titleSentenceSplit(text string) []string {
 	return out
 }
 
-// runePrefix returns the first n runes of s (a rune-safe prefix; never splits
-// a multi-byte character). Used by the offline/hard-split fallback.
+// runePrefix returns the first n runes of s as a prefix of the original bytes
+// (never splits a multi-byte character). Re-encoding through []rune would
+// rewrite invalid bytes as U+FFFD and break rest[len(head):] in the fallback.
 func runePrefix(s string, n int) string {
 	if n <= 0 {
 		return ""

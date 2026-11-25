@@ -29,6 +29,7 @@ import (
 	"image/png"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -308,6 +309,10 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
+	// General chunking is synchronous and its output count is unknown until
+	// the final split, so report a single terminal position rather than a
+	// synthetic in-flight progress bar.
+	runtime.ReportProgressDetail(ctx, "chunk:final", uint32(len(chunks)), uint32(len(chunks)))
 	attachPDFOutline(chunks, upstream.File)
 	return chunkOutputs(chunks), nil
 }
@@ -502,18 +507,18 @@ func separateGeneralTextBlocks(units []schema.ChunkDoc) []schema.ChunkDoc {
 	return units
 }
 
-// groupDOCXUnitsByRecordBoundary merges consecutive text paragraphs into one
-// unit until a paragraph begins with a custom (backtick) delimiter prefix.
-// DOCX upstream emits one paragraph per unit, so a custom delimiter that only
-// appears at the start of each logical record must group paragraphs rather
-// than split within a single paragraph (#20496).
+// groupDOCXUnitsByRecordBoundary groups consecutive text paragraphs when at
+// least one paragraph starts with a custom delimiter. A marked paragraph starts
+// a new record, and a non-text unit ends the current group.
 func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []string) ([]schema.ChunkDoc, bool) {
-	if len(recordPrefixes) == 0 {
+	if len(recordPrefixes) == 0 || !slices.ContainsFunc(units, func(unit schema.ChunkDoc) bool {
+		return itemDocType(unit) == "text" && strings.TrimSpace(unit.Text) != "" &&
+			docxTextStartsRecordBoundary(unit.Text, recordPrefixes)
+	}) {
 		return units, false
 	}
 	grouped := make([]schema.ChunkDoc, 0, len(units))
 	var current *schema.ChunkDoc
-	sawBoundary := false
 	flush := func() {
 		if current == nil {
 			return
@@ -536,15 +541,7 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		text.DocType = "text"
 		clearStructuralLayout(&text)
 		if docxTextStartsRecordBoundary(text.Text, recordPrefixes) {
-			sawBoundary = true
 			flush()
-			current = &text
-			continue
-		}
-		if !sawBoundary {
-			flush()
-			grouped = append(grouped, text)
-			continue
 		}
 		if current == nil {
 			current = &text
@@ -553,9 +550,6 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		mergeGeneralChunk(current, text, "\n")
 	}
 	flush()
-	if !sawBoundary {
-		return units, false
-	}
 	return grouped, true
 }
 
@@ -682,6 +676,13 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 		// rows, and a colspan is not duplicated. CellTexts would skip every
 		// Covered slot, dropping a data rowspan from the context entirely.
 		rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsData), td.HeaderRows
+		// A header-only segment has no data row to contribute, and BuildTableData
+		// keeps HeaderRows==1 even when every cell was empty and the grid is nil,
+		// so headerCount can meet or exceed len(rows). Return instead of slicing
+		// past the grid.
+		if len(rows) <= headerCount {
+			return "", false
+		}
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))

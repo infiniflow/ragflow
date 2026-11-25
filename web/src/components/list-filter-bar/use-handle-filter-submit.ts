@@ -43,16 +43,22 @@ const mergeFilterValue = (
   filterValue: FilterValue,
   ids: string[],
 ): FilterValue => {
+  // `ids` holds the valid ids of every filter field, so the same id can appear
+  // more than once (e.g. a metadata value "3" and a run-status "3"). Filter the
+  // selected values against a Set instead of iterating `ids`: iterating `ids`
+  // would keep a value once per field that happens to share its id, producing
+  // duplicates like ["3", "3"].
+  const validIds = new Set(ids);
   const value: FilterValue = {};
   for (const key in filterValue) {
     const fieldValue = filterValue[key];
     if (Array.isArray(fieldValue)) {
-      value[key] = ids.filter((id) => fieldValue.includes(id));
+      value[key] = fieldValue.filter((id) => validIds.has(id));
     } else {
       const nestedValue: Record<string, string[]> = {};
       for (const nestedKey in fieldValue) {
-        nestedValue[nestedKey] = ids.filter((id) =>
-          fieldValue[nestedKey].includes(id),
+        nestedValue[nestedKey] = (fieldValue[nestedKey] || []).filter((id) =>
+          validIds.has(id),
         );
       }
       value[key] = nestedValue;

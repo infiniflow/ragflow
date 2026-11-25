@@ -292,6 +292,12 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, req *CreateConne
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "data_source", permission.ActionEnable); err != nil {
+		return nil, err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::"+strings.TrimSpace(req.Source)), permission.ActionEnable); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(req.Name)
 	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrConnectorInvalidName, err)
@@ -383,33 +389,43 @@ func withDecryptedCredentials(connector *entity.Connector) (*entity.Connector, e
 	return connector, nil
 }
 
-// ListConnectors returns connectors belonging to a tenant the caller can use.
-func (s *ConnectorService) ListConnectors(ctx context.Context, requestedTenantID string) (*ListConnectorsResponse, error) {
+// ListConnectors returns connectors belonging to the requested user in the current tenant.
+func (s *ConnectorService) ListConnectors(ctx context.Context, accessUserID string) (*ListConnectorsResponse, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "data_source", permission.ActionEnable); err != nil {
+		return nil, err
+	}
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-
-	tenantID := strings.TrimSpace(requestedTenantID)
-	if tenantID == "" {
-		var err error
-		tenantID, err = requireCurrentTenantID(ctx)
-		if errors.Is(err, permission.ErrMembershipNotFound) {
-			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
-		return nil, err
+	tenantID, err := requireCurrentTenantID(ctx)
+	if errors.Is(err, permission.ErrMembershipNotFound) {
+		return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 	}
-	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
+	accessUserID = strings.TrimSpace(accessUserID)
+	if accessUserID == "" {
+		accessUserID = userID
+	}
+	connectors, err := s.connectorDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, accessUserID)
+	if err != nil {
+		return nil, err
+	}
+	visibleConnectors := connectors[:0]
+	checker := permission.NewDatabaseChecker(dao.DB)
+	for _, connector := range connectors {
+		checkErr := checker.CheckFeature(ctx, permission.Feature("data_source::"+connector.Source), permission.ActionEnable)
+		if checkErr == nil {
+			visibleConnectors = append(visibleConnectors, connector)
+		} else if !errors.Is(checkErr, permission.ErrPermissionDenied) {
+			return nil, checkErr
+		}
+	}
 
 	return &ListConnectorsResponse{
-		Connectors: connectors,
+		Connectors: visibleConnectors,
 	}, nil
 }
 
@@ -447,6 +463,9 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID string
 
 	source, connectorConfig, err := testConnectorSettings(storedConnector, config)
 	if err != nil {
+		return err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::"+source), permission.ActionEnable); err != nil {
 		return err
 	}
 	connector, err := s.connectorRegistry.OpenFromConfig(source, connectorConfig)
@@ -552,6 +571,9 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, source strin
 	}
 	if source != "google-drive" && source != "gmail" {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid Google OAuth type")
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::"+source), permission.ActionEnable); err != nil {
+		return nil, common.CodeForbidden, err
 	}
 
 	if req == nil || len(req.Credentials) == 0 {
@@ -1459,6 +1481,9 @@ func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, req *StartBoxWe
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if userID == "" {
 		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::box"), permission.ActionEnable); err != nil {
+		return nil, common.CodeForbidden, err
 	}
 	var clientID, clientSecret, redirectURI string
 	if req != nil {

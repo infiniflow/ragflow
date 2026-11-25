@@ -24,6 +24,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
+
+	"ragflow/internal/common"
 )
 
 // IndexDocument indexes a single document
@@ -36,6 +39,18 @@ func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc
 	}
 	if doc == nil {
 		return fmt.Errorf("document cannot be nil")
+	}
+
+	if strings.HasPrefix(indexName, "skill_") {
+		if docMap, ok := doc.(map[string]interface{}); ok {
+			for k := range docMap {
+				if dim, ok := common.VectorColumnDim(k); ok {
+					if err := e.ensureSkillVectorMapping(ctx, indexName, dim); err != nil {
+						return fmt.Errorf("failed to ensure skill vector mapping for %s: %w", k, err)
+					}
+				}
+			}
+		}
 	}
 
 	// Serialize document
@@ -59,6 +74,20 @@ func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interfa
 	}
 	if len(docs) == 0 {
 		return nil, fmt.Errorf("documents cannot be empty")
+	}
+
+	if strings.HasPrefix(indexName, "skill_") {
+		for _, doc := range docs {
+			if docMap, ok := doc.(map[string]interface{}); ok {
+				for k := range docMap {
+					if dim, ok := common.VectorColumnDim(k); ok {
+						if err := e.ensureSkillVectorMapping(ctx, indexName, dim); err != nil {
+							return nil, fmt.Errorf("failed to ensure skill vector mapping for %s: %w", k, err)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Build bulk request
