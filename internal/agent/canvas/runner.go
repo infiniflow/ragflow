@@ -265,8 +265,13 @@ func (r *Runner) Run(
 	root map[string]any,
 ) <-chan RunEvent {
 	out := make(chan RunEvent, 8)
+	if root == nil {
+		root = make(map[string]any)
+	}
 
 	if run == nil {
+		_, eventRun := startAgentEvents(ctx, canvasID, sessionID, "", root)
+		eventRun.finish(nil, errors.New("agent: nil RunFunc"))
 		pushErr(ctx, out, "agent: nil RunFunc", sessionID)
 		close(out)
 		return out
@@ -316,7 +321,9 @@ func (r *Runner) Run(
 			}
 		}
 
-		_, runErr := safeInvoke(ctx, run, root)
+		ctx, eventRun := startAgentEvents(ctx, canvasID, sessionID, messageID, root)
+		runState, runErr := safeInvoke(ctx, run, root)
+		eventRun.finish(runState, runErr)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) {
 				push(ctx, out, RunEvent{

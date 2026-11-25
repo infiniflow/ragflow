@@ -20,8 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
+
+	gcs "cloud.google.com/go/storage"
+	"google.golang.org/api/googleapi"
 )
 
 // --- retryObjectOp ---
@@ -271,5 +275,27 @@ func TestMoveWithRollback_RollbackFailureStillReportsFailure(t *testing.T) {
 	)
 	if ok {
 		t.Fatal("ok = true, want false (a failed rollback must not report success)")
+	}
+}
+
+// TestIsBucketNotFoundSeparatesObjectAndBucket404s pins the shared helper
+// used by bucket removals: a missing object must never be mistaken for a
+// missing bucket, and non-404 backend failures must still surface.
+func TestIsBucketNotFoundSeparatesObjectAndBucket404s(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"typed bucket", gcs.ErrBucketNotExist, true},
+		{"raw 404", &googleapi.Error{Code: http.StatusNotFound}, true},
+		{"typed object", gcs.ErrObjectNotExist, false},
+		{"403", &googleapi.Error{Code: http.StatusForbidden}, false},
+		{"unrelated", errors.New("backend unavailable"), false},
+	}
+	for _, tc := range cases {
+		if got := IsBucketNotFound(tc.err); got != tc.want {
+			t.Errorf("IsBucketNotFound(%s) = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

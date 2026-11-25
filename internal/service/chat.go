@@ -404,26 +404,33 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	}
 
 	normalizedIDs := make([]string, 0, len(values))
-	kbs := make([]*entity.Knowledgebase, 0, len(values))
 	for _, item := range values {
 		if !isTruthy(item) {
 			continue
 		}
-		datasetID := stringFromValue(item)
-		normalizedIDs = append(normalizedIDs, datasetID)
+		normalizedIDs = append(normalizedIDs, stringFromValue(item))
 	}
 
-	for _, datasetID := range normalizedIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
-			_, permissionErr := permissionresponse.Normalize(err)
-			return nil, permissionErr
+	checker := permission.NewDatabaseChecker(dao.DB)
+	loaded, allowed, err := filterAndLoadKBs(ctx, dao.DB, checker, s.kbDAO, normalizedIDs, permission.OperationUse)
+	if err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
+	}
+	kbs := make([]*entity.Knowledgebase, 0, len(loaded))
+	for i, kb := range loaded {
+		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: normalizedIDs[i]}
+		if !allowed[ref] {
+			if err := checker.CheckResource(ctx, ref, permission.OperationUse); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return nil, permissionErr
+			}
 		}
-		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
-		if err != nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+		if kb == nil {
+			return nil, fmt.Errorf("you don't own the dataset %s", normalizedIDs[i])
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", normalizedIDs[i])
 		}
 		kbs = append(kbs, kb)
 	}
@@ -1157,26 +1164,39 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 		return nil, errors.New("`dataset_ids` should be a list")
 	}
 
-	var kbs []*entity.Knowledgebase
+	datasetIDs := make([]string, 0, len(items))
 	kbIDs := make(entity.JSONSlice, 0, len(items))
 	for _, item := range items {
 		if !isTruthy(item) {
 			continue
 		}
 		datasetID := fmt.Sprint(item)
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
-			_, permissionErr := permissionresponse.Normalize(err)
-			return nil, permissionErr
+		datasetIDs = append(datasetIDs, datasetID)
+		kbIDs = append(kbIDs, datasetID)
+	}
+
+	checker := permission.NewDatabaseChecker(dao.DB)
+	loaded, allowed, err := filterAndLoadKBs(ctx, dao.DB, checker, s.kbDAO, datasetIDs, permission.OperationUse)
+	if err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
+	}
+	kbs := make([]*entity.Knowledgebase, 0, len(loaded))
+	for i, kb := range loaded {
+		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetIDs[i]}
+		if !allowed[ref] {
+			if err := checker.CheckResource(ctx, ref, permission.OperationUse); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return nil, permissionErr
+			}
 		}
-		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
-		if err != nil || kb == nil {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+		if kb == nil {
+			return nil, fmt.Errorf("you don't own the dataset %s", kbIDs[i])
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", kbIDs[i])
 		}
 		kbs = append(kbs, kb)
-		kbIDs = append(kbIDs, datasetID)
 	}
 
 	embeddingModelIDs := make([]string, 0, len(kbs))

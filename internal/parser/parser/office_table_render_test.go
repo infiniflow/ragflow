@@ -405,7 +405,7 @@ func spreadsheetText(res ParseResult) string {
 }
 
 // spreadsheetHeaderText returns the leading <table> item's header labels
-// joined by "; " — the rendered <th> cells of its first <tr> — or "" when no
+// joined by "; " from its last header row, or "" when no
 // table item exists.
 func spreadsheetHeaderText(res ParseResult) string {
 	for _, item := range ItemsToMaps(res.JSON) {
@@ -413,7 +413,7 @@ func spreadsheetHeaderText(res ParseResult) string {
 		if !ok {
 			continue
 		}
-		text := tableutil.RenderTableHTML(td)
+		text := tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[td.HeaderRows-1 : td.HeaderRows], HeaderRows: 1})
 		row := text
 		if i := strings.Index(row, "<tr>"); i >= 0 {
 			row = row[i+len("<tr>"):]
@@ -712,8 +712,7 @@ func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {
 }
 
 // TestXLSXParserHeaderBelowMergedTitle asserts a merged title that starts
-// above the detected header and crosses it is materialized into the header
-// cell instead of being lost after the header row is reordered to the front.
+// above the detected header retains its origin and span in worksheet order.
 func TestXLSXParserHeaderBelowMergedTitle(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Title")
@@ -731,7 +730,7 @@ func TestXLSXParserHeaderBelowMergedTitle(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "<th>Title</th><th>Name</th><th>Value</th>") {
+	if !strings.Contains(text, `<th rowspan="3">Title</th>`) || !strings.Contains(text, "<th>Name</th><th>Value</th>") {
 		t.Fatalf("merged title above the header was lost:\n%s", text)
 	}
 	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
@@ -812,27 +811,6 @@ func TestXLSXParserHeaderSpanClampedPerSegment(t *testing.T) {
 	}
 	if second.Grid[1][1].Covered || second.Grid[1][1].Text != "a3" {
 		t.Fatalf("second segment body = %+v, want a3 not covered", second.Grid[1])
-	}
-}
-
-// TestMaterializeDetachedMergesCapsWidth asserts a crafted far merge that
-// crosses the header cannot allocate one cell per worksheet column.
-func TestMaterializeDetachedMergesCapsWidth(t *testing.T) {
-	rows := map[int][]string{
-		1: {"Title"},
-		2: {},
-		3: {"", "Name"},
-	}
-	ranges := []mergeRange{{sr: 1, sc: 1, er: 3, ec: 16384}}
-	kept := materializeDetachedMerges(rows, 3, ranges)
-	if len(kept) != 0 {
-		t.Fatalf("detached merge left geometry: %v", kept)
-	}
-	if len(rows[3]) != maxMergeExtentCols {
-		t.Fatalf("header width = %d, want capped at %d", len(rows[3]), maxMergeExtentCols)
-	}
-	if rows[3][0] != "Title" || rows[3][1] != "Name" {
-		t.Fatalf("header cells = %q, want Title/Name", rows[3][:2])
 	}
 }
 
@@ -975,7 +953,7 @@ func TestDetectHeaderRow_Lightweight(t *testing.T) {
 	if !strings.Contains(spreadsheetText(res), "<th>Item</th><th>Count</th>") {
 		t.Fatalf("want row-2 header detected, got:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(spreadsheetText(res), "<th>100</th><th>200</th>") {
+	if spreadsheetHeaderText(res) != "Item; Count" {
 		t.Fatalf("numeric row 1 must not be the header:\n%s", spreadsheetText(res))
 	}
 }
@@ -1253,7 +1231,7 @@ func TestDetectHeaderRow_FourColumnForm(t *testing.T) {
 	if !strings.Contains(text, "<th>Name</th><th>Unit</th><th>Qty</th><th>Cost</th>") {
 		t.Fatalf("four-column form must select row 5 header:\n%s", text)
 	}
-	if strings.Contains(text, "<th>Label</th><th>Value</th>") {
+	if strings.HasPrefix(spreadsheetHeaderText(res), "Label; Value") {
 		t.Fatalf("narrow metadata row must not be promoted to header:\n%s", text)
 	}
 }
@@ -1294,7 +1272,7 @@ func TestDetectHeaderRow_ShortFormSheet(t *testing.T) {
 	if !strings.Contains(text, "<th>Kód</th><th>Popis</th><th>Množstvo</th><th>Cena</th>") {
 		t.Fatalf("short form must select the row-6 header:\n%s", text)
 	}
-	if strings.Contains(text, "<th>Label</th><th>Value</th>") {
+	if strings.HasPrefix(spreadsheetHeaderText(res), "Label; Value") {
 		t.Fatalf("metadata row must not be promoted to header:\n%s", text)
 	}
 }
@@ -1338,7 +1316,7 @@ func TestDetectHeaderRow_RecoveryStartsAfterCandidate(t *testing.T) {
 	if !strings.Contains(text, "<th>Col1</th>") {
 		t.Fatalf("recovery must find the header below the deferred candidate:\n%s", text)
 	}
-	if strings.Contains(text, "<th>Section</th>") {
+	if strings.HasPrefix(spreadsheetHeaderText(res), "Section;") {
 		t.Fatalf("title row above the deferred candidate must not be promoted:\n%s", text)
 	}
 }
@@ -1530,7 +1508,7 @@ func TestDetectHeaderRow_TitlePlusInvisibleFillHeader(t *testing.T) {
 	if !strings.Contains(text, "<th>Name</th><th>Category</th>") {
 		t.Fatalf("title stub must yield to the first text-majority row:\n%s", text)
 	}
-	if strings.Contains(text, "<th>Report Title</th>") {
+	if strings.HasPrefix(spreadsheetHeaderText(res), "Report Title") {
 		t.Fatalf("a lone title cell must not be treated as the header:\n%s", text)
 	}
 }
@@ -1695,5 +1673,46 @@ func TestDetectHeaderRow_MergedHeaderBelowMetadata(t *testing.T) {
 				t.Fatalf("first data row must not be promoted to header:\n%s", text)
 			}
 		})
+	}
+}
+
+func TestXLSXParserPreservesTitleBeforeHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "角色岗位对照表")
+		mustMergeCell(t, f, "Sheet1", "A1", "C1")
+		for i, value := range []string{"序号", "流程中角色", "对应岗位"} {
+			mustSetCell(t, f, "Sheet1", cellAxis(2, i+1), value)
+		}
+		mustSetCell(t, f, "Sheet1", "A3", "1")
+		mustSetCell(t, f, "Sheet1", "B3", "销售代表")
+		mustSetCell(t, f, "Sheet1", "C3", "销售经理")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "roles.xlsx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	item := res.JSON[0].ToMap()
+	td := item["table"].(*entity.TableData)
+	if td.Grid[0][0].Text != "角色岗位对照表" || td.Grid[1][0].Text != "序号" || td.Grid[2][1].Text != "销售代表" {
+		t.Fatalf("worksheet rows reordered: %+v", td.Grid)
+	}
+	if td.Grid[0][0].ColSpan != 3 {
+		t.Fatalf("title lost merge: %+v", td.Grid[0])
+	}
+	for i, pos := range item["positions"].([][]float64) {
+		if pos[1] != float64(i+1) {
+			t.Fatalf("position %d = %v", i, pos)
+		}
+	}
+}
+
+func TestCanonicalTableCapsMergedTitleWidth(t *testing.T) {
+	td := buildCanonicalTable(3, []string{"", "Name"}, []spreadsheetSegmentRow{
+		{rowNum: 1, cells: []string{"Title"}},
+		{rowNum: 2},
+	}, []mergeRange{{sr: 1, sc: 1, er: 3, ec: 16384}}, "Sheet1")
+	if len(td.Grid[0]) > 1000 || td.Grid[0][0].Text != "Title" || td.Grid[0][0].RowSpan != 3 {
+		t.Fatalf("merged title lost geometry or exceeded HTML span limit: %+v", td.Grid[0])
 	}
 }

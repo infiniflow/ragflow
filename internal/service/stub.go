@@ -201,6 +201,10 @@ func logAgentCompletion(_ context.Context, _, _ string, _ any, in <-chan canvas.
 	return in
 }
 
+func withAgentEventLog(ctx context.Context, _, _, _, _ string, _ map[string]any) context.Context {
+	return ctx
+}
+
 // ── mode 8 (Codex) ───────────────────────────────────────────────────────────
 // The community edition ships no mode 8 engine: internal/codexagent, the MCP
 // bridge wiring and the Codex pipeline live in the *_ee.go files. These stubs

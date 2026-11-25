@@ -119,6 +119,7 @@ export const SliderInputFormField = forwardRef<
                   max={displayMax}
                   min={displayMin}
                   step={displayStep}
+                  disabled={field.disabled}
                   data-testid={sliderTestId}
                 ></SingleFormSlider>
               </FormControl>
@@ -132,6 +133,7 @@ export const SliderInputFormField = forwardRef<
                   max={displayMax}
                   min={displayMin}
                   step={displayStep}
+                  disabled={field.disabled}
                   hideIcons
                   integer={integer}
                   value={

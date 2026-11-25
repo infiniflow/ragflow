@@ -388,7 +388,7 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	}
 }
 
-func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
+func TestUpdateMemoryManagerRequiresShareToChangePermissions(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
 	status := "1"
@@ -416,7 +416,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 		t.Fatalf("seed user tenant: %v", err)
 	}
 	ctx := serviceTestContext(t, "member-1", "owner-1", "owner-1")
-	grantServiceTestResource(t, "owner-1", "memory", "mem-team", "member-1", testResourcePermissionRead|testResourcePermissionWrite)
+	grantServiceTestResource(t, "owner-1", "memory", "mem-team", "member-1", testResourcePermissionRead|testResourcePermissionWrite|permission.ResourcePermissionManage)
 
 	svc := NewMemoryService(dao.DB, engine.Get())
 	samePermission := " TEAM "
@@ -428,9 +428,13 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 	}
 
 	nextPermission := "me"
-	if _, err := svc.UpdateMemory(ctx, "mem-team", &UpdateMemoryRequest{
+	_, err := svc.UpdateMemory(ctx, "mem-team", &UpdateMemoryRequest{
 		Permissions: &nextPermission,
-	}); err == nil {
+	})
+	if serviceTestShareEnabled() && err != nil {
+		t.Fatalf("UpdateMemory permission change error = %v", err)
+	}
+	if !serviceTestShareEnabled() && err == nil {
 		t.Fatal("UpdateMemory permission change error = nil, want error")
 	}
 }

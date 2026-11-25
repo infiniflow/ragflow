@@ -30,7 +30,7 @@ import {
   LucideRefreshCw,
   LucideThumbsDown,
   LucideThumbsUp,
-  LucideTrash2,
+  LucideMoreHorizontal,
   LucideVolume2,
 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -38,6 +38,12 @@ import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
 import { Button } from '../ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 
 interface IProps {
@@ -206,20 +212,28 @@ export const UserGroupButton = ({
         </Tooltip>
       )}
       {removeMessageById && (
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="transparent"
               size="icon-xs"
               className="border-0"
-              onClick={onRemoveMessage}
+              disabled={loading || deleteDisabled}
+              aria-label={t('common.action')}
+            >
+              <LucideMoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-state-error"
+              onSelect={onRemoveMessage}
               disabled={loading || deleteDisabled}
             >
-              <LucideTrash2 />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.delete')}</TooltipContent>
-        </Tooltip>
+              {t('common.delete')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   );

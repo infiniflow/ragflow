@@ -8,6 +8,10 @@ type DatasetDropdownGuardProps = {
   deleteItems: ReactNode;
 };
 
+export function shouldShowDatasetDropdown(_dataset: IDataset) {
+  return true;
+}
+
 /**
  * Enterprise seam for the dataset dropdown. Open source has no collaborator
  * permissions, so every action the shared file provides is rendered as-is.

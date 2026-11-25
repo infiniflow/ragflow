@@ -90,6 +90,13 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      infoFields: {
+        name: '檔案名稱',
+        size: '大小',
+        type: '類型',
+        create_time: '建立時間',
+        update_time: '更新時間',
+      },
       reselectParserAfterUploadHint:
         '可繼續上傳，系統將自動切換至支援這些檔案類型的內建解析配置。',
       dataset: '數據集',
