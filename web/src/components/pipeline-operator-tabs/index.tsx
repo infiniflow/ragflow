@@ -16,7 +16,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { normalizeOperatorForm } from '@/utils/pipeline-operator';
+import { mergeOperatorFormWithPrefilledVisionModel } from '@/utils/pipeline-operator';
 import { memo, useCallback, useMemo } from 'react';
 import { FieldErrors } from 'react-hook-form';
 import PipelineOperatorForm from './pipeline-operator-form';
@@ -69,7 +69,11 @@ const PipelineOperatorTabs = ({
         ...node,
         data: {
           ...node.data,
-          form: normalizeOperatorForm(operatorId, values),
+          form: mergeOperatorFormWithPrefilledVisionModel(
+            operatorId,
+            node.data?.form,
+            values,
+          ),
         },
       };
     });
