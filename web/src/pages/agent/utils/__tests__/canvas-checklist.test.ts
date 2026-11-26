@@ -898,6 +898,7 @@ describe('collectCanvasIssues: required tool API key', () => {
     ['SofyaSearch'],
     ['Search1APISearch'],
     ['SpecStreamSearch'],
+    ['SpecStreamExtract'],
     ['PerplexitySearch'],
   ])('passes a standalone %s node with an API key', (label) => {
     const issues = collect({
