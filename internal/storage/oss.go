@@ -121,7 +121,7 @@ func (o *OSSStorage) createBucket(ctx context.Context, bucket string) error {
 // silently clearing the shared prefix.
 func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	if o.bucket != "" {
-		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
+		return fmt.Errorf("cannot remove logical OSS bucket %s: %w", bucket, ErrSharedBucketRemoval)
 	}
 
 	actualBucket := bucket
@@ -173,7 +173,7 @@ func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 // shared-bucket mode a logical bucket cannot be removed at all.
 func (o *OSSStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
 	if o.bucket != "" {
-		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
+		return fmt.Errorf("cannot remove logical OSS bucket %s: %w", bucket, ErrSharedBucketRemoval)
 	}
 	_, err := o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
 	if isS3NotFound(err) {

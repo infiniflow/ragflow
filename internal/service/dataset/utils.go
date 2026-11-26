@@ -420,6 +420,35 @@ func datasetRoundFloat(value float64, places int) float64 {
 	return math.Round(value*shift) / shift
 }
 
+// datasetChunkImageKey names the object that holds a chunk's image.
+//
+// DefaultImageUploader stores the bytes at (bucket=datasetID, key=chunkID) and
+// returns img_id "<datasetID>-<chunkID>". The document service derives the same
+// key in chunkImageStorageKey; the two must agree or an image is left behind.
+func datasetChunkImageKey(datasetID string, chunk map[string]interface{}) (string, bool) {
+	if imgID := datasetChunkField(chunk, "img_id"); imgID != "" {
+		prefix := datasetID + "-"
+		if strings.HasPrefix(imgID, prefix) && len(imgID) > len(prefix) {
+			return strings.TrimPrefix(imgID, prefix), true
+		}
+		return imgID, true
+	}
+
+	id := datasetChunkField(chunk, "id", "_id")
+	return id, id != ""
+}
+
+// datasetChunkField returns the first of names the chunk holds as a non-blank string.
+func datasetChunkField(chunk map[string]interface{}, names ...string) string {
+	for _, name := range names {
+		text, ok := chunk[name].(string)
+		if ok && strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
+}
+
 func datasetChunkID(chunk map[string]interface{}) string {
 	if id, ok := chunk["chunk_id"]; ok {
 		if s, ok := id.(string); ok {
