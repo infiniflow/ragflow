@@ -57,6 +57,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.GreenNode,
   LLMFactory.Morse,
   LLMFactory.TeamoRouter,
+  LLMFactory.Straitly,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,

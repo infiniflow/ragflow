@@ -244,6 +244,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMorseModel(baseURL, urlSuffix), nil
 	case "teamorouter":
 		return NewTeamoRouterModel(baseURL, urlSuffix), nil
+	case "straitly":
+		return NewStraitlyModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
