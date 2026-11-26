@@ -4,7 +4,7 @@ import { AgentQuery } from '@/constants/agent';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {
-  History,
+  ClipboardClock,
   LucideFrame,
   LucideMessageSquareMore,
   LucideSettings,
@@ -72,7 +72,7 @@ export function AgentSidebar({
 
     list.push({
       key: AgentMenuKey.VersionHistory,
-      icon: <History className="size-4 shrink-0" />,
+      icon: <ClipboardClock className="size-4 shrink-0" />,
       label: t('flow.historyVersion'),
       path: `${Routes.Agent}/${id}/version-history`,
       active: isVersionHistory,
