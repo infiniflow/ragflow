@@ -71,7 +71,7 @@ func latestActiveStage(snap *progressstore.Snapshot, skipTerminal bool) *progres
 // mergeProgressSnapshot combines the authoritative run state with the latest
 // running-state snapshot. A missing snapshot — or one with no active unit —
 // marks fallback instead of presenting a fabricated 0/0 position.
-func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore.Snapshot, chunkNum int64) *IngestionProgressResponse {
+func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore.Snapshot, chunkNum int64, attemptStartedAt *time.Time) *IngestionProgressResponse {
 	resp := &IngestionProgressResponse{ChunkNum: chunkNum}
 	if run != nil {
 		resp.Status = run.OperationStatus
@@ -79,6 +79,15 @@ func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore
 		resp.DurationS = run.ProcessDuration
 	}
 	if snap == nil {
+		resp.Fallback = true
+		return resp
+	}
+	// A snapshot left by an earlier execution — or written before attempts
+	// existed — describes positions that no longer belong to this run. The
+	// document row is stamped on every worker takeover, so it identifies the
+	// current execution; the run row's begin time is fixed at creation.
+	if attemptStartedAt != nil &&
+		(snap.AttemptID == "" || snap.AttemptStartedAt.Before(*attemptStartedAt)) {
 		resp.Fallback = true
 		return resp
 	}
@@ -151,10 +160,12 @@ func (d *DatasetService) GetIngestionProgress(ctx context.Context, datasetID, lo
 		snap, _ = d.progressReader.Load(ctx, logID)
 	}
 	var chunkNum int64
+	var attemptStartedAt *time.Time
 	if run.DocumentID != "" {
 		if doc, docErr := d.documentDAO.GetByID(ctx, dao.DB, run.DocumentID); docErr == nil && doc != nil {
 			chunkNum = doc.ChunkNum
+			attemptStartedAt = doc.ProcessBeginAt
 		}
 	}
-	return mergeProgressSnapshot(run, snap, chunkNum), common.CodeSuccess, nil
+	return mergeProgressSnapshot(run, snap, chunkNum, attemptStartedAt), common.CodeSuccess, nil
 }
