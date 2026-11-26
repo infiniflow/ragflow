@@ -197,6 +197,157 @@ func TestSearchKNNFilterCarriesMustNot(t *testing.T) {
 	}
 }
 
+func TestSearchPureVectorAppliesCosineMinScore(t *testing.T) {
+	tests := []struct {
+		name            string
+		extraOptions    map[string]interface{}
+		orderBy         *types.OrderByExpr
+		wantMinScore    *float64
+		wantTrackScores bool
+	}{
+		{
+			name:         "similarity option maps cosine threshold to cosinesimil score",
+			extraOptions: map[string]interface{}{"similarity": 0.2},
+			wantMinScore: ptrFloat64(0.6),
+		},
+		{
+			name:         "min_score option supported for knowledge_compile reader",
+			extraOptions: map[string]interface{}{"min_score": 0.8},
+			wantMinScore: ptrFloat64(0.9),
+		},
+		{
+			name:         "threshold string option supported",
+			extraOptions: map[string]interface{}{"threshold": "0.5"},
+			wantMinScore: ptrFloat64(0.75),
+		},
+		{
+			name:         "zero similarity omits min_score",
+			extraOptions: map[string]interface{}{"similarity": 0.0},
+			wantMinScore: nil,
+		},
+		{
+			name:         "negative similarity omits min_score",
+			extraOptions: map[string]interface{}{"similarity": -0.2},
+			wantMinScore: nil,
+		},
+		{
+			name:         "absent similarity omits min_score",
+			extraOptions: nil,
+			wantMinScore: nil,
+		},
+		{
+			name:            "explicit sort with min_score enables track_scores",
+			extraOptions:    map[string]interface{}{"similarity": 0.6},
+			orderBy:         (&types.OrderByExpr{}).Desc("create_timestamp_flt"),
+			wantMinScore:    ptrFloat64(0.8),
+			wantTrackScores: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var searchQuery map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+					t.Errorf("decode search query: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+			}))
+			defer server.Close()
+
+			engine := newTestEngine(t, server.URL)
+			_, err := engine.Search(t.Context(), &types.SearchRequest{
+				IndexNames: []string{"ragflow_tenant"},
+				KbIDs:      []string{"kb-1"},
+				Limit:      16,
+				OrderBy:    tc.orderBy,
+				MatchExprs: []interface{}{&types.MatchDenseExpr{
+					VectorColumnName: "q_2_vec",
+					EmbeddingData:    []float64{1.0, 0.0},
+					TopN:             64,
+					ExtraOptions:     tc.extraOptions,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("Search: %v", err)
+			}
+
+			knn := searchQuery["query"].(map[string]interface{})["knn"].(map[string]interface{})["q_2_vec"].(map[string]interface{})
+			if knn["k"] != float64(64) {
+				t.Fatalf("knn k = %v, want 64 (must keep top-k instead of radial search)", knn["k"])
+			}
+			if _, hasClauseMinScore := knn["min_score"]; hasClauseMinScore {
+				t.Fatalf("pure vector knn clause must not emit radial min_score: %#v", knn)
+			}
+
+			gotMin, hasMin := searchQuery["min_score"]
+			if tc.wantMinScore == nil {
+				if hasMin {
+					t.Fatalf("unexpected top-level min_score = %v", gotMin)
+				}
+			} else {
+				gotFloat, ok := gotMin.(float64)
+				if !hasMin || !ok || gotFloat < *tc.wantMinScore-1e-9 || gotFloat > *tc.wantMinScore+1e-9 {
+					t.Fatalf("top-level min_score = %#v, want %v", gotMin, *tc.wantMinScore)
+				}
+			}
+
+			gotTrack, _ := searchQuery["track_scores"].(bool)
+			if gotTrack != tc.wantTrackScores {
+				t.Fatalf("track_scores = %v, want %v", gotTrack, tc.wantTrackScores)
+			}
+		})
+	}
+}
+
+func TestSearchChunkHybridLeavesTopKRecallUnfiltered(t *testing.T) {
+	var searchQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	engine := newTestEngine(t, server.URL)
+	_, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Limit:      64,
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{Fields: []string{"content_ltks"}, MatchingText: "hello", TopN: 64},
+			&types.MatchDenseExpr{
+				VectorColumnName: "q_2_vec",
+				EmbeddingData:    []float64{1.0, 0.0},
+				TopN:             1024,
+				ExtraOptions:     map[string]interface{}{"similarity": 0.5},
+			},
+			&types.FusionExpr{Method: "weighted_sum", TopN: 64, FusionParams: map[string]interface{}{"weights": "0.001,1"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if _, hasTopMin := searchQuery["min_score"]; hasTopMin {
+		t.Fatalf("chunk hybrid search must not set top-level min_score (would filter BM25 leg): %#v", searchQuery)
+	}
+	queries := searchQuery["query"].(map[string]interface{})["hybrid"].(map[string]interface{})["queries"].([]interface{})
+	knn := queries[1].(map[string]interface{})["knn"].(map[string]interface{})["q_2_vec"].(map[string]interface{})
+	if knn["k"] != float64(1024) {
+		t.Fatalf("chunk hybrid knn k = %v, want 1024", knn["k"])
+	}
+	if _, hasClauseMin := knn["min_score"]; hasClauseMin {
+		t.Fatalf("chunk hybrid knn clause must not switch to radial min_score: %#v", knn)
+	}
+}
+
+func ptrFloat64(v float64) *float64 {
+	return &v
+}
+
 func TestDeleteChunksRequiresDatasetID(t *testing.T) {
 	engine := newTestEngine(t, "http://127.0.0.1:1")
 	if _, err := engine.DeleteChunks(t.Context(), map[string]interface{}{"id": []string{"a"}}, "ragflow_tenant", ""); err == nil {

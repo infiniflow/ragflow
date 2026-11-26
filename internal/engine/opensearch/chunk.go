@@ -960,6 +960,40 @@ func parseHybridWeights(weights string) [2]jsonDouble {
 	return [2]jsonDouble{jsonDouble(bm25W), jsonDouble(1.0 - bm25W)}
 }
 
+// denseSimilarityThreshold extracts the requested cosine similarity floor from
+// a MatchDenseExpr. Callers pass the threshold under "similarity" (retrieval,
+// memory, skill, kg), "threshold" (Infinity convention), or "min_score"
+// (knowledge_compile reader).
+func denseSimilarityThreshold(matchDense *types.MatchDenseExpr) (float64, bool) {
+	if matchDense == nil || matchDense.ExtraOptions == nil {
+		return 0, false
+	}
+	for _, key := range []string{"similarity", "threshold", "min_score"} {
+		raw, exists := matchDense.ExtraOptions[key]
+		if !exists || raw == nil {
+			continue
+		}
+		if s, ok := raw.(string); ok {
+			if v, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil && !math.IsNaN(v) && !math.IsInf(v, 0) {
+				return v, true
+			}
+			continue
+		}
+		if v, ok := esoscommon.ToFloat64(raw); ok && !math.IsNaN(v) && !math.IsInf(v, 0) {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// cosineThresholdToOpenSearchScore converts a cosine similarity threshold in
+// [-1, 1] into OpenSearch's cosinesimil score space: score = (1 + cos) / 2.
+// Values above 1.0 are preserved above 1.0 so top-level min_score cleanly
+// filters out every hit without raising an OpenSearch validation error.
+func cosineThresholdToOpenSearchScore(sim float64) float64 {
+	return (1.0 + sim) / 2.0
+}
+
 // Search executes a unified search across the requested indices. Ordinary
 // searches fail when any index request fails, without returning partial results.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -1136,6 +1170,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// short the body is logged below, to tell "the index has less" from "the
 	// request asked for less".
 	hybrid := hasVectorMatch && matchText != nil
+	denseSim, hasDenseSim := denseSimilarityThreshold(matchDense)
+	hasPositiveDenseThreshold := hasVectorMatch && hasDenseSim && denseSim > 0
 
 	switch {
 	case hybrid:
@@ -1165,6 +1201,15 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	case hasVectorMatch:
 		// Vector-only search: send a plain knn query.
 		queryBody["query"] = map[string]interface{}{"knn": knnQuery}
+		// Apply the cosine similarity floor as a top-level min_score on top of
+		// the top-k kNN query. Placing min_score inside the knn clause is
+		// mutually exclusive with `k` and triggers a radial search, whereas
+		// top-level min_score post-filters the k nearest neighbours in the
+		// cosinesimil score space (score = (1 + cos) / 2), matching ES's
+		// knn.similarity semantics without radius-search overhead.
+		if hasPositiveDenseThreshold {
+			queryBody["min_score"] = cosineThresholdToOpenSearchScore(denseSim)
+		}
 	default:
 		if keywordQuery != nil {
 			queryBody["query"] = keywordQuery
@@ -1178,6 +1223,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
+			// OpenSearch omits _score (returns null) when explicit sort is
+			// combined with top-level min_score unless track_scores is enabled.
+			if _, hasTopMinScore := queryBody["min_score"]; hasTopMinScore {
+				queryBody["track_scores"] = true
+			}
 		}
 	}
 

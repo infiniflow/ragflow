@@ -284,3 +284,110 @@ func TestOpenSearchSQL(t *testing.T) {
 		t.Fatalf("RunSQL returned %d rows, want 2", len(rows))
 	}
 }
+
+func osBasisVector(x, y float64) []float64 {
+	v := make([]float64, osTestDim)
+	v[0] = x
+	v[1] = y
+	return v
+}
+
+// TestOpenSearchPureVectorSimilarityThreshold verifies end-to-end against a
+// real OpenSearch cluster that pure-vector searches honour cosine similarity
+// thresholds (translated to OpenSearch's cosinesimil score space (1+cos)/2).
+func TestOpenSearchPureVectorSimilarityThreshold(t *testing.T) {
+	requireOSTestCluster(t)
+	eng, err := NewEngine(t.Context(), getOSTestConfig())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	const idx = "ragflow_os_it_vec_threshold"
+	if err := eng.DropChunkStore(t.Context(), idx, osTestKBID); err != nil {
+		t.Fatalf("DropChunkStore (cleanup): %v", err)
+	}
+	t.Cleanup(func() {
+		_ = eng.DropChunkStore(context.Background(), idx, osTestKBID)
+	})
+
+	if err := eng.CreateChunkStore(t.Context(), idx, osTestKBID, osTestDim, "", "en"); err != nil {
+		t.Fatalf("CreateChunkStore: %v", err)
+	}
+
+	chunks := []map[string]interface{}{
+		{
+			"id":                  "same",
+			"doc_id":              "d1",
+			"kb_id":               osTestKBID,
+			"available_int":       1,
+			"content_with_weight": "exact match",
+			"content_ltks":        "exact match",
+			"q_768_vec":           osBasisVector(1.0, 0.0), // cos = 1.0 -> score = 1.0
+		},
+		{
+			"id":                  "mid",
+			"doc_id":              "d1",
+			"kb_id":               osTestKBID,
+			"available_int":       1,
+			"content_with_weight": "moderate match",
+			"content_ltks":        "moderate match",
+			"q_768_vec":           osBasisVector(0.6, 0.8), // cos = 0.6 -> score = 0.8
+		},
+		{
+			"id":                  "orth",
+			"doc_id":              "d1",
+			"kb_id":               osTestKBID,
+			"available_int":       1,
+			"content_with_weight": "orthogonal",
+			"content_ltks":        "orthogonal",
+			"q_768_vec":           osBasisVector(0.0, 1.0), // cos = 0.0 -> score = 0.5
+		},
+	}
+	if _, err := eng.InsertChunks(t.Context(), chunks, idx, osTestKBID, "en"); err != nil {
+		t.Fatalf("InsertChunks: %v", err)
+	}
+
+	queryVec := osBasisVector(1.0, 0.0)
+	search := func(extra map[string]interface{}) *types.SearchResult {
+		t.Helper()
+		res, err := eng.Search(t.Context(), &types.SearchRequest{
+			IndexNames: []string{idx},
+			KbIDs:      []string{osTestKBID},
+			Limit:      10,
+			MatchExprs: []interface{}{&types.MatchDenseExpr{
+				VectorColumnName: "q_768_vec",
+				EmbeddingData:    queryVec,
+				TopN:             10,
+				ExtraOptions:     extra,
+			}},
+		})
+		if err != nil {
+			t.Fatalf("Search(%v): %v", extra, err)
+		}
+		return res
+	}
+
+	// Threshold 0.2 (cos >= 0.2): keeps same (1.0) and mid (0.6), drops orth (0.0).
+	res := search(map[string]interface{}{"similarity": 0.2})
+	if res.Total != 2 || len(res.Chunks) != 2 || res.Chunks[0]["id"] != "same" || res.Chunks[1]["id"] != "mid" {
+		t.Fatalf("similarity=0.2: got total=%d chunks=%v; want [same, mid]", res.Total, res.Chunks)
+	}
+
+	// Threshold 0.8 (cos >= 0.8) via min_score key: keeps only same.
+	res = search(map[string]interface{}{"min_score": 0.8})
+	if res.Total != 1 || len(res.Chunks) != 1 || res.Chunks[0]["id"] != "same" {
+		t.Fatalf("min_score=0.8: got total=%d chunks=%v; want [same]", res.Total, res.Chunks)
+	}
+
+	// Threshold > 1.0: filters out everything without raising an OpenSearch error.
+	res = search(map[string]interface{}{"similarity": 1.1})
+	if res.Total != 0 || len(res.Chunks) != 0 {
+		t.Fatalf("similarity=1.1: got total=%d chunks=%v; want empty", res.Total, res.Chunks)
+	}
+
+	// Unset threshold: returns all 3 neighbours.
+	res = search(nil)
+	if res.Total != 3 || len(res.Chunks) != 3 {
+		t.Fatalf("no threshold: got total=%d chunks=%v; want 3", res.Total, res.Chunks)
+	}
+}
