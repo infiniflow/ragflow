@@ -80,7 +80,7 @@ func TestDeleteDatasetProjectsDocumentColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDatasetUpdateService(t).deleteDataset(t.Context(), kb); err != nil {
+	if err := testDatasetUpdateService(t).DeleteDatasetTx(t.Context(), captureDB, kb); err != nil {
 		t.Fatalf("delete dataset: %v", err)
 	}
 

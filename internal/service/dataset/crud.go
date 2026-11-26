@@ -483,8 +483,8 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 
 	successCount := 0
 	for _, kb := range kbs {
-		if err := d.deleteDataset(ctx, kb); err != nil {
-			common.Warn("deleteDataset failed", zap.String("dataset", datasetNameAndID(kb)), zap.String("kb_id", kb.ID), zap.Error(err))
+		if err := d.DeleteDatasetTx(ctx, dao.DB, kb); err != nil {
+			common.Warn("DeleteDatasetTx failed", zap.String("dataset", datasetNameAndID(kb)), zap.String("kb_id", kb.ID), zap.Error(err))
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -496,8 +496,13 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}, common.CodeSuccess, nil
 }
 
-// deleteDataset cleans up storage and index data before committing metadata deletion.
-func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledgebase) error {
+// DeleteDatasetTx cleans up storage and index data before committing metadata
+// deletion. The caller supplies the db handle so that deletion joins the
+// caller's transaction: pass dao.DB for a standalone delete, or a transaction
+// handle to make the deletion part of a larger unit of work. All DB mutations
+// run inside db's transaction; storage and engine cleanup stay outside it since
+// those resources are not transactional.
+func (d *DatasetService) DeleteDatasetTx(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return fmt.Errorf("storage not initialized")
@@ -509,7 +514,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 	// loop actually reads (id, name, location) are fetched; the full document
 	// row - including the potentially large parser_config - is never loaded.
 	var documents []entity.Document
-	if err := dao.DB.Select("id", "name", "location").Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
+	if err := db.Select("id", "name", "location").Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
 		return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
 	}
 	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -549,7 +554,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
 
-	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
+	if err := db.Transaction(func(tx *gorm.DB) error {
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
