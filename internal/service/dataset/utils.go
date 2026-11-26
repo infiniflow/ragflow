@@ -335,9 +335,10 @@ func datasetCosSim(a, b []float64) float64 {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
 func datasetCleanEmbeddingText(s string) string {
-	re := regexp.MustCompile(`<[^>]*>`)
-	return re.ReplaceAllString(s, "")
+	return htmlTagRe.ReplaceAllString(s, "")
 }
 
 func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {

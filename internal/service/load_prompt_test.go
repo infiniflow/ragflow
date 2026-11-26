@@ -104,3 +104,70 @@ func TestJSONFenceREParityWithPython(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderPrompt_Characterization pins the current {{ var }} and
+// {{ var | filter(args) }} substitution behavior.
+func TestRenderPrompt_Characterization(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		data     map[string]interface{}
+		want     string
+	}{
+		{
+			name:     "simple variable",
+			template: "Hello {{ name }}!",
+			data:     map[string]interface{}{"name": "Alice"},
+			want:     "Hello Alice!",
+		},
+		{
+			name:     "missing variable stays literal",
+			template: "Hi {{ missing }}",
+			data:     nil,
+			want:     "Hi {{ missing }}",
+		},
+		{
+			name:     "multiple variables",
+			template: "{{a}} and {{b}}",
+			data:     map[string]interface{}{"a": "1", "b": "2"},
+			want:     "1 and 2",
+		},
+		{
+			name:     "no template",
+			template: "plain text",
+			data:     nil,
+			want:     "plain text",
+		},
+		{
+			name:     "empty",
+			template: "",
+			data:     nil,
+			want:     "",
+		},
+		{
+			name:     "join filter",
+			template: `{{ names | join(', ') }}`,
+			data:     map[string]interface{}{"names": []string{"a", "b"}},
+			want:     "a, b",
+		},
+		{
+			name:     "unknown filter falls back to raw value",
+			template: `{{ name | upper() }}`,
+			data:     map[string]interface{}{"name": "bob"},
+			want:     "bob",
+		},
+		{
+			name:     "unclosed filter stays literal",
+			template: `{{ name | upper( }}`,
+			data:     map[string]interface{}{"name": "bob"},
+			want:     `{{ name | upper( }}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RenderPrompt(tt.template, tt.data); got != tt.want {
+				t.Fatalf("RenderPrompt(%q, %v) = %q, want %q", tt.template, tt.data, got, tt.want)
+			}
+		})
+	}
+}
