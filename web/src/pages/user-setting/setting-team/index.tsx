@@ -14,15 +14,89 @@
  *  limitations under the License.
  */
 
-import { TeamManagement } from '@/ee/pages/user-setting/setting-team/team-management';
+import { PageFrame } from '@/components/page-frame';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslation } from 'react-i18next';
 
-import styles from '@/ee/pages/user-setting/setting-team/index.module.less';
+import Spotlight from '@/components/spotlight';
+import { SearchInput } from '@/components/ui/input';
+import { UserPlus } from 'lucide-react';
+import { useState } from 'react';
+import AddingUserModal from './add-user-modal';
+import { useAddUser } from './hooks';
+import TenantTable from './tenant-table';
+import UserTable from './user-table';
 
 const UserSettingTeam = () => {
+  const { t } = useTranslation();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchUser, setSearchUser] = useState('');
+  const {
+    addingTenantModalVisible,
+    hideAddingTenantModal,
+    showAddingTenantModal,
+    handleAddUserOk,
+  } = useAddUser();
+
   return (
-    <div className={styles.teamWrapper}>
-      <TeamManagement />
-    </div>
+    <PageFrame className="relative">
+      <Spotlight />
+
+      <div className="h-full overflow-x-hidden overflow-y-auto">
+        <Card className="bg-transparent border-none">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
+            {/* <User className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
+            <CardTitle className="text-2xl">
+              {t('setting.teamMembers')}
+            </CardTitle>
+
+            <section className="flex gap-4 items-center">
+              <SearchInput
+                className="bg-bg-input border-border-default w-32"
+                placeholder={t('common.search')}
+                value={searchUser}
+                onChange={(e) => setSearchUser(e.target.value)}
+              />
+              <Button onClick={showAddingTenantModal}>
+                <UserPlus className=" h-4 w-4" />
+                {t('setting.invite')}
+              </Button>
+            </section>
+          </CardHeader>
+
+          <CardContent className="p-4 pt-0">
+            <UserTable searchUser={searchUser}></UserTable>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-transparent border-none mt-8">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
+            {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
+            <CardTitle className="text-2xl w-fit">
+              {t('setting.joinedTeams')}
+            </CardTitle>
+            <SearchInput
+              className="bg-bg-input border-border-default w-32"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('common.search')}
+            />
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            <TenantTable searchTerm={searchTerm}></TenantTable>
+          </CardContent>
+        </Card>
+      </div>
+
+      {addingTenantModalVisible && (
+        <AddingUserModal
+          visible
+          hideModal={hideAddingTenantModal}
+          onOk={handleAddUserOk}
+        ></AddingUserModal>
+      )}
+    </PageFrame>
   );
 };
 

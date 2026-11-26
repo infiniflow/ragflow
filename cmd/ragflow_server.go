@@ -107,6 +107,9 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	app := kingpin.New("ragflow_server", "RAGFlow server")
 
 	args.ConfigPath = app.Flag("config", "Config path").Short('f').String()
+	args.DataDir = app.Flag("data-dir", "Data directory for the in-process backends (desktop build only)").String()
+	args.UI = app.Flag("ui", "Serve the bundled web UI on a loopback port (desktop build only)").Bool()
+	args.UIReadyFile = app.Flag("ui-ready-file", "Where to publish the UI URL for the window shell (desktop build only)").String()
 	args.DeepdocDevice = app.Flag("deepdoc-device", "DeepDoc inference device").String()
 	args.EnablePProf = app.Flag("profile", "Enable pprof profiling").Bool()
 	var logLevelSet, portSet bool
@@ -208,6 +211,9 @@ func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintln(os.Stderr, "Run --migrate before starting individual services.")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
+	fmt.Fprintln(os.Stderr, "  --data-dir string  \tData directory for in-process backends (desktop build only)")
+	fmt.Fprintln(os.Stderr, "  --ui               \tServe the bundled web UI on a loopback port (desktop build only)")
+	fmt.Fprintln(os.Stderr, "  --ui-ready-file string\tPublish the UI URL to this file for the window shell")
 	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
 	fmt.Fprintln(os.Stderr, "  --log-level string \tLog level: debug, info, warn, error (default: warn)")
 	fmt.Fprintln(os.Stderr, "  --port int         \tHTTP port: API by default, admin with --admin (1-65535)")
@@ -234,6 +240,29 @@ func main() {
 	if *arguments.VersionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		return
+	}
+
+	// What the build tag changes: the desktop build boots its in-process
+	// backends here, before the configuration is read, and stops them on the way
+	// out. The server build starts none, so its stop function does nothing.
+	stopBackends, err := startDesktopBackends(ctx, arguments)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start the desktop backends: %v\n", err)
+		os.Exit(1)
+	}
+	defer stopBackends()
+
+	// --ui (desktop build) serves the bundled frontend once the servers report
+	// ready: the UI proxies to them, so it must not listen before they do. Every
+	// service calls the hook, and startUIServer is idempotent.
+	onReady := arguments.Ready
+	arguments.Ready = func() error {
+		if onReady != nil {
+			if err := onReady(); err != nil {
+				return err
+			}
+		}
+		return startUIServer(ctx, arguments)
 	}
 
 	if err = runServer(ctx, cancel, arguments); err != nil {
@@ -276,6 +305,10 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 
 	// Set log level according to config file
 	globalConfig := server.GetConfig()
+	// The desktop build started its own cache, queue and object store; repoint
+	// the parsed configuration at them before anything dials out. A no-op in
+	// the server build.
+	bootstrap.ApplyConfigOverrides(globalConfig)
 	resolvedLogLevel, err := globalConfig.ResolveLogLevel(arguments.LogLevel)
 	if err != nil {
 		return err

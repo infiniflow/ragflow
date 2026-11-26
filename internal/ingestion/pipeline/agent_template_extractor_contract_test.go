@@ -15,9 +15,7 @@ import (
 // sys_prompt/tenant_llm_id) ships an Extractor whose prompt configuration is
 // silently ignored at runtime.
 func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
-	// The agent templates carry a canvas form (data.form) that mirrors the DSL
-	// params; the ingestion_pipeline_* templates keep their params only in the
-	// DSL component, so only the former must have a matching form.
+	// Some templates carry a canvas form (data.form) mirroring the DSL params.
 	dirs := []struct {
 		path        string
 		requireForm bool
@@ -28,13 +26,12 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 	legacyKeys := []string{"field_name", "prompts", "sys_prompt", "tenant_llm_id"}
 	modularKeys := []string{"keywords", "questions", "tags", "summary", "metadata"}
 
-	// The agent templates preset an active sub-task; the ingestion_pipeline_*
-	// templates ship every sub-task disabled and let the operator enable them
-	// on the canvas, so only the former must be active out of the box.
+	// These pipelines preset active sub-tasks; the other built-ins let the
+	// operator enable sub-tasks on the canvas.
 	mustBeActive := map[string]bool{
-		"advanced_ingestion_pipeline.json": true,
-		"chunk_summary.json":               true,
-		"title_chunker.json":               true,
+		"ingestion_pipeline_enriched.json": true,
+		"ingestion_pipeline_summary.json":  true,
+		"ingestion_pipeline_outline.json":  true,
 	}
 
 	// subTaskActive mirrors the runtime gates in internal/ingestion/component:
@@ -110,7 +107,7 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 					if !reflect.DeepEqual(form, params) {
 						t.Errorf("%s: Extractor %s params and canvas data.form diverge; both must be updated together", f, cpnID)
 					}
-				} else if dir.requireForm {
+				} else if dir.requireForm || mustBeActive[base] {
 					t.Errorf("%s: Extractor %s has no matching canvas data.form node to compare against params", f, cpnID)
 				}
 				for _, k := range legacyKeys {

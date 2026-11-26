@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -115,8 +114,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
-	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
-	if !emailRegex.MatchString(req.Email) {
+	if !common.IsValidEmail(req.Email) {
 		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
 	req.Nickname = strings.TrimSpace(req.Nickname)

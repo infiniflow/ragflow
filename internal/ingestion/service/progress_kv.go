@@ -18,10 +18,17 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/progressstore"
 )
+
+// progressBeginner opens the progress window for one worker execution. It is
+// an interface so the claim-time wiring can be tested without a live KV.
+type progressBeginner interface {
+	BeginAttempt(ctx context.Context, id, docID, datasetID, attemptID string, startedAt time.Time) bool
+}
 
 // phaseLabel maps runtime.ProgressPhase (enter/exit/error) to the vocabulary
 // stored in the progress snapshot. An out-of-range value yields "" so the
@@ -53,6 +60,21 @@ func progressTerminalStatus(status string) string {
 	default:
 		return ""
 	}
+}
+
+// beginProgressAttempt opens a fresh KV progress window for the execution
+// identified by the attempt token on ctx. It must run after the worker claims
+// the task and before any component can emit progress, so positions from the
+// previous (crashed) execution can never leak into this one.
+func (e *Ingestor) beginProgressAttempt(ctx context.Context, task *entity.IngestionTask, beginner progressBeginner) {
+	if e == nil || task == nil || task.PipelineLogID == nil || beginner == nil {
+		return
+	}
+	attemptID := progressstore.AttemptFromContext(ctx)
+	if attemptID == "" {
+		return
+	}
+	beginner.BeginAttempt(ctx, *task.PipelineLogID, task.DocumentID, task.DatasetID, attemptID, time.Now().UTC())
 }
 
 // markProgressTerminal flips the run's snapshot to terminal. Best-effort:

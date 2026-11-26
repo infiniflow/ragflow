@@ -1,8 +1,8 @@
 export interface ChunkIdQuery {
   /**
-   * Complete ids, matched exactly.
+   * Id prefix, matched from the start of the stored id.
    */
-  ids: string[];
+  prefix: string;
 }
 
 /**

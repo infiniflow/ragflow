@@ -566,9 +566,11 @@ func (s *SkillsShSource) extractRepoSlug(value string) string {
 	return ""
 }
 
+// htmlTagRe matches HTML tags for stripping.
+var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
 // stripHTML removes HTML tags
 func (s *SkillsShSource) stripHTML(value string) string {
 	// Simple HTML tag removal
-	re := regexp.MustCompile(`<[^>]+>`)
-	return strings.TrimSpace(re.ReplaceAllString(value, ""))
+	return strings.TrimSpace(htmlTagRe.ReplaceAllString(value, ""))
 }

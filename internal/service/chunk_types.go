@@ -19,6 +19,8 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"ragflow/internal/common"
 )
@@ -125,13 +127,41 @@ func IndexName(uid string) string {
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
-	DatasetID    string   `json:"dataset_id,omitempty"`
-	DocID        string   `json:"doc_id" binding:"required"`
-	ChunkIDs     []string `json:"chunk_ids,omitempty"`
-	Page         *int     `json:"page,omitempty"`
-	Size         *int     `json:"size,omitempty"`
-	Keywords     string   `json:"keywords,omitempty"`
-	AvailableInt *int     `json:"available_int,omitempty"`
+	DatasetID string   `json:"dataset_id,omitempty"`
+	DocID     string   `json:"doc_id" binding:"required"`
+	ChunkIDs  []string `json:"chunk_ids,omitempty"`
+	// ChunkIDPrefix narrows the list to ids starting with it: the partial form of
+	// ChunkIDs.
+	ChunkIDPrefix string `json:"chunk_id_prefix,omitempty"`
+	Page          *int   `json:"page,omitempty"`
+	Size          *int   `json:"size,omitempty"`
+	Keywords      string `json:"keywords,omitempty"`
+	AvailableInt  *int   `json:"available_int,omitempty"`
+}
+
+// Chunk ids are 16 lowercase hex digits (common.ChunkID: %016x of a hash). Compiled
+// rows carry 64-digit ids, but the list hides them.
+const (
+	// ChunkIDPrefixPattern matches a whole chunk id or a leading part of one.
+	ChunkIDPrefixPattern = `^[0-9a-f]{1,16}$`
+)
+
+var chunkIDPrefixRE = regexp.MustCompile(ChunkIDPrefixPattern)
+
+// IsChunkIDPrefix reports whether value can be a whole chunk id or a leading part
+// of one.
+func IsChunkIDPrefix(value string) bool {
+	return chunkIDPrefixRE.MatchString(strings.ToLower(strings.TrimSpace(value)))
+}
+
+// NormalizeChunkIDPrefix lowercases and trims the one prefix a request may carry,
+// returning "" for a value that cannot lead a chunk id.
+func NormalizeChunkIDPrefix(raw string) string {
+	prefix := strings.ToLower(strings.TrimSpace(raw))
+	if !chunkIDPrefixRE.MatchString(prefix) {
+		return ""
+	}
+	return prefix
 }
 
 // ListChunksResponse response for listing chunks

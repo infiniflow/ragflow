@@ -24,11 +24,13 @@ import (
 )
 
 type recordedUpdate struct {
+	attemptID       string
 	component, unit string
 	current, total  uint32
 }
 
 type recordedPhase struct {
+	attemptID        string
 	component, phase string
 }
 
@@ -37,19 +39,19 @@ type fakeSnapshotWriter struct {
 	phases  []recordedPhase
 }
 
-func (f *fakeSnapshotWriter) Update(_ context.Context, _, _, _, component, unit string, current, total uint32) bool {
-	f.updates = append(f.updates, recordedUpdate{component, unit, current, total})
+func (f *fakeSnapshotWriter) UpdateAttempt(_ context.Context, _, _, _, attemptID, component, unit string, current, total uint32) bool {
+	f.updates = append(f.updates, recordedUpdate{attemptID, component, unit, current, total})
 	return true
 }
 
-func (f *fakeSnapshotWriter) SetPhase(_ context.Context, _, _, _, component, phase string) bool {
-	f.phases = append(f.phases, recordedPhase{component, phase})
+func (f *fakeSnapshotWriter) SetPhaseAttempt(_ context.Context, _, _, _, attemptID, component, phase string) bool {
+	f.phases = append(f.phases, recordedPhase{attemptID, component, phase})
 	return true
 }
 
 func TestSnapshotBufferCoalescesBeforeFlush(t *testing.T) {
 	w := &fakeSnapshotWriter{}
-	buf := newProgressSnapshotBuffer(w, "run1", "doc1", "ds1")
+	buf := newProgressSnapshotBuffer(w, "run1", "doc1", "ds1", "attempt-1")
 
 	buf.detail("Parser", "page:parse", 1, 100)
 	buf.detail("Parser", "page:parse", 5, 100)
@@ -83,9 +85,27 @@ func TestSnapshotBufferCoalescesBeforeFlush(t *testing.T) {
 	}
 }
 
+func TestSnapshotBufferForwardsAttemptToken(t *testing.T) {
+	// Every drained write must carry the execution that produced it; a stale
+	// execution's token reaching storage would otherwise fence out nothing.
+	w := &fakeSnapshotWriter{}
+	buf := newProgressSnapshotBuffer(w, "run1", "doc1", "ds1", "attempt-9")
+
+	buf.detail("Parser", "page:parse", 5, 100)
+	buf.phase("Parser", "done")
+	buf.flush(context.Background())
+
+	if len(w.updates) != 1 || w.updates[0].attemptID != "attempt-9" {
+		t.Fatalf("updates = %+v, want one write tagged attempt-9", w.updates)
+	}
+	if len(w.phases) != 1 || w.phases[0].attemptID != "attempt-9" {
+		t.Fatalf("phases = %+v, want one write tagged attempt-9", w.phases)
+	}
+}
+
 func TestSnapshotBufferClearsAfterFlush(t *testing.T) {
 	w := &fakeSnapshotWriter{}
-	buf := newProgressSnapshotBuffer(w, "run1", "doc1", "ds1")
+	buf := newProgressSnapshotBuffer(w, "run1", "doc1", "ds1", "attempt-1")
 	buf.detail("Parser", "page:parse", 5, 100)
 
 	buf.flush(context.Background())
@@ -101,7 +121,7 @@ func TestProgressSinkBufferedDetailFlushesOnClose(t *testing.T) {
 	// positions on Close, without doing KV work inside emitMu.
 	w := &fakeSnapshotWriter{}
 	sink := newProgressSink(context.Background(), servicepkg.NewIngestionTaskService(), "run1")
-	sink.installProgressWriter(w, "run1", "doc1", "ds1")
+	sink.installProgressWriter(w, "run1", "doc1", "ds1", "attempt-1")
 
 	sink.OnProgressDetail(context.Background(), "Parser", "page:parse", 5, 100)
 	if len(w.updates) != 0 {
@@ -120,7 +140,7 @@ func TestProgressSinkBufferedDetailFlushesOnClose(t *testing.T) {
 // BenchmarkSnapshotBufferDetail guards the emit path: it must stay an
 // in-memory coalescing write, not a synchronous KV round-trip per event.
 func BenchmarkSnapshotBufferDetail(b *testing.B) {
-	buf := newProgressSnapshotBuffer(&fakeSnapshotWriter{}, "run1", "doc1", "ds1")
+	buf := newProgressSnapshotBuffer(&fakeSnapshotWriter{}, "run1", "doc1", "ds1", "attempt-1")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		buf.detail("Parser", "page:parse", uint32(i%1000+1), 1000)

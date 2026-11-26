@@ -18,18 +18,16 @@ An ingestion pipeline parses documents, splits content into chunks, optionally e
 2. Choose **Create from blank**, enter **Name**, and click **Confirm**.
 3. Open the created card. The canvas starts with **Begin → Parser**.
 4. Click **Parser** and configure the file types you need to process. Use its outgoing connection point to add **Token chunker** or **Title chunker**.
-5. Add **Transformer** if you need to enrich chunks, or **Compiler** for knowledge compilation. Connect the final processing step to **Indexer**.
+5. Add **Extractor** if you need to enrich chunks, or **Compiler** for knowledge compilation. Connect the final processing step to **Indexer**.
 6. Configure each component and click **Save draft**. If **Checklist** appears, open it and resolve the reported configuration issues.
 
 A basic flow is **Begin → Parser → Token chunker → Indexer**. Add optional processing steps according to your document requirements.
 
-## Start from a Template
-
-Choose **Create from template** from the same creation menu, select a template, and follow the creation dialog. Open the resulting pipeline and review each component's models, prompts, and referenced resources before publishing it.
-
 ## Start from a Built-in Pipeline
 
 The same list includes **Built-in pipelines**, such as General, Q&A, Manual, and Table. Click a built-in card to inspect its configuration. The built-in preview is read-only. Use the card's **Copy** button to create an editable pipeline, then configure the copy for your documents.
+
+The catalog also includes **Outline** for heading-based chunking, **Summary** for chunk summaries, and **Enriched** for summaries, keywords, questions, and metadata. These pipelines can be selected directly under **Parsing mode** when creating a Dataset. Review the Extractor model and prompts in Dataset configuration before parsing documents, or configure them in an editable copy.
 
 ![Ingestion pipeline category showing built-in pipeline cards and their Copy icons](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_list.jpg)
 

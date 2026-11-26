@@ -39,7 +39,7 @@ Do not add `-v` unless you intentionally want to delete the deployment's data vo
 
 ## Switch to OpenSearch
 
-OpenSearch is supported as an alternative to Elasticsearch. Hybrid (BM25 + vector) retrieval requires OpenSearch 2.10 or later, which provides the normalization search pipeline the Go engine provisions on startup.
+OpenSearch is supported as an alternative to Elasticsearch. RAGFlow requires OpenSearch 2.19 or later (2.19 LTS or 3.x), which supports RAGFlow's `cosinesimil` `knn_vector` templates on the default Faiss engine, unified cosine scoring, and hybrid BM25 + vector retrieval with inline search pipelines. If you are upgrading a cluster from OpenSearch 2.17 or earlier, reindex any legacy NMSLIB vector indices before use.
 
 1. Set `DOC_ENGINE=opensearch` in **docker/.env** and configure the connection:
 

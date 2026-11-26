@@ -149,6 +149,11 @@ func (s *Synonym) load() {
 	//s.dictionary = dict
 }
 
+var (
+	whitespaceRe = regexp.MustCompile(`[ \t]+`)
+	alphaOnlyRe  = regexp.MustCompile(`^[a-z]+$`)
+)
+
 // Lookup looks up synonyms for a given token
 // Reference: synonym.py Dealer.lookup
 func (s *Synonym) Lookup(tk string, topN int) []string {
@@ -164,7 +169,7 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	s.lookupNum.Add(1)
 	//s.load()
 
-	key := regexp.MustCompile(`[ \t]+`).ReplaceAllString(strings.TrimSpace(tk), " ")
+	key := whitespaceRe.ReplaceAllString(strings.TrimSpace(tk), " ")
 	key = strings.ToLower(key)
 
 	if res, ok := s.dictionary[key]; ok {
@@ -175,7 +180,7 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	}
 
 	// 2) If not found and tk is purely alphabetical, fallback to WordNet
-	if matched, _ := regexp.MatchString(`^[a-z]+$`, tk); matched && s.wordNet != nil {
+	if alphaOnlyRe.MatchString(tk) && s.wordNet != nil {
 		wnSet := make(map[string]struct{})
 		synsets := s.wordNet.Synsets(tk, "")
 		for _, syn := range synsets {

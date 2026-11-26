@@ -71,6 +71,64 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	}
 }
 
+func TestCreateDataset_EnrichmentBuiltins(t *testing.T) {
+	for _, tc := range []struct {
+		parserID    string
+		extractorID string
+	}{
+		{"outline", "Extractor:DryRatsGive"},
+		{"summary", "Extractor:SharpTaxisSay"},
+		{"enriched", "Extractor:LazyCarpetsKiss"},
+	} {
+		t.Run(tc.parserID, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertCreateDatasetTenant(t, "tenant-1")
+			seedCreateDatasetDefaultChatModel(t, db, "tenant-1")
+			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+
+			result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+				Name:      "ds-" + tc.parserID,
+				ParserID:  &tc.parserID,
+				ParseType: iptr(1),
+			})
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("CreateDataset: code=%d err=%v", code, err)
+			}
+			if result["parser_id"] != tc.parserID {
+				t.Fatalf("parser_id = %#v, want %s", result["parser_id"], tc.parserID)
+			}
+			var saved entity.Knowledgebase
+			if err := db.Take(&saved, "id = ?", result["id"]).Error; err != nil {
+				t.Fatalf("read dataset: %v", err)
+			}
+			if saved.ParserID != tc.parserID {
+				t.Fatalf("stored parser_id = %v, want %s", saved.ParserID, tc.parserID)
+			}
+			extractor, ok := saved.ParserConfig[tc.extractorID].(map[string]any)
+			if !ok {
+				t.Fatalf("stored parser_config lost Extractor %s", tc.extractorID)
+			}
+			if extractor["llm_id"] != "llm-default" {
+				t.Errorf("Extractor model = %#v, want llm-default", extractor["llm_id"])
+			}
+			summary, _ := extractor["summary"].(map[string]any)
+			prompt, _ := summary["system_prompt"].(string)
+			if summary["enabled"] != true || prompt == "" {
+				t.Errorf("stored summary config lost its enabled state or prompt: %#v", summary)
+			}
+			if tc.parserID == "enriched" {
+				metadata, _ := extractor["metadata"].(map[string]any)
+				keywords, _ := extractor["keywords"].(map[string]any)
+				questions, _ := extractor["questions"].(map[string]any)
+				if metadata["enabled"] != true || keywords["top_n"] != float64(5) || questions["top_n"] != float64(3) {
+					t.Errorf("stored enrichment settings changed: %#v", extractor)
+				}
+			}
+		})
+	}
+}
+
 func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

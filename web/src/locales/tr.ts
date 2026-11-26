@@ -581,7 +581,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
       Parse: 'Ayrıştır',
       dataset: 'Dataset',
-      testing: 'Alım testi',
+      testing: 'Alım',
       files: 'dosyalar',
       configuration: 'Yapılandırma',
       nextConfiguration: 'Dataset yapılandırması',
@@ -3704,7 +3704,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       mergePath: 'Yolu birleştir',
       mergePathTip:
         'Etkinleştirildiğinde, bir değişkenden hemen sonra gelen nokta soneki {node@result.name} gibi bir yol sorgusuyla birleştirilir.',
-      historyVersion: 'Sürüm geçmişi',
+      historyVersion: 'Sürümler',
       version: {
         created: 'Oluşturuldu',
         details: 'Sürüm ayrıntıları',
@@ -3948,7 +3948,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       qAChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       tableChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       pageChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
-      extractor: 'Dönüştürücü',
+      extractor: 'Çıkarıcı',
       extractorDescription:
         'Belge parçalarından yapılandırılmış içgörüler çıkarmak için LLM kullanır.',
       compiler: 'Derleyici',

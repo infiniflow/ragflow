@@ -221,6 +221,7 @@ export interface ISearchAppDetailProps {
   };
   tenant_id: string;
   update_time: number;
+  operator_permission?: number;
 }
 
 interface SearchDetailResponse {

@@ -27,6 +27,7 @@ package extractor
 // #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/../../..
 // #cgo linux LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
 // #cgo darwin LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread ${SRCDIR}/../../../binding/cpp/cmake-build-release/libpcre2-8.a
+// #cgo windows LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.dll.a
 //
 // #include <stdlib.h>
 // #include "../../../binding/cpp/rag_analyzer_c_api.h"
@@ -35,11 +36,13 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
+
+	"ragflow/internal/common"
 )
 
 // Entity represents an extracted named entity.
@@ -335,25 +338,19 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 	return entities, nil
 }
 
-// findModelDir locates the spaCy model directory under /usr/share/infinity/resource/spacy.
+// findModelDir locates the spaCy model directory. SPACY_MODEL_DIR names one
+// outright; otherwise the model is the one the resource bundle ships under
+// spacy/, which is wherever ResourceDir() resolved (the desktop app's bundle, a
+// tree beside the binary, or /usr/share/infinity/resource).
 func (e *Extractor) findModelDir() string {
+	if p := common.GetEnv(common.EnvSpacyModelDir); p != "" {
+		return p
+	}
 	modelName := langModel[e.Lang]
 	if modelName == "" {
 		modelName = "en_core_web_sm"
 	}
-	base := "/usr/share/infinity/resource/spacy/" + modelName
-	if dirExists(base) {
-		return base
-	}
-	if p := common.GetEnv(common.EnvSpacyModelDir); p != "" {
-		return p
-	}
-	return base
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+	return filepath.Join(common.ResourceDir(), "spacy", modelName)
 }
 
 // tokenizeText tokenizes text via C++ tokenizer (all languages).

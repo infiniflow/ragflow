@@ -672,10 +672,12 @@ func TestRetrieval_RecordsFrontendReferencePayload(t *testing.T) {
 
 type capturingRetrievalService struct {
 	req RetrievalRequest
+	db  *gorm.DB
 }
 
-func (s *capturingRetrievalService) Search(_ context.Context, _ *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (s *capturingRetrievalService) Search(_ context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	s.req = req
+	s.db = db
 	return []RetrievalChunk{{ID: "ck-1", Content: "answer"}}, nil
 }
 

@@ -266,6 +266,16 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, agentID string, re
 	if !ok {
 		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   agentID,
+	})
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to resolve agent permission: %w", err)
+	}
+	if !access.Allows(permission.OperationUpdate) {
+		req.ExpUserID = permission.UserIDFromContext(ctx)
+	}
 
 	sessionDAO := dao.NewChatSessionDAO()
 
@@ -351,11 +361,12 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, agentID, sess
 	if sessionID == "" {
 		return false, common.CodeArgumentError, errors.New("session_id is required")
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, permission.OperationUse); err != nil {
+	userID, canDeleteAll, err := checkAgentSessionDeleteAccess(ctx, agentID)
+	if err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
-			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
+			return false, common.CodeOperatingError, errors.New("agent not found or no permission to delete sessions")
 		}
-		return false, common.CodeServerError, fmt.Errorf("failed to check agent access: %w", err)
+		return false, common.CodeServerError, fmt.Errorf("failed to check agent session deletion permission: %w", err)
 	}
 
 	conv, cerr := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, agentID)
@@ -364,6 +375,9 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, agentID, sess
 	}
 	if conv == nil {
 		return false, common.CodeSuccess, nil
+	}
+	if !canDeleteAll && conv.UserID != userID {
+		return false, common.CodeOperatingError, errors.New("you can only delete your own sessions")
 	}
 	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
@@ -375,19 +389,18 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, agentID, sess
 	return true, common.CodeSuccess, nil
 }
 
-// DeleteAgentSessions removes selected conversations belonging to agentID.
-// When ids is empty and deleteAll is true, every session under agentID is
-// removed.
+// DeleteAgentSessions removes selected conversations the caller may delete.
+// When ids is empty and deleteAll is true, it removes all visible sessions.
 func (s *AgentService) DeleteAgentSessions(ctx context.Context, agentID string, ids []string, deleteAll bool) (*DeleteAgentSessionsResult, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
-
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, permission.OperationUse); err != nil {
+	userID, canDeleteAll, err := checkAgentSessionDeleteAccess(ctx, agentID)
+	if err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, common.CodeDataError, fmt.Errorf("you don't have permission to delete sessions for agent %s", agentID)
 		}
-		return nil, common.CodeServerError, fmt.Errorf("check agent deletion permission: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("check agent session deletion permission: %w", err)
 	}
 
 	if len(ids) == 0 {
@@ -395,7 +408,12 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, agentID string, 
 			return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
 		}
 
-		listedIDs, err := s.api4ConversationDAO.ListIDsByAgentID(ctx, dao.DB, agentID)
+		var listedIDs []string
+		if canDeleteAll {
+			listedIDs, err = s.api4ConversationDAO.ListIDsByAgentID(ctx, dao.DB, agentID)
+		} else {
+			listedIDs, err = s.api4ConversationDAO.ListIDsByAgentIDAndUserID(ctx, dao.DB, agentID, userID)
+		}
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -422,6 +440,10 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, agentID string, 
 		}
 		if conv == nil {
 			errorsList = append(errorsList, fmt.Sprintf("The agent doesn't own the session %s", sessionID))
+			continue
+		}
+		if !canDeleteAll && conv.UserID != userID {
+			errorsList = append(errorsList, fmt.Sprintf("You can only delete your own session %s", sessionID))
 			continue
 		}
 

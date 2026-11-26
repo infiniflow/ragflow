@@ -22,10 +22,11 @@ import (
 )
 
 // snapshotWriter is the subset of the progress store used by the sink's
-// buffered writer. Injecting an interface keeps the emit path testable.
+// buffered writer. Every write carries the attempt that produced it so the
+// store can fence out callbacks from a superseded execution.
 type snapshotWriter interface {
-	Update(ctx context.Context, id, docID, datasetID, component, unit string, current, total uint32) bool
-	SetPhase(ctx context.Context, id, docID, datasetID, component, phase string) bool
+	UpdateAttempt(ctx context.Context, id, docID, datasetID, attemptID, component, unit string, current, total uint32) bool
+	SetPhaseAttempt(ctx context.Context, id, docID, datasetID, attemptID, component, phase string) bool
 }
 
 type unitRef struct {
@@ -45,16 +46,18 @@ type progressSnapshotBuffer struct {
 	id        string
 	docID     string
 	datasetID string
+	attemptID string
 	details   map[unitRef]unitPosition
 	phases    map[string]string
 }
 
-func newProgressSnapshotBuffer(writer snapshotWriter, id, docID, datasetID string) *progressSnapshotBuffer {
+func newProgressSnapshotBuffer(writer snapshotWriter, id, docID, datasetID, attemptID string) *progressSnapshotBuffer {
 	return &progressSnapshotBuffer{
 		writer:    writer,
 		id:        id,
 		docID:     docID,
 		datasetID: datasetID,
+		attemptID: attemptID,
 		details:   make(map[unitRef]unitPosition),
 		phases:    make(map[string]string),
 	}
@@ -94,17 +97,17 @@ func (b *progressSnapshotBuffer) flush(ctx context.Context) {
 		return
 	}
 	for ref, pos := range details {
-		b.writer.Update(ctx, b.id, b.docID, b.datasetID, ref.component, ref.unit, pos.current, pos.total)
+		b.writer.UpdateAttempt(ctx, b.id, b.docID, b.datasetID, b.attemptID, ref.component, ref.unit, pos.current, pos.total)
 	}
 	for component, phase := range phases {
-		b.writer.SetPhase(ctx, b.id, b.docID, b.datasetID, component, phase)
+		b.writer.SetPhaseAttempt(ctx, b.id, b.docID, b.datasetID, b.attemptID, component, phase)
 	}
 }
 
 // installProgressWriter attaches a buffered snapshot writer to the sink. It
 // must be called before progress events begin.
-func (s *progressSink) installProgressWriter(writer snapshotWriter, id, docID, datasetID string) {
-	s.snapshotBuf.Store(newProgressSnapshotBuffer(writer, id, docID, datasetID))
+func (s *progressSink) installProgressWriter(writer snapshotWriter, id, docID, datasetID, attemptID string) {
+	s.snapshotBuf.Store(newProgressSnapshotBuffer(writer, id, docID, datasetID, attemptID))
 }
 
 func (s *progressSink) flushSnapshot(ctx context.Context) {

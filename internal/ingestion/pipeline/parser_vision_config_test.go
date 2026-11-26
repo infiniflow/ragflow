@@ -21,6 +21,12 @@ func TestBuildParserConfigPreservesGlobalVisionSettings(t *testing.T) {
 	}
 }
 
+// builtinVisionEnhancementDefaults lets edition tests register builtin
+// templates that opt into vision enhancement by default. Community templates
+// keep the zero value (off), and the model id stays empty so the runtime
+// resolves the tenant's default image2text model.
+var builtinVisionEnhancementDefaults = map[string]bool{}
+
 func TestBuiltinParserVisionSettings(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
@@ -31,6 +37,7 @@ func TestBuiltinParserVisionSettings(t *testing.T) {
 	}
 	for _, ref := range registry.Refs() {
 		t.Run(ref, func(t *testing.T) {
+			wantVision := builtinVisionEnhancementDefaults[ref]
 			template, ok := registry.Get(ref)
 			if !ok {
 				t.Fatal("missing builtin template")
@@ -49,8 +56,8 @@ func TestBuiltinParserVisionSettings(t *testing.T) {
 			}
 			checkDefaults := func(params map[string]any) {
 				t.Helper()
-				if params["enable_vision_enhancement"] != false || !reflect.DeepEqual(params["vlm"], map[string]any{"llm_id": ""}) {
-					t.Errorf("default vision settings = %v / %v", params["enable_vision_enhancement"], params["vlm"])
+				if params["enable_vision_enhancement"] != wantVision || !reflect.DeepEqual(params["vlm"], map[string]any{"llm_id": ""}) {
+					t.Errorf("default vision settings = %v / %v, want enable=%v with an empty model", params["enable_vision_enhancement"], params["vlm"], wantVision)
 				}
 			}
 			checkDefaults(defaults[id])

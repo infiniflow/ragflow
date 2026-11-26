@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"testing"
+	"time"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/progressstore"
@@ -37,7 +38,7 @@ func TestMergeProgressUsesActiveUnit(t *testing.T) {
 			"chunk:keywords": {Current: 5047, Total: 5047},
 			"chunk:tags":     {Current: 3123, Total: 5047},
 		}})
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
 
 	if resp.Stage != "Extractor" || resp.Unit != "chunk:tags" {
 		t.Fatalf("stage/unit = %q/%q, want Extractor/chunk:tags", resp.Stage, resp.Unit)
@@ -65,7 +66,7 @@ func TestMergeProgressSelectsRunningStageNotCompletedOne(t *testing.T) {
 			"chunk:final": {Current: 2, Total: 100},
 		}},
 	)
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
 	if resp.Stage != "Tokenizer" || resp.Unit != "chunk:final" {
 		t.Fatalf("stage/unit = %q/%q, want Tokenizer/chunk:final (completed stage must not shadow the running one)", resp.Stage, resp.Unit)
 	}
@@ -85,7 +86,7 @@ func TestMergeProgressSelectsLatestRunningStage(t *testing.T) {
 			"chunk:tags": {Current: 7, Total: 50},
 		}},
 	)
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
 	if resp.Stage != "Extractor" || resp.Unit != "chunk:tags" {
 		t.Fatalf("stage/unit = %q/%q, want Extractor/chunk:tags", resp.Stage, resp.Unit)
 	}
@@ -102,14 +103,14 @@ func TestMergeProgressFallsBackToLastStageWhenAllDone(t *testing.T) {
 			"chunk:final": {Current: 100, Total: 100},
 		}},
 	)
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusDone)), snap, 0)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusDone)), snap, 0, nil)
 	if resp.Stage != "Tokenizer" || resp.Unit != "chunk:final" {
 		t.Fatalf("stage/unit = %q/%q, want Tokenizer/chunk:final", resp.Stage, resp.Unit)
 	}
 }
 
 func TestMergeProgressFallsBackWhenSnapshotMissing(t *testing.T) {
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), nil, 0)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), nil, 0, nil)
 	if !resp.Fallback {
 		t.Fatal("missing snapshot must mark fallback")
 	}
@@ -125,9 +126,68 @@ func TestMergeProgressFallsBackWhenSnapshotHasNoActiveUnit(t *testing.T) {
 	// Adversarial: KV key exists but no stage ever reported a position.
 	snap := testSnapshot(progressstore.StatusRunning,
 		progressstore.Stage{Name: "File", Phase: "running", Units: map[string]progressstore.UnitProgress{}})
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
 	if !resp.Fallback {
 		t.Fatal("snapshot without an active unit must mark fallback, not show 0/0")
+	}
+}
+
+func TestMergeProgressFallsBackForLegacySnapshot(t *testing.T) {
+	// Adversarial: snapshots written before attempts existed have no identity.
+	// Their positions belong to an unknown execution and must not be shown.
+	started := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	run := testRun(string(entity.TaskStatusRunning))
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: "running", Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 250, Total: 500},
+		}})
+
+	resp := mergeProgressSnapshot(run, snap, 0, &started)
+	if !resp.Fallback {
+		t.Fatal("legacy snapshot without attempt identity must mark fallback")
+	}
+	if resp.Current != 0 || resp.Total != 0 || resp.Stage != "" {
+		t.Fatalf("fallback response must not expose stale position: %+v", resp)
+	}
+}
+
+func TestMergeProgressFallsBackWhenSnapshotPredatesRun(t *testing.T) {
+	// Adversarial: a run started again while the KV key still holds the
+	// previous execution's snapshot. The old timestamp makes it untrusted.
+	started := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	run := testRun(string(entity.TaskStatusRunning))
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: "running", Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 250, Total: 500},
+		}})
+	snap.AttemptID = "attempt-old"
+	snap.AttemptStartedAt = started.Add(-time.Minute)
+
+	resp := mergeProgressSnapshot(run, snap, 0, &started)
+	if !resp.Fallback {
+		t.Fatal("snapshot from an earlier execution must mark fallback")
+	}
+	if resp.Current != 0 || resp.Stage != "" {
+		t.Fatalf("stale snapshot leaked into response: %+v", resp)
+	}
+}
+
+func TestMergeProgressUsesCurrentAttemptSnapshot(t *testing.T) {
+	started := time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC)
+	run := testRun(string(entity.TaskStatusRunning))
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: "running", Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 250, Total: 500},
+		}})
+	snap.AttemptID = "attempt-current"
+	snap.AttemptStartedAt = started.Add(time.Second)
+
+	resp := mergeProgressSnapshot(run, snap, 0, &started)
+	if resp.Fallback {
+		t.Fatal("snapshot from the current attempt must be trusted")
+	}
+	if resp.Current != 250 || resp.Total != 500 {
+		t.Fatalf("position = %d/%d, want 250/500", resp.Current, resp.Total)
 	}
 }
 
@@ -136,7 +196,7 @@ func TestMergeProgressTerminalCarriesChunkCount(t *testing.T) {
 		progressstore.Stage{Name: "Tokenizer", Phase: "done", Active: "chunk:embed", Units: map[string]progressstore.UnitProgress{
 			"chunk:embed": {Current: 5047, Total: 5047},
 		}})
-	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusDone)), snap, 5047)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusDone)), snap, 5047, nil)
 	if resp.Phase != progressstore.StatusCompleted || resp.ChunkNum != 5047 {
 		t.Fatalf("phase/chunkNum = %q/%d", resp.Phase, resp.ChunkNum)
 	}

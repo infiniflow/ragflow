@@ -25,6 +25,13 @@ package rag_analyzer
 // archive: cgo cannot search library paths, and naming a Homebrew prefix here
 // breaks every host whose Homebrew lives elsewhere.
 #cgo darwin LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread ${SRCDIR}/cpp/cmake-build-release/libpcre2-8.a
+// Windows links the import library of the tokenizer DLL: Go assembles the PE
+// image itself, so a statically linked C++ archive never gets MinGW's CRT
+// startup and faults once the analyzer allocates its dictionary. The DLL runs
+// its own startup, and pcre2/libstdc++ are resolved inside it — nothing but the
+// extern "C" entry points crosses the boundary here. The DLL itself has to sit
+// beside the executable (see build.sh, which copies it next to the Go binary).
+#cgo windows LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.dll.a
 
 #include <stdlib.h>
 #include "cpp/rag_analyzer_c_api.h"

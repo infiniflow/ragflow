@@ -40,25 +40,31 @@ function renderSidebar(
 }
 
 describe('AgentSidebar', () => {
-  it('shows Canvas, Launch and Setting for a workflow', () => {
+  it('shows Version history below Launch for a workflow', () => {
     renderSidebar('/agent/agent-1');
 
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(
+      ['flow.canvas', 'explore.title', 'flow.historyVersion', 'flow.setting'],
+    );
     expect(screen.getByRole('link', { name: 'flow.canvas' })).toHaveAttribute(
       'aria-current',
       'page',
     );
     expect(
-      screen.getByRole('link', { name: 'explore.title' }),
-    ).toBeInTheDocument();
+      screen.getByRole('link', { name: 'flow.historyVersion' }),
+    ).toHaveAttribute('href', '/agent/agent-1/version-history');
     expect(screen.getByRole('link', { name: 'flow.setting' })).toHaveAttribute(
       'href',
       '/agent/agent-1/setting',
     );
   });
 
-  it('hides Launch and preserves the category for a pipeline', () => {
+  it('shows Version history after Canvas and preserves the pipeline category', () => {
     renderSidebar('/agent/pipeline-1?category=dataflow_canvas');
 
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(
+      ['flow.canvas', 'flow.historyVersion', 'flow.setting'],
+    );
     expect(
       screen.queryByRole('link', { name: 'explore.title' }),
     ).not.toBeInTheDocument();
@@ -66,10 +72,30 @@ describe('AgentSidebar', () => {
       'href',
       '/agent/pipeline-1?category=dataflow_canvas',
     );
+    expect(
+      screen.getByRole('link', { name: 'flow.historyVersion' }),
+    ).toHaveAttribute(
+      'href',
+      '/agent/pipeline-1/version-history?category=dataflow_canvas',
+    );
     expect(screen.getByRole('link', { name: 'flow.setting' })).toHaveAttribute(
       'href',
       '/agent/pipeline-1/setting?category=dataflow_canvas',
     );
+  });
+
+  it('marks Version history active on its route', () => {
+    renderSidebar('/agent/agent-1/version-history');
+
+    expect(
+      screen.getByRole('link', { name: 'flow.canvas' }),
+    ).not.toHaveAttribute('aria-current');
+    expect(
+      screen.getByRole('link', { name: 'flow.historyVersion' }),
+    ).toHaveAttribute('aria-current', 'page');
+    expect(
+      screen.getByRole('link', { name: 'flow.setting' }),
+    ).not.toHaveAttribute('aria-current');
   });
 
   it('marks the current secondary page active', () => {

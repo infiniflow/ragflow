@@ -4,6 +4,7 @@ import { AgentQuery } from '@/constants/agent';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {
+  ClipboardClock,
   LucideFrame,
   LucideMessageSquareMore,
   LucideSettings,
@@ -15,6 +16,7 @@ import { useIsPipeline } from '../hooks/use-is-pipeline';
 
 enum AgentMenuKey {
   Canvas = 'canvas',
+  VersionHistory = 'version-history',
   Launch = 'launch',
   Setting = 'setting',
 }
@@ -38,6 +40,9 @@ export function AgentSidebar({
     useMatch({ path: `${Routes.Agent}/:id`, end: true }),
   );
   const isLaunch = Boolean(useMatch({ path: Routes.AgentExplore, end: true }));
+  const isVersionHistory = Boolean(
+    useMatch({ path: Routes.AgentVersionHistory, end: true }),
+  );
   const isSetting = Boolean(useMatch({ path: Routes.AgentSetting, end: true }));
 
   const items = useMemo(() => {
@@ -66,6 +71,14 @@ export function AgentSidebar({
     }
 
     list.push({
+      key: AgentMenuKey.VersionHistory,
+      icon: <ClipboardClock className="size-4 shrink-0" />,
+      label: t('flow.historyVersion'),
+      path: `${Routes.Agent}/${id}/version-history`,
+      active: isVersionHistory,
+    });
+
+    list.push({
       key: AgentMenuKey.Setting,
       icon: <LucideSettings className="size-4 shrink-0" />,
       label: t('flow.setting'),
@@ -77,7 +90,16 @@ export function AgentSidebar({
       ...item,
       to: { pathname: item.path, search },
     }));
-  }, [id, isCanvas, isLaunch, isPipeline, isSetting, searchParams, t]);
+  }, [
+    id,
+    isCanvas,
+    isLaunch,
+    isPipeline,
+    isSetting,
+    isVersionHistory,
+    searchParams,
+    t,
+  ]);
 
   return (
     <aside className="flex w-64 flex-col">

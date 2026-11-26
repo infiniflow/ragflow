@@ -17,6 +17,7 @@
 package security
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -41,15 +42,45 @@ type ScanResult struct {
 	Findings   []Finding
 }
 
+// compiledThreatPattern pairs a threat pattern with its compiled regex so a
+// scan never recompiles the rules and a malformed pattern fails loudly at
+// package initialization instead of being silently skipped.
+type compiledThreatPattern struct {
+	ThreatPattern
+	re *regexp.Regexp
+}
+
+// compiledThreatPatterns is built once at package initialization. A rule with
+// an invalid regex panics here (regexp.MustCompile) rather than being dropped
+// by a silent `continue` at scan time — a bad pattern must break the build,
+// not ship as a dead rule.
+var compiledThreatPatterns = mustCompileThreatPatterns(ThreatPatterns)
+
+// mustCompileThreatPatterns compiles every threat pattern once, using the same
+// case-insensitive (?i:...) wrapping the scanner applies at match time, so a
+// pattern that does not compile panics here at package init rather than being
+// silently dropped at scan time — the failure mode that left the original
+// rm_recursive_dangerous rule dead.
+func mustCompileThreatPatterns(patterns []ThreatPattern) []compiledThreatPattern {
+	compiled := make([]compiledThreatPattern, 0, len(patterns))
+	for _, p := range patterns {
+		compiled = append(compiled, compiledThreatPattern{
+			ThreatPattern: p,
+			re:            regexp.MustCompile("(?i:" + p.Pattern + ")"),
+		})
+	}
+	return compiled
+}
+
 // Scanner performs security scans on skill content
 type Scanner struct {
-	patterns []ThreatPattern
+	patterns []compiledThreatPattern
 }
 
 // NewScanner creates a new security scanner
 func NewScanner() *Scanner {
 	return &Scanner{
-		patterns: ThreatPatterns,
+		patterns: compiledThreatPatterns,
 	}
 }
 
@@ -77,29 +108,106 @@ func (s *Scanner) ScanSkill(skillName, source, trustLevel string, files map[stri
 func (s *Scanner) scanFile(filename, content string) []Finding {
 	var findings []Finding
 	lines := strings.Split(content, "\n")
-
-	for _, pattern := range s.patterns {
-		re, err := regexp.Compile("(?i:" + pattern.Pattern + ")")
-		if err != nil {
+	// A commented-out example such as "# Example: rm -rf $TARGET" is not a
+	// command, but a destructive-rm finding makes the skill uninstallable for
+	// community sources, so match against the code-only view of each line.
+	masked := make([]string, len(lines))
+	for i, line := range lines {
+		if isProseFile(filename) {
+			masked[i] = line
 			continue
 		}
+		masked[i] = maskShellComments(line)
+	}
 
-		for i, line := range lines {
-			if matches := re.FindString(line); matches != "" {
-				findings = append(findings, Finding{
-					PatternID:   pattern.PatternID,
-					Severity:    pattern.Severity,
-					Category:    pattern.Category,
-					File:        filename,
-					Line:        i + 1,
-					Match:       strings.TrimSpace(matches),
-					Description: pattern.Description,
-				})
+	for _, pattern := range s.patterns {
+		for i, line := range masked {
+			loc := pattern.re.FindStringIndex(line)
+			if loc == nil {
+				continue
 			}
+			findings = append(findings, Finding{
+				PatternID:   pattern.PatternID,
+				Severity:    pattern.Severity,
+				Category:    pattern.Category,
+				File:        filename,
+				Line:        i + 1,
+				Match:       strings.TrimSpace(lines[i][loc[0]:loc[1]]),
+				Description: pattern.Description,
+			})
 		}
 	}
 
 	return findings
+}
+
+// maskShellComments blanks the text a POSIX shell treats as a comment without
+// changing the line length, so match offsets stay valid for the original line.
+// A '#' opens a comment only where a word may start and only outside quotes;
+// '#' inside a word (a#b), in an expansion ($#) or in a quoted string is data.
+func maskShellComments(line string) string {
+	var masked []byte
+	inComment := false
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if inComment {
+			if masked == nil {
+				masked = []byte(line)
+			}
+			masked[i] = ' '
+			continue
+		}
+		if quote != 0 {
+			if c == '\\' && quote == '"' && i+1 < len(line) {
+				i++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '\\':
+			if i+1 < len(line) {
+				i++
+			}
+		case '\'', '"':
+			quote = c
+		case '#':
+			if i == 0 || isShellWordBreak(line[i-1]) {
+				inComment = true
+				if masked == nil {
+					masked = []byte(line)
+				}
+				masked[i] = ' '
+			}
+		}
+	}
+	if masked == nil {
+		return line
+	}
+	return string(masked)
+}
+
+func isShellWordBreak(c byte) bool {
+	switch c {
+	case ' ', '\t', ';', '&', '|', '(', ')', '<', '>':
+		return true
+	}
+	return false
+}
+
+// Markdown is prose the assistant reads as instructions, so a line such as
+// "# ignore previous instructions" is content, not a comment. Only files where
+// '#' introduces something the shell would skip are masked.
+func isProseFile(filename string) bool {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".md", ".markdown", ".mdx", ".txt", ".rst", ".adoc":
+		return true
+	}
+	return false
 }
 
 // determineVerdict determines the overall verdict based on findings

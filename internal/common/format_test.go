@@ -120,3 +120,61 @@ func TestFirstNonEmpty(t *testing.T) {
 		})
 	}
 }
+
+// TestIsUUID_Characterization pins the current 32-char lowercase alnum gate.
+func TestIsUUID_Characterization(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"32 lowercase alnum", "0123456789abcdef0123456789abcdef", true},
+		{"32 digits", "00000000000000000000000000000000", true},
+		{"31 chars rejected", "0123456789abcdef0123456789abcde", false},
+		{"33 chars rejected", "0123456789abcdef0123456789abcdef0", false},
+		{"empty rejected", "", false},
+		{"uppercase rejected", "0123456789ABCDEF0123456789ABCDEF", false},
+		{"hyphen rejected", "01234567-89ab-cdef-0123-456789abcdef", false},
+		{"space rejected", "0123456789abcdef0123456789abcde ", false},
+		{"unicode rejected", "0123456789abcdef0123456789abcde汉", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsUUID(tt.in); got != tt.want {
+				t.Fatalf("IsUUID(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsValidEmail_Characterization pins the shared email shape gate after
+// consolidating the duplicated regex into a single helper.
+func TestIsValidEmail_Characterization(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"plain", "alice@example.com", true},
+		{"subdomain and hyphen", "a.b_c-d@example-domain.com", true},
+		{"multi-level domain", "user@sub.example.co.uk", true},
+		{"short tld", "a@b.co", true},
+		{"single char tld rejected", "a@b.c", false},
+		{"no at rejected", "plainaddress", false},
+		{"double at rejected", "a@@b.com", false},
+		{"empty local rejected", "@example.com", false},
+		{"no dot in domain rejected", "alice@example", false},
+		{"empty tld rejected", "alice@example.", false},
+		{"uppercase allowed", "Alice@Example.COM", true},
+		{"plus tag rejected", "a+b@example.com", false},
+		{"empty rejected", "", false},
+		{"space rejected", "a b@example.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidEmail(tt.in); got != tt.want {
+				t.Fatalf("IsValidEmail(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

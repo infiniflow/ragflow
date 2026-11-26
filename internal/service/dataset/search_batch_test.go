@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
@@ -102,8 +103,8 @@ func TestSearchDatasetsBatchesDatasetQueries(t *testing.T) {
 		t.Fatalf("SearchDatasets error = %v, want the embedding-model mismatch (authorization must have completed)", err)
 	}
 
-	if n := capture.knowledgebaseSelects(); n > 2 {
-		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)
+	if n, limit := capture.knowledgebaseSelects(), 1+testsupport.DatasetPermissionQueryCount(len(ids)); n > limit {
+		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= %d; got SQL: %v", n, len(ids), limit, capture.sqls)
 	}
 }
 

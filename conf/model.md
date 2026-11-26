@@ -205,6 +205,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **Replicate** | Open-source model hosting |
 | **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
+| **Straitly** | OpenAI-compatible AI gateway: one key for 150+ models including Claude, GPT, Gemini, Grok and DeepSeek |
 | **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
 | **TeamoRouter** | OpenAI-compatible gateway: one key for GLM, Kimi, DeepSeek, Qwen, Claude, GPT and Gemini |
 | **TogetherAI** | Open-source model hosting |

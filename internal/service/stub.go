@@ -32,6 +32,23 @@ import (
 	"gorm.io/gorm"
 )
 
+func checkAgentSessionDeleteAccess(ctx context.Context, agentID string) (string, bool, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   agentID,
+	}, permission.OperationUse); err != nil {
+		return "", false, err
+	}
+	return permission.UserIDFromContext(ctx), true, nil
+}
+
+func checkAgentDeleteAccess(ctx context.Context, canvasID string) error {
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   canvasID,
+	}, permission.OperationDelete)
+}
+
 // CheckDocumentWrite checks whether the caller can write the document.
 func CheckDocumentWrite(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
 	checker := permission.NewDatabaseChecker(dao.DB)
@@ -80,6 +97,12 @@ func (h *AdminClient) InitHTTPClientEE() error { return nil }
 // enterprise feature, so every gp- model reference fails resolution.
 func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.ModelType) (*entity.TenantModel, error) {
 	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
+}
+
+// modelGroupDisplayName is unsupported in the community edition: model groups
+// are an enterprise feature, so a gp- reference has no group name to resolve.
+func modelGroupDisplayName(_ context.Context, _, _ string) (string, error) {
+	return "", fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
 }
 
 func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelProvider, *entity.TenantModelInstance, []*entity.TenantModel) error {
@@ -254,26 +277,4 @@ func (s *ChatPipelineService) codexAgent(
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	return nil, fmt.Errorf("codex (mode 8) is not available in the community edition")
-}
-
-// iterativeSynthesis runs one mode 7 turn. The community edition has no
-// iterative-synthesis engine, so it reports the engine as unavailable instead of
-// re-dispatching to the regular pipeline. The dispatcher already performs that
-// fallback: engineInstalled reports false here, so selectedEngine is cleared
-// before this function is reached and this body is unreachable in practice.
-// Re-dispatching would duplicate that decision, and it would be wrong when it
-// did run: stripping kwargs["reasoning"] also drops a per-request level-7
-// override, so a chat pinned to another level would answer at that level
-// instead of on the plain path. Returning an error, like codexAgent, keeps one
-// fallback point — the dispatcher's.
-func (s *ChatPipelineService) iterativeSynthesis(
-	ctx context.Context,
-	chat *entity.Chat,
-	messages []map[string]interface{},
-	stream bool,
-	kwargs map[string]interface{},
-	useWebSearch bool,
-	quote bool,
-) (<-chan AsyncChatResult, error) {
-	return nil, fmt.Errorf("iterative synthesis (mode 7) is not available in the community edition")
 }

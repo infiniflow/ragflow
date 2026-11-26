@@ -42,7 +42,6 @@ import (
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"regexp"
 	"strings"
 	"time"
 
@@ -156,8 +155,7 @@ func generateRandomHex(n int) string {
 //   - map[string]interface{}: user information without password
 //   - error: error message
 func (s *Service) CreateUser(ctx context.Context, username, password, role, nickname string) (map[string]interface{}, error) {
-	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
-	if !emailRegex.MatchString(username) {
+	if !common.IsValidEmail(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
 	}
 
@@ -370,7 +368,30 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*servicepkg.
 		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
-	return (servicepkg.UserDeletionService{}).Delete(ctx, user)
+	deletion := servicepkg.UserDeletionService{}
+	snapshot, result, err := deletion.DeleteTx(ctx, dao.DB, user)
+	if err != nil {
+		return nil, err
+	}
+	// dao.DB is a standalone handle: DeleteTx committed on return, so it is safe
+	// to clean up the external resources captured in the snapshot now.
+	warnings := deletion.CleanupUserExternal(ctx, snapshot)
+	if len(warnings) > 0 {
+		details := result.DeletedDetails
+		doneIndex := len(details)
+		for i, detail := range details {
+			if detail == "Delete done!" {
+				doneIndex = i
+				break
+			}
+		}
+		merged := make([]string, 0, len(details)+len(warnings))
+		merged = append(merged, details[:doneIndex]...)
+		merged = append(merged, warnings...)
+		merged = append(merged, details[doneIndex:]...)
+		result.DeletedDetails = merged
+	}
+	return result, nil
 }
 
 // ChangePassword change user password

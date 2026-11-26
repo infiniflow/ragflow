@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"math"
 
-	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/permission"
@@ -242,10 +241,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 		}
 		name = strings.TrimSpace(nameStr)
 	}
-	nameRunes := []rune(name)
-	if len(nameRunes) > 255 {
-		name = string(nameRunes[:255])
-	}
+	name = utility.TruncateRunes(name, 255)
 
 	prologue := ""
 	if dialog.PromptConfig != nil {
@@ -487,11 +483,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, chatID, sessionI
 		if !ok || strings.TrimSpace(nameStr) == "" {
 			return nil, common.CodeDataError, errors.New("`name` can not be empty")
 		}
-		req["name"] = strings.TrimSpace(nameStr)
-		nameRunes := []rune(req["name"].(string))
-		if len(nameRunes) > 255 {
-			req["name"] = string(nameRunes[:255])
-		}
+		req["name"] = utility.TruncateRunes(strings.TrimSpace(nameStr), 255)
 	}
 
 	updateFields := make(map[string]interface{})
@@ -1422,9 +1414,6 @@ func (s *ChatSessionService) ChatCompletions(
 						if len(result.ServedDocIDs) > 0 {
 							ans["served_docids"] = result.ServedDocIDs
 						}
-						if result.GateAudit != nil {
-							ans["gate_audit"] = result.GateAudit
-						}
 						if result.DeepReadChunks > 0 {
 							ans["deep_read_chunks"] = result.DeepReadChunks
 						}
@@ -1442,9 +1431,6 @@ func (s *ChatSessionService) ChatCompletions(
 						}
 						if result.Usage != nil {
 							ans["usage"] = result.Usage
-						}
-						if len(result.Rounds) > 0 {
-							ans["rounds"] = result.Rounds
 						}
 						if result.ElapsedSeconds > 0 {
 							ans["elapsed_seconds"] = result.ElapsedSeconds
@@ -1576,11 +1562,9 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	var toolErrorSamples map[string]string
 	var retrievedDocIDs []string
 	var servedDocIDs []string
-	var gateAudit *agentic_rag.GateAuditRecord
 	var deepReadChunks, shallowReadChunks int
 	var deepReadChunkIDs, shallowReadChunkIDs []string
 	var compactions int
-	var rounds []agentic_rag.IterativeRoundStat
 	for result := range resultChan {
 		if result.Final {
 			// The final event carries the complete (decorated) answer;
@@ -1600,13 +1584,11 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 			toolErrorSamples = result.ToolErrorSamples
 			retrievedDocIDs = result.RetrievedDocIDs
 			servedDocIDs = result.ServedDocIDs
-			gateAudit = result.GateAudit
 			deepReadChunks = result.DeepReadChunks
 			shallowReadChunks = result.ShallowReadChunks
 			deepReadChunkIDs = result.DeepReadChunkIDs
 			shallowReadChunkIDs = result.ShallowReadChunkIDs
 			compactions = result.Compactions
-			rounds = result.Rounds
 		} else if result.Answer != "" {
 			answer.WriteString(result.Answer)
 		}
@@ -1651,9 +1633,6 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	if len(servedDocIDs) > 0 {
 		ans["served_docids"] = servedDocIDs
 	}
-	if gateAudit != nil {
-		ans["gate_audit"] = gateAudit
-	}
 	if deepReadChunks > 0 {
 		ans["deep_read_chunks"] = deepReadChunks
 	}
@@ -1671,11 +1650,6 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	}
 	if compactions > 0 {
 		ans["compactions"] = compactions
-	}
-	// The per-round breakdown of an iterative-synthesis run: the totals above say
-	// what the turn cost, this says which round spent it.
-	if len(rounds) > 0 {
-		ans["rounds"] = rounds
 	}
 	if elapsedSeconds > 0 {
 		ans["elapsed_seconds"] = elapsedSeconds
@@ -2076,18 +2050,16 @@ type sseAnswerChunk struct {
 	// which reads as a measurement rather than an absence.
 	Usage     *TurnUsage `json:"usage,omitempty"`
 	ElapsedMs float64    `json:"elapsed_ms,omitempty"`
-	// Agentic turn accounting (modes 5-8). The final DeltaResult carries
+	// Agentic turn accounting (modes 5 and 8). The final DeltaResult carries
 	// these, but this struct is hand-written: a field the producer sets and
 	// this does not copy is silently dropped from the STREAM, even though the
 	// non-stream path returns the map untouched.
 	ElapsedSeconds      float64        `json:"elapsed_seconds,omitempty"`
-	Rounds              interface{}    `json:"rounds,omitempty"`
 	ToolCallCounts      map[string]int `json:"tool_call_counts,omitempty"`
 	ToolCallErrors      map[string]int `json:"tool_call_errors,omitempty"`
 	ToolErrorSamples    interface{}    `json:"tool_error_samples,omitempty"`
 	RetrievedDocIDs     []string       `json:"retrieved_docids,omitempty"`
 	ServedDocIDs        []string       `json:"served_docids,omitempty"`
-	GateAudit           interface{}    `json:"gate_audit,omitempty"`
 	DeepReadChunks      int            `json:"deep_read_chunks,omitempty"`
 	ShallowReadChunks   int            `json:"shallow_read_chunks,omitempty"`
 	DeepReadChunkIDs    []string       `json:"deep_read_chunk_ids,omitempty"`
@@ -2233,13 +2205,11 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	if v, ok := ans["elapsed_seconds"].(float64); ok {
 		chunk.ElapsedSeconds = v
 	}
-	chunk.Rounds = ans["rounds"]
 	chunk.ToolCallCounts, _ = ans["tool_call_counts"].(map[string]int)
 	chunk.ToolCallErrors, _ = ans["tool_call_errors"].(map[string]int)
 	chunk.ToolErrorSamples = ans["tool_error_samples"]
 	chunk.RetrievedDocIDs, _ = ans["retrieved_docids"].([]string)
 	chunk.ServedDocIDs, _ = ans["served_docids"].([]string)
-	chunk.GateAudit = ans["gate_audit"]
 	if v, ok := ans["deep_read_chunks"].(int); ok {
 		chunk.DeepReadChunks = v
 	}

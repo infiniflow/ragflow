@@ -295,7 +295,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       Parse: 'Analysieren',
       dataset: 'Datensatz',
-      testing: 'Abruftest',
+      testing: 'Abruf',
       files: 'Dateien',
       configuration: 'Konfiguration',
       knowledgeGraph: 'Wissensgraph',
@@ -2055,7 +2055,7 @@ Beispiel: Virtual Hosted Style`,
       }`,
       datatype: 'MIME-Typ der HTTP-Anfrage',
       insertVariableTip: 'Eingabe / Variablen einfügen',
-      historyVersion: 'Versionsverlauf',
+      historyVersion: 'Versionen',
       version: {
         created: 'Erstellt',
         details: 'Versionsdetails',
@@ -2203,7 +2203,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
       titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
       outputFormat: 'Ausgabeformat',

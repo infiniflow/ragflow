@@ -17,8 +17,9 @@
 package service
 
 import (
-	"ragflow/internal/common"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 func TestNewSourcedChunks_Empty(t *testing.T) {
@@ -319,5 +320,54 @@ func TestGetFloat(t *testing.T) {
 				t.Errorf("getFloat() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// sha256ChunkID is the 64-digit id compiled rows carry; the list hides them, so it
+// is not a prefix the box accepts.
+const sha256ChunkID = "015efa9ef476afb0e46aadd2c25b8d41195a377faeb306824f3dda64797de19a"
+
+// A chunk id is 16 hex digits, so a leading part of one is a legitimate search term.
+func TestIsChunkIDPrefix(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{"0123456789abcdef", true},
+		{"0123456789ABCDEF", true},
+		{"0123", true},
+		{"a", true},
+		{sha256ChunkID, false},
+		{sha256ChunkID[:16], true},
+		{"", false},
+		{"   ", false},
+		{"0123456789abcde", true},
+		{"xyz", false},
+		{"0123 4567", false},
+		{"0123-4567", false},
+	}
+	for _, tt := range tests {
+		if got := IsChunkIDPrefix(tt.value); got != tt.want {
+			t.Errorf("IsChunkIDPrefix(%q) = %v, want %v", tt.value, got, tt.want)
+		}
+	}
+}
+
+// The normalizer lowercases (ids are stored lowercase) and trims the one prefix.
+func TestNormalizeChunkIDPrefix(t *testing.T) {
+	tests := []struct{ raw, want string }{
+		{" 0123 ", "0123"},
+		{"ABCD", "abcd"},
+		{"0123456789ABCDEF", "0123456789abcdef"},
+		{sha256ChunkID, ""},
+		{"0123 4567", ""},
+		{"0123,4567", ""},
+		{"zz", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := NormalizeChunkIDPrefix(tt.raw); got != tt.want {
+			t.Errorf("NormalizeChunkIDPrefix(%q) = %q, want %q", tt.raw, got, tt.want)
+		}
 	}
 }

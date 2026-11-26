@@ -23,117 +23,40 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// SeedCanvasTemplates seeds the canvas_template table from the built-in
-// agent/templates/*.json and internal/ingestion/pipeline/template/*.json files.
+// SeedCanvasTemplates seeds workflow templates from internal/agent/templates/*.json.
+// Built-in ingestion pipelines are served by the embedded pipeline registry.
 func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
 	if err := addColumnIfNotExists(ctx, db, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
 		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
 	}
 
-	var allTemplates []*entity.CanvasTemplate
-	var allIDs []string
-	for _, dir := range findTemplateDirs() {
-		if dir == "" {
-			continue
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			common.Warn("Failed to read template directory", zap.String("dir", dir), zap.Error(err))
-			continue
-		}
-		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-		templates, ids := loadTemplatesFromDir(dir, entries)
-		allTemplates = append(allTemplates, templates...)
-		allIDs = append(allIDs, ids...)
-	}
-
-	if len(allTemplates) == 0 {
+	dir := findAgentTemplatesDir()
+	if dir == "" {
 		common.Warn("No template directories found, skipping canvas template seeding")
 		return nil
 	}
-
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, tmpl := range allTemplates {
-			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "id"}},
-				DoUpdates: clause.AssignmentColumns([]string{
-					"avatar", "title", "description", "canvas_type", "canvas_types", "canvas_category", "dsl",
-				}),
-			}).Create(tmpl).Error; err != nil {
-				return fmt.Errorf("failed to save agent template %s: %w", tmpl.ID, err)
-			}
-		}
-		if err := tx.WithContext(ctx).Where("id NOT IN ?", allIDs).Delete(&entity.CanvasTemplate{}).Error; err != nil {
-			return fmt.Errorf("failed to remove stale agent templates: %w", err)
-		}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		common.Warn("Failed to read template directory", zap.String("dir", dir), zap.Error(err))
 		return nil
-	})
+	}
+	count, err := seedCanvasTemplates(ctx, db, dir, entries)
 	if err != nil {
 		return err
 	}
-	common.Info("Seeded canvas templates", zap.Int("count", len(allTemplates)))
+	common.Info("Seeded canvas templates", zap.Int("count", count))
 	return nil
-}
-
-func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTemplate, []string) {
-	templates := make([]*entity.CanvasTemplate, 0, len(entries))
-	ids := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			common.Warn("Failed to read agent template", zap.String("file", path), zap.Error(err))
-			continue
-		}
-		tmpl, err := parseCanvasTemplateFile(raw)
-		if err != nil {
-			common.Warn("Failed to parse agent template", zap.String("file", path), zap.Error(err))
-			continue
-		}
-		templates = append(templates, tmpl)
-		ids = append(ids, tmpl.ID)
-	}
-	return templates, ids
-}
-
-func findTemplateDirs() []string {
-	var dirs []string
-	if d := findAgentTemplatesDir(); d != "" {
-		dirs = append(dirs, d)
-	}
-	if d := findIngestionTemplatesDir(); d != "" {
-		dirs = append(dirs, d)
-	}
-	return dirs
-}
-
-func findIngestionTemplatesDir() string {
-	candidates := []string{
-		"internal/ingestion/pipeline/template",
-		filepath.Join("..", "internal", "ingestion", "pipeline", "template"),
-		filepath.Join("..", "..", "internal", "ingestion", "pipeline", "template"),
-		filepath.Join("..", "..", "..", "internal", "ingestion", "pipeline", "template"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
 }
 
 func seedCanvasTemplates(ctx context.Context, db *gorm.DB, dir string, entries []os.DirEntry) (int, error) {
@@ -265,6 +188,9 @@ func collectCanvasTypes(rawType, rawTypes any) entity.JSONSlice {
 
 func findAgentTemplatesDir() string {
 	candidates := []string{
+		// The desktop bundle carries both catalogues inside conf/, which resolves
+		// from the executable rather than the working directory.
+		filepath.Join(utility.ConfDir(), "canvas_templates"),
 		"internal/agent/templates",
 		"agent/templates",
 		filepath.Join("..", "agent", "templates"),

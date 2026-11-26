@@ -23,7 +23,7 @@ type DatasetService struct {
 	syncTaskDAO      *dao.SyncTaskDAO
 	searchService    *service.SearchService
 	ingestionTaskSvc *service.IngestionTaskService
-	// taskStopWait bounds how long deleteDataset waits for active ingestion
+	// taskStopWait bounds how long DeleteDatasets waits for active ingestion
 	// workers to observe the stop request. Zero means defaultTaskStopWait.
 	taskStopWait     time.Duration
 	docEngine        engine.DocEngine

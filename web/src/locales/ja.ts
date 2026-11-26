@@ -153,7 +153,7 @@ export default {
       reselectParserAfterUploadHint:
         'アップロードを続行すると、これらのファイルは対応する組み込み解析設定に自動的に切り替わります。',
       dataset: 'データセット',
-      testing: '検索テスト',
+      testing: '検索',
       files: 'ファイル',
       configuration: '設定',
       name: '名前',
@@ -2582,7 +2582,7 @@ export default {
       mergePath: 'パスをマージ',
       mergePathTip:
         '有効にすると、変数の直後にあるドット付きのサフィックスが、{node@result.name}のようなパスクエリにマージされます。',
-      historyVersion: 'バージョン履歴',
+      historyVersion: 'バージョン',
 
       version: {
         created: '作成日時',
@@ -2751,7 +2751,7 @@ export default {
       titleChunkerDescription:
         '見出しの階層構造に基づいてドキュメントをセクションに分割します。正規表現ルールで見出しレベルを定義し、階層モードまたはグループモードを選択してチャンクの構成方法を制御します。',
       titleChunker: 'タイトルチャンカー',
-      extractor: 'トランスフォーマー',
+      extractor: '抽出器',
       extractorDescription:
         'LLMを使用して、ドキュメントチャンクから要約や分類などの構造化された知見を抽出します。',
       compiler: 'コンパイル',

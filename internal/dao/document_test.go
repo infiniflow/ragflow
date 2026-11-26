@@ -17,12 +17,17 @@
 package dao
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -755,6 +760,51 @@ func TestGetFilterByKBIDGroupsSuffixAndStatus(t *testing.T) {
 	}
 	if got, want := filters["ingestion_status"].(map[string]int64), map[string]int64{common.COMPLETED: 2, common.FAILED: 1}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ingestion_status(pdf) = %v, want %v", got, want)
+	}
+}
+
+// TestGetFilterByKBIDGroupsOnDerivedColumns pins the SQL shape the counter
+// aggregation depends on under MySQL's ONLY_FULL_GROUP_BY mode: the status
+// CASE reads ingestion_task.status, so it is computed per row inside a derived
+// table and the outer query aggregates over the derived columns only. Grouping
+// the expression itself - or its SELECT alias - makes MySQL reject the query
+// with error 1055.
+func TestGetFilterByKBIDGroupsOnDerivedColumns(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+
+	var logged bytes.Buffer
+	loggingDB := db.Session(&gorm.Session{
+		Logger: logger.New(log.New(&logged, "", 0), logger.Config{LogLevel: logger.Info, SlowThreshold: time.Minute}),
+	})
+
+	dao := NewDocumentDAO()
+	if _, _, err := dao.GetFilterByKBID(t.Context(), loggingDB, DocumentListOptions{KbID: "kb-1"}); err != nil {
+		t.Fatalf("GetFilterByKBID: %v", err)
+	}
+
+	sql := strings.ToLower(logged.String())
+	groupStart := strings.Index(sql, "group by")
+	if groupStart < 0 {
+		t.Fatalf("no GROUP BY in logged SQL: %s", logged.String())
+	}
+	groupBy := sql[groupStart:]
+	if !strings.HasPrefix(groupBy, "group by doc_rows.suffix") || !strings.Contains(groupBy, "doc_rows.ingestion_status") {
+		t.Fatalf("GROUP BY must aggregate the derived columns, got: %s", logged.String())
+	}
+	// The status expression references ingestion_task.status; grouping on it
+	// is exactly what ONLY_FULL_GROUP_BY rejects.
+	if strings.Contains(groupBy, "ingestion_task") || strings.Contains(groupBy, "case") {
+		t.Fatalf("GROUP BY references the status expression instead of the derived columns: %s", logged.String())
+	}
+	if !strings.Contains(sql, "from (select") {
+		t.Fatalf("status must be computed in a derived table, got: %s", logged.String())
 	}
 }
 

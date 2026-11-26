@@ -521,6 +521,28 @@ export function normalizeOperatorForm(
   }
 }
 
+// A DSL-built Parser node may carry a resolved vision model (the tenant default,
+// filled before the form mounts). An empty saved model means "use the workspace
+// default", so it must not mask that resolved model in the form.
+export function mergeOperatorFormWithPrefilledVisionModel(
+  operatorId: string,
+  nodeForm: Record<string, any> | undefined,
+  values: Record<string, any>,
+): Record<string, any> {
+  const merged = normalizeOperatorForm(operatorId, values);
+  if (getOperatorType(operatorId) !== Operator.Parser) {
+    return merged;
+  }
+  const nodeModel = nodeForm?.vlm?.llm_id;
+  if (!nodeModel || merged?.vlm?.llm_id) {
+    return merged;
+  }
+  return {
+    ...merged,
+    vlm: { ...merged.vlm, llm_id: nodeModel },
+  };
+}
+
 export function buildOperatorNode(
   dslNode: RAGFlowNodeType,
   pipelineParserConfig: Record<string, any> = {},

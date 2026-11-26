@@ -180,12 +180,13 @@ const SettingModelV2: FC = () => {
               )}
               {instances.map((instance, index) => (
                 <ProviderInstanceCardWithPrivilege
-                  key={instance.instance_name}
+                  key={instance.id}
                   providerName={selection as string}
                   instance={instance}
                   defaultOpen={
                     index === 0 ||
-                    instance.instance_name === newlySavedInstanceName
+                    (instance.is_owner !== false &&
+                      instance.instance_name === newlySavedInstanceName)
                   }
                 />
               ))}

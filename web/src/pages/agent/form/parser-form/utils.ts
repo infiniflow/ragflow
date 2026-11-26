@@ -149,7 +149,7 @@ export function buildInitialParserValues(
   return {
     ...initialParserValues,
     vlm: {
-      llm_id: defaultModelDictionary[ModelTypeToField.vision] ?? '',
+      llm_id: defaultModelDictionary[ModelTypeToField.vlm] ?? '',
       system_prompt: '',
       lang: '',
     },

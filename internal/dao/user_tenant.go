@@ -184,11 +184,18 @@ type TenantMemberItem struct {
 // update_date is formatted as "2006-01-02T15:04:05" (no timezone) to match the Python API.
 func (dao *UserTenantDAO) GetMembersByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*TenantMemberItem, error) {
 	var results []*TenantMemberItem
+	// The desktop build's SQLite store has no DATE_FORMAT; strftime produces
+	// the same shape. It renders in the process's timezone because the stored
+	// value carries an offset, which strftime would otherwise fold to UTC.
+	updateDateExpr := "DATE_FORMAT(user.update_date, '%Y-%m-%dT%H:%i:%s')"
+	if db.Dialector.Name() == "sqlite" {
+		updateDateExpr = "strftime('%Y-%m-%dT%H:%M:%S', user.update_date, 'localtime')"
+	}
 	err := db.WithContext(ctx).Table("user_tenant").
 		Select("user_tenant.id, user_tenant.user_id, user_tenant.role, user_tenant.status, "+
 			"user.nickname, user.email, user.avatar, user.is_authenticated, "+
 			"user.status AS is_active, user.is_anonymous, user.is_superuser, "+
-			"DATE_FORMAT(user.update_date, '%Y-%m-%dT%H:%i:%s') AS update_date").
+			updateDateExpr+" AS update_date").
 		Joins("JOIN user ON user_tenant.user_id = user.id").
 		Where("user_tenant.tenant_id = ? AND user_tenant.status IN ? AND user_tenant.role != ?",
 			tenantID, []string{

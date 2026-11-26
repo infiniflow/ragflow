@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
 // modelProviderLoadOnce guards the fallback load for callers that run without
@@ -53,15 +54,9 @@ func GetModelProviderManager() *models.ProviderManager {
 }
 
 func findModelConfigDir() (string, error) {
-	candidates := []string{
-		"conf/models",
-		filepath.Join("..", "..", "conf", "models"),
-		filepath.Join("..", "..", "..", "conf", "models"),
+	dir := filepath.Join(utility.ConfDir(), "models")
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return dir, nil
 	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("conf/models not found")
+	return "", fmt.Errorf("model provider catalog not found under %s", dir)
 }

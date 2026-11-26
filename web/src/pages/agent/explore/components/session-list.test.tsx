@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { SessionList } from './session-list';
 
+const mockAddTemporarySession = jest.fn();
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -15,15 +17,13 @@ jest.mock('../hooks/use-select-derived-session-list', () => ({
     loading: false,
     loadingMore: false,
     handleScroll: jest.fn(),
-    addTemporarySession: jest.fn(),
+    addTemporarySession: mockAddTemporarySession,
     removeTemporarySession: jest.fn(),
   }),
 }));
 
-jest.mock('./session-card', () => ({
-  SessionCard: ({ session }: { session: { name: string } }) => (
-    <div>{session.name}</div>
-  ),
+jest.mock('./session-dropdown', () => ({
+  SessionDropdown: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 const getSessionCount = () =>
@@ -38,9 +38,10 @@ const applySearch = async (value: string) => {
   });
 };
 
-describe('SessionList search count', () => {
+describe('SessionList', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    mockAddTemporarySession.mockClear();
   });
 
   afterEach(() => {
@@ -71,5 +72,22 @@ describe('SessionList search count', () => {
 
     await applySearch('missing');
     expect(getSessionCount()).toHaveTextContent('0');
+  });
+
+  it('creates a temporary session from the new conversation button', () => {
+    render(<SessionList onSelectSession={jest.fn()} />);
+
+    fireEvent.click(screen.getByTestId('agent-explore-session-new'));
+
+    expect(mockAddTemporarySession).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects a session through the shared conversation list', () => {
+    const onSelectSession = jest.fn();
+    render(<SessionList onSelectSession={onSelectSession} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
+
+    expect(onSelectSession).toHaveBeenCalledWith('session-1', false);
   });
 });
