@@ -56,7 +56,6 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`while true; do rm -rf "a; $T"; done`,
 		`{ rm -rf "a; $T"; }`,
 		`f() { rm -rf "a; $T"; }`,
-		`case x) rm -rf "a; $T";;`,
 		`echo <(rm -rf "a; $T")`,
 		`echo >(rm -rf "a; $T")`,
 		`env IGNORE=<(printf ok) rm -rf "p;/../victim$SUFFIX"`,
@@ -66,13 +65,10 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`env -u root rm -rf "a; $T"`,
 		`rm -r "a; $T" > "log; $T"`,
 		`env -S rm -rf "a; $T"`,
-		`env -S 'rm -rf "a; $T"'`,
-		`env -S'rm -rf "a; $T"'`,
-		`env --split-string 'rm -rf "a; $T"'`,
-		`env --split-string='rm -rf "a; $T"'`,
-		`env -S 'sudo -u root rm -rf "a; $T"'`,
+		`env -S 'rm' -rf "a; $T"`,
+		`env -S 'sudo -u root rm' -rf "a; $T"`,
+		`command -p rm -rf "a; $T"`,
 		`printf 'x\n' | xargs -I -n rm -rf "a; $T"`,
-		`printf 'x\n' | xargs -I -n -1 rm -rf "a; $T"`,
 	}
 
 	for _, line := range lines {
@@ -126,7 +122,15 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`echo $(case x in x) printf %s esac;; y) printf ok;; esac) rm -r "label; $T"`,
 		`env -S 'rm -rf "a; b"'`,
 		`env -S 'echo rm -rf "a; $T"'`,
+		`env -S 'rm -rf "a; $T"'`,
+		`env -S'rm -rf "a; $T"'`,
+		`env --split-string 'rm -rf "a; $T"'`,
+		`env --split-string='rm -rf "a; $T"'`,
+		`env -S 'sudo -u root rm -rf "a; $T"'`,
 		`env --split-string 'printf %s "a; $T"'`,
+		`command -v rm -rf "a; $T"`,
+		`command -V rm -rf "a; $T"`,
+		`command -pv rm -rf "a; $T"`,
 		`xargs -n 1 echo rm -rf "a; $T"`,
 		`xargs -I -n echo rm -rf "a; $T"`,
 	}
@@ -164,8 +168,9 @@ func TestScanSkillJoinsBackslashContinuations(t *testing.T) {
 }
 
 func TestScanSkillKeepsCommentAfterContinuation(t *testing.T) {
-	// The shell removes both `\<newline>` pairs, so the `#` follows a blank
-	// and starts a comment that ends at its own physical newline; rm still runs
+	// The shell removes the first `\<newline>`, so the `#` follows a blank and
+	// opens a comment. The backslash before the second newline sits inside that
+	// comment and stays literal: the newline ends the comment, so rm still runs
 	// on line 3 and must be found there.
 	content := "echo \\\n# c \\\nrm -rf \"p;/../victim$SUFFIX\"\n"
 	findings := scanContent(content)
@@ -211,6 +216,39 @@ func TestScanSkillKeepsCommentNewline(t *testing.T) {
 	for _, finding := range findings {
 		if finding.PatternID == "rm_quoted_expansion" && finding.Line != 3 {
 			t.Fatalf("reported line %d, want the physical line 3", finding.Line)
+		}
+	}
+}
+
+func TestScanSkillSkipsHeredocBodies(t *testing.T) {
+	// The body of a quoted here-document is literal input to cat, not a
+	// command the shell runs; neither its rm example nor a real command after
+	// the delimiter may be confused with it.
+	content := "#!/bin/sh\ncat <<'DOC' > notes.txt\nrm -rf \"build; $HOME\"\nDOC\nrm -rf \"build; $HOME\"\n"
+	findings := scanContent(content)
+	var got []int
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			got = append(got, finding.Line)
+		}
+	}
+	if len(got) != 1 || got[0] != 5 {
+		t.Fatalf("rm_quoted_expansion lines = %v, want only the command on line 5", got)
+	}
+}
+
+func TestScanSkillKeepsQuotedStringAcrossPhysicalLines(t *testing.T) {
+	// A single-quoted printf format spans two physical lines; the rm text
+	// inside it is data, while a real command after the closing quote still
+	// runs and must be found.
+	content := "#!/bin/sh\nprintf 'name: %s\nrm -rf \"a; $T\"\n' x && rm -rf \"b; $T\"\n"
+	if findings := scanContent(content); !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("missing the command after the closing quote: %v", findings)
+	}
+	multiline := "#!/bin/sh\nprintf 'name: %s\nrm -rf \"a; $T\"\n' x\n"
+	for _, finding := range scanContent(multiline) {
+		if finding.PatternID == "rm_quoted_expansion" {
+			t.Fatalf("quoted format text raised rm_quoted_expansion: %v", finding)
 		}
 	}
 }

@@ -135,6 +135,11 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 	}
 
 	for _, line := range lines {
+		if line.data {
+			// A here-document body is literal input to a program, not a
+			// command the shell runs.
+			continue
+		}
 		if operand, ok := scanQuotedRmExpansion(line.text); ok {
 			findings = append(findings, Finding{
 				PatternID:   "rm_quoted_expansion",
@@ -222,89 +227,206 @@ func isProseFile(filename string) bool {
 
 // logicalLine is one shell command line after backslash continuations are
 // folded: number is the physical line the logical line starts on, text no
-// longer carries the removed `\<newline>` pairs.
+// longer carries the removed `\<newline>` pairs. data marks a line that sits
+// inside a here-document body, which the shell hands to a program as literal
+// input instead of running as a command.
 type logicalLine struct {
 	number int
 	text   string
+	data   bool
+}
+
+// heredocTerm is one pending here-document: the delimiter that ends its body
+// and whether `<<-` strips leading tabs from the body and the delimiter.
+type heredocTerm struct {
+	delimiter string
+	stripTabs bool
 }
 
 // logicalLines folds `\`-continued physical lines into logical commands so a
 // rule sees one command even when its operand is written on the next line. A
 // backslash inside single quotes or a comment is literal and does not continue
 // the line, matching the shell. A comment ends at its physical newline, so the
-// newline after `# ...\` must survive: the next line still runs.
+// newline after `# ...\` must survive: the next line still runs. A quoted
+// string that spans physical newlines stays in the same command. A
+// here-document body is marked as data and the command line ends at its
+// delimiter.
 func logicalLines(content string) []logicalLine {
 	var lines []logicalLine
-	var buf []byte
-	number, start := 1, 1
-	// Double-quote state matters: an apostrophe is literal text inside a
-	// double-quoted span, so it must not open single-quote mode and swallow the
-	// backslash-newline that follows.
-	inSingle, inDouble, escaped, comment, wordStart := false, false, false, false, true
-	// A folded `\<newline>` is removed by the shell, so the word-boundary
-	// state from before the backslash still applies: `echo \<newline># c`
-	// leaves `#` after a blank, where it opens a comment.
-	wordStartBeforeEscape := true
+	number := 1
+	for pos := 0; pos < len(content); {
+		start := number
+		var buf []byte
+		var heredocs []heredocTerm
+		// Double-quote state matters: an apostrophe is literal text inside a
+		// double-quoted span, so it must not open single-quote mode and swallow
+		// the backslash-newline that follows.
+		inSingle, inDouble, escaped, comment, wordStart := false, false, false, false, true
+		// A folded `\<newline>` is removed by the shell, so the word-boundary
+		// state from before the backslash still applies: `echo \<newline># c`
+		// leaves `#` after a blank, where it opens a comment.
+		wordStartBeforeEscape := true
 
-	for i := 0; i < len(content); i++ {
-		c := content[i]
-		if c == '\n' {
-			if escaped && !inSingle && !comment {
-				buf = buf[:len(buf)-1]
+		for pos < len(content) {
+			c := content[pos]
+			if c == '\n' {
+				if escaped && !inSingle && !comment {
+					buf = buf[:len(buf)-1]
+					escaped = false
+					if !inDouble {
+						wordStart = wordStartBeforeEscape
+					}
+					number++
+					pos++
+					continue
+				}
+				if inSingle || inDouble {
+					// The shell keeps the newline inside the quoted word and
+					// keeps running the same command, so the scan must too.
+					buf = append(buf, c)
+					number++
+					pos++
+					continue
+				}
+				break
+			}
+			if !inSingle && !inDouble && !comment && c == '<' && pos+1 < len(content) && content[pos+1] == '<' {
+				if term, ok := parseHeredocDelimiter(content, pos); ok {
+					heredocs = append(heredocs, term)
+				}
+			}
+			buf = append(buf, c)
+			switch {
+			case escaped:
 				escaped = false
-				if !inDouble {
-					wordStart = wordStartBeforeEscape
+				wordStart = false
+			case inSingle:
+				if c == '\'' {
+					inSingle = false
+				}
+			case inDouble:
+				// A backslash still escapes a following newline, so double quotes
+				// keep the continuation; they only end on an unescaped quote.
+				switch c {
+				case '\\':
+					escaped = true
+				case '"':
+					inDouble = false
+				}
+			case comment:
+				// Comment text runs to the physical newline; nothing in it is code.
+			case c == '\\':
+				escaped = true
+				wordStartBeforeEscape = wordStart
+				wordStart = false
+			case c == '\'':
+				inSingle = true
+				wordStart = false
+			case c == '"':
+				inDouble = true
+				wordStart = false
+			case c == '#' && wordStart:
+				comment = true
+			case c == ' ', c == '\t', c == ';', c == '&', c == '|':
+				wordStart = true
+			default:
+				wordStart = false
+			}
+			pos++
+		}
+		lines = append(lines, logicalLine{number: start, text: string(buf)})
+		if pos >= len(content) {
+			break
+		}
+		pos++ // the newline that ended the command
+		number++
+		for _, term := range heredocs {
+			for pos < len(content) {
+				eol := strings.IndexByte(content[pos:], '\n')
+				text, next := content[pos:], len(content)
+				if eol >= 0 {
+					text, next = text[:eol], pos+eol+1
+				}
+				match := text
+				if term.stripTabs {
+					match = strings.TrimLeft(match, "\t")
+				}
+				if match == term.delimiter {
+					// The delimiter line closes the body and is not a command.
+					pos = next
+					if eol >= 0 {
+						number++
+					}
+					break
+				}
+				lines = append(lines, logicalLine{number: number, text: text, data: true})
+				pos = next
+				if eol < 0 {
+					break
 				}
 				number++
-				continue
 			}
-			lines = append(lines, logicalLine{number: start, text: string(buf)})
-			buf = buf[:0]
-			number++
-			start = number
-			escaped, inSingle, inDouble, comment, wordStart = false, false, false, false, true
-			continue
-		}
-		buf = append(buf, c)
-		switch {
-		case escaped:
-			escaped = false
-			wordStart = false
-		case inSingle:
-			if c == '\'' {
-				inSingle = false
-			}
-		case inDouble:
-			// A backslash still escapes a following newline, so double quotes
-			// keep the continuation; they only end on an unescaped quote.
-			switch c {
-			case '\\':
-				escaped = true
-			case '"':
-				inDouble = false
-			}
-		case comment:
-			// Comment text runs to the physical newline; nothing in it is code.
-		case c == '\\':
-			escaped = true
-			wordStartBeforeEscape = wordStart
-			wordStart = false
-		case c == '\'':
-			inSingle = true
-			wordStart = false
-		case c == '"':
-			inDouble = true
-			wordStart = false
-		case c == '#' && wordStart:
-			comment = true
-		case c == ' ', c == '\t', c == ';', c == '&', c == '|':
-			wordStart = true
-		default:
-			wordStart = false
 		}
 	}
-	lines = append(lines, logicalLine{number: start, text: string(buf)})
 	return lines
+}
+
+// parseHeredocDelimiter reads the `<<` or `<<-` introducer at pos and returns
+// its delimiter word with the shell quoting removed. A here-string (`<<<`) or
+// an introducer without a word is not a here-document.
+func parseHeredocDelimiter(content string, pos int) (heredocTerm, bool) {
+	j := pos + 2
+	if j < len(content) && content[j] == '<' {
+		return heredocTerm{}, false
+	}
+	term := heredocTerm{}
+	if j < len(content) && content[j] == '-' {
+		term.stripTabs = true
+		j++
+	}
+	for j < len(content) && (content[j] == ' ' || content[j] == '\t') {
+		j++
+	}
+	var word []byte
+	quote := byte(0)
+scan:
+	for j < len(content) {
+		c := content[j]
+		if quote != 0 {
+			switch {
+			case c == quote:
+				quote = 0
+			case c == '\\' && quote == '"' && j+1 < len(content):
+				j++
+				word = append(word, content[j])
+			default:
+				word = append(word, c)
+			}
+			j++
+			continue
+		}
+		switch c {
+		case '\'', '"':
+			quote = c
+			j++
+		case '\\':
+			if j+1 < len(content) {
+				j++
+				word = append(word, content[j])
+			}
+			j++
+		case ' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')':
+			break scan
+		default:
+			word = append(word, c)
+			j++
+		}
+	}
+	if len(word) == 0 {
+		return heredocTerm{}, false
+	}
+	term.delimiter = string(word)
+	return term, true
 }
 
 // maxSplitDepth bounds env -S recursion: every level strips at least its own
@@ -464,16 +586,20 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 			continue
 		}
 		if value, ok := chain.takeSplitString(word.text); ok {
-			// env -S splices its value into the command and keeps the rest of
-			// the line as further arguments, so both halves run as one command.
-			rest := value
-			if tail := strings.TrimSpace(line[word.end:end]); tail != "" {
-				rest += " " + tail
+			// env -S splits its value into argv words: quotes group and a
+			// backslash escapes, but a separator or `$` stays literal. Inspect
+			// the argv env would execute, then the shell words after it.
+			words := make([]cmdWord, 0, 4)
+			for _, v := range envSplitWords(value) {
+				words = append(words, cmdWord{text: v, literal: true})
+			}
+			for _, span := range shellWordSpans(line, word.end, end) {
+				words = append(words, cmdWord{text: span.text})
 			}
 			chain.broken = true
 			chain.wrapper = ""
 			if depth < maxSplitDepth {
-				if operand, found := scanQuotedRmExpansionDepth(rest, depth+1); found {
+				if operand, found := scanArgvForQuotedRm(words, depth+1); found {
 					return operand, true, lastWordEnd, chain, inCase
 				}
 			}
@@ -584,6 +710,7 @@ type prefixChain struct {
 	wrapper string // wrapper whose option list is still being read
 	pending bool   // the last option of wrapper waits for its value
 	split   bool   // the pending value is env's split command string
+	lookup  bool   // command -v/-V lists the name instead of running it
 	broken  bool
 }
 
@@ -614,6 +741,10 @@ func (c *prefixChain) wrapperConsumes(word string) bool {
 	if c.wrapper == "" {
 		return false
 	}
+	if c.lookup {
+		// `command -v rm ...` describes the name; nothing after it runs.
+		return true
+	}
 	if c.pending {
 		// A required value is taken as written even when it looks like an
 		// option: `xargs -I -n rm` uses -n as the replacement string.
@@ -638,6 +769,11 @@ func (c *prefixChain) takeWrapperWord(word string) bool {
 	if strings.HasPrefix(word, "-") {
 		c.pending = wrapperOptionTakesValue(c.wrapper, word)
 		c.split = c.pending && isSplitStringOption(c.wrapper, word)
+		if c.wrapper == "command" && !strings.HasPrefix(word, "--") && strings.ContainsAny(word[1:], "vV") {
+			// `command -v` and `command -V` (also combined as -pv) look the
+			// name up instead of executing it; `command -p` still runs it.
+			c.lookup = true
+		}
 		return true
 	}
 	return true
@@ -670,6 +806,137 @@ func (c *prefixChain) takeSplitString(word string) (string, bool) {
 // the command it runs.
 func isSplitStringOption(wrapper, option string) bool {
 	return wrapper == "env" && (option == "-S" || option == "--split-string")
+}
+
+// cmdWord is one argument of the command env -S builds. literal marks a word
+// that comes from the split string: env passes it through untouched, so a
+// separator or `$` inside it is text, not a shell expansion.
+type cmdWord struct {
+	text    string
+	literal bool
+}
+
+// scanArgvForQuotedRm inspects the argv env would execute. The words arrive as
+// arguments with no shell separators, so only a word that still belongs to the
+// shell line can carry an expansion; depth bounds nested split strings.
+func scanArgvForQuotedRm(words []cmdWord, depth int) (string, bool) {
+	var chain prefixChain
+	for i, word := range words {
+		if chain.broken || chain.lookup {
+			return "", false
+		}
+		if value, ok := chain.takeSplitString(word.text); ok {
+			next := make([]cmdWord, 0, len(words)-i)
+			for _, v := range envSplitWords(value) {
+				next = append(next, cmdWord{text: v, literal: true})
+			}
+			next = append(next, words[i+1:]...)
+			if depth < maxSplitDepth {
+				return scanArgvForQuotedRm(next, depth+1)
+			}
+			return "", false
+		}
+		if !chain.wrapperConsumes(word.text) && isRmArgvWord(word.text) {
+			return quotedRmArgvOperands(words[i+1:])
+		}
+		chain.feed(word.text)
+	}
+	return "", false
+}
+
+// isRmArgvWord reports whether an argv word names the rm executable. An argv
+// word is whole, so any basename rm counts.
+func isRmArgvWord(word string) bool {
+	return word == "rm" || strings.HasSuffix(word, "/rm")
+}
+
+// quotedRmArgvOperands returns the first recursive rm operand that hides an
+// expansion. Only shell words count: a split-string operand carries literal
+// text, so a `$` in it never expands.
+func quotedRmArgvOperands(words []cmdWord) (string, bool) {
+	recursive, endOfOptions := false, false
+	var operands []cmdWord
+	for i := 0; i < len(words); i++ {
+		word := words[i]
+		if !endOfOptions && word.text == "--" {
+			endOfOptions = true
+			continue
+		}
+		if !endOfOptions && len(word.text) > 1 && word.text[0] == '-' {
+			if isRecursiveFlag(word.text) {
+				recursive = true
+			}
+			continue
+		}
+		if isRedirection(word.text) && i+1 < len(words) {
+			i++ // the redirection target is not an operand
+			continue
+		}
+		operands = append(operands, word)
+	}
+	if !recursive {
+		return "", false
+	}
+	for _, operand := range operands {
+		if !operand.literal && operandHidesExpansion(operand.text) {
+			return operand.text, true
+		}
+	}
+	return "", false
+}
+
+// envSplitWords splits the value of env -S the way coreutils does: whitespace
+// separates arguments, single and double quotes group, and a backslash escapes
+// the next byte. No shell expansion or separator handling runs on the value.
+func envSplitWords(s string) []string {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	flush := func() {
+		if inWord {
+			words = append(words, word.String())
+			word.Reset()
+			inWord = false
+		}
+	}
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case ' ', '\t', '\n':
+			flush()
+		case '\'':
+			inWord = true
+			for i++; i < len(s) && s[i] != '\''; i++ {
+				word.WriteByte(s[i])
+			}
+		case '"':
+			inWord = true
+			for i++; i < len(s); i++ {
+				if s[i] == '\\' && i+1 < len(s) {
+					switch s[i+1] {
+					case '"', '\\', '$', '`':
+						i++
+						word.WriteByte(s[i])
+						continue
+					}
+				}
+				if s[i] == '"' {
+					break
+				}
+				word.WriteByte(s[i])
+			}
+		case '\\':
+			inWord = true
+			if i+1 < len(s) {
+				i++
+				word.WriteByte(s[i])
+			}
+		default:
+			inWord = true
+			word.WriteByte(c)
+		}
+	}
+	flush()
+	return words
 }
 
 // unquoteShellWord removes the quoting the shell applies to one word, leaving
