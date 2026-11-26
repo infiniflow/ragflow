@@ -39,7 +39,7 @@ func TestFailedAPIKeyWideningStopsTheTenantModelBackfill(t *testing.T) {
 	// The widening ALTER fails: the column keeps its legacy narrow shape.
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
 	mock.ExpectExec(
-		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(4096\) NOT NULL`,
+		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(8192\) NOT NULL`,
 	).WillReturnError(errors.New("ERROR 1071 (42000): Specified key was too long; max key length is 3072 bytes"))
 
 	err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec)
@@ -48,7 +48,7 @@ func TestFailedAPIKeyWideningStopsTheTenantModelBackfill(t *testing.T) {
 	}
 
 	// The migration flow re-reads the column and refuses to continue: the
-	// column is still varchar(512), not the varchar(4096) the backfill reads
+	// column is still varchar(512), not the varchar(8192) the backfill reads
 	// through.
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
 	err = requireTenantModelInstanceAPIKeyWidened(context.Background(), db)
@@ -72,7 +72,7 @@ func TestFailedAPIKeyWideningStopsTheTenantModelBackfill(t *testing.T) {
 func TestWidenedAPIKeyColumnLetsTheBackfillProceed(t *testing.T) {
 	db, mock := openMySQLSpecMock(t)
 
-	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(4096)", "NO")
+	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(8192)", "NO")
 	if err := requireTenantModelInstanceAPIKeyWidened(context.Background(), db); err != nil {
 		t.Fatalf("a widened api_key column must not block the backfill: %v", err)
 	}

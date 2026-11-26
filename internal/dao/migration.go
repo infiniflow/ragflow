@@ -926,24 +926,15 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 const tenantModelIDLength = 32
 
 // tenantModelInstanceAPIKeyColumnSpec widens tenant_model_instance.api_key
-// ahead of the base-step backfill. migrateModelData — and with it
-// migrateTenantModelInstances, which copies tenant_llm keys into the column
-// with a raw INSERT — runs before AutoMigrate, so on an upgrade whose table
-// still holds the legacy varchar(512) a provider key longer than 512
-// characters (IONOS keys exceed 1,700, #22422) fails the INSERT in strict
-// mode and with it the whole startup, before AutoMigrate could converge the
-// entity's declaration; non-strict sessions truncate the key silently. The
-// target stays a bounded varchar(4096) (review of #22424) rather than TEXT,
-// so the column keeps a declared maximum; the legacy unique index that
-// would break the widening is dropped first (dropLegacyTenantModelInstanceAPIKeyIndex).
-// The spec is guarded like every other: it issues no DDL when the table or
-// column is missing or already carries the target shape.
+// before the tenant_llm backfill, which runs before AutoMigrate. The bound
+// includes the JSON settings stored alongside provider tokens. The legacy
+// composite unique index must be dropped before applying this spec.
 var tenantModelInstanceAPIKeyColumnSpec = columnSpec{
 	table:      "tenant_model_instance",
 	column:     "api_key",
-	columnType: "varchar(4096)",
+	columnType: "varchar(8192)",
 	nullable:   false,
-	definition: "varchar(4096) NOT NULL",
+	definition: "varchar(8192) NOT NULL",
 	// The backfill below reads the column through this bound, so a failed
 	// widening must stop the migration instead of being logged and ignored:
 	// the narrow column left in place is what makes the backfill fail (strict
@@ -997,7 +988,7 @@ func requireTenantModelInstanceAPIKeyWidened(ctx context.Context, db *gorm.DB) e
 // later releases dropped again. Databases created in that window still carry
 // it, and it must go before api_key is widened anywhere in the upgrade:
 // MODIFY COLUMN past the legacy varchar(512) makes MySQL rebuild the index,
-// and the widened key (4096 chars of utf8mb4 on api_key plus provider_id)
+// and the widened key (8192 chars of utf8mb4 on api_key plus provider_id)
 // exceeds the 3072-byte InnoDB key length limit, so the ALTER — and with it
 // the whole startup — fails while the index is in place. Uniqueness of
 // api_key was never part of the contract the current schema keeps: keys are
