@@ -1,5 +1,5 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { MoreButton } from '@/components/more-button';
+import { ConversationList } from '@/components/conversation-list';
 import { SecondarySidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -11,9 +11,9 @@ import {
   useRemoveSessions,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { IConversation } from '@/interfaces/database/chat';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
-import { cn } from '@/lib/utils';
 import {
   LucideActivity,
   LucideCopyX,
@@ -24,7 +24,7 @@ import {
   LucideTrash2,
   LucideUndo2,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStreamStore } from '../chat-stream/store';
 import { useChatUrlParams } from '../hooks/use-chat-url';
@@ -224,6 +224,34 @@ export function Sessions({
     [handleConversationCardClick, onShowSingleChat],
   );
 
+  const renderConversationActions = useCallback(
+    (conversation: IConversation, trigger: ReactNode) => {
+      const canDelete =
+        canManageAllSessions ||
+        (canDeleteOwnSession &&
+          (conversation.user_id === userInfo.id || conversation.is_new));
+
+      if (!canDelete) {
+        return null;
+      }
+
+      return (
+        <ConversationDropdown
+          conversation={conversation}
+          removeTemporaryConversation={removeTemporaryConversation}
+        >
+          {trigger}
+        </ConversationDropdown>
+      );
+    },
+    [
+      canDeleteOwnSession,
+      canManageAllSessions,
+      removeTemporaryConversation,
+      userInfo.id,
+    ],
+  );
+
   const collapseSidebars = useCallback(() => {
     setCollapsed(true);
     setPrimarySidebarCollapsed(true);
@@ -384,49 +412,14 @@ export function Sessions({
               ))}
             </ul>
           ) : (
-            <nav aria-label={t('chat.conversations')}>
-              <ul className="space-y-2">
-                {conversationList.map((x) => (
-                  <li
-                    key={x.id}
-                    className="
-                      group pr-3 flex items-center gap-1 rounded-lg
-                      aria-selected:bg-bg-card has-[>button:focus-visible]:bg-bg-card
-                    "
-                    aria-selected={conversationId === x.id}
-                  >
-                    <button
-                      type="button"
-                      className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
-                      onClick={() => handleConversationClick(x.id, x.is_new)}
-                      data-testid="chat-detail-session-item"
-                      data-session-id={x.id}
-                    >
-                      {x.name}
-                    </button>
-
-                    {(canManageAllSessions ||
-                      (canDeleteOwnSession &&
-                        (x.user_id === userInfo.id || x.is_new))) && (
-                      <ConversationDropdown
-                        conversation={x}
-                        removeTemporaryConversation={
-                          removeTemporaryConversation
-                        }
-                      >
-                        <MoreButton
-                          className={cn(
-                            conversationId === x.id ? 'block' : 'hidden',
-                          )}
-                          data-testid="chat-detail-session-actions"
-                          data-session-id={x.id}
-                        ></MoreButton>
-                      </ConversationDropdown>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </nav>
+            <ConversationList
+              items={conversationList}
+              label={t('chat.conversations')}
+              selectedId={conversationId}
+              onSelect={handleConversationClick}
+              renderActions={renderConversationActions}
+              testIdPrefix="chat-detail-session"
+            />
           )}
           {loadingMore && (
             <LucideLoader2

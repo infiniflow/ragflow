@@ -75,6 +75,9 @@ jest.mock('@/hooks/use-chat-request', () => ({
   useFetchChat: () => ({ data: { name: 'Chat app', icon: '' } }),
   useRemoveSessions: () => ({ removeSessions: mockRemoveSessions }),
 }));
+jest.mock('@/hooks/use-user-setting-request', () => ({
+  useFetchUserInfo: () => ({ data: { id: 'user-1' } }),
+}));
 jest.mock('../hooks/use-click-card', () => ({
   useHandleClickConversationCard: () => ({
     handleConversationCardClick: mockHandleConversationCardClick,

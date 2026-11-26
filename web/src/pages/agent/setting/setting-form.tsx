@@ -56,13 +56,23 @@ export function SettingForm({ submit }: SettingFormProps) {
         className="space-y-8"
         id={AgentSettingId}
       >
-        <RAGFlowFormItem name="title" label={t('title')}>
+        <RAGFlowFormItem name="title" label={t('title')} horizontal>
           <Input />
         </RAGFlowFormItem>
-        <RAGFlowFormItem name="avatar" label={t('photo')}>
+        <RAGFlowFormItem
+          name="avatar"
+          label={t('photo')}
+          horizontal
+          className="!items-start"
+        >
           <AvatarUpload></AvatarUpload>
         </RAGFlowFormItem>
-        <RAGFlowFormItem name="description" label={t('description')}>
+        <RAGFlowFormItem
+          name="description"
+          label={t('description')}
+          horizontal
+          className="!items-start"
+        >
           <Textarea rows={4} />
         </RAGFlowFormItem>
 
@@ -71,6 +81,7 @@ export function SettingForm({ submit }: SettingFormProps) {
             name="permission"
             label={t('permissions')}
             tooltip={t('permissionsTip')}
+            horizontal
           >
             {(field) => (
               <RadioGroup
