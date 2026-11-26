@@ -1,12 +1,61 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"testing/fstest"
 )
+
+func TestRegistryIncludesEnrichmentPipelines(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	listed := make(map[string]string)
+	for _, meta := range registry.List().BuiltinPipelines {
+		listed[meta.ParserID] = meta.Title
+	}
+	for _, tc := range []struct {
+		id      string
+		title   string
+		chunker string
+	}{
+		{"outline", "Outline", "TitleChunker:WideResultsTeach"},
+		{"summary", "Summary", "TokenChunker:ModernPetsKneel"},
+		{"enriched", "Enriched", "TokenChunker:BumpyStarsPress"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			if listed[tc.id] != tc.title {
+				t.Errorf("listed title = %q, want %q", listed[tc.id], tc.title)
+			}
+			if !registry.IsValid(tc.id) {
+				t.Fatalf("parser_id %q is not valid", tc.id)
+			}
+			dsl, err := LoadBuiltinDSL(tc.id)
+			if err != nil {
+				t.Fatalf("LoadBuiltinDSL: %v", err)
+			}
+			var root map[string]any
+			if err := json.Unmarshal([]byte(dsl), &root); err != nil {
+				t.Fatalf("decode DSL: %v", err)
+			}
+			components := root["components"].(map[string]any)
+			if len(components) != 5 || components[tc.chunker] == nil {
+				t.Fatalf("pipeline lost its original component chain: %#v", components)
+			}
+			graph := root["graph"].(map[string]any)
+			if len(graph["nodes"].([]any)) != 5 || len(graph["edges"].([]any)) != 4 {
+				t.Fatal("pipeline lost its canvas nodes or connections")
+			}
+			if _, err := NewPipelineFromDSL([]byte(dsl), "builtin-"+tc.id); err != nil {
+				t.Fatalf("build pipeline: %v", err)
+			}
+		})
+	}
+}
 
 func TestRegistryLoadsSummaries(t *testing.T) {
 	dir := t.TempDir()

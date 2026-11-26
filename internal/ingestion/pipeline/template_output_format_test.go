@@ -134,10 +134,9 @@ func assertNoParserOutputFormatInGraph(t *testing.T, ref string, root map[string
 }
 
 // TestAgentTemplatesCarryNoParserOutputFormat extends the pin to the seeded
-// canvas templates under internal/agent/templates. The ingestion-pipeline
-// canvases there (title_chunker, chunk_summary, advanced_ingestion_pipeline)
-// carry Parser nodes too, and the dao seeder copies their DSL verbatim into
-// the canvas_template table, so a baked key there reaches live canvases.
+// canvas templates under internal/agent/templates. The dao seeder copies
+// their DSL verbatim into the canvas_template table, so a baked key there
+// reaches live canvases.
 // compiler.json is a bare DSL fixture without the metadata wrapper, so the
 // "dsl" key is optional.
 func TestAgentTemplatesCarryNoParserOutputFormat(t *testing.T) {
