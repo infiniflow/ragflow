@@ -252,8 +252,8 @@ func loadUserDeletionData(ctx context.Context, db *gorm.DB, userID string) (*use
 }
 
 func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine engine.DocEngine, store storage.Storage) error {
-	// External stores cannot join the SQL transaction. Keep the user row until
-	// cleanup succeeds so a failed request can be retried.
+	// External stores cannot join the SQL transaction. The user row is already committed before external cleanup
+	// runs, so a failure is reported as a warning rather than reverting the deletion.
 	if docEngine == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0) {
 		return fmt.Errorf("document engine is unavailable for user data cleanup")
 	}

@@ -51,6 +51,12 @@ func TestDeleteUserTxDefersExternalCleanupUntilCommit(t *testing.T) {
 
 	var snapshot *userDeletionData
 	err := db.Transaction(func(tx *gorm.DB) error {
+		// This row exists only inside the caller's transaction. If the read
+		// phase used dao.DB instead of the caller's handle, it would be
+		// invisible to the snapshot and the assertion below would fail.
+		if e := tx.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc-tx", "dataset", "general", "{}", "pdf", "user-1", "pdf", "tx.pdf").Error; e != nil {
+			return e
+		}
 		data, _, e := svc.DeleteTx(t.Context(), tx, user)
 		if e != nil {
 			return e
@@ -71,6 +77,11 @@ func TestDeleteUserTxDefersExternalCleanupUntilCommit(t *testing.T) {
 			t.Fatalf("rollback did not preserve %s/%s: count=%d, err=%v", item[0], item[1], count, e)
 		}
 	}
+	// The row inserted inside the caller's transaction must be rolled back too.
+	var txDocCount int64
+	if e := db.Table("document").Where("id = ?", "doc-tx").Count(&txDocCount).Error; e != nil || txDocCount != 0 {
+		t.Fatalf("uncommitted document survived rollback: count=%d, err=%v", txDocCount, e)
+	}
 	// The distinguishing assertion: no external cleanup happened inside DeleteTx.
 	// If the implementation still called deleteExternalData eagerly, the snapshot
 	// would already be emptied and the storage would show removals despite rollback.
@@ -79,6 +90,20 @@ func TestDeleteUserTxDefersExternalCleanupUntilCommit(t *testing.T) {
 	}
 	if len(snapshot.documentIDs) == 0 {
 		t.Fatalf("snapshot must carry document IDs for later cleanup, got %+v", snapshot)
+	}
+	// The caller's uncommitted document must be in the snapshot. Reading through
+	// dao.DB instead of the caller's handle would omit it and fail here.
+	foundTxDoc := false
+	for _, doc := range snapshot.documents {
+		if doc.ID == "doc-tx" {
+			foundTxDoc = true
+			if doc.Location == nil || *doc.Location != "tx.pdf" {
+				t.Fatalf("uncommitted document location missing from snapshot: %+v", doc)
+			}
+		}
+	}
+	if !foundTxDoc {
+		t.Fatalf("snapshot missed the caller's uncommitted document: %+v", snapshot.documents)
 	}
 	hasLocation := false
 	for _, doc := range snapshot.documents {

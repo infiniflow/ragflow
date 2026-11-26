@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -383,5 +384,19 @@ func TestDeleteUserRollsBackDatabaseCleanup(t *testing.T) {
 		if err := db.Table(item[0]).Where("id = ?", item[1]).Count(&count).Error; err != nil || count != 1 {
 			t.Fatalf("transaction did not preserve %s/%s: count=%d, err=%v", item[0], item[1], count, err)
 		}
+	}
+}
+
+func TestDeleteExternalDataCommentMatchesPostCommitOrder(t *testing.T) {
+	src, err := os.ReadFile("user_delete.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	if strings.Contains(text, "Keep the user row until cleanup succeeds") {
+		t.Fatal("stale comment still claims the user row is kept until cleanup succeeds")
+	}
+	if !strings.Contains(text, "The user row is already committed before external cleanup") {
+		t.Fatal("comment must state that the DB row is committed before external cleanup")
 	}
 }
