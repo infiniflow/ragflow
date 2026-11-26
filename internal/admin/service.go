@@ -42,7 +42,6 @@ import (
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"regexp"
 	"strings"
 	"time"
 
@@ -156,8 +155,7 @@ func generateRandomHex(n int) string {
 //   - map[string]interface{}: user information without password
 //   - error: error message
 func (s *Service) CreateUser(ctx context.Context, username, password, role, nickname string) (map[string]interface{}, error) {
-	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
-	if !emailRegex.MatchString(username) {
+	if !common.EmailRe.MatchString(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
 	}
 

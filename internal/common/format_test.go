@@ -120,3 +120,29 @@ func TestFirstNonEmpty(t *testing.T) {
 		})
 	}
 }
+
+// TestIsUUID_Characterization pins the current 32-char lowercase alnum gate.
+func TestIsUUID_Characterization(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"32 lowercase alnum", "0123456789abcdef0123456789abcdef", true},
+		{"32 digits", "00000000000000000000000000000000", true},
+		{"31 chars rejected", "0123456789abcdef0123456789abcde", false},
+		{"33 chars rejected", "0123456789abcdef0123456789abcdef0", false},
+		{"empty rejected", "", false},
+		{"uppercase rejected", "0123456789ABCDEF0123456789ABCDEF", false},
+		{"hyphen rejected", "01234567-89ab-cdef-0123-456789abcdef", false},
+		{"space rejected", "0123456789abcdef0123456789abcde ", false},
+		{"unicode rejected", "0123456789abcdef0123456789abcde汉", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsUUID(tt.in); got != tt.want {
+				t.Fatalf("IsUUID(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

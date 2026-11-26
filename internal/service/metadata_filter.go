@@ -39,6 +39,8 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
+var extraNewlinesRe = regexp.MustCompile(`\n{3,}`)
+
 // MetaFilterCondition represents a single filter condition
 type MetaFilterCondition struct {
 	Key   string      `json:"key"`
@@ -139,7 +141,7 @@ func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints, 
 	).Replace(result)
 
 	// Clean up any extra newlines from removed blocks
-	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
+	result = extraNewlinesRe.ReplaceAllString(result, "\n\n")
 
 	return strings.TrimSpace(result), nil
 }

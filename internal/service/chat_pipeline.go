@@ -2278,12 +2278,13 @@ func (s *ChatPipelineService) tavilyRetrieve(ctx context.Context, apiKey, questi
 	}, nil
 }
 
+var tokenizeWhitespaceRe = regexp.MustCompile(`\s+`)
+
 // tokenizeText is a lightweight tokenizer for Tavily content.
 // It lowercases and splits on whitespace, similar to rag_tokenizer.tokenize.
 func tokenizeText(text string) string {
 	// Collapse multiple whitespaces and split.
-	ws := regexp.MustCompile(`\s+`)
-	text = ws.ReplaceAllString(text, " ")
+	text = tokenizeWhitespaceRe.ReplaceAllString(text, " ")
 	// Convert to lowercase for tokenization.
 	return strings.ToLower(text)
 }
@@ -2738,6 +2739,13 @@ func parseFileDicts(files interface{}) ([]map[string]interface{}, bool) {
 	return nil, false
 }
 
+var (
+	ttsControlRe    = regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
+	ttsEmojiRe      = regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
+	ttsWhitespaceRe = regexp.MustCompile(`\s+`)
+	ttsTagRe        = regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+)
+
 // cleanTTSText sanitizes text for TTS synthesis.
 func cleanTTSText(text string) string {
 	if text == "" {
@@ -2746,15 +2754,12 @@ func cleanTTSText(text string) string {
 	// Drop invalid UTF-8 before applying the character limit.
 	text = strings.ToValidUTF8(text, "")
 	// Strip control chars.
-	controlRe := regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
-	text = controlRe.ReplaceAllString(text, "")
+	text = ttsControlRe.ReplaceAllString(text, "")
 	// Strip emojis.
-	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
-	text = emojiRe.ReplaceAllString(text, "")
+	text = ttsEmojiRe.ReplaceAllString(text, "")
 	text = stripTTSTags(text)
 	// Collapse whitespace.
-	wsRe := regexp.MustCompile(`\s+`)
-	text = wsRe.ReplaceAllString(text, " ")
+	text = ttsWhitespaceRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
 	if r := []rune(text); len(r) > 500 {
 		text = string(r[:500])
@@ -2766,8 +2771,7 @@ func cleanTTSText(text string) string {
 // Unmatched tags stay literal so compact comparisons such as a<b>c survive.
 func stripTTSTags(text string) string {
 	// Quoted attributes may contain > without ending the tag.
-	tagRe := regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
-	matches := tagRe.FindAllStringSubmatchIndex(text, -1)
+	matches := ttsTagRe.FindAllStringSubmatchIndex(text, -1)
 	strip := make([]bool, len(matches))
 	open := make(map[string][]int)
 	for i, match := range matches {
@@ -4622,6 +4626,13 @@ func repairSQLForMissingColumns(
 	return chatForSQL(ctx, chatModel, sysPrompt, userPrompt, "sql missing-columns repair")
 }
 
+var (
+	sqlThinkRe        = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	sqlChineseThinkRe = regexp.MustCompile(`(?s)思考\n.*?\n`)
+	sqlFenceRe        = regexp.MustCompile("(?i)```(?:sql)?\\s*")
+	sqlFenceEndRe     = regexp.MustCompile("```\\s*$")
+)
+
 // normalizeSQL strips LLM artifacts from a SQL response. Mirrors the
 // helper at dialog_service.py:976-990.
 func normalizeSQL(s string) string {
@@ -4629,18 +4640,14 @@ func normalizeSQL(s string) string {
 		return ""
 	}
 	// Remove <think>...</think> blocks.
-	thinkRe := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	s = thinkRe.ReplaceAllString(s, "")
+	s = sqlThinkRe.ReplaceAllString(s, "")
 	// Also strip Chinese reasoning markers (思考...) — some models
 	// (notably Qwen) emit these instead of <think>. Mirrors
 	// dialog_service.py:985: `re.sub(r"思考\n.*?\n", "", ...)`.
-	chineseThinkRe := regexp.MustCompile(`(?s)思考\n.*?\n`)
-	s = chineseThinkRe.ReplaceAllString(s, "")
+	s = sqlChineseThinkRe.ReplaceAllString(s, "")
 	// Strip Markdown code fences.
-	fenceRe := regexp.MustCompile("(?i)```(?:sql)?\\s*")
-	s = fenceRe.ReplaceAllString(s, "")
-	fenceEnd := regexp.MustCompile("```\\s*$")
-	s = fenceEnd.ReplaceAllString(s, "")
+	s = sqlFenceRe.ReplaceAllString(s, "")
+	s = sqlFenceEndRe.ReplaceAllString(s, "")
 	// Trim trailing semicolons (ES SQL parser doesn't like them) and
 	// outer whitespace.
 	s = strings.TrimSpace(s)

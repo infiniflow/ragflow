@@ -46,13 +46,17 @@ func IsCompositeModelName(modelName string) bool {
 	return !slices.Contains(parts, "")
 }
 
+// EmailRe validates the shared email address shape used by admin and service paths.
+var EmailRe = regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
+
+var uuidCharsRe = regexp.MustCompile(`^[a-z0-9]+$`)
+
 func IsUUID(uuid string) bool {
 	// only lower case letters and numbers, length is 32
 	if len(uuid) != 32 {
 		return false
 	}
-	uuidRegex := regexp.MustCompile(`^[a-z0-9]+$`)
-	if uuidRegex.MatchString(uuid) {
+	if uuidCharsRe.MatchString(uuid) {
 		return true
 	}
 	return false

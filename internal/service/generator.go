@@ -113,6 +113,11 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	return result, nil
 }
 
+var (
+	outputPrefixRe = regexp.MustCompile(`(?i)^output:\s*`)
+	newlineRunRe   = regexp.MustCompile(`\n+`)
+)
+
 // CrossLanguages translates a question into multiple languages using LLM.
 // The model is fetched internally based on llmID:
 //   - If llmID is empty, fetches tenant's default chat model
@@ -199,8 +204,8 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Parse response
-	result = regexp.MustCompile(`(?i)^output:\s*`).ReplaceAllString(result, "")
-	result = regexp.MustCompile(`\n+`).ReplaceAllString(result, "")
+	result = outputPrefixRe.ReplaceAllString(result, "")
+	result = newlineRunRe.ReplaceAllString(result, "")
 
 	parts := strings.Split(result, "===")
 	var translations []string

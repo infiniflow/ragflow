@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,6 +77,31 @@ var defaultIgnorePatterns = []string{
 	".DS_Store", "._*", "*.log", "*.tmp", "*.temp", "*.swp", "*.swo", "*~",
 	".env", ".env.*", ".vscode/", ".idea/", "Thumbs.db", "desktop.ini",
 	".skill-meta.json",
+}
+
+var (
+	dotSlashPrefixRe   = regexp.MustCompile(`^\./+`)
+	slugInvalidCharsRe = regexp.MustCompile(`[^a-z0-9-]+`)
+	dashRunRe          = regexp.MustCompile(`-+`)
+)
+
+// globRegexpCache caches compiled glob ignore patterns. The patterns in use
+// come from the fixed defaultIgnorePatterns list, so the cache stays bounded.
+var globRegexpCache sync.Map // map[string]*regexp.Regexp
+
+// cachedGlobRegexp compiles a glob pattern at most once. An invalid pattern
+// compiles to a never-matching expression, preserving the original
+// regexp.MatchString behavior that ignored compile errors.
+func cachedGlobRegexp(pattern string) *regexp.Regexp {
+	if re, ok := globRegexpCache.Load(pattern); ok {
+		return re.(*regexp.Regexp)
+	}
+	re, err := regexp.Compile(globToRegex(pattern))
+	if err != nil {
+		re = regexp.MustCompile(`a^`)
+	}
+	actual, _ := globRegexpCache.LoadOrStore(pattern, re)
+	return actual.(*regexp.Regexp)
 }
 
 // ============================================================================
@@ -1676,7 +1702,7 @@ func isTextFile(filePath, contentType string) bool {
 
 // sanitizeRelPath sanitizes relative path
 func sanitizeRelPath(path string) string {
-	normalized := regexp.MustCompile(`^\./+`).ReplaceAllString(path, "")
+	normalized := dotSlashPrefixRe.ReplaceAllString(path, "")
 	normalized = strings.TrimLeft(normalized, "/")
 
 	if normalized == "" || strings.HasSuffix(normalized, "/") {
@@ -1729,9 +1755,7 @@ func matchPattern(filePath, pattern string) bool {
 		return true
 	}
 
-	regex := globToRegex(pattern)
-	matched, _ := regexp.MatchString(regex, filePath)
-	return matched
+	return cachedGlobRegexp(pattern).MatchString(filePath)
 }
 
 // globToRegex converts glob pattern to regex
@@ -1780,10 +1804,8 @@ func normalizeSkillName(name string) string {
 	name = strings.ToLower(name)
 	name = strings.ReplaceAll(name, " ", "-")
 	name = strings.ReplaceAll(name, "_", "-")
-	re := regexp.MustCompile(`[^a-z0-9-]+`)
-	name = re.ReplaceAllString(name, "-")
-	re = regexp.MustCompile(`-+`)
-	name = re.ReplaceAllString(name, "-")
+	name = slugInvalidCharsRe.ReplaceAllString(name, "-")
+	name = dashRunRe.ReplaceAllString(name, "-")
 	name = strings.Trim(name, "-")
 	return name
 }
