@@ -1983,7 +1983,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			if resp != nil && resp.Answer != nil {
 				answer = *resp.Answer
 			}
-			if resp.ReasonContent != nil {
+			if resp != nil && resp.ReasonContent != nil {
 				reasoning = *resp.ReasonContent
 			}
 			// Debug log matching Python's dialog_service.py:335-336.
