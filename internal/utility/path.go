@@ -107,9 +107,14 @@ func ConfDir() string {
 	}
 	if wd, err := os.Getwd(); err == nil {
 		dir := wd
-		for depth := 0; depth < 4; depth++ {
+		for {
 			if joined := filepath.Join(dir, "conf"); hasModelsDir(joined) {
 				return joined
+			}
+			// go.mod marks the source tree root: every package depth above it
+			// belongs to the tree, and nothing above it does.
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				break
 			}
 			parent := filepath.Dir(dir)
 			if parent == dir {
