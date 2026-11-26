@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"ragflow/internal/engine/types"
@@ -438,9 +439,8 @@ func mapMemoryField(field string) string {
 }
 
 func copyMap(source map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(source)+1)
-	for key, value := range source {
-		result[key] = value
+	if source == nil {
+		return map[string]interface{}{}
 	}
-	return result
+	return maps.Clone(source)
 }

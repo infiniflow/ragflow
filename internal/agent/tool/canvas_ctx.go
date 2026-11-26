@@ -61,6 +61,8 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 	checker := permission.NewDatabaseChecker(db)
 	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
 	seen := make(map[string]struct{}, len(ids))
+	dependencies := make([]permission.ResourceRef, 0, len(ids))
+	orderedIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
 		if id == "" {
@@ -70,10 +72,18 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 			continue
 		}
 		seen[id] = struct{}{}
-		dependency := permission.ResourceRef{Kind: kind, ID: id}
-		if err := checker.CheckDependency(ctx, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
-			return fmt.Errorf("%s %q: %w", kind, id, err)
+		orderedIDs = append(orderedIDs, id)
+		dependencies = append(dependencies, permission.ResourceRef{Kind: kind, ID: id})
+	}
+	if batchErr := checker.CheckDependencies(ctx, entry, dependencies, permission.OperationRun, permission.OperationUse); batchErr != nil {
+		// Preserve the original first-failure message, which names the denied
+		// dependency. Re-check in order only on this rare error path.
+		for i, dependency := range dependencies {
+			if err := checker.CheckDependency(ctx, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
+				return fmt.Errorf("%s %q: %w", kind, orderedIDs[i], err)
+			}
 		}
+		return batchErr
 	}
 	return nil
 }

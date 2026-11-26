@@ -1751,7 +1751,13 @@ func defaultSelectedPDFOCRProvider(ctx context.Context, db *gorm.DB, tenantID, s
 		}
 		name = resolved.driver.Name()
 	}
-	switch strings.ToLower(name) {
+	switch strings.ToLower(modelModule.CatalogProviderName(name)) {
+	case "mistral":
+		// Mistral also serves vision models. A UUID was already resolved as OCR.
+		if strings.Contains(selector, "@") && !modelModule.IsMistralOCRModelReference(selector) {
+			return ""
+		}
+		return "Mistral OCR"
 	case "minicpm-ocr":
 		return "MiniCPM-OCR"
 	case "xiaomiocr":
@@ -1765,7 +1771,8 @@ func defaultSelectedPDFOCRProvider(ctx context.Context, db *gorm.DB, tenantID, s
 
 func dispatchSelectedOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector, provider string, setup schema.ParserSetup) (parser.ParseResult, error) {
 	var options *modelModule.OCRConfig
-	if provider == "XiaomiOCR" || provider == "Nace" {
+	switch provider {
+	case "XiaomiOCR", "Nace", "Mistral OCR":
 		pages, err := utility.NormalizePDFPages(setup["pages"])
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: %s pages: %w", provider, err)
@@ -1779,7 +1786,7 @@ func dispatchSelectedOCRPDF(ctx context.Context, db *gorm.DB, filename string, b
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: %s model: %w", provider, err)
 	}
-	if !strings.EqualFold(driver.Name(), provider) {
+	if !strings.EqualFold(driver.Name(), modelModule.CatalogProviderName(provider)) {
 		return parser.ParseResult{}, fmt.Errorf("parser: %s requires a %s OCR model; found %q", provider, provider, driver.Name())
 	}
 	resp, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, options, nil)

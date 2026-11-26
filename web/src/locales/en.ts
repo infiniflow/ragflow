@@ -433,6 +433,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
+      infoFields: {
+        name: 'Name',
+        size: 'Size',
+        type: 'Type',
+        create_time: 'Created at',
+        update_time: 'Updated at',
+      },
       continueUpload: 'Continue upload',
       uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
       uploadPipelineDeletedContent:

@@ -157,3 +157,25 @@ func TestXLSXQAMergedAnswerBelowFirstRow(t *testing.T) {
 		}
 	}
 }
+
+func TestXLSXTableChunkKeepsTitleBeforeColumnLabels(t *testing.T) {
+	data := xlsxWorkbookWithMerges(t, [][]string{
+		{"角色岗位对照表"},
+		{"序号", "流程中角色", "对应岗位"},
+		{"1", "销售代表", "销售经理"},
+	}, [][2]string{{"A1", "C1"}})
+	p, _ := parser.NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "roles.xlsx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	chunks := tableChunksOf(t, map[string]any{"name": "roles.xlsx", "output_format": "json", "json": res.JSON})
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	text, _ := chunks[0]["text"].(string)
+	title, header, body := strings.Index(text, "角色岗位对照表"), strings.Index(text, "序号"), strings.Index(text, "销售代表")
+	if title < 0 || header <= title || body <= header {
+		t.Fatalf("rows reordered in chunk: %s", text)
+	}
+}

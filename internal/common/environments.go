@@ -309,6 +309,7 @@ const (
 	EnvSOMarkEnableTableImage            = "SOMARK_ENABLE_TABLE_IMAGE"
 	EnvSOMarkEnableImageUnderstanding    = "SOMARK_ENABLE_IMAGE_UNDERSTANDING"
 	EnvSOMarkKeepHeaderFooter            = "SOMARK_KEEP_HEADER_FOOTER"
+	EnvSOMarkPollTimeout                 = "SOMARK_POLL_TIMEOUT"
 	EnvTCADPAPIServerURL                 = "TCADP_APISERVER_URL"
 	EnvTCADPAPIKey                       = "TCADP_API_KEY"
 	EnvFirecrawlAPIKey                   = "FIRECRAWL_API_KEY"

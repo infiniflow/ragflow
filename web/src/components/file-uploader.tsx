@@ -13,9 +13,12 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Images } from '@/constants/common';
 import { useControllableState } from '@/hooks/use-controllable-state';
 import { cn, formatBytes } from '@/lib/utils';
+import { getExtension } from '@/utils/document-util';
 import { useTranslation } from 'react-i18next';
+import { FileIcon } from './icon-font';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 function isFileWithPreview(file: File): file is File & { preview: string } {
@@ -33,7 +36,15 @@ interface FilePreviewProps {
 }
 
 function FilePreview({ file }: FilePreviewProps) {
-  if (file.type.startsWith('image/')) {
+  // Decide by extension, not by MIME prefix: CAD files are reported as
+  // `image/vnd.dwg` / `image/vnd.dxf`, but their raw bytes cannot be decoded
+  // by <img>, so they used to render as a broken image. Only raster formats
+  // get an inline preview; everything else falls back to the file-type icon.
+  const extension = getExtension(file.name);
+  const isPreviewableImage =
+    Images.includes(extension) || ['svg', 'avif'].includes(extension);
+
+  if (isPreviewableImage) {
     return (
       <img
         src={file.preview}
@@ -47,11 +58,12 @@ function FilePreview({ file }: FilePreviewProps) {
   }
 
   return (
-    <FileText
-      strokeWidth={1}
-      className="size-10 text-muted-foreground"
+    <span
+      className="flex size-8 items-center justify-center"
       aria-hidden="true"
-    />
+    >
+      <FileIcon name={file.name} width={32} className="size-8" />
+    </span>
   );
 }
 

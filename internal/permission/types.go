@@ -359,6 +359,31 @@ func (c *Checker) CheckDependency(ctx context.Context, entry, dependency Resourc
 	return c.policy.CheckDependency(ctx, entry, dependency, entryOperation, dependencyOperation)
 }
 
+// dependencyBatchPolicy is implemented by policies that can authorize a whole
+// dependency set with a single resource load. Policies without it keep the
+// original per-dependency path through the optional-interface fallback below.
+type dependencyBatchPolicy interface {
+	CheckDependencies(context.Context, ResourceRef, []ResourceRef, Operation, Operation) error
+}
+
+// CheckDependencies checks entry access and the caller's and entry owner's
+// access to every dependency. It uses one batch load when the active policy
+// supports it and otherwise preserves the per-dependency check order.
+func (c *Checker) CheckDependencies(ctx context.Context, entry ResourceRef, dependencies []ResourceRef, entryOperation, dependencyOperation Operation) error {
+	if c == nil || c.policy == nil {
+		return ErrSourceUnavailable
+	}
+	if batch, ok := c.policy.(dependencyBatchPolicy); ok {
+		return batch.CheckDependencies(ctx, entry, dependencies, entryOperation, dependencyOperation)
+	}
+	for _, dependency := range dependencies {
+		if err := c.policy.CheckDependency(ctx, entry, dependency, entryOperation, dependencyOperation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ResolveAccess resolves the effective access for the authenticated identity in ctx.
 func (c *Checker) ResolveAccess(ctx context.Context, resource ResourceRef) (Access, error) {
 	if c == nil || c.policy == nil {

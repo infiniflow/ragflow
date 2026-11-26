@@ -75,8 +75,38 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		}
 	}
 
-	// First pass: validate every document exists and is accessible before
-	// mutating any state, so a single invalid doc rejects the whole request.
+	// First pass: validate every document exists before mutating any state, so
+	// a single invalid doc rejects the whole request. Collect the distinct
+	// datasets once so their rows are fetched in one query; a batch often
+	// contains many documents from the same KB. Authorization stays on the
+	// per-document seam in the ordered loop below — dataset rows are batched,
+	// but the write check is not.
+	kbIDs := make([]string, 0, len(req.DocIDs))
+	seenKB := make(map[string]struct{}, len(req.DocIDs))
+	for _, docID := range req.DocIDs {
+		doc := docsByID[docID]
+		if doc == nil {
+			// Existence is reported by the ordered validation loop below so a
+			// missing dataset on an earlier document still wins.
+			continue
+		}
+		if _, seen := seenKB[doc.KbID]; seen {
+			continue
+		}
+		seenKB[doc.KbID] = struct{}{}
+		kbIDs = append(kbIDs, doc.KbID)
+	}
+	loadedKBs, loadErr := service.LoadKBsInOrder(ctx, dao.DB, s.kbDAO, kbIDs)
+	if loadErr != nil {
+		return common.CodeDataError, fmt.Errorf("dataset not found")
+	}
+	kbByID := make(map[string]*entity.Knowledgebase, len(loadedKBs))
+	for i, kb := range loadedKBs {
+		if kb != nil {
+			kbByID[kbIDs[i]] = kb
+		}
+	}
+
 	type validatedDoc struct {
 		doc *entity.Document
 		kb  *entity.Knowledgebase
@@ -88,8 +118,8 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		if doc == nil {
 			return common.CodeDataError, fmt.Errorf("document not found")
 		}
-		kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
-		if err != nil {
+		kb := kbByID[doc.KbID]
+		if kb == nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
 		if err := service.CheckDocumentWrite(ctx, docID, doc.KbID, permission.OperationRun, ""); err != nil {

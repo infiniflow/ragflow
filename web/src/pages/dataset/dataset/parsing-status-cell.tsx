@@ -6,6 +6,7 @@ import message from '@/components/ui/message';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
+import { ParsingErrorLabel } from '@/ee/pages/dataset/dataset/parsing-error-label';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { hasReadPermission } from '@/ee/utils/permission-util';
 import { cn } from '@/lib/utils';
@@ -330,7 +331,9 @@ export function ParsingStatusCell({
           data-testid="document-view-error"
         >
           <TriangleAlert />
-          {t('knowledgeDetails.viewError')}
+          <ParsingErrorLabel record={record}>
+            {t('knowledgeDetails.viewError')}
+          </ParsingErrorLabel>
         </Button>
       ) : (
         <ParsingCard

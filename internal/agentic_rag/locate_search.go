@@ -92,9 +92,9 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	}
 	similarityThreshold := searchChunksDefaultSimilarityThreshold
 	if spec.similarityThreshold != nil {
-		similarityThreshold = clampFloat01(*spec.similarityThreshold)
+		similarityThreshold = min(max(*spec.similarityThreshold, 0.0), 1.0)
 	}
-	weight := clampFloat01(spec.weight)
+	weight := min(max(spec.weight, 0.0), 1.0)
 	datasetIDs, err := resolveDatasetScope(spec.boundDatasetIDs, spec.datasetIDs)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", spec.tool, err)

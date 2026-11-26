@@ -67,6 +67,14 @@ var mistralOCRLinkPattern = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)\)`)
 
 var mistralOCRBlankLines = regexp.MustCompile(`\n{3,}`)
 
+// IsMistralOCRModelReference reports whether a composite refers to a dedicated
+// OCR model under the Mistral provider or its stored Mistral OCR alias.
+func IsMistralOCRModelReference(ref string) bool {
+	name, _, provider, err := common.ParseCompositeModelName(ref)
+	return err == nil && strings.EqualFold(CatalogProviderName(provider), "Mistral") &&
+		strings.HasPrefix(strings.ToLower(name), "mistral-ocr-")
+}
+
 // mistralOCRPageIndexes converts 1-indexed inclusive page ranges into the
 // zero-based page selector /v1/ocr expects. The selector is bounded by the
 // API's page limit; a selection lying entirely past it is an error rather
@@ -179,8 +187,7 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("Mistral OCR: failed to parse response: %w", err)
 	}
-	text := result.markdown()
-	return &OCRFileResponse{Text: &text}, nil
+	return result.fileResponse()
 }
 
 // mistralOCRCredentials returns apiConfig with the bare Mistral key. Instances
@@ -327,7 +334,7 @@ type mistralOCRResponse struct {
 }
 
 type mistralOCRPage struct {
-	Index    int    `json:"index"`
+	Index    *int   `json:"index"`
 	Markdown string `json:"markdown"`
 	Images   []struct {
 		ID string `json:"id"`
@@ -343,41 +350,53 @@ type mistralOCRPage struct {
 	} `json:"blocks"`
 }
 
-// markdown joins the pages in order. A page with layout blocks is rebuilt
-// from them, which drops header/footer blocks; a page without
-// blocks falls back to its Markdown with table and image links resolved.
-// Title blocks stay Markdown headings either way: the API sends their content
-// with its heading marker ("## Section"), and a bare title becomes "# ".
-func (r mistralOCRResponse) markdown() string {
+// fileResponse keeps the text response for OCR callers and the original page
+// indexes for ingestion, including when the request selects a subset of pages.
+func (r mistralOCRResponse) fileResponse() (*OCRFileResponse, error) {
 	parts := make([]string, 0, len(r.Pages))
+	pages := make([]OCRPage, 0, len(r.Pages))
 	for _, page := range r.Pages {
-		tables := make(map[string]string, len(page.Tables))
-		for _, table := range page.Tables {
-			tables[table.ID] = strings.TrimSpace(table.Content)
+		if page.Index == nil || *page.Index < 0 || *page.Index >= mistralOCRMaxPages {
+			return nil, fmt.Errorf("Mistral OCR: response contains an invalid page index")
 		}
-		if len(page.Blocks) == 0 {
-			if md := page.resolvedMarkdown(tables); md != "" {
-				parts = append(parts, md)
-			}
+		result := OCRPage{Index: *page.Index, KeepPagePosition: true}
+		if markdown := page.markdown(); markdown != "" {
+			result.Blocks = []OCRBlock{{Text: markdown}}
+			parts = append(parts, markdown)
+		}
+		pages = append(pages, result)
+	}
+	text := strings.Join(parts, "\n\n")
+	return &OCRFileResponse{Text: &text, Pages: pages}, nil
+}
+
+// markdown rebuilds a page from its layout blocks when available. Otherwise
+// it resolves table and image links in the page's Markdown.
+func (p mistralOCRPage) markdown() string {
+	tables := make(map[string]string, len(p.Tables))
+	for _, table := range p.Tables {
+		tables[table.ID] = strings.TrimSpace(table.Content)
+	}
+	if len(p.Blocks) == 0 {
+		return p.resolvedMarkdown(tables)
+	}
+	parts := make([]string, 0, len(p.Blocks))
+	for _, block := range p.Blocks {
+		text := strings.TrimSpace(block.Content)
+		switch block.Type {
+		case "header", "footer", "image":
 			continue
+		case "title":
+			if text != "" && !strings.HasPrefix(text, "#") {
+				text = "# " + text
+			}
+		case "table":
+			if text == "" {
+				text = tables[block.TableID]
+			}
 		}
-		for _, block := range page.Blocks {
-			text := strings.TrimSpace(block.Content)
-			switch block.Type {
-			case "header", "footer", "image":
-				continue
-			case "title":
-				if text != "" && !strings.HasPrefix(text, "#") {
-					text = "# " + text
-				}
-			case "table":
-				if text == "" {
-					text = tables[block.TableID]
-				}
-			}
-			if text != "" {
-				parts = append(parts, text)
-			}
+		if text != "" {
+			parts = append(parts, text)
 		}
 	}
 	return strings.Join(parts, "\n\n")

@@ -23,8 +23,10 @@ import {
 import { ICreateMemoryProps, IMemory } from './interface';
 import { MemoryCard } from './memory-card';
 import { useShowPrivilegeDialog } from '@/ee/pages/memories/use-show-privilege-dialog';
+import { useCanCreateMemory } from '@/ee/pages/memories/memory-dropdown-guard';
 
 export default function MemoryList() {
+  const canCreateMemory = useCanCreateMemory();
   // const { data } = useFetchFlowList();
   const { t } = useTranslate('memories');
   const [addOrEditType, setAddOrEditType] = useState<'add' | 'edit'>('add');
@@ -108,10 +110,12 @@ export default function MemoryList() {
             onChange={handleFilterSubmit}
             value={filterValue}
           >
-            <Button onClick={openCreateModalFun}>
-              <Plus className="size-[1em]" />
-              {t('createMemory')}
-            </Button>
+            {canCreateMemory && (
+              <Button onClick={openCreateModalFun}>
+                <Plus className="size-[1em]" />
+                {t('createMemory')}
+              </Button>
+            )}
           </NavGroupListFilterBar>
         </header>
 
@@ -147,7 +151,7 @@ export default function MemoryList() {
               className={searchString ? undefined : 'w-[480px] p-14'}
               isSearch={Boolean(searchString)}
               type={EmptyCardType.Memory}
-              onClick={openCreateModalFun}
+              onClick={canCreateMemory ? openCreateModalFun : undefined}
             />
           </div>
         )}

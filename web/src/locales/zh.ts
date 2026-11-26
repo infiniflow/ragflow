@@ -389,6 +389,13 @@ export default {
       dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
+      infoFields: {
+        name: '文件名',
+        size: '大小',
+        type: '类型',
+        create_time: '创建时间',
+        update_time: '更新时间',
+      },
       continueUpload: '继续上传',
       uploadPipelineDeletedTitle: '解析 Pipeline 不可用',
       uploadPipelineDeletedContent:

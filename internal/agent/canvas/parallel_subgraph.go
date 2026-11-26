@@ -274,7 +274,7 @@ func buildParallelOuterWorkflow(
 		}
 		localState.SetGlobal("__item__", itemMap["item"])
 		localState.SetGlobal("__index__", index)
-		return runtime.WithState(ctx, localState), nil
+		return runtime.WithDeferredNodeRegistry(runtime.WithState(withAgentNodeParent(ctx, key), localState)), nil
 	}))
 
 	parNode, err := workflowx.AddParallelNode[map[string]any, map[string]any](

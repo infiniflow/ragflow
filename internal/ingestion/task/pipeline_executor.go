@@ -366,8 +366,10 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	if correctedID != "" {
 		s.canvasID = correctedID
 	}
+	var savePreview func(context.Context)
 	if !s.taskCtx.IsDebug() {
 		s.persistResolvedPipeline(context.WithoutCancel(ctx))
+		ctx, savePreview = component.PrepareDocumentPreview(ctx, s.deps.DB, s.taskCtx.Doc)
 	}
 
 	pipelineOutput, pipelineDSL, err := s.runPipelineFunc(ctx, dsl)
@@ -384,6 +386,10 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	result, err := s.processOutput(ctx, pipelineOutput, start)
 	if err != nil {
 		return nil, err
+	}
+
+	if savePreview != nil {
+		savePreview(ctx)
 	}
 
 	if pipelineDSL != "" && s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil && *s.taskCtx.IngestionTask.PipelineLogID != "" {
