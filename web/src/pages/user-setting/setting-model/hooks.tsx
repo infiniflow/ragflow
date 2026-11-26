@@ -16,7 +16,6 @@
 
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
-  useAddInstanceModel,
   useAddProviderInstance,
   useFetchAddedProviders,
   useFetchProviderInstances,
@@ -40,7 +39,6 @@ export type VerifyResult = {
  */
 const useSubmitProviderInstance = () => {
   const { addProviderInstance } = useAddProviderInstance();
-  const { addInstanceModel } = useAddInstanceModel();
 
   return useCallback(
     async (payload: IAddProviderInstanceRequestBody, isVerify = false) => {
@@ -59,26 +57,14 @@ const useSubmitProviderInstance = () => {
       const hasModelPayload =
         !!modelPayload.model_name && !!modelPayload.model_type;
 
-      const instanceRet = await addProviderInstance({
+      return addProviderInstance({
         ...instancePayload,
         llm_factory: payload.llm_factory,
         instance_name: payload.instance_name,
+        model_info: hasModelPayload ? [modelPayload] : [],
       } as IAddProviderInstanceRequestBody);
-      if (instanceRet.code !== 0 || !hasModelPayload) {
-        return instanceRet;
-      }
-
-      if (!hasModelPayload) {
-        return { code: 0, data: null } as any;
-      }
-
-      return addInstanceModel({
-        provider_name: payload.llm_factory,
-        instance_name: payload.instance_name,
-        ...modelPayload,
-      });
     },
-    [addProviderInstance, addInstanceModel],
+    [addProviderInstance],
   );
 };
 
@@ -92,7 +78,12 @@ export const useFetchInstanceNameSet = (providerName: string) => {
     providerExists ? providerName : '',
   );
   const instanceNameSet = useMemo(
-    () => new Set(instances.map((i) => i.instance_name)),
+    () =>
+      new Set(
+        instances
+          .filter((instance) => instance.is_owner !== false)
+          .map((instance) => instance.instance_name),
+      ),
     [instances],
   );
   return { instanceNameSet, providerExists };

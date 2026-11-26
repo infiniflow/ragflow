@@ -386,6 +386,8 @@ export function useModelsCatalog({
         useStoredCredentials && instance?.is_owner === true;
       const ret = await listProviderModels({
         provider_name: providerName,
+        ...(instance?.provider_id ? { provider_id: instance.provider_id } : {}),
+        ...(instance?.id ? { instance_id: instance.id } : {}),
         ...(!useStoredCredentials ? { api_key: apiKey as any } : {}),
         ...(canOverrideSavedCredentials &&
         apiKeyConfig &&
@@ -903,7 +905,9 @@ export function useModelVerify({
 
 interface UseModelMutationsArgs {
   providerName: string;
+  providerID?: string;
   instanceName: string;
+  instanceID?: string;
   isDraftInstance: boolean;
   hideActions: boolean;
   resolveCreds: () => ResolvedCreds;
@@ -926,7 +930,9 @@ interface UseModelMutationsArgs {
 
 export function useModelMutations({
   providerName,
+  providerID,
   instanceName,
+  instanceID,
   isDraftInstance,
   hideActions,
   resolveCreds,
@@ -965,6 +971,8 @@ export function useModelMutations({
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: model.name,
       model_type: model.model_types ?? [],
       max_tokens: model.max_tokens ?? 0,
@@ -984,6 +992,8 @@ export function useModelMutations({
     await deleteInstanceModels({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: [model.name],
     });
   };
@@ -1012,6 +1022,8 @@ export function useModelMutations({
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: item.name,
       model_type: item.model_types ?? [],
       max_tokens: item.max_tokens ?? 0,
@@ -1055,7 +1067,9 @@ export function useModelMutations({
     const { apiKey, baseUrl } = resolveCreds();
     await updateProviderInstance({
       provider_name: providerName,
+      provider_id: providerID,
       id: instance!.id,
+      instance_id: instance!.id,
       instance_name: instanceName,
       api_key: apiKey,
       base_url: baseUrl,
@@ -1085,7 +1099,9 @@ export function useModelMutations({
 
 interface UseModelEditArgs {
   providerName: string;
+  providerID?: string;
   instanceName: string;
+  instanceID?: string;
   isModelAdded: (name: string) => boolean;
   isDraftInstance?: boolean;
   /**
@@ -1102,7 +1118,9 @@ interface UseModelEditArgs {
 
 export function useModelEdit({
   providerName,
+  providerID,
   instanceName,
+  instanceID,
   isModelAdded,
   isDraftInstance,
   defaultToolsEnabled = false,
@@ -1210,6 +1228,8 @@ export function useModelEdit({
     const data = await patchInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: targetName,
       max_tokens: item.max_tokens ?? 0,
       model_type: item.model_types ?? [],
@@ -1217,7 +1237,10 @@ export function useModelEdit({
     });
     if (data.code === 0) {
       queryClient.setQueryData<IInstanceModel[]>(
-        LlmKeys.instanceModels(providerName, instanceName),
+        LlmKeys.instanceModels(
+          providerID ?? providerName,
+          instanceID ?? instanceName,
+        ),
         (prev) => {
           if (!prev) return prev;
           const idx = prev.findIndex(

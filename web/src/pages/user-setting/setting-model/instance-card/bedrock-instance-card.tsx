@@ -519,7 +519,8 @@ export const BedrockInstanceCard = forwardRef<
     } else {
       await deleteProviderInstance({
         provider_name: providerName,
-        instances: [instance.instance_name],
+        provider_id: instance.provider_id,
+        instances: [instance.id],
       });
     }
   }, [
