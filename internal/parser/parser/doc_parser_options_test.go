@@ -1,7 +1,10 @@
 package parser
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -143,6 +146,141 @@ func TestDOCParser_RemoveHeaderFooter_DoesNotError(t *testing.T) {
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
+	}
+}
+
+func TestDOCParser_HeaderFooter_PositionalOrderAndRemoval(t *testing.T) {
+	irJSON := `{"sections":[{"title":"","first_page_header":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"First Header"}]}
+	]},"header":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"DOC-123"}]}
+	]},"even_page_header":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"Even Header"}]}
+	]},"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"Body text"}]},
+		{"type":"paragraph","content":[{"type":"text","text":"DOC-123"}]},
+		{"type":"paragraph","content":[{"type":"text","text":"Approval"}]}
+	],"first_page_footer":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"First Footer"}]}
+	]},"footer":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"Approval"}]}
+	]},"even_page_footer":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"Even Footer"}]}
+	]}}]}`
+
+	orig := docExtract
+	defer func() { docExtract = orig }()
+	docExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return irJSON, "", "", nil, nil
+	}
+
+	itemTexts := func(items []DocItem) []string {
+		out := make([]string, len(items))
+		for i, item := range items {
+			out[i] = itemText(item.ToMap())
+		}
+		return out
+	}
+
+	ctx := context.Background()
+
+	// Default parse emits all six header/footer slots around the section body.
+	pDefault := NewDOCParser()
+	resDefault := pDefault.ParseWithResult(ctx, "report.doc", []byte("dummy ole2 bytes"))
+	if resDefault.Err != nil {
+		t.Fatalf("default ParseWithResult error: %v", resDefault.Err)
+	}
+	wantDefault := []string{
+		"First Header", "DOC-123", "Even Header",
+		"Body text", "DOC-123", "Approval",
+		"First Footer", "Approval", "Even Footer",
+	}
+	if got := itemTexts(resDefault.JSON); !reflect.DeepEqual(got, wantDefault) {
+		t.Errorf("default texts = %#v, want %#v", got, wantDefault)
+	}
+
+	// remove_header_footer=true skips header/footer slots by position while
+	// keeping body paragraphs whose text matches header/footer lines.
+	pRemoved := NewDOCParser()
+	pRemoved.ConfigureFromSetup(map[string]any{"remove_header_footer": true})
+	resRemoved := pRemoved.ParseWithResult(ctx, "report.doc", []byte("dummy ole2 bytes"))
+	if resRemoved.Err != nil {
+		t.Fatalf("remove_header_footer ParseWithResult error: %v", resRemoved.Err)
+	}
+	wantBody := []string{"Body text", "DOC-123", "Approval"}
+	if got := itemTexts(resRemoved.JSON); !reflect.DeepEqual(got, wantBody) {
+		t.Errorf("removed texts = %#v, want %#v", got, wantBody)
+	}
+
+	// A .docx renamed to .doc must also skip by position instead of text-matching
+	// against word/header*.xml and word/footer*.xml.
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+	for name, body := range map[string]string{
+		"word/header1.xml": `<?xml version="1.0"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>DOC-123</w:t></w:r></w:p></w:hdr>`,
+		"word/footer1.xml": `<?xml version="1.0"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Approval</w:t></w:r></w:p></w:ftr>`,
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resRenamed := pRemoved.ParseWithResult(ctx, "renamed.doc", buf.Bytes())
+	if resRenamed.Err != nil {
+		t.Fatalf("renamed .docx ParseWithResult error: %v", resRenamed.Err)
+	}
+	if got := itemTexts(resRenamed.JSON); !reflect.DeepEqual(got, wantBody) {
+		t.Errorf("renamed .docx texts = %#v, want %#v", got, wantBody)
+	}
+}
+
+func TestDOCParser_HeaderFooterOnlyIR(t *testing.T) {
+	irJSON := `{"sections":[{"title":"","header":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"DOC-123"}]}
+	]},"elements":[],"footer":{"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"Page 1"}]}
+	]}}]}`
+
+	orig := docExtract
+	defer func() { docExtract = orig }()
+
+	ctx := context.Background()
+
+	// Default parse emits header/footer content even when the body and plain-text views are empty.
+	docExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return irJSON, "", "", nil, nil
+	}
+	resDefault := NewDOCParser().ParseWithResult(ctx, "hf_only.doc", []byte("dummy"))
+	if resDefault.Err != nil {
+		t.Fatalf("default ParseWithResult error: %v", resDefault.Err)
+	}
+	want := []string{"DOC-123", "Page 1"}
+	got := make([]string, len(resDefault.JSON))
+	for i, item := range resDefault.JSON {
+		got[i] = itemText(item.ToMap())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("default texts = %#v, want %#v", got, want)
+	}
+
+	// remove_header_footer=true must not fall back to plainText and re-emit removed header/footer text.
+	docExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return irJSON, "", "DOC-123\nPage 1", nil, nil
+	}
+	pRemoved := NewDOCParser()
+	pRemoved.ConfigureFromSetup(map[string]any{"remove_header_footer": true})
+	resRemoved := pRemoved.ParseWithResult(ctx, "hf_only.doc", []byte("dummy"))
+	if resRemoved.Err != nil {
+		t.Fatalf("remove_header_footer ParseWithResult error: %v", resRemoved.Err)
+	}
+	if len(resRemoved.JSON) != 1 || itemText(resRemoved.JSON[0].ToMap()) != "" {
+		t.Errorf("remove_header_footer items = %+v, want single empty text item", resRemoved.JSON)
 	}
 }
 
