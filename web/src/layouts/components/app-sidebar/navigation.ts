@@ -6,6 +6,7 @@ import {
   LucideMessagesSquare,
   LucidePlug,
   LucideSparkles,
+  LucideUserGroup,
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -24,6 +25,7 @@ export enum NavItemKey {
   Studio = 'studio',
   Library = 'library',
   Integrations = 'integrations',
+  Team = 'team',
 }
 
 export interface NavItem {
@@ -78,6 +80,13 @@ export const NavItems: NavItem[] = [
     icon: LucideLibrary,
     activeAliases: [],
   },
+  {
+    key: NavItemKey.Team,
+    path: Routes.Team,
+    labelKey: 'sidebar.team',
+    icon: LucideUserGroup,
+    activeAliases: [],
+  },
 ];
 
 export interface IntegrationChild {
@@ -107,11 +116,6 @@ export const IntegrationChildren: IntegrationChild[] = [
     key: 'mcp',
     path: `${Routes.Integrations}${Routes.Mcp}`,
     labelKey: 'sidebar.mcp',
-  },
-  {
-    key: 'team',
-    path: Routes.Team,
-    labelKey: 'sidebar.team',
   },
 ];
 
