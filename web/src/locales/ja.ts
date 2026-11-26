@@ -356,9 +356,9 @@ export default {
       chunkMethodTab: 'チャンク方法',
       testResults: '結果',
       testSetting: '設定',
-      retrievalTesting: '検索テスト',
+      retrievalTesting: '検索',
       retrievalTestingDescription:
-        '検索テストを実行し、RAGFlowがLLMに必要な内容を正しく取得できるかを確認します。',
+        '検索を実行し、RAGFlowがLLMに必要な内容を正しく取得できるかを確認します。',
       Parse: 'パース',
       knowledgeGraph: 'ナレッジグラフ',
       compilation: 'コンパイル',

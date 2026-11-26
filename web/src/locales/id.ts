@@ -86,6 +86,7 @@ export default {
       reselectParserAfterUploadHint:
         'Lanjutkan pengunggahan, lalu sistem akan secara otomatis mengalihkan file-file ini ke konfigurasi parsing bawaan yang didukung.',
       dataset: 'Dataset',
+      retrievalTesting: 'Pengambilan',
       testing: 'Pengambilan',
       files: 'file',
       configuration: 'Konfigurasi',
@@ -112,7 +113,7 @@ export default {
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',
       testingDescription:
-        'Lakukan tes pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
+        'Lakukan pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'Saat melakukan pengambilan, RAGFlow menggunakan kombinasi kesamaan kata kunci berbobot dan kesamaan kosinus vektor berbobot, atau kombinasi kesamaan kata kunci berbobot dan skor pemeringkatan ulang berbobot ketika model pemeringkat ulang dipilih. Parameter ini menetapkan ambang kesamaan antara kueri pengguna dan potongan. Potongan dengan skor kesamaan di bawah ambang ini akan dikecualikan dari hasil. Secara default, ambang ditetapkan ke 20. Artinya, hanya potongan dengan skor kesamaan hibrida 20 atau lebih tinggi yang akan diambil. Jika bobot kesamaan vektor ditetapkan ke 0, ambang ini tidak berlaku.',
