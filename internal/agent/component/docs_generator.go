@@ -479,9 +479,7 @@ func sanitizeFilename(raw, ext string) string {
 	// Delegate control-char stripping and forbidden-char mapping to the
 	// shared component; collapse whitespace to a single underscore.
 	base := strings.Join(strings.Fields(utility.SanitizeFileNameComponent(raw)), "_")
-	if runes := []rune(base); len(runes) > maxBase {
-		base = string(runes[:maxBase])
-	}
+	base = utility.TruncateRunes(base, maxBase)
 	if base == "" {
 		return "file" + ext
 	}

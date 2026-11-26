@@ -1551,8 +1551,5 @@ func (s *IngestionTaskService) truncateIngestionEventMessage(message string) str
 	// The marker is tiny relative to the configured limits for any practical
 	// input. Keep a defensive fallback for an unexpectedly huge rune count.
 	marker := fmt.Sprintf("… [truncated, %d chars dropped]", len(runes))
-	if len([]rune(marker)) > limits.MaxMessageChars {
-		return string([]rune(marker)[:limits.MaxMessageChars])
-	}
-	return marker
+	return utility.TruncateRunes(marker, limits.MaxMessageChars)
 }

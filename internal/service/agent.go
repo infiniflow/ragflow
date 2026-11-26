@@ -2826,11 +2826,7 @@ func deriveAgentSessionName(userInput any) string {
 	} else {
 		text = stringifyAgentUserInput(userInput)
 	}
-	runes := []rune(text)
-	if len(runes) > 250 {
-		runes = runes[:250]
-	}
-	return string(runes)
+	return utility.TruncateRunes(text, 250)
 }
 
 // alone for first-touch runs, canvasID + sessionID for resumed runs

@@ -876,7 +876,7 @@ func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
 			text = strings.Join(parts, "")
 		}
 	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(cpnID)+"@")
+	return common.ContainsFold(text, cpnID+"@")
 }
 
 func hasStructuredOutput(params map[string]any) bool {

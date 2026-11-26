@@ -57,6 +57,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"ragflow/internal/common"
@@ -529,8 +530,6 @@ func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resol
 
 func mapStringAny(in map[string]any) map[string]interface{} {
 	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
-	"strconv"
 	"time"
 )
 
@@ -39,15 +38,7 @@ func LoadConfig() Config {
 }
 
 func envInt(key string, def int) int {
-	v := common.GetEnv(key)
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
+	return common.GetEnvInt(key, def)
 }
 
 func envStr(key, def string) string {

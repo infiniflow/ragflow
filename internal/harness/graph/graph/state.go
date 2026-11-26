@@ -3,6 +3,7 @@ package graph
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -185,12 +186,8 @@ var reducers = map[string]types.ReducerFunc{
 		if currentMap, ok := current.(map[string]interface{}); ok {
 			if updateMap, ok := update.(map[string]interface{}); ok {
 				result := make(map[string]interface{}, len(currentMap)+len(updateMap))
-				for k, v := range currentMap {
-					result[k] = v
-				}
-				for k, v := range updateMap {
-					result[k] = v
-				}
+				maps.Copy(result, currentMap)
+				maps.Copy(result, updateMap)
 				return result
 			}
 		}
