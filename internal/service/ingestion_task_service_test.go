@@ -2792,3 +2792,66 @@ func TestRetryWithFreshRunIdentityRejectsDriftedStatus(t *testing.T) {
 		t.Fatalf("pipeline log count = %d, want 0 (no run created on conflict)", n)
 	}
 }
+
+// TestStopActiveTaskRedirectsQueuedStopToRunning covers the TOCTOU drift that
+// makes the REST stop test flaky: the caller saw CREATED/SCHEDULED, but by the
+// time the queued-stop CAS runs the worker has already moved the task to
+// RUNNING. The stop must follow the RUNNING -> STOPPING path instead of
+// returning a status-conflict error and leaving the task running.
+func TestStopActiveTaskRedirectsQueuedStopToRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	// The DB holds the post-drift status; the caller's snapshot is stale.
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+	stale := &entity.IngestionTask{ID: "task-1", Status: common.SCHEDULED}
+	got, err := svc.stopActiveTask(ctx, stale)
+	if err != nil {
+		t.Fatalf("stopActiveTask should redirect on status drift, got: %v", err)
+	}
+	if got.Status != common.STOPPING {
+		t.Fatalf("status = %q, want %q", got.Status, common.STOPPING)
+	}
+	task, err := svc.GetTask(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.Status != common.STOPPING {
+		t.Fatalf("persisted status = %q, want %q", task.Status, common.STOPPING)
+	}
+}
+
+// TestStopActiveTaskDoesNotRedirectTerminalStatus is the adversarial guard:
+// a drift to a terminal state must remain a conflict, never be resurrected
+// into STOPPING (which has no worker to settle it and would hang forever).
+func TestStopActiveTaskDoesNotRedirectTerminalStatus(t *testing.T) {
+	for _, terminal := range []string{common.COMPLETED, common.STOPPED, common.FAILED} {
+		t.Run(terminal, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", terminal)
+
+			svc := NewIngestionTaskService()
+			ctx := t.Context()
+			stale := &entity.IngestionTask{ID: "task-1", Status: common.SCHEDULED}
+			_, err := svc.stopActiveTask(ctx, stale)
+			var conflict *TaskStatusConflictError
+			if !errors.As(err, &conflict) {
+				t.Fatalf("err = %v, want TaskStatusConflictError", err)
+			}
+			task, err := svc.GetTask(ctx, "task-1")
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			if task.Status != terminal {
+				t.Fatalf("terminal task drifted to %q, want %q", task.Status, terminal)
+			}
+		})
+	}
+}

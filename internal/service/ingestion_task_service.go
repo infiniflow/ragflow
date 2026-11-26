@@ -493,6 +493,17 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 	case common.CREATED, common.SCHEDULED:
 		stopped, err := s.transitionFrom(ctx, task.ID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
 		if err != nil {
+			// The CAS can lose a race with the worker promoting the task to
+			// RUNNING between the caller's read and this transition. The
+			// conflict error already re-read the live status; when it is
+			// RUNNING, follow the running-stop path so the user's stop still
+			// takes effect instead of failing spuriously. Every queued-stop
+			// side effect below runs only after a successful CAS, so
+			// redirecting here cannot duplicate any of them.
+			var conflict *TaskStatusConflictError
+			if errors.As(err, &conflict) && conflict.ActualCurrent == common.RUNNING {
+				return s.stopRunningTask(ctx, task.ID)
+			}
 			return nil, err
 		}
 		// The stop finalizes without a worker (no RUNNING phase, so no
@@ -503,20 +514,28 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
-		task, err := s.transition(ctx, task.ID, common.STOPPING)
-		if err != nil {
-			return nil, err
-		}
-		// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
-		// running worker's pollCancel detects the stop on its next 500ms
-		// tick instead of the slower DB fallback path.
-		if rc := kvrocks.Get(); rc != nil {
-			rc.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 1*time.Hour)
-		}
-		return task, nil
+		return s.stopRunningTask(ctx, task.ID)
 	default:
 		return task, nil
 	}
+}
+
+// stopRunningTask moves an already-running task to STOPPING and raises the
+// cancel flag the worker polls. It serves both the direct RUNNING branch and
+// the redirect taken when a queued-stop CAS loses the race to the worker's
+// RUNNING transition.
+func (s *IngestionTaskService) stopRunningTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.transition(ctx, taskID, common.STOPPING)
+	if err != nil {
+		return nil, err
+	}
+	// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
+	// running worker's pollCancel detects the stop on its next 500ms
+	// tick instead of the slower DB fallback path.
+	if rc := kvrocks.Get(); rc != nil {
+		rc.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 1*time.Hour)
+	}
+	return task, nil
 }
 
 // RequestStopScoped stops a task only when its current status is among allowed.
