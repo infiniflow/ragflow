@@ -1,0 +1,96 @@
+package chunker
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
+
+// Regression coverage for #22874: a CRLF document with a custom (backtick)
+// delimiter must split exactly like its LF twin because line endings are
+// normalized before the delimiter is matched. Both the text path
+// (invokeTextPayload -> chunkPerSegment) and the JSON path
+// (invokeJSONPayload -> chunkFromItem) are exercised; their LF twin is the
+// baseline for the expected chunk texts.
+
+const (
+	crlfCustomDelimDoc = "Alpha\r\nstill one paragraph\r\n\r\nBeta paragraph\r\n"
+	lfCustomDelimDoc   = "Alpha\nstill one paragraph\n\nBeta paragraph\n"
+	backtickBlankLine  = "`\n\n`"
+)
+
+func customCRLFTextParams() map[string]any {
+	return map[string]any{
+		"chunk_token_size": float64(128),
+		"delimiters":       []string{backtickBlankLine},
+	}
+}
+
+func crlfTextInput(text string) map[string]any {
+	return map[string]any{"name": "t", "output_format": "text", "text": text}
+}
+
+func crlfJSONTextInput(text string) map[string]any {
+	return map[string]any{
+		"name":          "t",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": text, "doc_type_kwd": "text"}},
+	}
+}
+
+func TestCustomDelimiterTextCRLFNormalized(t *testing.T) {
+	params := customCRLFTextParams()
+	crlf := chunkTexts(invokeTokenChunks(t, params, crlfTextInput(crlfCustomDelimDoc)))
+	lf := chunkTexts(invokeTokenChunks(t, params, crlfTextInput(lfCustomDelimDoc)))
+
+	if len(crlf) != 2 {
+		t.Fatalf("CRLF text path: want 2 chunks, got %d (%q)", len(crlf), crlf)
+	}
+	for i, s := range crlf {
+		if strings.Contains(s, "\r") {
+			t.Errorf("chunk[%d] carries carriage return: %q", i, s)
+		}
+	}
+	if !reflect.DeepEqual(crlf, lf) {
+		t.Errorf("CRLF/LF divergence:\n crlf=%q\n lf  =%q", crlf, lf)
+	}
+}
+
+func TestCustomDelimiterJSONCRLFNormalized(t *testing.T) {
+	params := customCRLFTextParams()
+	crlf := chunkTexts(invokeTokenChunks(t, params, crlfJSONTextInput(crlfCustomDelimDoc)))
+	lf := chunkTexts(invokeTokenChunks(t, params, crlfJSONTextInput(lfCustomDelimDoc)))
+
+	if len(crlf) != 2 {
+		t.Fatalf("CRLF JSON path: want 2 chunks, got %d (%q)", len(crlf), crlf)
+	}
+	for i, s := range crlf {
+		if strings.Contains(s, "\r") {
+			t.Errorf("chunk[%d] carries carriage return: %q", i, s)
+		}
+	}
+	if !reflect.DeepEqual(crlf, lf) {
+		t.Errorf("CRLF/LF divergence:\n crlf=%q\n lf  =%q", crlf, lf)
+	}
+}
+
+// TestCustomDelimiterJSONNonTextBytesUntouched locks the scope of the fix: only
+// text items are normalized. A table/image item keeps its bytes verbatim.
+func TestCustomDelimiterJSONNonTextBytesUntouched(t *testing.T) {
+	params := customCRLFTextParams()
+	for _, docType := range []string{"table", "image"} {
+		t.Run(docType, func(t *testing.T) {
+			chunks := invokeTokenChunks(t, params, map[string]any{
+				"name":          "t",
+				"output_format": "json",
+				"json":          []map[string]any{{"text": crlfCustomDelimDoc, "doc_type_kwd": docType}},
+			})
+			if len(chunks) != 1 {
+				t.Fatalf("want 1 chunk, got %d", len(chunks))
+			}
+			if got := chunks[0]["text"]; got != crlfCustomDelimDoc {
+				t.Errorf("non-text text changed: want %q got %q", crlfCustomDelimDoc, got)
+			}
+		})
+	}
+}

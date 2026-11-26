@@ -104,6 +104,13 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
+// normalizeLineEndings converts CRLF and lone CR to LF, mirroring Python's
+// text.replace("\r\n", "\n").replace("\r", "\n"). Idempotent: normalizing
+// already-normalized text returns it unchanged.
+func normalizeLineEndings(text string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+}
+
 // splitByDelim splits text on every match of pattern.
 //
 // When keepDelim is true the matched delimiter is preserved by gluing it to the
