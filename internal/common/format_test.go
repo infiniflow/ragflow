@@ -146,3 +146,35 @@ func TestIsUUID_Characterization(t *testing.T) {
 		})
 	}
 }
+
+// TestIsValidEmail_Characterization pins the shared email shape gate after
+// consolidating the duplicated regex into a single helper.
+func TestIsValidEmail_Characterization(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"plain", "alice@example.com", true},
+		{"subdomain and hyphen", "a.b_c-d@example-domain.com", true},
+		{"multi-level domain", "user@sub.example.co.uk", true},
+		{"short tld", "a@b.co", true},
+		{"single char tld rejected", "a@b.c", false},
+		{"no at rejected", "plainaddress", false},
+		{"double at rejected", "a@@b.com", false},
+		{"empty local rejected", "@example.com", false},
+		{"no dot in domain rejected", "alice@example", false},
+		{"empty tld rejected", "alice@example.", false},
+		{"uppercase allowed", "Alice@Example.COM", true},
+		{"plus tag rejected", "a+b@example.com", false},
+		{"empty rejected", "", false},
+		{"space rejected", "a b@example.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidEmail(tt.in); got != tt.want {
+				t.Fatalf("IsValidEmail(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

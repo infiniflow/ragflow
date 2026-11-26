@@ -83,6 +83,11 @@ var (
 	dotSlashPrefixRe   = regexp.MustCompile(`^\./+`)
 	slugInvalidCharsRe = regexp.MustCompile(`[^a-z0-9-]+`)
 	dashRunRe          = regexp.MustCompile(`-+`)
+	skillNameRe        = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+	semverRe           = regexp.MustCompile(`^\d+\.\d+\.\d+`)
+	// neverMatchRe is the fallback for an invalid glob pattern; it preserves
+	// the old regexp.MatchString behavior of ignoring compile errors.
+	neverMatchRe = regexp.MustCompile(`a^`)
 )
 
 // globRegexpCache caches compiled glob ignore patterns. The patterns in use
@@ -98,7 +103,7 @@ func cachedGlobRegexp(pattern string) *regexp.Regexp {
 	}
 	re, err := regexp.Compile(globToRegex(pattern))
 	if err != nil {
-		re = regexp.MustCompile(`a^`)
+		re = neverMatchRe
 	}
 	actual, _ := globRegexpCache.LoadOrStore(pattern, re)
 	return actual.(*regexp.Regexp)
@@ -1666,14 +1671,12 @@ func parseFrontmatter(content string) (*SkillMetadata, error) {
 
 // isValidSkillName checks if skill name follows slug format
 func isValidSkillName(name string) bool {
-	matched, _ := regexp.MatchString(`^[a-z0-9][a-z0-9_-]*$`, name)
-	return matched
+	return skillNameRe.MatchString(name)
 }
 
 // isValidSemver checks basic semver format
 func isValidSemver(version string) bool {
-	matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+`, version)
-	return matched
+	return semverRe.MatchString(version)
 }
 
 // isTextFile checks if file is text-based

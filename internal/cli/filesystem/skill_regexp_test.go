@@ -94,3 +94,12 @@ func TestMatchPattern_Characterization(t *testing.T) {
 		})
 	}
 }
+
+// BenchmarkIsValidSkillName guards the regexp-hoist on the skill-name
+// validation path, which compiled its pattern on every call.
+func BenchmarkIsValidSkillName(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		isValidSkillName("my-skill-name")
+	}
+}

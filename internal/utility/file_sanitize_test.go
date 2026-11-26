@@ -20,7 +20,9 @@ import "testing"
 
 // TestSanitizeFilename_Characterization pins the current filename sanitizer
 // behavior: path separators normalized, dot segments dropped, and every char
-// outside [A-Za-z0-9_-/] stripped from each component.
+// outside [A-Za-z0-9_-/] stripped from each component. The dot between a name
+// and its extension is stripped by the current pattern; preserving extensions
+// is a separate concern, not part of this characterization.
 func TestSanitizeFilename_Characterization(t *testing.T) {
 	tests := []struct {
 		name string

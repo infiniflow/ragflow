@@ -155,7 +155,7 @@ func generateRandomHex(n int) string {
 //   - map[string]interface{}: user information without password
 //   - error: error message
 func (s *Service) CreateUser(ctx context.Context, username, password, role, nickname string) (map[string]interface{}, error) {
-	if !common.EmailRe.MatchString(username) {
+	if !common.IsValidEmail(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
 	}
 
