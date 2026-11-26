@@ -5,7 +5,7 @@ import { useCanvasSnapshot } from '../context';
 import useGraphStore from '../store';
 
 // Snapshot-aware graph accessors. Inside a read-only snapshot preview (e.g.
-// the version history dialog) they resolve nodes/edges from the provided
+// the version history page) they resolve nodes/edges from the provided
 // snapshot instead of the live canvas store, which always holds the current
 // draft; outside a preview they fall back to the store unchanged.
 

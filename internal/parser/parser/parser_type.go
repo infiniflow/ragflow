@@ -18,6 +18,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"ragflow/internal/utility"
 )
@@ -61,6 +62,50 @@ func selectParser(fileType utility.FileType, data []byte, textOnly bool) (ParseR
 // editions. Lookups consult this map before the built-in switch so an edition
 // can add parsers for its own file types without the community switch changing.
 var parserFactories = map[utility.FileType]func(textOnly bool) (ParseResultProducer, error){}
+
+// parseMethodFactories holds parser overrides keyed by file type and method.
+var parseMethodFactories = map[utility.FileType]map[string]func(textOnly bool) (ParseResultProducer, error){}
+
+// RegisterParseMethodFactory registers a parser factory for a specific
+// file type and method pair. Register factories during package initialization.
+// Methods are matched case-insensitively.
+func RegisterParseMethodFactory(ft utility.FileType, method string, factory func(textOnly bool) (ParseResultProducer, error)) {
+	method = strings.ToLower(strings.TrimSpace(method))
+	if ft == "" || method == "" || factory == nil {
+		return
+	}
+	byMethod := parseMethodFactories[ft]
+	if byMethod == nil {
+		byMethod = map[string]func(textOnly bool) (ParseResultProducer, error){}
+		parseMethodFactories[ft] = byMethod
+	}
+	byMethod[method] = factory
+}
+
+// HasParseMethod reports whether a FileType + parse_method override exists.
+func HasParseMethod(ft utility.FileType, method string) bool {
+	method = strings.ToLower(strings.TrimSpace(method))
+	if method == "" {
+		return false
+	}
+	_, ok := parseMethodFactories[ft][method]
+	return ok
+}
+
+// GetParserWithMethod selects a registered method-specific parser. When the
+// method is not registered it falls back to the ordinary FileType route, which
+// owns validation/fallback for that family.
+func GetParserWithMethod(ft utility.FileType, method string, data []byte, textOnly bool) (ParseResultProducer, utility.FileType, error) {
+	method = strings.ToLower(strings.TrimSpace(method))
+	if factory, ok := parseMethodFactories[ft][method]; ok {
+		p, err := factory(textOnly)
+		if err != nil {
+			return nil, ft, err
+		}
+		return p, ft, nil
+	}
+	return selectParser(ft, data, textOnly)
+}
 
 // RegisterParserFactory registers a parser factory for a FileType not handled by
 // the community switch. Enterprise editions call this from init() to inject

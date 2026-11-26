@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -212,6 +213,30 @@ func quoteMetaDSNValue(v string) string {
 	return "'" + r + "'"
 }
 
+// buildMySQLMetaDSN builds the go-sql-driver/mysql DSN for the metadata
+// database. `tls` is optional: managed MySQL offerings often require TLS
+// (issue #22714). go-sql-driver has no allowPublicKeyRetrieval option: it
+// requests the RSA public key itself during plaintext caching_sha2_password
+// authentication, and an unknown DSN parameter would be sent as a system
+// variable and rejected.
+func buildMySQLMetaDSN(cfg config.MySQLConfig) string {
+	params := url.Values{}
+	params.Set("charset", cfg.Charset)
+	params.Set("parseTime", "True")
+	params.Set("loc", "Local")
+	if cfg.TLS != "" {
+		params.Set("tls", cfg.TLS)
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+		cfg.DatabaseName,
+		params.Encode(),
+	)
+}
+
 // buildVastbaseMetaDSN builds the lib/pq keyword DSN for the Vastbase metadata
 // database, mirroring the document engine's DSN contract: quoted values, an
 // empty ssl_mode resolved by host (disable on loopback, verify-full on every
@@ -324,15 +349,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		staleTimeout = vastbaseConfig.StaleTimeout
 	default:
 		databaseConfig := globalConfig.GetMySQLConfig()
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-			databaseConfig.User,
-			databaseConfig.Password,
-			databaseConfig.Host,
-			databaseConfig.Port,
-			databaseConfig.DatabaseName,
-			databaseConfig.Charset,
-		)
-		dialector = newMigrationAwareDialector(dsn)
+		dialector = newMigrationAwareDialector(buildMySQLMetaDSN(databaseConfig))
 		maxConnections = databaseConfig.MaxConnections
 		staleTimeout = databaseConfig.StaleTimeout
 	}

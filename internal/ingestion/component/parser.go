@@ -473,14 +473,14 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     arms are keyed off the utility constants.
 	//
 	requestedType := fileTypeFromInputs(inputs)
-	fileParser, fileTypeExt, selectionErr := parser.GetParser(requestedType, binary)
+	fileParser, fileTypeExt, selectionErr := selectParserForRequest(requestedType, binary, setups)
 	if selectionErr == nil && fileTypeExt != requestedType {
 		warning := fmt.Sprintf("file %q: requested format %s does not match detected format %s; continuing with the %s parser", filename, requestedType, fileTypeExt, fileTypeExt)
 		common.Warn(warning)
 		reportParserWarnings(ctx, []string{warning})
 	}
 	parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
-	enhanceOn := c.enableVisionEnhancement
+	enhanceOn := c.enableVisionEnhancement && !parser.HasParseMethod(fileTypeExt, configuredParserMethod(setups, fileTypeExt))
 	split := progress.NewSplit(parsePagesOn, enhanceOn)
 	pageWin := split.Take(parsePagesOn)
 	visionWin := split.Take(enhanceOn)
@@ -520,6 +520,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		if selectionErr != nil && fileTypeExt != utility.FileTypeOTHER {
 			return nil, fmt.Errorf("parser: resolve %q: %w", fileTypeExt, selectionErr)
 		}
+		langHint, _ := getString(inputs, "lang")
+		configureParserLanguage(fileParser, langHint)
 		dispatched = dispatchParse(ctx, fileParser, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
 			pageWin.Report(ctx, 1.0)
