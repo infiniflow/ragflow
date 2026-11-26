@@ -39,6 +39,10 @@ type parserSetupConfigurer interface {
 	ConfigureFromSetup(setup map[string]any)
 }
 
+type parserLanguageConfigurer interface {
+	SetLanguage(lang string)
+}
+
 // resolveParserFamily maps an already-selected parser type to its setup key.
 // A type name must not be reinterpreted as another filename extension.
 func resolveParserFamily(fileType utility.FileType) string {
@@ -57,6 +61,32 @@ func resolveParserFamily(fileType utility.FileType) string {
 		return "audio"
 	default:
 		return string(fileType)
+	}
+}
+
+// configuredParserMethod returns the parse_method a template pinned for the
+// file family, or "" when it did not set one.
+func configuredParserMethod(setups map[string]schema.ParserSetup, fileType utility.FileType) string {
+	setup, ok := setups[resolveParserFamily(fileType)]
+	if !ok {
+		return ""
+	}
+	method, _ := setup["parse_method"].(string)
+	return strings.TrimSpace(method)
+}
+
+// selectParserForRequest applies a registered override for the configured
+// method, falling back to the ordinary file-type route.
+func selectParserForRequest(fileType utility.FileType, data []byte, setups map[string]schema.ParserSetup) (parser.ParseResultProducer, utility.FileType, error) {
+	return parser.GetParserWithMethod(fileType, configuredParserMethod(setups, fileType), data, false)
+}
+
+func configureParserLanguage(p any, lang string) {
+	if lang == "" {
+		return
+	}
+	if cfg, ok := p.(parserLanguageConfigurer); ok {
+		cfg.SetLanguage(lang)
 	}
 }
 
@@ -107,7 +137,7 @@ func dispatchParse(ctx context.Context, p parser.ParseResultProducer, fileType u
 	configureParserFromSetups(p, fileType, setups)
 	attachPDFPageProgress(ctx, p, window)
 	var finishParserIO func()
-	if method := strings.ToLower(strings.TrimSpace(parseMethod)); method != "" && method != "deepdoc" && method != "plain_text" {
+	if method := strings.ToLower(strings.TrimSpace(parseMethod)); method != "" && method != "deepdoc" && method != "plain_text" && !parser.HasParseMethod(fileType, method) {
 		finishParserIO = agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend="+method)
 	} else {
 		finishParserIO = func() {}
