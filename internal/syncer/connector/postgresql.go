@@ -27,7 +27,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +35,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
+
+	"ragflow/internal/utility/sqllex"
 )
 
 const (
@@ -137,16 +138,12 @@ func (c *PostgreSQLConnector) ValidateConnectorSetting(ctx context.Context, requ
 
 // OpenSync opens one PostgreSQL sync session.
 func (c *PostgreSQLConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
-	db, err := c.open()
+	mode := request.rdbmsMode(c.idColumn, c.timestampColumn)
+	db, bases, err := c.openQueries(ctx, mode != rdbmsVerbatim)
 	if err != nil {
 		return nil, err
 	}
-	bases, err := c.baseQueries(ctx, db)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	queries := c.buildSyncQueries(bases, request)
+	queries := c.buildSyncQueries(bases, request, mode)
 	orderColumn := c.syncOrderColumn(request)
 	session := &postgresSyncSession{
 		connector:         c,
@@ -171,13 +168,8 @@ func (c *PostgreSQLConnector) OpenSync(ctx context.Context, request SyncRequest)
 
 // OpenPrune opens one complete PostgreSQL prune snapshot session.
 func (c *PostgreSQLConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
-	db, err := c.open()
+	db, bases, err := c.openQueries(ctx, true)
 	if err != nil {
-		return nil, err
-	}
-	bases, err := c.baseQueries(ctx, db)
-	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	queries := make([]string, 0, len(bases))
@@ -234,13 +226,14 @@ func postgresPinnedDial(pinIP net.IP, port string, timeout time.Duration) func(c
 	}
 }
 
-// baseQueries returns the configured query or a SELECT per table. Table names
+func (c *PostgreSQLConnector) openQueries(ctx context.Context, wrapped bool) (rdbmsSessionDB, []rdbmsQuery, error) {
+	return openRDBMSQueries(ctx, c.open, c.tableQueries, c.query, sqllex.PostgreSQL, wrapped)
+}
+
+// tableQueries returns a SELECT per table. Table names
 // are sorted so the sync stream order is stable across runs and a resume
 // cursor can reliably skip already-processed tables.
-func (c *PostgreSQLConnector) baseQueries(ctx context.Context, db *sql.DB) ([]rdbmsQuery, error) {
-	if c.query != "" {
-		return []rdbmsQuery{{name: "", sql: c.query}}, nil
-	}
+func (c *PostgreSQLConnector) tableQueries(ctx context.Context, db *sql.DB) ([]rdbmsQuery, error) {
 	rows, err := db.QueryContext(ctx, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
 	if err != nil {
 		return nil, err
@@ -276,10 +269,10 @@ func quotePostgresIdentifier(name string) string {
 // one is available, so a checkpoint can resume the stream from an anchor.
 // Each query carries an unordered fallback used when a custom SQL query does
 // not expose the configured ordering column.
-func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncRequest) []rdbmsSyncQuery {
+func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncRequest, mode rdbmsSyncMode) []rdbmsSyncQuery {
 	queries := make([]rdbmsSyncQuery, 0, len(bases))
-	switch {
-	case !request.FromBeginning && c.timestampColumn != "":
+	switch mode {
+	case rdbmsTimeWindow:
 		start := request.WindowStart
 		end := &request.WindowEnd
 		for _, base := range bases {
@@ -290,13 +283,13 @@ func (c *PostgreSQLConnector) buildSyncQueries(bases []rdbmsQuery, request SyncR
 				fallback: c.buildTimeFilteredQuery(base.sql, start, end),
 			})
 		}
-	case request.FromBeginning && c.idColumn != "":
+	case rdbmsOrderByID:
 		for _, base := range bases {
 			queries = append(queries, rdbmsSyncQuery{
 				name:     base.name,
 				sql:      c.buildOrderedQuery(base.sql, c.idColumn),
 				ordered:  true,
-				fallback: c.wrapQuery(base.sql),
+				fallback: wrapRDBMSQuery(base.sql, "*"),
 			})
 		}
 	default:
@@ -324,7 +317,7 @@ func (c *PostgreSQLConnector) syncOrderColumn(request SyncRequest) string {
 // buildOrderedQuery wraps the base query and orders it by a stable column so
 // connector sync can resume from a checkpoint.
 func (c *PostgreSQLConnector) buildOrderedQuery(base, orderColumn string) string {
-	return c.wrapQuery(base) + " ORDER BY ragflow_src." + orderColumn + " ASC"
+	return wrapRDBMSQuery(base, "*") + " ORDER BY ragflow_src." + orderColumn + " ASC"
 }
 
 // buildTimeFilteredQuery wraps the base query and appends timestamp bounds.
@@ -336,7 +329,7 @@ func (c *PostgreSQLConnector) buildTimeFilteredQuery(base string, start, end *ti
 	if end != nil {
 		conditions = append(conditions, fmt.Sprintf("ragflow_src.%s <= %s", c.timestampColumn, c.formatDatetime(*end)))
 	}
-	query := c.wrapQuery(base)
+	query := wrapRDBMSQuery(base, "*")
 	if len(conditions) > 0 {
 		query = query + " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -364,32 +357,13 @@ func (c *PostgreSQLConnector) buildSlimQuery(base string) string {
 		columns = c.contentColumns
 	}
 	if len(columns) == 0 {
-		return c.wrapQuery(base)
+		return wrapRDBMSQuery(base, "*")
 	}
 	selects := make([]string, 0, len(columns))
 	for _, column := range columns {
 		selects = append(selects, fmt.Sprintf("ragflow_src.%s", column))
 	}
-	return fmt.Sprintf("SELECT %s FROM (%s) AS ragflow_src", strings.Join(selects, ", "), c.stripOrderBy(base))
-}
-
-// wrapQuery wraps the base query as a derived table named ragflow_src.
-func (c *PostgreSQLConnector) wrapQuery(base string) string {
-	return fmt.Sprintf("SELECT * FROM (%s) AS ragflow_src", c.stripOrderBy(base))
-}
-
-// stripOrderBy removes a trailing top-level ORDER BY clause.
-func (c *PostgreSQLConnector) stripOrderBy(query string) string {
-	pattern := regexp.MustCompile(`(?i)\border\s+by\b`)
-	cleaned := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	matches := pattern.FindAllStringIndex(cleaned, -1)
-	for i := len(matches) - 1; i >= 0; i-- {
-		prefix := cleaned[:matches[i][0]]
-		if strings.Count(prefix, "(") == strings.Count(prefix, ")") {
-			return strings.TrimSpace(prefix)
-		}
-	}
-	return cleaned
+	return wrapRDBMSQuery(base, strings.Join(selects, ", "))
 }
 
 // formatDatetime renders a UTC time as an ISO-8601 PostgreSQL literal.
@@ -601,7 +575,7 @@ func (c *PostgreSQLConnector) splitColumns(value any) []string {
 
 type postgresSyncSession struct {
 	connector  *PostgreSQLConnector
-	db         *sql.DB
+	db         rdbmsSessionDB
 	queries    []string
 	queryNames []string
 	// orderedFlags[i] reports whether queries[i] carries a stable ORDER BY.
@@ -796,7 +770,7 @@ func isPostgresUnknownColumn(err error) bool {
 
 type postgresPruneSession struct {
 	connector  *PostgreSQLConnector
-	db         *sql.DB
+	db         rdbmsSessionDB
 	queries    []string
 	queryIndex int
 	rows       *sql.Rows

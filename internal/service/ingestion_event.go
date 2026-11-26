@@ -16,12 +16,14 @@ type IngestionEventItem struct {
 	Component string     `json:"component"`
 	Phase     int        `json:"phase"`
 	Message   string     `json:"message"`
+	ErrorCode string     `json:"error_code,omitempty"`
 }
 
 func IngestionEventItemFromLog(event *entity.IngestionTaskLog) IngestionEventItem {
 	if event == nil {
 		return IngestionEventItem{}
 	}
+	errorCode, _ := event.Checkpoint["error_code"].(string)
 	return IngestionEventItem{
 		ID:        event.ID,
 		TS:        event.CreateDate,
@@ -29,5 +31,6 @@ func IngestionEventItemFromLog(event *entity.IngestionTaskLog) IngestionEventIte
 		Component: event.Component,
 		Phase:     event.Phase,
 		Message:   event.Message,
+		ErrorCode: errorCode,
 	}
 }

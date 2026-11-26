@@ -78,6 +78,7 @@ Configure how PDF documents are parsed. You can select a parsing method based on
   - **DeepDOC:** RAGFlow's default document parser. It performs OCR, table structure recognition, and document layout analysis. It is suitable for PDFs containing complex layouts, images, scanned content, or tables.
   - **Naive:** Suitable for PDFs that primarily contain plain text. It reduces OCR, table recognition, and complex layout analysis, making it faster for simple text-based PDFs.
   - **Docling:** An open-source document parsing tool that can parse PDFs and other documents and extract structured content.
+  - **Mistral OCR:** Add a Mistral OCR model under **Model providers**, then select it as the PDF parsing method. It uses Mistral's OCR endpoint and supports PDF page ranges.
   - **OpenDataLoader:** Extracts text, layout, and structured information from documents. It can serve as an alternative to other built-in parsing methods.
   - **TCADP Parser:** An open-source parser from Tencent that can parse PDF content.
   - **MonkeyOCRv2:** A vision-based parsing method that combines OCR and visual understanding to process scanned documents, complex layouts, and mixed text and images.

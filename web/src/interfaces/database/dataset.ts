@@ -137,6 +137,7 @@ export interface IKnowledgeFile {
   update_date: string;
   update_time: number;
   parser_config: IKnowledgeFileParserConfig;
+  operator_permission?: number;
 }
 
 export interface ITenantInfo {

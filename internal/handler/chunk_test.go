@@ -160,6 +160,7 @@ func setupChunkHandlerWithUser(userID string, mock *mockChunkSvc) (*gin.Engine, 
 }
 
 func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
@@ -168,8 +169,8 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		if permission.UserIDFromContext(ctx) != "user-1" {
 			t.Fatalf("context userID = %q, want user-1", permission.UserIDFromContext(ctx))
 		}
-		if req.DatasetID != "kb-1" || req.DocID != "doc-1" {
-			t.Fatalf("req ids = %q/%q, want kb-1/doc-1", req.DatasetID, req.DocID)
+		if req.DatasetID != "kb-owner" || req.DocID != "doc-1" {
+			t.Fatalf("req ids = %q/%q, want kb-owner/doc-1", req.DatasetID, req.DocID)
 		}
 		if req.Page == nil || *req.Page != 2 {
 			t.Fatalf("page = %v, want 2", req.Page)
@@ -195,7 +196,7 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		}, nil
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-owner/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

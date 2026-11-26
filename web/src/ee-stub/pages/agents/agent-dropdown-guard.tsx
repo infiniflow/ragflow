@@ -8,6 +8,10 @@ type AgentDropdownGuardProps = {
   deleteItems: ReactNode;
 };
 
+export function shouldShowAgentDropdown(_agent: IFlow) {
+  return true;
+}
+
 /**
  * Enterprise seam for the agent dropdown. Open source has no collaborator
  * permissions, so every action the shared file provides is rendered as-is.

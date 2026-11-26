@@ -8,6 +8,11 @@ import {
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
+import {
+  hasDocumentManagementPermission,
+  hasEditPermission,
+  hasReadPermission,
+} from '@/ee/utils/permission-util';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
@@ -48,25 +53,30 @@ export function useDatasetTableColumns({
     () => [
       {
         id: 'select',
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
-            onCheckedChange={(value) =>
-              table.toggleAllPageRowsSelected(!!value)
-            }
-            aria-label="Select all"
-            disabled={datasetEditButtonDisabled}
-          />
-        ),
+        header: ({ table }) => {
+          const canSelectAnyRow = table
+            .getRowModel()
+            .rows.some((row) => row.getCanSelect());
+          return (
+            <Checkbox
+              checked={
+                table.getIsAllPageRowsSelected() ||
+                (table.getIsSomePageRowsSelected() && 'indeterminate')
+              }
+              onCheckedChange={(value) =>
+                table.toggleAllPageRowsSelected(!!value)
+              }
+              aria-label="Select all"
+              disabled={!canSelectAnyRow}
+            />
+          );
+        },
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
             aria-label="Select row"
-            disabled={datasetEditButtonDisabled}
+            disabled={!row.getCanSelect()}
           />
         ),
         enableSorting: false,
@@ -94,16 +104,27 @@ export function useDatasetTableColumns({
         meta: { cellClassName: 'max-w-[20vw]' },
         cell: ({ row }) => {
           const name: string = row.getValue('name');
+          const canReadDocument = hasReadPermission(
+            row.original.operator_permission ?? 0,
+          );
 
           return (
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
-                  className="flex items-center gap-2 cursor-pointer"
-                  onClick={navigateToChunkParsedResult(
-                    row.original.id,
-                    row.original.dataset_id,
+                  className={cn(
+                    'flex items-center gap-2',
+                    canReadDocument && 'cursor-pointer',
                   )}
+                  aria-disabled={!canReadDocument}
+                  onClick={
+                    canReadDocument
+                      ? navigateToChunkParsedResult(
+                          row.original.id,
+                          row.original.dataset_id,
+                        )
+                      : undefined
+                  }
                 >
                   <FileIcon name={name}></FileIcon>
                   <span className={cn('truncate')}>{name}</span>
@@ -168,11 +189,18 @@ export function useDatasetTableColumns({
             <Button
               variant="static"
               size="auto"
+              disabled={
+                !hasReadPermission(row.original.operator_permission ?? 0)
+              }
               onClick={() => {
                 showManageMetadataModal({
                   isEditField: false,
-                  isCanAdd: true,
-                  isAddValue: true,
+                  isCanAdd: hasEditPermission(
+                    row.original.operator_permission ?? 0,
+                  ),
+                  isAddValue: hasEditPermission(
+                    row.original.operator_permission ?? 0,
+                  ),
                   type: MetadataType.UpdateSingle,
                   record: row.original,
                   title: (
@@ -189,6 +217,9 @@ export function useDatasetTableColumns({
                     </div>
                   ),
                   isDeleteSingleValue: true,
+                  readOnly: !hasEditPermission(
+                    row.original.operator_permission ?? 0,
+                  ),
                   documentIds: [row.original.id],
                 });
               }}
@@ -206,7 +237,9 @@ export function useDatasetTableColumns({
             <ParseCell
               record={row.original}
               showChangeParserModal={showChangeParserModal}
-              datasetEditButtonDisabled={datasetEditButtonDisabled}
+              documentEditButtonDisabled={
+                !hasEditPermission(row.original.operator_permission ?? 0)
+              }
             />
           );
         },
@@ -230,7 +263,19 @@ export function useDatasetTableColumns({
               record={record}
               showRenameModal={showRenameModal}
               setRowSelection={setRowSelection}
-              datasetEditButtonDisabled={datasetEditButtonDisabled}
+              datasetEditButtonDisabled={
+                datasetEditButtonDisabled ||
+                !hasEditPermission(record.operator_permission ?? 0)
+              }
+              documentEditButtonDisabled={
+                !hasEditPermission(record.operator_permission ?? 0)
+              }
+              documentManageButtonDisabled={
+                !hasDocumentManagementPermission(
+                  record.operator_permission ?? 0,
+                  !datasetEditButtonDisabled,
+                )
+              }
             />
           );
         },

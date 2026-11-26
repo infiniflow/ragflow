@@ -224,7 +224,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	if err != nil {
 		return nil, err
 	}
-	limit := positiveOr(req.Limit, 30)
+	limit := common.PositiveOr(req.Limit, 30)
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s LIMIT %d, %d", fieldsSQL, quoteIdentifier(tableName), whereSQL, orderSQL, max(req.Offset, 0), limit)
 	rows, err := e.queryRows(ctx, query, args...)
 	if err != nil {

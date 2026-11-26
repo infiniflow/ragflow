@@ -3,6 +3,8 @@ package structure
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -133,7 +135,7 @@ func chainDetectViolations(edges []chainEdge) map[chainEdge][]string {
 	for _, comp := range chainSCCs(edges) {
 		for _, e := range edges {
 			if comp[e.From] && comp[e.To] {
-				add(e, fmt.Sprintf("cycle within %s", sortedKeys(comp)))
+				add(e, fmt.Sprintf("cycle within %s", slices.Sorted(maps.Keys(comp))))
 			}
 		}
 	}
@@ -409,20 +411,8 @@ func sortedStrings(in []string) []string {
 			out = append(out, s)
 		}
 	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
-}
-
-func sortedKeys(m map[string]bool) []string {
-	var out []string
-	for k := range m {
-		out = append(out, k)
-	}
-	return sortedStrings(out)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func mustJSONList(items []map[string]any) string {

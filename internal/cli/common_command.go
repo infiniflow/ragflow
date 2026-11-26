@@ -1047,7 +1047,7 @@ func (c *CLI) CommonShowDeployCommand(commandCount int, cmd *Command) (ResponseI
 
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to show hardware: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("failed to show deploy: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

@@ -211,8 +211,8 @@ func TestAttachPDFPageProgress_ReportsPageDetail(t *testing.T) {
 	pdfParser.OnPageDone(12, 12)
 
 	want := []detailObservation{
-		{"Parser:pdf", "page", 3, 12},
-		{"Parser:pdf", "page", 12, 12},
+		{"Parser:pdf", "page:parse", 3, 12},
+		{"Parser:pdf", "page:parse", 12, 12},
 	}
 	if len(details) != len(want) {
 		t.Fatalf("page details = %v, want %v", details, want)

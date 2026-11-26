@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -375,8 +377,8 @@ func TestGetWikiAlteration_RemovedAndNewlyUploaded(t *testing.T) {
 
 func assertSameStringSet(t *testing.T, got, want []string) {
 	t.Helper()
-	gs := sortedSetKeys(toSet(got))
-	ws := sortedSetKeys(toSet(want))
+	gs := slices.Sorted(maps.Keys(toSet(got)))
+	ws := slices.Sorted(maps.Keys(toSet(want)))
 	if len(gs) != len(ws) {
 		t.Fatalf("set = %v; want %v", gs, ws)
 	}
@@ -393,4 +395,22 @@ func toSet(items []string) map[string]struct{} {
 		s[it] = struct{}{}
 	}
 	return s
+}
+
+// TestWikiAlterationEmptyIDListsAreNonNil pins the JSON shape of an empty
+// alteration: the old sortedSetKeys returned a non-nil empty slice, so the
+// response serialized as []. slices.Sorted(maps.Keys(empty)) returns nil,
+// which would serialize as null and break the response contract.
+func TestWikiAlterationEmptyIDListsAreNonNil(t *testing.T) {
+	svc, _ := newWikiAlterationTest(t)
+	got, err := svc.GetWikiAlteration(t.Context(), "tenant", "dataset")
+	if err != nil {
+		t.Fatalf("GetWikiAlteration: %v", err)
+	}
+	if got.InvolvedDocIDs == nil {
+		t.Error("InvolvedDocIDs is nil, want non-nil empty slice")
+	}
+	if got.EligibleDocIDs == nil {
+		t.Error("EligibleDocIDs is nil, want non-nil empty slice")
+	}
 }

@@ -1402,9 +1402,10 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
-// RecordTerminal writes the terminal explanation associated with a run.
-func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
-	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
+// RecordTerminal writes a run's terminal explanation and classifies any supplied causes.
+func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string, causes ...error) error {
+	errorCode := ingestionErrorCode(errors.Join(causes...))
+	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message, errorCode); err != nil {
 		return err
 	}
 	foldContext := context.WithoutCancel(ctx)
@@ -1432,7 +1433,7 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 // ensureTerminalEvent serializes terminal writers on the run row and inserts
 // the terminal event only when one is not already present. This makes retrying
 // settlement safe after the operation status has already advanced.
-func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message string) error {
+func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message, errorCode string) error {
 	if dao.DB == nil {
 		return errors.New("ingestion task: nil database")
 	}
@@ -1451,7 +1452,7 @@ func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipeline
 		if count > 0 {
 			return nil
 		}
-		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message)
+		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message, errorCode)
 	})
 }
 
@@ -1466,10 +1467,10 @@ func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error
 }
 
 func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
-	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message)
+	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message, "")
 }
 
-func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
+func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message, errorCode string) error {
 	if pipelineLogID == "" {
 		return rejectIngestionEvent("missing_pipeline_log_id", pipelineLogID, taskID, errors.New("ingestion event requires a pipeline log id"))
 	}
@@ -1497,6 +1498,10 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 		phase = 0
 	}
 	message = s.truncateIngestionEventMessage(message)
+	checkpoint := entity.JSONMap{}
+	if errorCode != "" {
+		checkpoint["error_code"] = errorCode
+	}
 	now := time.Now().Local()
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;
@@ -1504,7 +1509,7 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 	return db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
 		"task_id":         taskID,
 		"pipeline_log_id": pipelineLogID,
-		"checkpoint":      entity.JSONMap{},
+		"checkpoint":      checkpoint,
 		"phase":           phase,
 		"event_type":      eventType,
 		"component":       component,

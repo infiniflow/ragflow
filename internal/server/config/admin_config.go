@@ -17,6 +17,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/spf13/viper"
 )
 
@@ -53,10 +55,11 @@ func (c *Config) GetAdminServerConfig() AdminConfig {
 	return c.admin
 }
 
-// SetAdminHTTPPort stores a resolved admin server port in the global
-// config. GetAdminServerConfig returns a copy, so this setter (not a write
-// into the returned struct) is how a CLI/env override reaches the config
-// the admin server actually binds.
-func (c *Config) SetAdminHTTPPort(port int) {
+func (c *Config) SetAdminHTTPPort(port int) error {
+	if port < MinPort || port > MaxPort {
+		return fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
+			port, MinPort, MaxPort)
+	}
 	c.admin.HTTPPort = port
+	return nil
 }

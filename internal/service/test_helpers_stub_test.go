@@ -26,6 +26,8 @@ import "testing"
 func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {
 }
 
+func serviceTestShareEnabled() bool { return false }
+
 func revokeServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string) {}
 
 // permissionChangeLogTestModels adds no tables: the community edition has no

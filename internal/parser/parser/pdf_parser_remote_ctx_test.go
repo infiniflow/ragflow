@@ -113,6 +113,9 @@ func TestSoMarkSubmit_CancelDuringRequestAbortsIt(t *testing.T) {
 // released response instead of failing with context.Canceled.
 func TestParsePDFWithSoMark_CancelDuringPollAbortsPollRequest(t *testing.T) {
 	withSSRFBypass(t)
+	// The poll loop waits one interval before its first check; shorten it so
+	// the request reaches the server well inside the test's 2s budget.
+	withSoMarkPollInterval(t, 10*time.Millisecond)
 	var pollHits atomic.Int64
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})

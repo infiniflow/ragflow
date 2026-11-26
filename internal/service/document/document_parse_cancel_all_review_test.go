@@ -77,7 +77,7 @@ func TestStopParseDocumentsAll_DedupeDuplicateFileMappings(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", nil)
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)
@@ -107,7 +107,7 @@ func TestStopParseDocumentsAll_MissingTaskRecordedAsFailure(t *testing.T) {
 	insertTestDocWithFile(t, "doc-1", "file-1", "kb-1") // no ingestion task
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", []string{common.UNSTART})
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)
@@ -143,7 +143,7 @@ func TestStopParseDocumentsAll_ManyDocumentsAllCancelled(t *testing.T) {
 	defer func() { cancelAllTaskBatchSize = orig }()
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", nil)
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)

@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
 // The decision-model backend answers the filter's per-passage question over
@@ -460,11 +461,11 @@ func (b *decisionBackend) ask(ctx context.Context, question, intent, passage str
 // firstRunes is the error-message slice: enough of a body to see what came
 // back, never enough to flood a log line.
 func firstRunes(s string, n int) string {
-	r := []rune(strings.TrimSpace(s))
-	if len(r) <= n {
-		return string(r)
+	trimmed := strings.TrimSpace(s)
+	if truncated := utility.TruncateRunes(trimmed, n); truncated != trimmed {
+		return truncated + "..."
 	}
-	return string(r[:n]) + "..."
+	return trimmed
 }
 
 // envStringDefault reads a string env var.

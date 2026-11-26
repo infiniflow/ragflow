@@ -32,8 +32,38 @@ import (
 	"gorm.io/gorm"
 )
 
+// CheckDocumentWrite checks whether the caller can write the document.
+func CheckDocumentWrite(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	if datasetOperation != "" {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, datasetOperation); err != nil {
+			return err
+		}
+	}
+	if documentOperation == "" {
+		return nil
+	}
+	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: documentID}, documentOperation)
+}
+
+// CheckDocumentManage preserves the community permission checks.
+func CheckDocumentManage(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	if datasetOperation != "" {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, datasetOperation); err != nil {
+			return err
+		}
+	}
+	if documentOperation == "" {
+		return nil
+	}
+	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: documentID}, documentOperation)
+}
+
 // configExtras is empty in the community edition.
 type configExtras struct{}
+
+func ingestionErrorCode(error) string { return "" }
 
 // loadConfigExtras returns no additional settings in the community edition.
 func loadConfigExtras(context.Context) (configExtras, error) { return configExtras{}, nil }
@@ -169,6 +199,10 @@ func logChatCompletion(_ context.Context, _ *entity.Chat, _ []map[string]any, _ 
 
 func logAgentCompletion(_ context.Context, _, _ string, _ any, in <-chan canvas.RunEvent) <-chan canvas.RunEvent {
 	return in
+}
+
+func withAgentEventLog(ctx context.Context, _, _, _, _ string, _ map[string]any) context.Context {
+	return ctx
 }
 
 // ── mode 8 (Codex) ───────────────────────────────────────────────────────────

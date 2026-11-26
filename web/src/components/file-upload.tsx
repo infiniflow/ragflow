@@ -15,6 +15,10 @@ import {
 } from 'lucide-react';
 import * as React from 'react';
 
+import { Images } from '@/constants/common';
+import { getExtension } from '@/utils/document-util';
+import SvgIcon, { hasSvgIcon } from './svg-icon';
+
 const ROOT_NAME = 'FileUpload';
 const DROPZONE_NAME = 'FileUploadDropzone';
 const TRIGGER_NAME = 'FileUploadTrigger';
@@ -1052,6 +1056,15 @@ function getFileIcon(file: File) {
     return <FileCodeIcon />;
   }
 
+  // A bundled file-type icon is more specific than the generic category icons
+  // below (and is what the rest of the app renders), so resolve it first. This
+  // is also what gives CAD files (.dwg/.dxf/.dxfb) a proper icon instead of a
+  // broken/blank one.
+  const iconName = `file-icon/${extension}`;
+  if (hasSvgIcon(iconName)) {
+    return <SvgIcon name={iconName} width={24} />;
+  }
+
   if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(extension)) {
     return <FileArchiveIcon />;
   }
@@ -1081,7 +1094,11 @@ function FileUploadItemPreview(props: FileUploadItemPreviewProps) {
     (file: File) => {
       if (render) return render(file);
 
-      if (itemContext.fileState?.file.type.startsWith('image/')) {
+      // Match raster extensions instead of the `image/` MIME prefix: CAD files
+      // arrive as `image/vnd.dwg` / `image/vnd.dxf` and cannot be decoded by
+      // <img>, so they must fall through to the file-type icon.
+      const extension = getExtension(file.name);
+      if (Images.includes(extension) || ['svg', 'avif'].includes(extension)) {
         let url = context.urlCache.get(file);
         if (!url) {
           url = URL.createObjectURL(file);
@@ -1095,7 +1112,7 @@ function FileUploadItemPreview(props: FileUploadItemPreviewProps) {
 
       return getFileIcon(file);
     },
-    [render, itemContext.fileState?.file.type, context.urlCache],
+    [render, context.urlCache],
   );
 
   if (!itemContext.fileState) return null;

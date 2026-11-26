@@ -256,7 +256,9 @@ func splitLineByRunes(enc tokenizer.MetaspaceEncoder, line string, segmentTokens
 	return out
 }
 
-// runePrefix returns the first n runes of s.
+// runePrefix returns the first n runes of s as a prefix of the original bytes.
+// Re-encoding through []rune would rewrite invalid bytes as U+FFFD, making the
+// fragment longer than the original and breaking callers that advance by len().
 func runePrefix(s string, n int) string {
 	count := 0
 	for i := range s {

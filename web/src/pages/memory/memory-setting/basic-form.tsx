@@ -17,7 +17,7 @@ export const basicInfoSchema = {
     .optional(),
 };
 export const defaultBasicInfo = { name: '', avatar: '', description: '' };
-export const BasicInfo = () => {
+export const BasicInfo = ({ readOnly = false }: { readOnly?: boolean }) => {
   return (
     <>
       <RAGFlowFormItem
@@ -29,7 +29,7 @@ export const BasicInfo = () => {
         // labelClassName={labelClassName || field.labelClassName}
       >
         {(field) => {
-          return <Input {...field}></Input>;
+          return <Input {...field} disabled={readOnly}></Input>;
         }}
       </RAGFlowFormItem>
       <RAGFlowFormItem
@@ -41,7 +41,11 @@ export const BasicInfo = () => {
         // labelClassName={labelClassName || field.labelClassName}
       >
         {(field) => {
-          return <AvatarUpload {...field}></AvatarUpload>;
+          return (
+            <div className={readOnly ? 'pointer-events-none opacity-60' : ''}>
+              <AvatarUpload {...field}></AvatarUpload>
+            </div>
+          );
         }}
       </RAGFlowFormItem>
       <RAGFlowFormItem
@@ -57,6 +61,7 @@ export const BasicInfo = () => {
           return (
             <Input
               {...field}
+              disabled={readOnly}
               maxLength={DESCRIPTION_MAX_LENGTH}
               placeholder={t('memory.config.descriptionPlaceholder')}
             ></Input>

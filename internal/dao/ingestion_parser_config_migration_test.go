@@ -303,6 +303,37 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 	}
 }
 
+func TestMigrateIngestionParserConfigsMistralOCR(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	selectors := map[string]string{
+		"knowledgebase": "mistral-ocr-latest@default@Mistral OCR",
+		"document":      "mistral-ocr-2512@Mistral OCR",
+	}
+	for table, selector := range selectors {
+		insertIngestionConfig(t, db, table, "row-1", "general", fmt.Sprintf(`{"layout_recognize":%q}`, selector))
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for table, selector := range selectors {
+		var row ingestionConfigMigrationRow
+		if err := db.Table(table).Where("id = ?", "row-1").Take(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row.ParserConfig == nil {
+			t.Fatalf("%s: parser config is missing", table)
+		}
+		got := decodeIngestionConfig(t, *row.ParserConfig)
+		want := decodeIngestionConfig(t, fmt.Sprintf(`{"Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":%q}}}`, selector))
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: got %v, want %v", table, got, want)
+		}
+	}
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("version=%s, want %s", got, ingestionParserConfigTargetVersion)
+	}
+}
+
 // TestMigrateIngestionParserConfigsRejectsInvalidRows keeps failed batches and
 // their version unchanged when a supported setting cannot be converted.
 func TestMigrateIngestionParserConfigsRejectsInvalidRows(t *testing.T) {
