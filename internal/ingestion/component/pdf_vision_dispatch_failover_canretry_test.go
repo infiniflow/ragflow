@@ -40,9 +40,12 @@ func TestOCRFailoverCanRetry(t *testing.T) {
 		{name: "no textual layouts", err: wrap(errMonkeyOCRNoTextualLayouts), wantRetry: false},
 		{name: "image OCR empty text", err: wrap(fmt.Errorf("selected image OCR returned no text (%w)", errOCRResultNoText)), wantRetry: false},
 		{name: "MinerU response terminal", err: wrap(fmt.Errorf("parser: MinerU extract: %w (%w)", errors.New("corrupt archive"), errOCRResponseTerminal)), wantRetry: false},
-		{name: "context canceled", err: wrap(context.Canceled), wantRetry: false},
-		{name: "context deadline", err: wrap(context.DeadlineExceeded), wantRetry: false},
-		{name: "deadline wrapped in provider error", err: wrap(fmt.Errorf("post: %w", context.DeadlineExceeded)), wantRetry: false},
+		// Per-member timeouts come from inner contexts; the outer ctx stays
+		// alive, so a hung member must still fail over. Caller cancellation
+		// is handled by InvokeWithGroupFailover's ctx.Err() guard instead.
+		{name: "inner per-member deadline", err: wrap(context.DeadlineExceeded), wantRetry: true},
+		{name: "deadline wrapped in provider error", err: wrap(fmt.Errorf("post: %w", context.DeadlineExceeded)), wantRetry: true},
+		{name: "inner context canceled", err: wrap(context.Canceled), wantRetry: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

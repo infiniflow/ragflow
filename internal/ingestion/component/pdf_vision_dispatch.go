@@ -61,13 +61,13 @@ var (
 	errOCRResponseTerminal = errors.New("OCR response handling failed terminally")
 )
 
-// ocrFailoverCanRetry excludes context cancellation, accepted-task polling
-// timeouts, and document-property failures from the flip-and-retry decision.
+// ocrFailoverCanRetry excludes accepted-task polling timeouts and
+// document-property failures from the flip-and-retry decision. Per-member
+// timeouts (inner contexts: mineruStreamParse, cloudCtx, ParseMinerUV1) are
+// NOT excluded - a hung member must still fail over; caller cancellation on
+// the outer context is handled by InvokeWithGroupFailover's ctx.Err() guard.
 func ocrFailoverCanRetry(err error) bool {
 	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	return !errors.Is(err, errOCRTaskPollTimeout) &&
