@@ -339,3 +339,20 @@ func TestFileDAO_GetRootFolderFindsOrCreatesTenantRoot(t *testing.T) {
 		t.Fatalf("second GetRootFolder(t2) = %+v, %v; want the created root %q", again, err, created.ID)
 	}
 }
+
+func TestFileDAO_GetRootFolderFindsRenamedLegacyRoot(t *testing.T) {
+	db := setupFileTestDB(t)
+	testFile(t, db, "legacy-root", "legacy-root", "t1", "renamed", "folder")
+
+	got, err := NewFileDAO().GetRootFolder(t.Context(), db, "t1")
+	if err != nil {
+		t.Fatalf("GetRootFolder(t1): %v", err)
+	}
+	if got.ID != "legacy-root" {
+		t.Fatalf("root id = %q, want legacy-root", got.ID)
+	}
+	var roots int64
+	if err := db.Model(&entity.File{}).Where("tenant_id = ? AND parent_id = id", "t1").Count(&roots).Error; err != nil || roots != 1 {
+		t.Fatalf("t1 roots = %d, %v; want 1", roots, err)
+	}
+}

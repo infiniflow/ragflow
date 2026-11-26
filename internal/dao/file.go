@@ -211,19 +211,34 @@ func (dao *FileDAO) GetSubtreeIDs(ctx context.Context, db *gorm.DB, tenantID, pf
 // RootFolderName is the name of every tenant's root folder.
 const RootFolderName = "/"
 
-// GetRootFolder gets or creates root folder for tenant
-func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID string) (*entity.File, error) {
+// FindRootFolder returns the tenant's root folder, or gorm.ErrRecordNotFound
+// when the tenant has none.
+func (dao *FileDAO) FindRootFolder(ctx context.Context, db *gorm.DB, tenantID string) (*entity.File, error) {
 	var file entity.File
 	// No index serves parent_id = id; the name filter lets the indexed columns
 	// find the root instead of reading every file of the tenant.
 	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ? AND parent_id = id", tenantID, RootFolderName).First(&file).Error
-	if err == nil {
-		return &file, nil
+	if IsNotFoundErr(err) {
+		// A root renamed before MoveFiles rejected root renames keeps only its
+		// self-parenting. This scan runs once per new tenant, and on every
+		// lookup for such a legacy root.
+		err = db.WithContext(ctx).Where("tenant_id = ? AND parent_id = id", tenantID).First(&file).Error
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
+// GetRootFolder gets or creates root folder for tenant
+func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID string) (*entity.File, error) {
+	root, err := dao.FindRootFolder(ctx, db, tenantID)
+	if !IsNotFoundErr(err) {
+		return root, err
 	}
 
-	// Create root folder if not exists
 	fileID := common.GenerateToken()
-	file = entity.File{
+	file := entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
 		UserID:    tenantID,

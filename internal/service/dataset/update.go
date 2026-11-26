@@ -611,10 +611,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 // renameDatasetFolder updates an existing dataset folder in the caller's
 // transaction. Datasets without a folder do not create one during a rename.
 func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgebase, newName string) (common.ErrorCode, error) {
-	var root entity.File
-	err := tx.WithContext(ctx).
-		Where("tenant_id = ? AND name = ? AND parent_id = id AND type = ?", kb.TenantID, dao.RootFolderName, "folder").
-		Take(&root).Error
+	root, err := dao.NewFileDAO().FindRootFolder(ctx, tx, kb.TenantID)
 	if dao.IsNotFoundErr(err) {
 		return common.CodeSuccess, nil
 	}
