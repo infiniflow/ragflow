@@ -148,3 +148,24 @@ func TestHeaderSetWithBlockType_BoxRCStaleAfterCleanup(t *testing.T) {
 		t.Errorf("R/C-STALE DIVERGENCE: both boxes overlap the header row with H>0 (2/2 columns), so row 0 must be a header. Go trusts the stale PRE-cleanup C and drops the C=2 box (past the cleaned row), counting only 1/2 -> misses it: %v", hdrs)
 	}
 }
+
+// TestHeaderSetWithBlockType_NumericTableTextRow covers the other half of the
+// numeric-dominant predicate: a non-numeric cell counts toward the header even
+// without H (table_structure_recognizer.py:345
+// `or (max_type == "Nu" and arr[0]["btype"] != "Nu")`). A text row on top of a
+// numeric table is a header although no box overlaps a header-labeled cell.
+func TestHeaderSetWithBlockType_NumericTableTextRow(t *testing.T) {
+	c := func(s string) pdf.TSRCell { return pdf.TSRCell{Text: s, Label: "table row"} }
+	rows := [][]pdf.TSRCell{
+		{c("Item"), c("Price"), c("Qty")},
+		{c("1"), c("2.50"), c("10")},
+		{c("2"), c("3.75"), c("20")},
+		{c("3"), c("1.20"), c("30")},
+	}
+
+	hdrs := HeaderSetWithBlockType(rows, nil)
+
+	if !hdrs[0] || len(hdrs) != 1 {
+		t.Errorf("numeric-dominant table: only the text row 0 should be a header, got %v", hdrs)
+	}
+}
