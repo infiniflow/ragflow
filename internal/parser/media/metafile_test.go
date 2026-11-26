@@ -16,11 +16,57 @@ package media
 
 import (
 	"bytes"
+	"encoding/binary"
 	"image/png"
 	"os"
 	"strings"
 	"testing"
 )
+
+func TestMetafileFontFallback(t *testing.T) {
+	wmf := make([]byte, 18+56)
+	copy(wmf, []byte{1, 0, 9, 0, 0, 3})
+	binary.LittleEndian.PutUint32(wmf[18:], 28)
+	binary.LittleEndian.PutUint16(wmf[22:], 0x02fb)
+	wmf[37] = 134                      // GBK charset in the WMF LOGFONT.
+	copy(wmf[42:], "\xcb\xce\xcc\xe5") // 宋体 in GBK.
+
+	emf := make([]byte, 88+104)
+	binary.LittleEndian.PutUint32(emf, 1)
+	binary.LittleEndian.PutUint32(emf[4:], 88)
+	copy(emf[40:], " EMF")
+	binary.LittleEndian.PutUint32(emf[88:], 82)
+	binary.LittleEndian.PutUint32(emf[92:], 104)
+	copy(emf[128:], "S\x00i\x00m\x00S\x00u\x00n\x00")
+
+	fonts := map[string]bool{"noto serif cjk sc": true}
+	for _, tc := range []struct {
+		name       string
+		data       []byte
+		faceOffset int
+		want       []byte
+	}{
+		{"WMF", wmf, 42, []byte("Noto Serif CJK SC\x00")},
+		{"EMF", emf, 128, []byte("N\x00o\x00t\x00o\x00 \x00S\x00e\x00r\x00i\x00f\x00 \x00C\x00J\x00K\x00 \x00S\x00C\x00\x00\x00")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original := bytes.Clone(tc.data)
+			got := substituteMetafileFonts(tc.data, fonts)
+			if !bytes.HasPrefix(got[tc.faceOffset:], tc.want) {
+				t.Fatalf("font field = %x, want prefix %x", got[tc.faceOffset:], tc.want)
+			}
+			if !bytes.Equal(tc.data, original) {
+				t.Fatal("the original metafile was modified")
+			}
+			if got := substituteMetafileFonts(tc.data[:len(tc.data)-1], fonts); !bytes.Equal(got, tc.data[:len(tc.data)-1]) {
+				t.Fatal("a truncated record was modified")
+			}
+		})
+	}
+	if got := substituteMetafileFonts(wmf, map[string]bool{"宋体": true, "noto serif cjk sc": true}); !bytes.Equal(got, wmf) {
+		t.Fatal("the available original font was replaced")
+	}
+}
 
 func TestSinkNormalizesMetafilesAcrossDocuments(t *testing.T) {
 	for _, tc := range []struct{ document, ext, mime string }{

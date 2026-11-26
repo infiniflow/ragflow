@@ -1,6 +1,6 @@
 module ragflow
 
-go 1.27.3
+go 1.27.4
 
 require (
 	cloud.google.com/go v0.123.0
@@ -72,6 +72,7 @@ require (
 	github.com/spf13/cast v1.6.0
 	github.com/spf13/viper v1.18.2
 	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260807065450-08464aef9ed5
+	github.com/xo/ivy v0.0.0-20261121045519-d2129f8c8aa0
 	github.com/xo/okage v0.20.0
 	github.com/xuri/excelize/v2 v2.11.1
 	github.com/yfedoseev/office_oxide/go v0.1.17

@@ -615,6 +615,8 @@ github.com/x-cray/logrus-prefixed-formatter v0.5.2 h1:00txxvfBM9muc0jiLIEAkAcIMJ
 github.com/x-cray/logrus-prefixed-formatter v0.5.2/go.mod h1:2duySbKsL6M18s5GU7VPsoEPHyzalCE06qoARUCeBBE=
 github.com/xhit/go-str2duration/v2 v2.1.0 h1:lxklc02Drh6ynqX+DdPyp5pCKLUQpRT8bp8Ydu2Bstc=
 github.com/xhit/go-str2duration/v2 v2.1.0/go.mod h1:ohY8p+0f07DiV6Em5LKB0s2YpLtXVyJfNt1+BlmyAsU=
+github.com/xo/ivy v0.0.0-20261121045519-d2129f8c8aa0 h1:gMPRPeLqqPDqziN0V6sbxdD/LlR7kBHftL5IwRDIWBM=
+github.com/xo/ivy v0.0.0-20261121045519-d2129f8c8aa0/go.mod h1:HXJuxuic1iI6XKA47KhANxCH07KtH4cawrKyb5N4dPQ=
 github.com/xo/okage v0.20.0 h1:MPEGXuX3bm0ExSBHicDEynfkGKmb/r7SDSfE/3bcgmM=
 github.com/xo/okage v0.20.0/go.mod h1:pte/3aqjk2ElZwxYex0erXC3kT2tqxOwWuIHA8fhKOM=
 github.com/xuri/efp v0.0.3-0.20260924042702-217b81952dec h1:sZZokRLgr8nyrzkDDCQcvEYBsTrZr6eqXa/R9qALoQA=

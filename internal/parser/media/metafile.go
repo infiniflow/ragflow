@@ -16,15 +16,17 @@ package media
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"image/color"
 	"image/png"
+	"io"
 	"math"
 
-	"ragflow/internal/thirdparty/ivy"
-	"ragflow/internal/thirdparty/ivy/emf"
+	"github.com/xo/ivy"
+	"github.com/xo/ivy/emf"
 )
 
 const maxMetafileEdge = 2048
@@ -67,8 +69,9 @@ func MetafileMIMEForExtension(ext string) string {
 }
 
 func transcodeMetafile(ctx context.Context, data []byte) (string, []byte, error) {
-	if len(data) == 0 || len(data) > ImageMaxBytes() {
-		return "", nil, fmt.Errorf("metafile: input size %d is outside the %d-byte limit", len(data), ImageMaxBytes())
+	limit := ImageMaxBytes()
+	if len(data) == 0 || len(data) > limit {
+		return "", nil, fmt.Errorf("metafile: input size %d is outside the %d-byte limit", len(data), limit)
 	}
 	// The ingestion dispatcher may already have converted the image for OCR.
 	if bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) {
@@ -80,10 +83,15 @@ func transcodeMetafile(ctx context.Context, data []byte) (string, []byte, error)
 	case <-ctx.Done():
 		return "", nil, ctx.Err()
 	}
+	data, err := decompressMetafile(data, limit)
+	if err != nil {
+		return "", nil, fmt.Errorf("decompress metafile: %w", err)
+	}
+	data = substituteMetafileFonts(data, metafileSystemFonts())
 	cfg := ivy.Config{
 		SystemFonts: true,
 		Limits: ivy.Limits{
-			MaxMemory: int64(ImageMaxBytes()),
+			MaxMemory: int64(limit),
 			MaxPixels: maxMetafileEdge * maxMetafileEdge,
 		},
 	}
@@ -111,8 +119,27 @@ func transcodeMetafile(ctx context.Context, data []byte) (string, []byte, error)
 	if err := png.Encode(&encoded, raster); err != nil {
 		return "", nil, fmt.Errorf("encode metafile PNG: %w", err)
 	}
-	if encoded.Len() > ImageMaxBytes() {
-		return "", nil, fmt.Errorf("metafile: PNG exceeds the %d-byte image limit", ImageMaxBytes())
+	if encoded.Len() > limit {
+		return "", nil, fmt.Errorf("metafile: PNG exceeds the %d-byte image limit", limit)
 	}
 	return "image/png", encoded.Bytes(), nil
+}
+
+func decompressMetafile(data []byte, limit int) ([]byte, error) {
+	if !bytes.HasPrefix(data, []byte{0x1f, 0x8b}) {
+		return data, nil
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	decoded, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(decoded) > limit {
+		return nil, fmt.Errorf("expanded metafile exceeds the %d-byte image limit", limit)
+	}
+	return decoded, nil
 }
