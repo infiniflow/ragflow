@@ -26,6 +26,8 @@ import (
 	"golang.org/x/text/encoding/traditionalchinese"
 )
 
+const etoGlyphIndex = 0x0010
+
 var metafileSystemFonts = sync.OnceValue(func() map[string]bool {
 	db := svg.NewFontDatabase()
 	db.LoadOSFonts()
@@ -40,6 +42,7 @@ var metafileSystemFonts = sync.OnceValue(func() map[string]bool {
 
 // substituteMetafileFonts replaces missing Windows font names in a private
 // copy, keeping their character sets, record sizes and drawing commands.
+// Glyph-index text requires the original font identity for playback.
 func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 	var replaced []byte
 	replace := func(offset, size, width int, name string) {
@@ -74,6 +77,9 @@ func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 			if kind == 0 { // META_EOF
 				break
 			}
+			if byte(kind) == 0x32 && size >= 14 && binary.LittleEndian.Uint16(record[12:14])&etoGlyphIndex != 0 { // META_EXTTEXTOUT
+				return data
+			}
 			if kind == 0x02fb && size > 24 { // META_CREATEFONTINDIRECT
 				field := record[24:min(int(size), 56)]
 				replace(offset+24, len(field), 1, wmfFaceName(field, record[19]))
@@ -89,8 +95,6 @@ func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 				break
 			}
 			if emfUsesGlyphIndexes(kind, record[:int(size)]) {
-				// Glyph IDs belong to the original face. Preserve its identity so
-				// Ivy can reject an unavailable font instead of drawing wrong glyphs.
 				return data
 			}
 			if kind == 82 && size >= 104 { // EMR_EXTCREATEFONTINDIRECTW
@@ -117,12 +121,11 @@ func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 }
 
 func emfUsesGlyphIndexes(kind uint32, record []byte) bool {
-	const glyphIndex = 0x0010 // ETO_GLYPH_INDEX
 	switch kind {
 	case 84: // EMR_EXTTEXTOUTW
-		return len(record) >= 56 && binary.LittleEndian.Uint32(record[52:])&glyphIndex != 0
+		return len(record) >= 56 && binary.LittleEndian.Uint32(record[52:])&etoGlyphIndex != 0
 	case 108: // EMR_SMALLTEXTOUT
-		return len(record) >= 24 && binary.LittleEndian.Uint32(record[20:])&glyphIndex != 0
+		return len(record) >= 24 && binary.LittleEndian.Uint32(record[20:])&etoGlyphIndex != 0
 	case 97: // EMR_POLYTEXTOUTW
 		if len(record) < 40 {
 			return false
@@ -134,7 +137,7 @@ func emfUsesGlyphIndexes(kind uint32, record []byte) bool {
 				return false
 			}
 			options := binary.LittleEndian.Uint32(texts[16:])
-			if options&glyphIndex != 0 {
+			if options&etoGlyphIndex != 0 {
 				return true
 			}
 			size := 24

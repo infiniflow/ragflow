@@ -81,6 +81,20 @@ func TestMetafileFontFallback(t *testing.T) {
 	if got := substituteMetafileFonts(wmf, map[string]bool{"宋体": true, "noto serif cjk sc": true}); !bytes.Equal(got, wmf) {
 		t.Fatal("the available original font was replaced")
 	}
+	t.Run("WMF ExtTextOut glyph indexes", func(t *testing.T) {
+		for _, kind := range []uint16{0x0a32, 0x0032} {
+			record := []byte{8, 0, 0, 0, 0, 0, 10, 0, 10, 0, 2, 0, 0x10, 0, 'H', 'I'}
+			binary.LittleEndian.PutUint16(record[4:], kind)
+			data := append(bytes.Clone(wmf), record...)
+			if got := substituteMetafileFonts(data, fonts); !bytes.Equal(got, data) {
+				t.Errorf("font substitution changed WMF glyph-index text for record type %#04x", kind)
+			}
+			data[len(wmf)+12] = 0 // Render character text instead of glyph indexes.
+			if got := substituteMetafileFonts(data, fonts); !bytes.HasPrefix(got[42:], []byte("Noto Serif CJK SC\x00")) {
+				t.Errorf("font substitution did not replace the missing font for record type %#04x", kind)
+			}
+		}
+	})
 	for _, tc := range []struct {
 		name       string
 		kind, size uint32
