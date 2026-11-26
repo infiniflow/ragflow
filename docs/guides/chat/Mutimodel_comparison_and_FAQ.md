@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: Multimodel Comparison & FAQ
-sidebar_label: Multimodel_Comparison_and_FAQ
+sidebar_label: Multimodel Comparison & FAQ
 slug: /chat_Multimodel_Comparison_and_FAQ
 sidebar_custom_props:
   categoryIcon: LucideTestTube

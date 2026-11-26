@@ -81,16 +81,34 @@ export const SearchSettingFormSchema = z
 
 export type SearchSettingFormData = z.infer<typeof SearchSettingFormSchema>;
 
+const isModelValidationReady = (state: ReturnType<typeof useModelValidIds>) =>
+  'isSettled' in state ? state.isSettled === true : state.isFetched;
+
 /**
  * Extends the static schema with an existence check against the added-model
  * list: a persisted value may reference a model that has since been deleted.
  * Only validate selected models when their corresponding feature is enabled.
  */
-export const useSearchSettingFormSchema = () => {
+export const useSearchSettingFormSchema = (
+  resourceTenantId?: string,
+  accessUserId?: string | null,
+) => {
   const { t } = useTranslation();
-  const { validIds: validRerankIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.rerank_id);
-  const { validIds: validLlmIds } = useModelValidIds(ModelTypeMap.llm_id);
+  const rerankModelState = useModelValidIds(
+    ModelTypeMap.rerank_id,
+    resourceTenantId,
+    accessUserId,
+  );
+  const llmModelState = useModelValidIds(
+    ModelTypeMap.llm_id,
+    resourceTenantId,
+    accessUserId,
+  );
+  const { validIds: validRerankIds } = rerankModelState;
+  const { validIds: validLlmIds } = llmModelState;
+  const modelsFetched =
+    isModelValidationReady(rerankModelState) &&
+    isModelValidationReady(llmModelState);
 
   const formSchema = useMemo(
     () =>
@@ -188,3 +206,12 @@ export const useRevalidatePersistedModels = ({
 
   return { rerankModelEnabled, llmRequired };
 };
+
+/*
+ * Enterprise modifications - keep on sync from open-source ragflow.
+ * - Wait for direct-model and model-group validation data to settle before
+ *   validating persisted search model references. The selectors support
+ *   enterprise model groups, so this readiness check cannot live in an overlay.
+ *   Fall back to isFetched when syncing to open-source, where isSettled and
+ *   model groups are unavailable.
+ */

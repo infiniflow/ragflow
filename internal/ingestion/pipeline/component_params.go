@@ -61,9 +61,9 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 			if k == "outputs" {
 				continue
 			}
-			params[k] = deepCopyValue(v)
+			params[k] = common.DeepCopyValue(v)
 		}
-		// Canvases saved by the Python-era frontend nest the Parser's
+		// Canvases saved by the -era frontend nest the Parser's
 		// per-family setups under a "setups" key; lift them so the extracted
 		// defaults (and the parser_config built from them) stay flat.
 		if common.IsParserComponent(cpnID, comp.Obj.ComponentName) {
@@ -78,35 +78,6 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 	return out, nil
 }
 
-// deepCopyValue returns a deep copy of a value that might be a nested map or slice.
-func deepCopyValue(v any) any {
-	switch val := v.(type) {
-	case map[string]any:
-		cp := make(map[string]any, len(val))
-		for mk, mv := range val {
-			cp[mk] = deepCopyValue(mv)
-		}
-		return cp
-	case []any:
-		cp := make([]any, len(val))
-		for i, item := range val {
-			cp[i] = deepCopyValue(item)
-		}
-		return cp
-	default:
-		return v
-	}
-}
-
-// deepCopyMapStr deep-copies a map[string]any so the caller can safely mutate the result.
-func deepCopyMapStr(src map[string]any) map[string]any {
-	cp := make(map[string]any, len(src))
-	for k, v := range src {
-		cp[k] = deepCopyValue(v)
-	}
-	return cp
-}
-
 // ComponentParamsDefaults extracts component params from DSL JSON and returns
 // them in the component_params storage format {cpnID: {param: value}}.
 // Values are deep-copied from the DSL so callers can safely mutate the result.
@@ -117,7 +88,7 @@ func ComponentParamsDefaults(dslJSON []byte) (map[string]map[string]any, error) 
 	}
 	out := make(map[string]map[string]any, len(schemas))
 	for _, s := range schemas {
-		out[s.CpnID] = deepCopyMapStr(s.ParamsDefaults)
+		out[s.CpnID] = common.DeepCopyValue(s.ParamsDefaults).(map[string]any)
 	}
 	return out, nil
 }

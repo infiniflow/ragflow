@@ -38,7 +38,7 @@ import (
 // With no resolvable citations both come back unchanged: an empty reference
 // keeps the SSE shape the UI expects, and the untouched text is the honest state
 // of an answer whose sources could not be loaded.
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry) (map[string]interface{}, string) {
+func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry) (map[string]interface{}, string) {
 	// Normalize the answer's markers BEFORE anything reads them. A reasoning
 	// model parks the whole answer inside <think>, so the normalization covers
 	// the entire text rather than a post-`</think>` tail: a handle sitting in
@@ -110,7 +110,7 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 			corpusIDs = append(corpusIDs, id)
 		}
 	}
-	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, corpusIDs)
+	rows := fetchChunksByIDs(ctx, datasetIDs, corpusIDs)
 	for _, r := range rows {
 		if id, ok := r["id"].(string); ok {
 			byID[id] = r
@@ -122,12 +122,32 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 			resolved = append(resolved, id)
 		}
 	}
+	// A web passage cited by url (the FOS web shape) joins the payload after the corpus
+	// chunks. It is the model's own claim: nothing in the turn records what a search
+	// served, so url/title/snippet are taken from the answer as written.
+	for _, w := range agentic_rag.ExtractCitedWebSources(normalized) {
+		if _, dup := byID[w.URL]; dup {
+			continue
+		}
+		title := w.Title
+		if title == "" {
+			title = w.URL
+		}
+		byID[w.URL] = map[string]interface{}{
+			"id": w.URL, "doc_id": w.URL, "docnm_kwd": title,
+			"content_with_weight": w.Snippet, "url": w.URL,
+			"kb_id": []interface{}{}, "img_id": "", "positions": []interface{}{},
+		}
+		resolved = append(resolved, w.URL)
+	}
 	if len(resolved) == 0 {
 		return map[string]interface{}{}, normalized
 	}
 	ordered := make([]map[string]interface{}, 0, len(resolved))
-	for _, id := range resolved {
+	index := make(map[string]int, len(resolved))
+	for i, id := range resolved {
 		ordered = append(ordered, byID[id])
+		index[id] = i
 	}
 	marked := normalized
 	if byHandles {
@@ -135,7 +155,7 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		// first-citation order ("[ID:0]"), the numbering the payload ships.
 		marked, _ = agentic_rag.ResolveCitations(normalized, registry, resolved)
 	}
-	marked = agentic_rag.InsertCitationMarkers(marked, resolved)
+	marked = agentic_rag.RewriteProvenance(marked, index)
 	common.InfoCtx(ctx, "agentic citations built",
 		zap.Int("cited", len(cited)),
 		zap.Int("resolved", len(resolved)),
@@ -147,18 +167,19 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 	}, marked
 }
 
-// fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the
-// engine row shape (chunk_id / content_with_weight / docnm_kwd / doc_id /
-// kb_id / img_id / position_int) so chunksFormat can normalize it. The index is
-// the chat's OWNING tenant's - the same scoping the agent's retrieval tools
-// use.
-func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
+// fetchChunksByIDs loads the cited chunks from the indexes holding the given
+// datasets, keeping the engine row shape (chunk_id / content_with_weight /
+// docnm_kwd / doc_id / kb_id / img_id / position_int) so chunksFormat can
+// normalize it. The indexes come from the datasets themselves, exactly like the
+// agent's retrieval tools: a team-shared dataset lives in the sharing tenant's
+// index, not the chat's.
+func fetchChunksByIDs(ctx context.Context, datasetIDs, ids []string) []map[string]interface{} {
 	de := engine.Get()
 	if de == nil || len(ids) == 0 {
 		return nil
 	}
 	req := &enginetypes.SearchRequest{
-		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		IndexNames:   agentic_rag.IndexNamesFor(ctx, datasetIDs),
 		KbIDs:        datasetIDs,
 		Filter:       map[string]interface{}{"id": ids},
 		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "position_int"},

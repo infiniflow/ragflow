@@ -184,6 +184,9 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
 	ensureDatasetTestMembership(t, "user-1", "owner-1", "normal")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("created_by", "owner-1").Error; err != nil {
+		t.Fatalf("set document owner: %v", err)
+	}
 
 	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
@@ -459,7 +462,11 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 func TestUpdateMetadataConfig_TenantLookupFailureDoesNotPersist(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	// kb-1 points at a tenant that does not exist, so tenantDAO.GetByID fails.
+	inactive := string(entity.StatusInvalid)
+	if err := db.Create(&entity.Tenant{ID: "missing-tenant", ParserIDs: "", Status: &inactive}).Error; err != nil {
+		t.Fatalf("insert inactive Tenant: %v", err)
+	}
+	// kb-1 points at an inactive tenant, so tenantDAO.GetByID fails.
 	insertDatasetMetadataConfigKB(t, "kb-1", "missing-tenant")
 
 	ctx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
@@ -542,7 +549,11 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 		t.Fatalf("expected error for missing kb, got code=%v err=%v", code, err)
 	}
 
-	// KB exists but tenant lookup fails (kb.TenantID points to missing tenant)
+	// KB exists but tenant lookup fails because its tenant is inactive.
+	inactive := string(entity.StatusInvalid)
+	if err := db.Create(&entity.Tenant{ID: "missing-tenant", ParserIDs: "", Status: &inactive}).Error; err != nil {
+		t.Fatalf("insert inactive Tenant: %v", err)
+	}
 	insertDatasetMetadataConfigKB(t, "kb-bad-tenant", "missing-tenant")
 	insertDatasetMetadataConfigDoc(t, "doc2", "kb-bad-tenant", entity.JSONMap{})
 	missingTenantCtx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
@@ -550,7 +561,11 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 		missingTenantCtx, "kb-bad-tenant", "doc2",
 		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
 	)
-	if code != common.CodeServerError || err == nil {
-		t.Fatalf("expected server error for tenant lookup failure, got code=%v err=%v", code, err)
+	wantCode := common.CodeServerError
+	if datasetTestResourcePermissionsAvailable() {
+		wantCode = common.CodeForbidden
+	}
+	if code != wantCode || err == nil {
+		t.Fatalf("tenant lookup failure code=%v err=%v, want code=%v", code, err, wantCode)
 	}
 }

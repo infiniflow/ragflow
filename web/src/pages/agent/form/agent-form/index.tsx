@@ -32,7 +32,7 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -94,10 +94,10 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
     FormSchema,
-    { ownerTenantId },
+    { resourceTenantId },
   );
 
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
@@ -172,8 +172,8 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField ownerTenantId={ownerTenantId} />
-          {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
+          <LargeModelFormField resourceTenantId={resourceTenantId} />
+          {findLlmByUuid(llmId)?.model_type?.includes('vlm') && (
             <QueryVariable
               name="visual_files_var"
               label={t('flow.visualInputFile')}

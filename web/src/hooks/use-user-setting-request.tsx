@@ -18,7 +18,6 @@ import message from '@/components/ui/message';
 import { TenantRole } from '@/ee/constants/team';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
-import { ITenantInfo } from '@/interfaces/database/dataset';
 import { ILangfuseConfig } from '@/interfaces/database/system';
 import {
   ITenant,
@@ -38,7 +37,6 @@ import userService, {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFetchDefaultModelDictionary } from './use-llm-request';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -59,11 +57,14 @@ export const enum UserSettingApiAction {
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
 
-export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
+export const useFetchUserInfo = (
+  enabled = true,
+): ResponseGetType<IUserInfo> => {
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
     initialData: {},
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data } = await userService.userInfo();
 
@@ -90,10 +91,14 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
  *   has no `/users/me/models`). Defaults to `true`, so existing callers are
  *   unchanged.
  */
-export const useFetchTenantData = (
-  enabled: boolean = true,
-): ResponseGetType<ITenantInfo> => {
-  const { data, isFetching: loading } = useQuery({
+export const useFetchTenantData = (enabled: boolean = true) => {
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo],
     initialData: {},
     gcTime: 0,
@@ -107,7 +112,7 @@ export const useFetchTenantData = (
       return res ?? {};
     },
   });
-  return { data, loading };
+  return { data, loading, isFetched, isError, refetch };
 };
 
 export const useFetchTenantInfo = useFetchTenantData;
@@ -127,8 +132,6 @@ export const useSelectParserList = (): Array<{
     },
     staleTime: Infinity,
   });
-  useFetchDefaultModelDictionary(true);
-
   const defaultParsers = useMemo(
     () => [
       { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },
@@ -216,6 +219,20 @@ export const useSaveSetting = (silent = false) => {
   return { data, loading, saveSetting: mutateAsync };
 };
 
+// The version endpoint returns either a bare string or `{ version: string }`
+// depending on the backend implementation. Normalize both so the sidebar
+// never attempts to render an object as a React child.
+const normalizeSystemVersion = (payload: unknown): string => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+  if (payload && typeof payload === 'object' && 'version' in payload) {
+    const { version } = payload as { version?: unknown };
+    return typeof version === 'string' ? version : '';
+  }
+  return '';
+};
+
 export const useFetchSystemVersion = () => {
   const [version, setVersion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -225,7 +242,7 @@ export const useFetchSystemVersion = () => {
       setLoading(true);
       const { data } = await userService.getSystemVersion();
       if (data.code === 0) {
-        setVersion(data.data.version);
+        setVersion(normalizeSystemVersion(data.data));
         setLoading(false);
       }
     } catch (error) {

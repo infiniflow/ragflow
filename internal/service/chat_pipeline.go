@@ -20,11 +20,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"net/http"
 
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -33,6 +37,8 @@ import (
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 	"regexp"
 	"sort"
 	"strings"
@@ -43,6 +49,25 @@ import (
 
 	"go.uber.org/zap"
 )
+
+// rebindToolcallSession re-attaches the toolcall session from kwargs onto a
+// freshly resolved chat model. Phase 4 binds tools only to the originally
+// resolved instance, so without this a gp- group-failover retry would run a
+// new model without ToolConfig and silently lose the tool-call capability.
+func rebindToolcallSession(model *modelModule.ChatModel, kwargs map[string]interface{}) {
+	if model == nil {
+		return
+	}
+	session, hasSession := kwargs["toolcall_session"]
+	tools, hasTools := kwargs["tools"]
+	if !hasSession || session == nil || !hasTools || tools == nil {
+		return
+	}
+	if ts, ok := session.(modelModule.ToolCallSession); ok {
+		common.Info("Bind ToolCall after failover re-resolve")
+		model.BindTools(ts, tools)
+	}
+}
 
 // Fields defined by the chat-completions message schema. Stored messages also
 // carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
@@ -102,28 +127,85 @@ type AsyncChatResult struct {
 	// the think-block sentence), forwarded so a client can render steps —
 	// tool, status, counts, sources, duration — instead of paragraphs.
 	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
-	// Usage and ElapsedMs are this turn's cost, emitted on the final chunk so a
-	// client can show what the answer cost. They are the same numbers the
-	// Langfuse generation below records; without them a UI has to parse the
-	// human-readable prompt text to learn anything about cost.
-	Usage     *ChatTurnUsage `json:"usage,omitempty"`
-	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
+	// ElapsedMs is this turn's client-facing wall-clock cost, emitted on the
+	// final chunk so a client can show what the answer cost. Usage (the token
+	// accounting) is declared once further down, as *TurnUsage.
+	ElapsedMs float64 `json:"elapsed_ms,omitempty"`
 	// Internal-only: set when Answer is the run's authoritative full text —
 	// <think> stretch included, citation handles already compacted against the
 	// shipped reference — so the session writer must persist it instead of the
 	// accumulated stream deltas, which still carry the pre-compaction handles.
 	AnswerIsAuthoritative bool
+	// ToolCallCounts carries how many times each tool ran during this turn,
+	// keyed by tool name (e.g. {"search_chunks": 7, "list_chunks": 4}).
+	// Only agentic runs populate it, and only on the final result — the
+	// numbers are only complete once the ReAct loop (and its delivery gate)
+	// is done. Benchmarks report it as average search calls per question.
+	ToolCallCounts map[string]int `json:"tool_call_counts,omitempty"`
+	// ToolCallErrors tallies how many of those calls returned a failure
+	// notice (<tool_error> / severity="error") — a backend outage or
+	// repeated invalid arguments shows up here instead of hiding inside the
+	// call counts. Same population rule as ToolCallCounts.
+	ToolCallErrors map[string]int `json:"tool_call_errors,omitempty"`
+	// ToolErrorSamples carries one representative failure message per tool
+	// (first occurrence, truncated) so a benchmark row is diagnosable
+	// without opening the server logs. Same population rule.
+	ToolErrorSamples map[string]string `json:"tool_error_samples,omitempty"`
+	// RetrievedDocIDs is every document identifier (doc_id and doc_name) the
+	// turn's retrieval tools RETRIEVED - opened with full chunk content
+	// (list_chunks, search_chunks, search_semantic_chunks), deduplicated and
+	// sorted. A document seen only through a <match_snippet> window
+	// (search_bm25_chunks, grep_chunks) was LOCATED, not retrieved, and does
+	// NOT appear here: the two sets answer different questions, and the
+	// benchmark's Recall (%) scores against this one. Same population rule as
+	// ToolCallCounts. Measured 2026-10-05: q1093 of a ten-question run
+	// reported 6 ids here while its retrieval had served 270 documents -
+	// reading this field as "what the agent saw" understates the context by an
+	// order of magnitude. ServedDocIDs is the set for that question.
+	RetrievedDocIDs []string `json:"retrieved_docids,omitempty"`
+	// ServedDocIDs is every document identifier the turn's retrieval tools
+	// SURFACED: the full-content tools above PLUS the snippet-only locators
+	// (search_bm25_chunks, grep_chunks), ranked most-served first. It is the
+	// set that answers "was the answer's own document ever in front of the
+	// model", which RetrievedDocIDs cannot: a document can surface a dozen
+	// times and never be opened, and that gap is exactly where a retained
+	// candidate sits on a document nobody read.
+	ServedDocIDs []string `json:"served_docids,omitempty"`
+	// DeepReadChunks / ShallowReadChunks count the chunks the turn's
+	// retrieval tools put in front of the model, split by read depth: deep =
+	// full chunk content (list_chunks, search_chunks), shallow =
+	// <match_snippet> windows (grep_chunks, search_bm25_chunks). They show
+	// where a run's context weight came from — document reading vs triage
+	// traffic — which raw tool call counts cannot distinguish. Same
+	// population rule as ToolCallCounts.
+	DeepReadChunks    int `json:"deep_read_chunks,omitempty"`
+	ShallowReadChunks int `json:"shallow_read_chunks,omitempty"`
+	// DeepReadChunkIDs / ShallowReadChunkIDs name the chunks behind those two
+	// counts, sorted. The counts say how MUCH a run read; the ids say WHICH —
+	// and the difference between a chunk that was read and never cited and one
+	// that was never read at all is the one a total cannot make. Reported as
+	// raw facts: whether an uncited read chunk matters is the auditor's
+	// judgement, not the ledger's.
+	DeepReadChunkIDs    []string `json:"deep_read_chunk_ids,omitempty"`
+	ShallowReadChunkIDs []string `json:"shallow_read_chunk_ids,omitempty"`
+	// Compactions counts the context compactions the engine performed this turn
+	// (mode 8 only; 0 or 1). Codex only — an in-process engine sends its whole
+	// history every turn and has no server-side context to compact. It is
+	// observability: it says the model's own view of the conversation was
+	// summarized mid-turn, not that any stored turn was dropped.
+	Compactions int `json:"compactions,omitempty"`
+	// Usage is the turn's token accounting. A benchmark reports cost per
+	// question, and only the pipeline sees every LLM call the ReAct loop and
+	// its delivery gate made — the response's own token counts cover the final
+	// answer alone. The regular chat path fills the three plain token fields;
+	// agentic runs add the per-call split (LLMCalls / LLMTurns).
+	Usage *TurnUsage `json:"usage,omitempty"`
+	// ElapsedSeconds is the server-side wall-clock duration of the whole turn,
+	// including the delivery gate. Client-side timing additionally covers
+	// transport and queueing, which a benchmark wants to see separately.
+	ElapsedSeconds float64 `json:"elapsed_seconds,omitempty"`
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
-}
-
-// ChatTurnUsage is one turn's token cost. CompletionTokens is an estimate (the
-// answer has no tokenizer on this path), which is why it is reported separately
-// rather than folded into a single "tokens" number a reader would trust.
-type ChatTurnUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
 }
 
 // ThinkEvent is one structured agentic reasoning step as it goes over the
@@ -161,6 +243,22 @@ type ThinkEvent struct {
 	// Summary is the human sentence for this step, exactly what the think
 	// block shows.
 	Summary string `json:"summary"`
+}
+
+// TurnUsage is the aggregated token cost of every LLM call one agentic turn
+// made: the loop's research steps, the delivery gate's audits, and the
+// synthesis fallback alike.
+type TurnUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+	LLMCalls         int `json:"llm_calls"`
+	// LLMTurns is the per-call split the aggregate above sums up: one entry per
+	// LLM call (ReAct iteration, repair turn, audit pass, synthesis), with its
+	// input/output tokens, the model that served it and when it started. A
+	// benchmark reads it to see WHERE a question's cost went, not just how much
+	// it was. Omitted by backends that do not report it.
+	LLMTurns []tokenizer.CallUsage `json:"llm_turns,omitempty"`
 }
 
 // AsyncChat is the Go equivalent of Python's async_chat() in
@@ -227,7 +325,12 @@ func (s *ChatPipelineService) AsyncChat(
 	messages []map[string]interface{},
 	stream bool,
 	kwargs map[string]interface{},
-) (<-chan AsyncChatResult, error) {
+) (results <-chan AsyncChatResult, runErr error) {
+	defer func() {
+		if runErr == nil && results != nil {
+			results = logChatCompletion(ctx, chat, messages, stream, results)
+		}
+	}()
 
 	common.Info("AsyncChat started", zap.String("chat_id", chat.ID))
 
@@ -247,9 +350,29 @@ func (s *ChatPipelineService) AsyncChat(
 	if err := validateChatDatasetAccess(ctx, chat.KBIDs); err != nil {
 		return nil, err
 	}
+	question, err := NormalizeOpenAIMessageContent(lastMsg["content"])
+	if err != nil {
+		return nil, err
+	}
+	if err := compliance.ValidateQuestion(ctx, question); err != nil {
+		if ctx.Err() != nil {
+			out := make(chan AsyncChatResult)
+			close(out)
+			return out, nil
+		}
+		out := make(chan AsyncChatResult, 2)
+		if stream {
+			out <- AsyncChatResult{Answer: err.Error()}
+		}
+		out <- AsyncChatResult{Answer: err.Error(), Final: true}
+		close(out)
+		return out, nil
+	}
 
-	// Resolve what this conversation can reach BEFORE dispatching: whether it
-	// has knowledge bases, and whether web search is enabled.
+	// Resolve what this conversation can reach BEFORE dispatching: both the
+	// classic pipeline and the agentic ReAct path are gated on them, and the
+	// agentic path needs the resolution to know whether it may offer the
+	// web_search tool.
 	hasKBs := false
 	for _, raw := range chat.KBIDs {
 		if id, ok := raw.(string); ok && id != "" {
@@ -266,34 +389,49 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
-	// The smart-reasoning agent runs its own retrieval through its corpus
-	// tools, so the pipeline's search and generation phases do not apply. Two
-	// things select it: an explicit agent_mode kwarg, and reasoning level
-	// reasoningLevelAgentic. Reading a nil kwargs map is safe (the zero value
-	// is "").
+	// The agentic engines (mode 5, mode 8) run their own retrieval — mode 5
+	// through its in-process corpus tools, mode 8 through Codex calling this
+	// process's MCP bridge — so the pipeline's search and generation phases do not
+	// apply. selectAgenticEngine owns which one, if any, a turn runs on, from the
+	// reasoning level and the dialog's KB scope.
 	//
 	// The level is resolved from the request first and the dialog's
 	// prompt_config second, exactly as Phase 9 resolves it; a dialog pinned to
-	// the agentic mode therefore keeps that mode when the request omits the
-	// level, and the check stays ahead of the solo-chat short-circuit below so
+	// an agentic level therefore keeps that engine when the request omits the
+	// level, and the dispatch stays ahead of the solo-chat short-circuit below so
 	// a level-selected turn is never diverted to a plain LLM answer.
-	//
-	// A dialog with no knowledge bases is NOT agentic-eligible. The agent
-	// resolves a citation with an explicit kb_id scope, and an empty scope
-	// drops that term from the ES query (buildBoolQueryFromCondition), which
-	// would let a cited chunk resolve out of any KB in the tenant. Falling
-	// through keeps an empty scope unreachable instead of trusting every
-	// citation path to defend itself; grep_chunks already refuses an empty
-	// scope, and this keeps fetchChunksByIDs from disagreeing with it.
-	_, agenticSelected := kwargs["agent_mode"].(string)
-	if !agenticSelected {
-		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
+	level := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
+	selectedEngine := selectAgenticEngine(level, hasKBs)
+	// The engine dispatch hands the caller's identity to the engine runs below;
+	// the regular pipeline phases read it from ctx themselves.
+	userID := permission.UserIDFromContext(ctx)
+	// mode 8 needs a configured shared Codex app-server AND a dialog model that
+	// speaks the Responses wire API. Without either, fall back to the regular
+	// pipeline (and never leak an unconfigured engine to a caller) — the honest
+	// reading of "the engine it asked for is not available here", mirroring how a
+	// level-5 turn with no KBs drops to the regular branch.
+	if selectedEngine == engineCodex {
+		if !codexConfigured() {
+			common.WarnCtx(ctx, "codex (mode 8) requested but no codex.endpoint/mcp_public_base is configured; using the regular pipeline",
+				zap.String("chat_id", chat.ID))
+			selectedEngine = ""
+		} else if !s.codexResponsesCapable(ctx, userID, chat) {
+			common.WarnCtx(ctx, "codex (mode 8) requires a Responses-API dialog model; using the regular pipeline",
+				zap.String("chat_id", chat.ID))
+			selectedEngine = ""
+		}
 	}
-	if agenticSelected && hasKBs {
+	switch selectedEngine {
+	case engineAgenticRAG:
+		// agenticRag reads the web-search provider from the context — upstream
+		// dropped its useWebSearch argument. The Codex engine still takes it as
+		// a parameter and converts it internally.
 		if useWebSearch {
 			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
 		}
 		return s.agenticRag(ctx, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
+	case engineCodex:
+		return s.codexAgent(ctx, userID, chat, messages, stream, kwargs, useWebSearch, quoteEnabled(kwargs, chat.PromptConfig))
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -462,7 +600,11 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			var images []string
-			textAttachmentsList, images = splitFileAttachments(ctx, files, modelType == "image2text")
+			textAttachmentsList, images, err = splitFileAttachments(ctx, files, modelType == "image2text")
+			if err != nil {
+				sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+				return
+			}
 			imageFiles, hasImageAttachments = gateImageAttachments(chat.LLMID, modelType, images)
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			// Log counts only: attachment payloads are base64 images or
@@ -476,7 +618,11 @@ func (s *ChatPipelineService) AsyncChat(
 		var historyImageFiles []string
 		for _, previous := range messages[:len(messages)-1] {
 			if previous["role"] == "user" && previous["files"] != nil {
-				_, images := s.splitChatAttachments(ctx, previous["files"])
+				_, images, attachmentErr := s.splitChatAttachments(ctx, previous["files"])
+				if attachmentErr != nil {
+					sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", attachmentErr), Final: true})
+					return
+				}
 				modelType, _ := llmModelConfig["model_type"].(string)
 				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				historyImageFiles = append(historyImageFiles, images...)
@@ -651,7 +797,7 @@ func (s *ChatPipelineService) AsyncChat(
 			if refined, err := FullQuestion(ctx, chatModel, messages, ""); err == nil && refined != "" {
 				questions = []string{refined} // replace with refined question
 				common.Debug("refine_multiturn applied",
-					zap.String("refined", truncateForLog(refined, 60)))
+					zap.String("refined", refined))
 			} else if err != nil {
 				common.Warn("refine_multiturn failed; using original question", zap.Error(err))
 			}
@@ -878,7 +1024,13 @@ func (s *ChatPipelineService) AsyncChat(
 				kbinfos["chunks"] = served
 			}
 		}
-		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
+		// The passages get what the window leaves after the system prompt, the
+		// citation rules appended to it and the completion reserve.
+		chatCfg := BuildChatConfig(chat, kwargs)
+		systemTemplate, _ := promptConfig["system"].(string)
+		modelMaxOutput, _ := llmModelConfig["max_output"].(int)
+		reserve := completionReserve(chatCfg, modelMaxOutput, modelMaxTokens)
+		knowledges = s.kbPrompt(kbinfos, s.knowledgeTokenBudget(modelMaxTokens, systemTemplate, kwargs, quote, reserve))
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
 			zap.String("question", strings.Join(questions, " ")),
@@ -908,10 +1060,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
-				finalReference := kbinfos
-				if !quote {
-					finalReference = map[string]interface{}{}
-				}
+				finalReference := emptyResponseReference(kbinfos, knowledges, quote)
 				if !sendResult(AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
@@ -1014,7 +1163,11 @@ func (s *ChatPipelineService) AsyncChat(
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
 		for i := range llmMessages[:len(llmMessages)-1] {
-			llmMessages[i] = s.chatHistoryMessage(ctx, llmMessages[i], modelType, factoryName)
+			llmMessages[i], err = s.chatHistoryMessage(ctx, llmMessages[i], modelType, factoryName)
+			if err != nil {
+				sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+				return
+			}
 		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
@@ -1052,7 +1205,6 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		chatCfg := BuildChatConfig(chat, kwargs)
 		// The citation template joins the prompt only when the request is issued
 		// (prompt+prompt4citation, below), which is after messageFitIn sized the
 		// window — so its tokens are added here by hand. They are deliberately NOT
@@ -1171,64 +1323,91 @@ func (s *ChatPipelineService) AsyncChat(
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
-			if chatDriver.ToolConfig != nil {
+			onToolDelta := func(answerDelta *string, reason *string) error {
 				// Tool streaming path:
 				// Wraps reasoning in <think></think> markers.
 				// inThink tracks local state to route reasoning vs answer.
 				var inThink bool
-				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg,
-					func(answerDelta *string, reason *string) error {
-						if answerDelta == nil || *answerDelta == "" {
-							return nil
-						}
-						text := *answerDelta
-						fullAnswer += text
+				if answerDelta == nil || *answerDelta == "" {
+					return nil
+				}
+				text := *answerDelta
+				fullAnswer += text
 
-						if text == "<think>" {
-							inThink = true
-							if !send(AsyncChatResult{
-								Answer:       "",
-								Reference:    map[string]interface{}{},
-								AudioBinary:  nil,
-								CreatedAt:    float64(time.Now().Unix()),
-								Final:        false,
-								StartToThink: true,
-							}) {
-								return ctx.Err()
-							}
-							return nil
+				if text == "<think>" {
+					inThink = true
+					if !send(AsyncChatResult{
+						Answer:       "",
+						Reference:    map[string]interface{}{},
+						AudioBinary:  nil,
+						CreatedAt:    float64(time.Now().Unix()),
+						Final:        false,
+						StartToThink: true,
+					}) {
+						return ctx.Err()
+					}
+					return nil
+				}
+				if text == "</think>" {
+					inThink = false
+					if !send(AsyncChatResult{
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
+					}) {
+						return ctx.Err()
+					}
+					return nil
+				}
+				if inThink {
+					// Reasoning text — route to Reasoning field so
+					// the SSE handler maps it to
+					// `delta.reasoning_content`.
+					if !send(AsyncChatResult{
+						Reasoning:   text,
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+					}) {
+						return ctx.Err()
+					}
+				} else {
+					// Regular answer content
+					if !send(AsyncChatResult{
+						Answer:    text,
+						Reference: map[string]interface{}{},
+						CreatedAt: float64(time.Now().Unix()),
+						Final:     false,
+					}) {
+						return ctx.Err()
+					}
+				}
+				return nil
+			}
+			onDelta := func(answer *string, reason *string) error {
+				if reason != nil && *reason != "" {
+					if thinkState.EnterReasoning() {
+						if !send(AsyncChatResult{
+							Answer:       "",
+							Reference:    map[string]interface{}{},
+							AudioBinary:  nil,
+							CreatedAt:    float64(time.Now().Unix()),
+							Final:        false,
+							StartToThink: true,
+						}) {
+							return ctx.Err()
 						}
-						if text == "</think>" {
-							inThink = false
+					}
+					deltas := NextThinkDelta(thinkState, *reason, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
+							fullAnswer += d.Value
 							if !send(AsyncChatResult{
-								Answer:      "",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-								EndToThink:  true,
-							}) {
-								return ctx.Err()
-							}
-							return nil
-						}
-						if inThink {
-							// Reasoning text — route to Reasoning field so
-							// the SSE handler maps it to
-							// `delta.reasoning_content`.
-							if !send(AsyncChatResult{
-								Reasoning:   text,
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}) {
-								return ctx.Err()
-							}
-						} else {
-							// Regular answer content
-							if !send(AsyncChatResult{
-								Answer:    text,
+								Answer:    d.Value,
 								Reference: map[string]interface{}{},
 								CreatedAt: float64(time.Now().Unix()),
 								Final:     false,
@@ -1236,85 +1415,75 @@ func (s *ChatPipelineService) AsyncChat(
 								return ctx.Err()
 							}
 						}
-						return nil
-					})
-			} else {
-				driverErr = chatDriver.ChatStreamlyWithSender(
-					ctx, chatMessages, chatCfg, nil,
-					func(answer *string, reason *string) error {
-						if reason != nil && *reason != "" {
-							if thinkState.EnterReasoning() {
+					}
+				}
+				if isContentDelta(answer) {
+					if thinkState.ExitReasoning() {
+						for _, d := range FlushRemaining(thinkState) {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
+								fullAnswer += d.Value
 								if !send(AsyncChatResult{
-									Answer:       "",
-									Reference:    map[string]interface{}{},
-									AudioBinary:  nil,
-									CreatedAt:    float64(time.Now().Unix()),
-									Final:        false,
-									StartToThink: true,
+									Answer:    d.Value,
+									Reference: map[string]interface{}{},
+									CreatedAt: float64(time.Now().Unix()),
+									Final:     false,
 								}) {
 									return ctx.Err()
 								}
 							}
-							deltas := NextThinkDelta(thinkState, *reason, 16)
-							for _, d := range deltas {
-								if d.Kind == ThinkDeltaText && d.Value != "" {
-									fullAnswer += d.Value
-									if !send(AsyncChatResult{
-										Answer:    d.Value,
-										Reference: map[string]interface{}{},
-										CreatedAt: float64(time.Now().Unix()),
-										Final:     false,
-									}) {
-										return ctx.Err()
-									}
-								}
+						}
+						if !send(AsyncChatResult{
+							Answer:      "",
+							Reference:   map[string]interface{}{},
+							AudioBinary: nil,
+							CreatedAt:   float64(time.Now().Unix()),
+							Final:       false,
+							EndToThink:  true,
+						}) {
+							return ctx.Err()
+						}
+					}
+					fullAnswer += *answer
+					deltas := BufferAnswerDelta(thinkState, *answer, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
+							if !send(AsyncChatResult{
+								Answer:    d.Value,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							}) {
+								return ctx.Err()
 							}
 						}
-						if isContentDelta(answer) {
-							if thinkState.ExitReasoning() {
-								for _, d := range FlushRemaining(thinkState) {
-									if d.Kind == ThinkDeltaText && d.Value != "" {
-										fullAnswer += d.Value
-										if !send(AsyncChatResult{
-											Answer:    d.Value,
-											Reference: map[string]interface{}{},
-											CreatedAt: float64(time.Now().Unix()),
-											Final:     false,
-										}) {
-											return ctx.Err()
-										}
-									}
-								}
-								if !send(AsyncChatResult{
-									Answer:      "",
-									Reference:   map[string]interface{}{},
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-									EndToThink:  true,
-								}) {
-									return ctx.Err()
-								}
-							}
-							fullAnswer += *answer
-							deltas := BufferAnswerDelta(thinkState, *answer, 16)
-							for _, d := range deltas {
-								if d.Kind == ThinkDeltaText && d.Value != "" {
-									if !send(AsyncChatResult{
-										Answer:    d.Value,
-										Reference: map[string]interface{}{},
-										CreatedAt: float64(time.Now().Unix()),
-										Final:     false,
-									}) {
-										return ctx.Err()
-									}
-								}
-							}
-						}
-						return nil
-					},
-				)
+					}
+				}
+				return nil
 			}
+			// Failover: a gp- group reference whose invocation fails before
+			// any delta reached the client (canRetry sees fullAnswer) flips
+			// its current member inactive and retries once on the next
+			// member. Once deltas have streamed the answer cannot be replayed
+			// on another model, so the error surfaces as-is.
+			driverErr = dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					fresh, rerr := s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					if rerr == nil {
+						rebindToolcallSession(fresh, kwargs)
+					}
+					return fresh, rerr
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					fullAnswer = ""
+					thinkState = &ThinkStreamState{}
+					if model.ToolConfig != nil {
+						_, err := model.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
+						return err
+					}
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+				},
+				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -1385,20 +1554,34 @@ func (s *ChatPipelineService) AsyncChat(
 			final.AudioBinary = nil
 			send(final)
 		} else {
-			// Non-streaming: get the answer synchronously.
+			// Non-streaming: get the answer synchronously, with gp- group
+			// failover (flip + re-resolve + retry once on invocation error).
 			var answer string
-			var err error
-			// Tool routing: use tool-loop when tools are bound.
-			if chatDriver.ToolConfig != nil {
-				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
-			} else {
-				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-				if respErr != nil {
-					err = respErr
-				} else if resp != nil && resp.Answer != nil {
-					answer = *resp.Answer
-				}
-			}
+			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					fresh, rerr := s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					if rerr == nil {
+						rebindToolcallSession(fresh, kwargs)
+					}
+					return fresh, rerr
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					if model.ToolConfig != nil {
+						a, _, callErr := model.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
+						answer = a
+						return callErr
+					}
+					resp, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					if callErr != nil {
+						return callErr
+					}
+					if resp != nil && resp.Answer != nil {
+						answer = *resp.Answer
+					}
+					return nil
+				},
+				nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 
 			if err != nil {
@@ -1537,7 +1720,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
 				var images []string
-				attachmentsStr, images = s.splitChatAttachments(ctx, files)
+				attachmentsStr, images, err = s.splitChatAttachments(ctx, files)
+				if err != nil {
+					sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+					return
+				}
 				imageFiles, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				common.Info("AsyncChatSolo: file attachments resolved",
 					zap.Bool("vision_model", isImage2Text),
@@ -1554,7 +1741,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				continue
 			}
 			if i < len(messages)-1 {
-				m = s.chatHistoryMessage(ctx, m, modelType, factoryName)
+				m, err = s.chatHistoryMessage(ctx, m, modelType, factoryName)
+				if err != nil {
+					sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+					return
+				}
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -1580,6 +1771,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatModel, err = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 		}
 		if err != nil {
+			common.WarnCtx(ctx, "chat completions: chat model construction failed",
+				zap.String("tenant_id", chat.TenantID),
+				zap.String("llm_id", chat.LLMID),
+				zap.Error(err))
 			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
@@ -1633,24 +1828,39 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
-			driverErr := chatModel.ChatStreamlyWithSender(
-				ctx, chatMessages, chatCfg, nil,
-				func(answer *string, reason *string) error {
-					if reason != nil && *reason != "" {
-						if thinkState.EnterReasoning() {
+			onDelta := func(answer *string, reason *string) error {
+				if reason != nil && *reason != "" {
+					if thinkState.EnterReasoning() {
+						if !sendResult(AsyncChatResult{
+							Answer:       "",
+							Reference:    map[string]interface{}{},
+							AudioBinary:  nil,
+							CreatedAt:    float64(time.Now().Unix()),
+							Final:        false,
+							StartToThink: true,
+						}) {
+							return ctx.Err()
+						}
+					}
+					deltas := NextThinkDelta(thinkState, *reason, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
+							fullAnswer += d.Value
 							if !sendResult(AsyncChatResult{
-								Answer:       "",
-								Reference:    map[string]interface{}{},
-								AudioBinary:  nil,
-								CreatedAt:    float64(time.Now().Unix()),
-								Final:        false,
-								StartToThink: true,
+								Answer:      d.Value,
+								Reference:   map[string]interface{}{},
+								AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
 							}) {
 								return ctx.Err()
 							}
 						}
-						deltas := NextThinkDelta(thinkState, *reason, 16)
-						for _, d := range deltas {
+					}
+				}
+				if isContentDelta(answer) {
+					if thinkState.ExitReasoning() {
+						for _, d := range FlushRemaining(thinkState) {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
 								if !sendResult(AsyncChatResult{
@@ -1664,53 +1874,51 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								}
 							}
 						}
+						if !sendResult(AsyncChatResult{
+							Answer:      "",
+							Reference:   map[string]interface{}{},
+							AudioBinary: nil,
+							CreatedAt:   float64(time.Now().Unix()),
+							Final:       false,
+							EndToThink:  true,
+						}) {
+							return ctx.Err()
+						}
 					}
-					if isContentDelta(answer) {
-						if thinkState.ExitReasoning() {
-							for _, d := range FlushRemaining(thinkState) {
-								if d.Kind == ThinkDeltaText && d.Value != "" {
-									fullAnswer += d.Value
-									if !sendResult(AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}) {
-										return ctx.Err()
-									}
-								}
-							}
+					fullAnswer += *answer
+					deltas := BufferAnswerDelta(thinkState, *answer, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
 							if !sendResult(AsyncChatResult{
-								Answer:      "",
+								Answer:      d.Value,
 								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
+								AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
-								EndToThink:  true,
 							}) {
 								return ctx.Err()
 							}
 						}
-						fullAnswer += *answer
-						deltas := BufferAnswerDelta(thinkState, *answer, 16)
-						for _, d := range deltas {
-							if d.Kind == ThinkDeltaText && d.Value != "" {
-								if !sendResult(AsyncChatResult{
-									Answer:      d.Value,
-									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-								}) {
-									return ctx.Err()
-								}
-							}
-						}
 					}
-					return nil
+				}
+				return nil
+			}
+			// Failover: a gp- group reference whose invocation fails before
+			// any delta reached the client flips its current member inactive
+			// and retries once on the next member. Once deltas have streamed
+			// the answer cannot be replayed on another model, so the error
+			// surfaces as-is.
+			driverErr := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatModel, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 				},
-			)
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					thinkState = &ThinkStreamState{}
+					fullAnswer = ""
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+				},
+				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -1778,11 +1986,26 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				Final:       true,
 			})
 		} else {
-			// Non-streaming: one-shot call.
+			// Non-streaming: one-shot call, with gp- group failover (flip +
+			// re-resolve + retry once on invocation error).
 			chatCfg := BuildChatConfig(chat, config)
-			timer.Enter(common.PhaseGenerateAnswer)
-			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-			timer.Exit(common.PhaseGenerateAnswer)
+			var resp *modelModule.ChatResponse
+			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatModel, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					timer.Enter(common.PhaseGenerateAnswer)
+					r, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					timer.Exit(common.PhaseGenerateAnswer)
+					if callErr != nil {
+						return callErr
+					}
+					resp = r
+					return nil
+				},
+				nil)
 			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1791,7 +2014,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			answer := ""
-			if resp.Answer != nil {
+			if resp != nil && resp.Answer != nil {
 				answer = *resp.Answer
 			}
 			// Debug log matching Python's dialog_service.py:335-336.
@@ -1817,7 +2040,23 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	return out, nil
 }
 
-// splitChatAttachments resolves the last message's file attachments into
+// flipChatGroupMember deactivates the currently picked member of a gp- chat
+// model reference (best-effort) so the next NewChatModel on the same
+// reference picks the next member, mirroring the ingestion dispatchers'
+// failover. No-op for non-group references; failures are logged without
+// masking the original model error.
+func (s *ChatPipelineService) flipChatGroupMember(ctx context.Context, tenantID, llmID string) {
+	groupID, ok := common.ParseGroupModelRef(llmID)
+	if !ok {
+		return
+	}
+	if _, err := dao.MarkGroupMemberInactive(ctx, dao.DB, strings.TrimSpace(tenantID), groupID, entity.ModelTypeChat); err != nil {
+		common.WarnCtx(ctx, "chat completions: model group failover flip failed",
+			zap.String("llm_id", llmID),
+			zap.Error(err))
+	}
+}
+
 // text content (entries joined by "\n\n") and image data URIs, reading
 // each blob from storage at most once.
 //
@@ -1829,7 +2068,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 //
 // Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
 // returned data URIs directly.
-func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files interface{}) (string, []string) {
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files interface{}) (string, []string, error) {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
@@ -1837,14 +2076,17 @@ func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files in
 		fileSvc := file.NewFileService(nil)
 		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
+			if errors.Is(err, utility.ErrFeatureDisabled) {
+				return "", nil, err
+			}
 			common.Warn("GetFileContents failed in splitChatAttachments",
 				zap.Error(err))
-			return "", nil
+			return "", nil, nil
 		}
 		if len(texts) == 0 {
-			return "", images
+			return "", images, nil
 		}
-		return strings.Join(texts, "\n\n"), images
+		return strings.Join(texts, "\n\n"), images, nil
 	}
 
 	// ── String mode ──
@@ -1879,9 +2121,9 @@ func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files in
 		}
 	}
 	if len(texts) == 0 {
-		return "", images
+		return "", images, nil
 	}
-	return strings.Join(texts, "\n\n"), images
+	return strings.Join(texts, "\n\n"), images, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1943,14 +2185,6 @@ func normalizeInternetFlag(v interface{}) *bool {
 	return nil
 }
 
-// shouldUseWebSearch returns true if web search should be enabled.
-// Mirrors Python's _should_use_web_search (dialog_service.py:122-126):
-// A web search provider must be configured on chat.PromptConfig AND the internet
-// flag must normalize to explicit true.
-//
-// The second parameter takes the raw internet value (typically
-// kwargs["internet"] at the call site) — same shape as Python's
-// `_should_use_web_search(chat.prompt_config, kwargs.get("internet"))`.
 func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet interface{}) bool {
 	if chat.PromptConfig == nil {
 		return false
@@ -2096,8 +2330,8 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 
 // buildLLMModelConfig returns only the public metadata needed by RAG's token
 // fitting and attachment dispatch. The persisted legacy max_tokens value is
-// the input/context budget; generated output limits are enforced by ChatModel
-// against ModelInfo.MaxOutput.
+// the input/context budget; max_output is the catalog output limit, which
+// sizes the completion reserve and which ChatModel enforces on generation.
 func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (map[string]interface{}, string, string, string, error) {
 	if info == nil {
 		return nil, "", "", "", fmt.Errorf("chat model metadata is unavailable")
@@ -2110,6 +2344,7 @@ func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (
 		"model_type":  "chat",
 		"llm_name":    info.Name,
 		"max_tokens":  contextLength,
+		"max_output":  info.MaxOutput,
 		"llm_factory": info.ProviderName,
 	}
 	return cfg, info.Name, info.ProviderName, "", nil
@@ -2216,6 +2451,113 @@ func factoryFromLLMID(llmID string) string {
 	return provider
 }
 
+// agenticRag drives the agentic (ReAct) conversation mode via eino ADK's
+// adk.ChatModelAgent. It mirrors AsyncChat's channel contract: yields
+// AsyncChatResult deltas (answer / reasoning / final) over a buffered channel
+// consumed by the same callers (ChatCompletions / OpenAIChatCompletions).
+
+// smartReasoningTimeout is the total wall-clock budget for one agentic agent
+// run, shared by the model and every tool — tools carry no per-call limits of
+// their own. The two HTTP entrypoints pass Request.Context(), which carries no
+// deadline (http.Server.WriteTimeout does not become a handler context
+// deadline), so without an explicit budget here a client that keeps the
+// connection open could let the agent burn CPU indefinitely.
+//
+// The budget must cover the main research loop AND the whole delivery gate:
+// auditing a deliverable costs one auditor sub-agent run per pass (deep
+// list_chunks reads plus the echoed verdict), and each repair turn repeats the
+// retrieval cycle. Ten minutes sufficed while the loop ended early; once the
+// templates mandate constraint-first retrieval and multi-pass auditing, the
+// main loop alone can consume half of it and the gate then dies mid-flight —
+// every in-flight tool call fails with "context deadline exceeded" at the
+// deadline (observed on q268, where two Elasticsearch queries died at exactly
+// T+10m while the cluster was green, and the gate shipped pure narration
+// because there was no budget left to repair or even to synthesize).
+// Raised to 30 minutes on 2026-09-17 for the slow-plan experiment: with 10-minute per-call
+// budgets a single stalled call plus the audit passes can consume most of 20 minutes and
+// leave nothing for the synthesis turn.
+var smartReasoningTimeout = 30 * time.Minute
+
+// buildCodexReference turns a mode 8 answer's citations into the reference payload and
+// rewrites the answer's provenance to that payload's numbering. The model ends each sourced
+// line with a provenance tuple — `(doc: …, doc_id: …, chunk_id: <id>, snippet: "…")` for a
+// corpus passage, `(source: web, url: <url>, title: <title>, snippet: "…")` for a web one —
+// and this resolves them, strips the tuples and appends the markers (see
+// agentic_rag.RewriteProvenance), so `[ID:N]` indexes reference.chunks[N].
+//
+// Both sources encode into ONE 0-based sequence: the corpus chunks that resolved first (in
+// citation order), then the web passages (in citation order). The payload array carries the
+// same order, so a single numbering covers both and the client needs no source-specific
+// rule.
+//
+// Verification differs by source, deliberately:
+//   - a corpus chunk_id must exist AND belong to the conversation's datasets
+//     (fetchChunksByIDs). That is the whole of the corpus check — there is no served-chunk
+//     ledger (see D12), so a chunk the model names but never retrieved still resolves as
+//     long as it is in scope;
+//   - a web url is the MODEL's own claim. The turn records nothing about what a search
+//     served, so url/title/snippet are taken from the answer as written.
+//
+// An unresolvable corpus id keeps its tuple in the answer: an unverifiable citation stays
+// visible instead of silently vanishing or pointing at a wrong index.
+func (s *ChatPipelineService) buildCodexReference(ctx context.Context, tenantID string, datasetIDs []string, final string) (map[string]interface{}, string) {
+	corpus := agentic_rag.ExtractCitedChunkIDs(final)
+	web := agentic_rag.ExtractCitedWebSources(final)
+	if len(corpus) == 0 && len(web) == 0 {
+		return map[string]interface{}{}, final
+	}
+	byID := make(map[string]map[string]interface{}, len(corpus)+len(web))
+	for _, r := range fetchChunksByIDs(ctx, datasetIDs, corpus) {
+		if id, ok := r["id"].(string); ok {
+			byID[id] = r
+		}
+	}
+	// One numbering, corpus first then web, each in citation order. Only what resolved
+	// takes a number: the marker IS the payload position.
+	order := make([]string, 0, len(corpus)+len(web))
+	for _, id := range corpus {
+		if _, ok := byID[id]; ok {
+			order = append(order, id)
+		}
+	}
+	for _, w := range web {
+		if _, dup := byID[w.URL]; dup {
+			continue
+		}
+		title := w.Title
+		if title == "" {
+			title = w.URL
+		}
+		// Same shape the in-process web path builds (see buildAgenticReference), so the
+		// client renders a web citation exactly like a corpus one.
+		byID[w.URL] = map[string]interface{}{
+			"id": w.URL, "doc_id": w.URL, "docnm_kwd": title,
+			"content_with_weight": w.Snippet, "url": w.URL,
+			"kb_id": []interface{}{}, "img_id": "", "positions": []interface{}{},
+		}
+		order = append(order, w.URL)
+	}
+	if len(order) == 0 {
+		return map[string]interface{}{}, final
+	}
+	ordered := make([]map[string]interface{}, 0, len(order))
+	index := make(map[string]int, len(order))
+	for i, key := range order {
+		ordered = append(ordered, byID[key])
+		index[key] = i
+	}
+	marked := agentic_rag.RewriteProvenance(final, index)
+	common.InfoCtx(ctx, "codex citations built",
+		zap.Int("corpus_cited", len(corpus)),
+		zap.Int("web_cited", len(web)),
+		zap.Int("resolved", len(order)),
+		zap.Int("final_bytes", len(marked)))
+	return map[string]interface{}{
+		"chunks":   chunksFormat(ordered),
+		"doc_aggs": agenticDocAggs(ordered),
+	}, marked
+}
+
 // The handler in openai_chat.go has already rejected requests
 // whose last message is not from the user, so this should always succeed.
 func lastUserQuestion(messages []map[string]interface{}) string {
@@ -2259,6 +2601,18 @@ func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachmen
 	return knowledgeCount == 0 && attachments == "" && !imageAttachments
 }
 
+// emptyResponseReference is the reference the empty-response fallback closes
+// the stream with. With citations off it is empty. With citations on it is the
+// retrieval result, unless retrieval returned chunks but none of them entered
+// the prompt (no room in the knowledge budget): then it is empty too, so the
+// client never gets sources for passages the answer could not have used.
+func emptyResponseReference(kbinfos map[string]interface{}, knowledges []string, quote bool) map[string]interface{} {
+	if !quote || (len(knowledges) == 0 && len(chunksFromKBInfos(kbinfos)) > 0) {
+		return map[string]interface{}{}
+	}
+	return kbinfos
+}
+
 // splitFileAttachments mirrors Python's `split_file_attachments` at
 // dialog_service.py:371-392. It separates `messages[-1]["files"]`
 // into text-file content and image attachments.
@@ -2276,7 +2630,7 @@ func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachmen
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (textAttachments []string, imageAttachments []string, err error) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
@@ -2284,10 +2638,12 @@ func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (tex
 		fileSvc := file.NewFileService(nil)
 		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
-			common.Warn("GetFileContents failed, falling back to string splitting",
-				zap.Error(err))
+			if errors.Is(err, utility.ErrFeatureDisabled) {
+				return nil, nil, err
+			}
+			common.Warn("GetFileContents failed, falling back to string splitting", zap.Error(err))
 		} else {
-			return texts, images
+			return texts, images, nil
 		}
 	}
 
@@ -2316,7 +2672,7 @@ func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (tex
 				}
 			}
 		}
-		return texts, images
+		return texts, images, nil
 	}
 
 	// raw=false: split by "data:" prefix.
@@ -2343,7 +2699,7 @@ func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (tex
 			}
 		}
 	}
-	return texts, images
+	return texts, images, nil
 }
 
 // parseFileDicts attempts to parse files as a list of file-dict maps
@@ -2557,47 +2913,18 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbin
 	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
-// kbPrompt builds knowledge prompt blocks from retrieved chunks.
-// Mirrors Python's kb_prompt() in rag/prompts/generator.py.
+// kbPrompt builds knowledge prompt blocks from retrieved chunks, keeping
+// blocks until their tokens, headers included, pass 97% of maxTokens. A
+// non-positive maxTokens leaves no room for any block.
 func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens int) []string {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
-	if !ok || len(chunksRaw) == 0 {
+	if !ok || len(chunksRaw) == 0 || maxTokens <= 0 {
 		return nil
 	}
 
-	// Pass 1: count content tokens to determine how many chunks fit.
-	type chunkContent struct {
-		content string
-	}
-	contents := make([]chunkContent, 0, len(chunksRaw))
-	for _, ck := range chunksRaw {
-		c := getMapString(ck, "content_with_weight", "content")
-		if c == "" {
-			continue
-		}
-		contents = append(contents, chunkContent{content: c})
-	}
-
-	usedTokenCount := 0
-	chunksNum := 0
-	for _, cc := range contents {
-		usedTokenCount += graph.NumTokensFromString(cc.content)
-		chunksNum++
-		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
-			common.Warn("Not all the retrieval into prompt",
-				zap.Int("kept", chunksNum),
-				zap.Int("total", len(contents)))
-			break
-		}
-	}
-
-	// Pass 2: format chunks with tree structure, capped at chunksNum.
-	if chunksNum > len(chunksRaw) {
-		chunksNum = len(chunksRaw)
-	}
 	var result []string
-	for i := 0; i < chunksNum; i++ {
-		ck := chunksRaw[i]
+	usedTokenCount := 0
+	for i, ck := range chunksRaw {
 		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
@@ -2623,6 +2950,14 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += "\n└── Content:\n"
 		cnt += c
 		result = append(result, cnt)
+
+		usedTokenCount += graph.NumTokensFromString(cnt)
+		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
+			common.Warn("Not all the retrieval into prompt",
+				zap.Int("kept", len(result)),
+				zap.Int("total", len(chunksRaw)))
+			break
+		}
 	}
 
 	return result
@@ -2744,19 +3079,22 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	return result
 }
 
-func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, message map[string]interface{}, modelType, factory string) (map[string]interface{}, error) {
 	if message["role"] != "user" || message["files"] == nil {
-		return message
+		return message, nil
 	}
-	_, images := s.splitChatAttachments(ctx, message["files"])
+	_, images, attachmentErr := s.splitChatAttachments(ctx, message["files"])
+	if attachmentErr != nil {
+		return nil, attachmentErr
+	}
 	images, _ = gateImageAttachments("", modelType, images)
 	msg := normalizeLLMMessage(message)
 	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
 	if err != nil {
 		common.Warn("chat history multimodal conversion failed", zap.Error(err))
-		return msg
+		return msg, nil
 	}
-	return converted
+	return converted, nil
 }
 
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
@@ -3216,7 +3554,7 @@ func (s *ChatPipelineService) decorateAnswer(
 		Final:     false, // caller sets Final = true
 		// Same numbers the Langfuse generation above records, on the wire so a
 		// client does not have to parse the human-readable prompt to learn them.
-		Usage: &ChatTurnUsage{
+		Usage: &TurnUsage{
 			PromptTokens:     usedTokenCount,
 			CompletionTokens: tkNum,
 			TotalTokens:      usedTokenCount + tkNum,
@@ -4832,8 +5170,28 @@ func kbTenantIDStrings(kbs []*entity.Knowledgebase) []string {
 // BuildChatConfig converts the dialog's LLM setting (with optional
 // per-request overrides) into a typed ChatConfig for the LLM driver.
 // Dialog values are read first; request config values win when present.
+// chatConfigWithTemperature copies chatCfg and pins the given temperature;
+// a nil temp leaves the temperature field unset (the model's own default
+// applies) and strips whatever the producer carried.
+func chatConfigWithTemperature(chatCfg *modelModule.ChatConfig, temp *float64) *modelModule.ChatConfig {
+	if temp == nil {
+		if chatCfg == nil {
+			return &modelModule.ChatConfig{}
+		}
+		out := *chatCfg
+		out.Temperature = nil
+		return &out
+	}
+	if chatCfg == nil {
+		return &modelModule.ChatConfig{Temperature: temp}
+	}
+	out := *chatCfg
+	out.Temperature = temp
+	return &out
+}
+
 func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelModule.ChatConfig {
-	cfg := &modelModule.ChatConfig{}
+	cfg := &modelModule.ChatConfig{Thinking: new(false)}
 
 	if dialog.LLMSetting != nil {
 		if v, ok := dialog.LLMSetting["stream"].(bool); ok {
@@ -4841,6 +5199,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
+		} else if v, ok := dialog.LLMSetting["thinking"].(string); ok {
+			cfg.Thinking = new(v == "enabled")
 		}
 		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
 			i := v
@@ -4881,6 +5241,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
+		} else if v, ok := config["thinking"].(string); ok {
+			cfg.Thinking = new(v == "enabled")
 		}
 		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
 			i := v
@@ -4918,6 +5280,43 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	return cfg
 }
 
+// defaultCompletionReserve is the completion room kept when neither the chat
+// nor the model catalog sets an output limit. It matches the web UI model presets.
+const defaultCompletionReserve = 4096
+
+// completionReserve is the room kept for the answer in a window of
+// modelMaxTokens: the chat's max_tokens when set, honoured exactly; otherwise
+// the model's catalog output limit, else defaultCompletionReserve, both capped
+// at a quarter of the window so a large catalog limit cannot take it all.
+func completionReserve(cfg *modelModule.ChatConfig, modelMaxOutput, modelMaxTokens int) int {
+	if cfg != nil && cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
+		return *cfg.MaxTokens
+	}
+	reserve := defaultCompletionReserve
+	if modelMaxOutput > 0 {
+		reserve = modelMaxOutput
+	}
+	return min(reserve, modelMaxTokens/4)
+}
+
+// knowledgeTokenBudget is the room the retrieved passages may take in a window
+// of modelMaxTokens: what the system prompt, the citation rules sent after it
+// (when quoting) and the completion reserve leave. The system prompt is measured
+// as formatPrompt renders it from kwargs, with the knowledge left out, so a
+// prompt parameter carrying a large value is counted. formatPrompt writes the
+// passages at every {knowledge} of the template, and AsyncChat appends them once
+// to a template without one, so the room is split across those insertions.
+func (s *ChatPipelineService) knowledgeTokenBudget(modelMaxTokens int, systemTemplate string, kwargs map[string]interface{}, quote bool, reserve int) int {
+	params := maps.Clone(kwargs)
+	delete(params, "knowledge")
+	used := graph.NumTokensFromString(s.formatPrompt(systemTemplate, params)) + reserve
+	if quote {
+		used += graph.NumTokensFromString(ragprompts.CitationPrompt(""))
+	}
+	insertions := max(strings.Count(systemTemplate, "{knowledge}"), 1)
+	return max(modelMaxTokens-used, 0) / insertions
+}
+
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
 	if usedTokenCount >= modelMaxTokens {
 		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max context length %d", usedTokenCount, modelMaxTokens)
@@ -4947,33 +5346,21 @@ func chatConfigPositiveInt(value interface{}) (int, bool) {
 }
 
 func chatConfigInt(value interface{}) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	case float32:
-		return int(v), true
-	default:
-		return 0, false
-	}
+	return common.ToIntNum(value)
 }
 
 func chatConfigFloat(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	default:
-		return 0, false
+	// Keep the pre-convergence contract: only native numeric kinds are valid
+	// overrides. common.ToFloat also parses strings (including "NaN"/"Inf"),
+	// which would put non-finite values into the LLM request body.
+	switch value.(type) {
+	case float64, float32, int, int64:
+		f, ok := common.ToFloat(value)
+		if ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return f, true
+		}
 	}
+	return 0, false
 }
 
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {
@@ -5097,10 +5484,72 @@ func quoteEnabled(kwargs map[string]interface{}, promptConfig map[string]interfa
 // removed thinking modes — runs the standard retrieval path below.
 const reasoningLevelAgentic = 5
 
-// resolveReasoningLevel reads the requesting reasoning level from the request
-// kwargs first, falling back to the chat prompt_config. Only
-// reasoningLevelAgentic selects the smart-reasoning agent. Frontend sends
-// Number(getThinkingLevel()), so the raw value is numeric, not a bool.
+// reasoningLevelCodex is the reasoning level that hands the turn to the Codex
+// engine: this process brokers a shared Codex app-server (dialed over WebSocket)
+// and exposes the agent_rag retrieval tools to it through an MCP bridge.
+//
+// Sibling of the other engine levels for the same reason: it names an ENGINE, not a
+// harness depth, so it must never reach harnessModeForLevel. Unlike level 5 it
+// does NOT require knowledge bases — Codex is a general assistant and can still converse
+// without one; the MCP retrieval tools return an error when the conversation binds
+// no KB (see the mode 8 plan, D8).
+const reasoningLevelCodex = 8
+
+// agenticEngine names the engine a turn runs on. The zero value means the regular
+// chat pipeline.
+type agenticEngine string
+
+const (
+	// engineAgenticRAG is mode 5: the plain eino ReAct explorer (direct answer).
+	engineAgenticRAG agenticEngine = "agentic"
+	// engineCodex is mode 8: the Codex engine (shared app-server over WebSocket,
+	// agent_rag tools via MCP).
+	engineCodex agenticEngine = "codex"
+)
+
+// selectAgenticEngine decides which engine answers a turn, from the reasoning
+// level and the dialog's knowledge-base scope.
+//
+// The LEVEL is the only selector. An `agent_mode` request parameter used to name
+// a template; with it gone, the level names the engine and nothing else does.
+// Which mode-5 template runs is not a request concern at all: it is
+// defaultAgenticTemplateID, resolved inside agenticRag.
+//
+// It is a named function rather than an inline condition so the dispatch and its
+// test cannot drift apart: the mapping below IS the contract, and a test that
+// re-derived it would pass while the production branch said something else.
+//
+// No knowledge bases means NO mode-5 engine: it resolves citations against an
+// explicit kb_id scope, and an empty scope drops that term from the ES query
+// (buildBoolQueryFromCondition), letting a cited chunk resolve out of any KB in
+// the tenant. Falling through to the regular pipeline keeps the empty-scope
+// query unconstructible instead of trusting every citation path to defend
+// itself.
+//
+// mode 8 is deliberately exempt from that gate: Codex is a general assistant
+// that can converse without a KB, and its MCP retrieval tools return an error on
+// a no-scope call (never an empty/default scope query). So level 8 is handled
+// BEFORE the !hasKBs return.
+func selectAgenticEngine(level int, hasKBs bool) agenticEngine {
+	if level == reasoningLevelCodex {
+		return engineCodex
+	}
+	if !hasKBs {
+		return ""
+	}
+	if level == reasoningLevelAgentic {
+		return engineAgenticRAG
+	}
+	// 0 (off) and the harness depths 1..4 stay on the pipeline.
+	return ""
+}
+
+// resolveReasoningLevel mirrors Python's rag_agent: the requesting reasoning
+// level is taken from the request kwargs first, falling back to the chat
+// prompt_config, and is an integer 0..4 (0 = off, 1..4 = low/medium/high/
+// ultra), reasoningLevelAgentic for the smart-reasoning agent, or
+// reasoningLevelCodex for the Codex engine. Frontend
+// sends Number(getThinkingLevel()), so the raw value is numeric, not a bool.
 func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
 	if kwargs != nil {
 		if v, ok := kwargs["reasoning"]; ok {

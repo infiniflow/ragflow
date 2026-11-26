@@ -47,7 +47,6 @@ const (
 	weComWSHandshakeTimeout = 10 * time.Second
 	weComSubscribeTimeout   = 10 * time.Second
 	weComWSWriteTimeout     = 10 * time.Second
-	weComReconnectDelay     = 3 * time.Second
 	weComHeartbeatInterval  = 25 * time.Second
 	weComTokenSafetyMargin  = 60 * time.Second
 	weComStreamTick         = 100 * time.Millisecond
@@ -95,6 +94,8 @@ type wecomChannel struct {
 	tokenMu     sync.Mutex
 	accessToken string
 	tokenExpiry time.Time
+
+	retryAttempts int
 }
 
 type wecomAPIResponse struct {
@@ -336,6 +337,9 @@ func (c *wecomChannel) Send(ctx context.Context, msg core.OutgoingMessage) error
 }
 
 func (c *wecomChannel) runWebSocket(ctx context.Context) {
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
 	for ctx.Err() == nil {
 		err := c.runWebSocketOnce(ctx)
 		if ctx.Err() != nil {
@@ -348,7 +352,11 @@ func (c *wecomChannel) runWebSocket(ctx context.Context) {
 		if err != nil {
 			common.Error("wecom: websocket loop error", err, zap.String("account_id", c.account.AccountID))
 		}
-		if !waitForWeComRetry(ctx) {
+		c.mu.Lock()
+		c.retryAttempts++
+		delay := channelRetryDelay(c.retryAttempts)
+		c.mu.Unlock()
+		if !waitForContext(ctx, delay) {
 			return
 		}
 	}
@@ -387,6 +395,9 @@ func (c *wecomChannel) runWebSocketOnce(ctx context.Context) error {
 	if err := c.subscribeWebSocket(conn); err != nil {
 		return err
 	}
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
 	heartbeatDone := make(chan struct{})
 	defer close(heartbeatDone)
 	go c.runWebSocketHeartbeat(ctx, conn, heartbeatDone)
@@ -752,22 +763,6 @@ func (c *wecomChannel) requestJSON(ctx context.Context, method, endpoint string,
 	return nil
 }
 
-// redactURLError strips the query string from transport errors. WeCom carries
-// the access token / corp secret in the request URL query, and *url.Error keeps
-// the full URL in its message, so raw errors must not reach the log sinks.
-func redactURLError(err error) error {
-	var urlErr *url.Error
-	if !errors.As(err, &urlErr) {
-		return err
-	}
-	parsed, parseErr := url.Parse(urlErr.URL)
-	if parseErr != nil {
-		return urlErr
-	}
-	parsed.RawQuery = ""
-	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: redactURLError(urlErr.Err)}
-}
-
 func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {
 	if strings.TrimSpace(text) == "" {
 		return
@@ -863,15 +858,4 @@ func weComIntValue(value any) int {
 
 func newWeComRequestID() string {
 	return fmt.Sprintf("req-%d-%d", time.Now().UnixNano(), weComRequestSequence.Add(1))
-}
-
-func waitForWeComRetry(ctx context.Context) bool {
-	timer := time.NewTimer(weComReconnectDelay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }

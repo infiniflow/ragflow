@@ -20,6 +20,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,7 +103,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		}
 		normalized = append(normalized, document)
 	}
-	if err := e.ensureDynamicColumns(ctx, baseName, sortedSet(fieldNames)); err != nil {
+	if err := e.ensureDynamicColumns(ctx, baseName, slices.Sorted(maps.Keys(fieldNames))); err != nil {
 		return nil, err
 	}
 	if err := e.backfillVectorColumns(ctx, baseName, normalized); err != nil {
@@ -289,7 +291,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 	setParts := make([]string, 0, len(newValue))
 	setArgs := make([]interface{}, 0, len(newValue))
 	removeFields := map[string]interface{}{}
-	for _, rawKey := range sortedKeys(newValue) {
+	for _, rawKey := range slices.Sorted(maps.Keys(newValue)) {
 		key := rawKey
 		if kind == "memory" {
 			key = mapMemoryField(rawKey)
@@ -360,7 +362,7 @@ func (e *Engine) applyKeywordRemovals(ctx context.Context, tableName, whereSQL s
 	if len(removeFields) == 0 {
 		return nil
 	}
-	removeColumns := sortedMapKeys(removeFields)
+	removeColumns := slices.Sorted(maps.Keys(removeFields))
 	selectColumns := make([]string, 0, len(removeColumns)+1)
 	for _, column := range removeColumns {
 		selectColumns = append(selectColumns, quoteIdent(column))
@@ -380,7 +382,7 @@ func (e *Engine) applyKeywordRemovals(ctx context.Context, tableName, whereSQL s
 		for _, column := range removeColumns {
 			current, _ := decodeColumnValue("chunk", column, row[column]).([]string)
 			removeValue := stringValue(removeFields[column])
-			if !containsString(current, removeValue) {
+			if !slices.Contains(current, removeValue) {
 				continue
 			}
 			updated := make([]string, 0, len(current))
@@ -395,7 +397,7 @@ func (e *Engine) applyKeywordRemovals(ctx context.Context, tableName, whereSQL s
 			updates[column][strings.Join(updated, keywordSeparator)] = append(updates[column][strings.Join(updated, keywordSeparator)], id)
 		}
 	}
-	for _, column := range sortedMapKeys(updates) {
+	for _, column := range slices.Sorted(maps.Keys(updates)) {
 		for joined, ids := range updates[column] {
 			// The filter args keep their original $1..$n numbering (they are
 			// bound first); the SET value and the id list continue past them.
@@ -506,29 +508,8 @@ func mapMemoryField(field string) string {
 // copyMap shallow-copies a filter map so per-table discriminators can be
 // added without aliasing the request's filter.
 func copyMap(source map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(source)+1)
-	for key, value := range source {
-		result[key] = value
+	if source == nil {
+		return map[string]interface{}{}
 	}
-	return result
-}
-
-// sortedSet lists a set's members in sorted order.
-func sortedSet(source map[string]bool) []string {
-	values := make([]string, 0, len(source))
-	for value := range source {
-		values = append(values, value)
-	}
-	sort.Strings(values)
-	return values
-}
-
-// sortedMapKeys lists a map's keys in sorted order.
-func sortedMapKeys[V any](source map[string]V) []string {
-	keys := make([]string, 0, len(source))
-	for key := range source {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return maps.Clone(source)
 }

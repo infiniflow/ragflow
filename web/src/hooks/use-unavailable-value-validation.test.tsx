@@ -88,7 +88,7 @@ describe('useUnavailableModelFormSchema', () => {
   it('flags a persisted model missing from the current user models', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
-      isFetched: true,
+      isSettled: true,
     });
     const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
 
@@ -104,7 +104,7 @@ describe('useUnavailableModelFormSchema', () => {
   it('accepts a usable model', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
-      isFetched: true,
+      isSettled: true,
     });
     const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
 
@@ -116,7 +116,7 @@ describe('useUnavailableModelFormSchema', () => {
   it('stays quiet while the model list is loading', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(),
-      isFetched: false,
+      isSettled: false,
     });
     const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
 
@@ -125,17 +125,17 @@ describe('useUnavailableModelFormSchema', () => {
     ).toBe(true);
   });
 
-  it('validates against the given owner tenant', () => {
+  it('validates against the given owner user', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
-      isFetched: true,
+      isSettled: true,
     });
     renderHook(() =>
-      useUnavailableModelFormSchema(Schema, { ownerTenantId: 'owner-1' }),
+      useUnavailableModelFormSchema(Schema, { resourceTenantId: 'owner-1' }),
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       'owner-1',
     );
   });
@@ -205,7 +205,7 @@ describe('useUnavailableCompilationTemplateGroupFormSchema', () => {
     });
     renderHook(() =>
       useUnavailableCompilationTemplateGroupFormSchema(TemplateSchema, {
-        ownerTenantId: 'owner-1',
+        accessUserId: 'owner-1',
       }),
     );
 

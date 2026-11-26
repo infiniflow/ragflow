@@ -14,11 +14,13 @@ import { getSummary } from './log-summary';
 export const getDataSourceLogsTableColumns = ({
   now,
   showDatasetColumn = true,
+  getSourceName,
   handleToDataSetDetail,
 }: {
   now: number;
   showDatasetColumn?: boolean;
-  handleToDataSetDetail?: (id: string) => void;
+  getSourceName?: (connectorId: string) => string | undefined;
+  handleToDataSetDetail?: (id: string) => () => void;
 }): ColumnDef<IDataSourceLog>[] => {
   const columns: ColumnDef<IDataSourceLog>[] = [
     {
@@ -47,6 +49,21 @@ export const getDataSourceLogsTableColumns = ({
     },
   ];
 
+  if (getSourceName) {
+    columns.push({
+      id: 'connector_name',
+      header: t('knowledgeDetails.datasourceLogs'),
+      meta: { headerClassName: 'w-40' },
+      cell: ({ row }) => (
+        <div className="text-text-primary truncate">
+          {getSourceName?.(row.original.connector_id) ||
+            row.original.connector_id ||
+            '-'}
+        </div>
+      ),
+    });
+  }
+
   if (showDatasetColumn) {
     columns.push({
       accessorKey: 'kb_name',
@@ -55,9 +72,7 @@ export const getDataSourceLogsTableColumns = ({
       cell: ({ row }) => (
         <div
           className="flex items-center gap-2 text-text-primary cursor-pointer"
-          onClick={() => {
-            handleToDataSetDetail?.(row.original.kb_id);
-          }}
+          onClick={handleToDataSetDetail?.(row.original.kb_id)}
         >
           <RAGFlowAvatar
             avatar={row.original.avatar}

@@ -429,10 +429,6 @@ export default {
       layoutRecognize: 'Analyseur PDF',
       layoutRecognizeTip:
         "Utilise un modèle visuel pour détecter les titres, blocs de texte, images et tableaux dans les PDF. Si l'option naïve est choisie, seul le texte brut est extrait. Ne fonctionne que sur les fichiers PDF.",
-      taskPageSize: 'Taille de page par tâche',
-      taskPageSizeMessage: 'Veuillez saisir une taille de page pour la tâche !',
-      taskPageSizeTip:
-        'Pendant la reconnaissance, un fichier PDF est divisé en segments traités en parallèle. Une taille plus grande réduit les coupures de texte entre pages.',
       addPage: 'Ajouter une page',
       greaterThan: 'La valeur actuelle doit être supérieure à "à" !',
       greaterThanPrevious:
@@ -453,9 +449,6 @@ export default {
       delimiter: 'Délimiteur de texte',
       delimiterTip:
         'Un délimiteur peut être un ou plusieurs caractères spéciaux. Pour plusieurs caractères, encadrez-les de backticks (``). Ex : \\n`##`;',
-      html4excel: 'Excel vers HTML',
-      html4excelTip:
-        'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
         'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -1392,8 +1385,6 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\\\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
-      dingtalkAITableDescription:
-        "Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d'une table spécifiée.",
       Verify: 'Vérifier',
       keyValid: 'Votre clé API est valide.',
       keyInvalid: 'Votre clé API est invalide.',
@@ -1827,7 +1818,7 @@ Exemple : Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },
@@ -1955,6 +1946,20 @@ Exemple : Virtual Hosted Style`,
         'Un composant qui demande au LLM de générer des réponses. Assurez-vous que le prompt est correctement configuré.',
       categorizeDescription:
         'Un composant qui utilise le LLM pour classer les entrées utilisateur en catégories prédéfinies. Assurez-vous de spécifier le nom, la description et les exemples pour chaque catégorie, ainsi que le composant suivant correspondant.',
+      scoredSwitchQuestionRequired:
+        'Chaque question supplémentaire doit avoir des instructions',
+      scoredSwitchLevelMinimum: 'Ajoutez au moins deux niveaux',
+      scoredSwitchFieldMinimum: 'Ajoutez au moins un champ',
+      scoredSwitchFieldNameInvalid:
+        'Le nom du champ doit commencer par une lettre ou un tiret bas',
+      scoredSwitchListItemsRequired:
+        'Une liste doit indiquer le type de ses elements',
+      scoredSwitchEstimateBoundsRequired:
+        'Une estimation doit avoir un minimum et un maximum',
+      scoredSwitchForecastRequired:
+        'Une prevision doit avoir un horizon et un intervalle',
+      scoredSwitchDecimalsRange:
+        'Les décimales doivent être comprises entre 0 et 6',
       relevantDescription:
         "Un composant qui utilise le LLM pour évaluer si la sortie en amont est pertinente par rapport à la dernière requête de l'utilisateur. Assurez-vous de spécifier le composant suivant pour chaque résultat de jugement.",
       rewriteQuestionDescription:
@@ -2469,13 +2474,6 @@ Exemple : Virtual Hosted Style`,
       seconds: 'Secondes',
       subject: 'Sujet',
       // --- clés manquantes ajoutées ---
-      preprocess: {
-        preprocess: 'Prétraitement',
-        mainContent: 'Contenu principal',
-        abstract: 'Résumé',
-        author: 'Auteur',
-        sectionTitle: 'Titre de section',
-      },
       editTags: 'Modifier les étiquettes',
       editTagsDescription:
         'Ajoutez des étiquettes pour organiser et filtrer vos agents. Appuyez sur Entrée ou virgule pour ajouter.',
@@ -2551,9 +2549,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'Toutes les sections analysées seront fusionnées dans un seul bloc.',
-      flattenMediaToText: 'Désactiver le modèle de vision',
-      flattenMediaToTextTip:
-        "Traite les sections d'images et de tableaux comme du texte brut et ignore l'amélioration par vision.",
       enableChildrenDelimiters:
         'Les blocs enfants sont utilisés pour la récupération',
       merge: 'Fusionner',
@@ -2636,7 +2631,7 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       titleChunkerDescription:
         'Divise les documents en sections par hiérarchie de titres. Définissez les niveaux de titre avec des règles regex, puis choisissez le mode Hiérarchie ou Groupe pour contrôler la structure des blocs.',
       titleChunker: 'Découpeur par titres',
-      extractor: 'Transformateur',
+      extractor: 'Extracteur',
       extractorDescription:
         'Utilise un LLM pour extraire des informations structurées des blocs de document — telles que des résumés, classifications, etc.',
       outputFormat: 'Format de sortie',

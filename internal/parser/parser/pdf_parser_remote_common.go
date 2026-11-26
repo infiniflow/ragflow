@@ -2,8 +2,17 @@ package parser
 
 import (
 	"context"
+	"math"
 	"strings"
 )
+
+// pdfBoxExceedsBleed reports whether any edge extends more than 10% of the
+// page dimension beyond the page. The box and page must use the same units.
+func pdfBoxExceedsBleed(left, minY, right, maxY, width, height float64) bool {
+	const tolerance = 0.1
+	return math.Max(-left, right-width) > width*tolerance ||
+		math.Max(-minY, maxY-height) > height*tolerance
+}
 
 func pdfFileMeta(filename string, pageCount int) map[string]any {
 	if pageCount < 0 {

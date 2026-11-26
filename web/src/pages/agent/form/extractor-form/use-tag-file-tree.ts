@@ -24,14 +24,15 @@ function toTreeNode(x: IFile): TreeNodeType {
   };
 }
 
-export function useTagFileTree(value?: string, ownerTenantId?: string) {
+export function useTagFileTree(value?: string, resourceTenantId?: string) {
   const { fetchList } = useFetchPureFileList();
 
   const [treeData, setTreeData] = useState<TreeNodeType[]>([]);
-  const ownerTenantIdRef = useRef(ownerTenantId);
-  ownerTenantIdRef.current = ownerTenantId;
+  const rootLoadRef = useRef<{ tenantId?: string }>();
+  const resourceTenantIdRef = useRef(resourceTenantId);
+  resourceTenantIdRef.current = resourceTenantId;
   const appendFiles = useCallback((files: IFile[], tenantId?: string) => {
-    if (ownerTenantIdRef.current !== tenantId) {
+    if (resourceTenantIdRef.current !== tenantId) {
       return;
     }
     setTreeData((tree) =>
@@ -52,15 +53,25 @@ export function useTagFileTree(value?: string, ownerTenantId?: string) {
 
   const loadData = useCallback(
     async ({ id }: TreeNodeType) => {
+      // An empty or fully filtered listing still counts as a loaded root.
+      if (!id) {
+        if (
+          rootLoadRef.current &&
+          rootLoadRef.current.tenantId === resourceTenantId
+        ) {
+          return;
+        }
+        rootLoadRef.current = { tenantId: resourceTenantId };
+      }
       const ret = await fetchList({
         parentId: id as string,
-        tenantId: ownerTenantId,
+        tenantId: resourceTenantId,
       }).catch(() => null);
       if (ret?.code === 0) {
-        appendFiles(ret.data.files, ownerTenantId);
+        appendFiles(ret.data.files, resourceTenantId);
       }
     },
-    [fetchList, appendFiles, ownerTenantId],
+    [fetchList, appendFiles, resourceTenantId],
   );
 
   // Resolve a previously saved selection: the tree is lazy-loaded, so a file
@@ -70,7 +81,7 @@ export function useTagFileTree(value?: string, ownerTenantId?: string) {
   useEffect(() => {
     setTreeData([]);
     resolvedValueRef.current = '';
-  }, [ownerTenantId]);
+  }, [resourceTenantId]);
 
   useEffect(() => {
     if (
@@ -85,7 +96,7 @@ export function useTagFileTree(value?: string, ownerTenantId?: string) {
       const response = await fileManagerService
         .getAllParentFolder(
           {
-            ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+            ...(resourceTenantId ? { tenant_id: resourceTenantId } : {}),
           },
           `${value}/ancestors`,
         )
@@ -93,7 +104,7 @@ export function useTagFileTree(value?: string, ownerTenantId?: string) {
       if (!response) {
         return;
       }
-      if (ownerTenantIdRef.current !== ownerTenantId) {
+      if (resourceTenantIdRef.current !== resourceTenantId) {
         return;
       }
       const folders: IFile[] =
@@ -112,20 +123,20 @@ export function useTagFileTree(value?: string, ownerTenantId?: string) {
         }
         const ret = await fetchList({
           parentId: folder.id,
-          tenantId: ownerTenantId,
+          tenantId: resourceTenantId,
         }).catch(() => null);
         if (!ret) {
           return;
         }
-        if (ownerTenantIdRef.current !== ownerTenantId) {
+        if (resourceTenantIdRef.current !== resourceTenantId) {
           return;
         }
         if (ret.code === 0) {
-          appendFiles(ret.data.files, ownerTenantId);
+          appendFiles(ret.data.files, resourceTenantId);
         }
       }
     })();
-  }, [value, treeData, fetchList, appendFiles, ownerTenantId]);
+  }, [value, treeData, fetchList, appendFiles, resourceTenantId]);
 
   return { treeData, loadData };
 }

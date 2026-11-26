@@ -52,9 +52,6 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (
@@ -155,6 +152,13 @@ func isHexID(s string) bool {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if isHexID(embeddingModel) {
+		return nil
+	}
+
+	// A gp- model group reference resolves through the group picker at use
+	// time (verifyEmbeddingAvailability -> ResolveInfo), so it passes format
+	// validation here.
+	if _, ok := common.ParseGroupModelRef(embeddingModel); ok {
 		return nil
 	}
 
@@ -561,4 +565,17 @@ func normalizeMetadataConfigFields(fields []service.MetadataConfigField, fieldNa
 		})
 	}
 	return normalizedFields, nil
+}
+
+// datasetJSONEqual reports whether two configuration values encode to the same
+// JSON. It lives here, untagged, because both the shared update path (deciding
+// whether a submitted parser_config is a no-op) and the edition-gated history
+// compare snapshots with it.
+func datasetJSONEqual(left, right interface{}) bool {
+	leftEncoded, leftErr := json.Marshal(left)
+	rightEncoded, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return fmt.Sprintf("%v", left) == fmt.Sprintf("%v", right)
+	}
+	return string(leftEncoded) == string(rightEncoded)
 }

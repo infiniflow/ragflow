@@ -30,6 +30,14 @@ func (r *recordingEmitter) last() common.IngestionLog {
 	return r.events[len(r.events)-1]
 }
 
+// count returns the number of recorded events under the lock, so assertions do
+// not read the slice directly.
+func (r *recordingEmitter) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.events)
+}
+
 // TestEmitLifecycleEventForwardsToEmitter verifies the service builds an
 // observability event from the task and forwards it to the configured emitter.
 func TestEmitLifecycleEventForwardsToEmitter(t *testing.T) {
@@ -42,11 +50,14 @@ func TestEmitLifecycleEventForwardsToEmitter(t *testing.T) {
 		DatasetID:  "kb-1",
 		UserID:     "u-1",
 	}
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "boom")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "boom")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	got := rec.last()
-	if got.EventType != "completed" {
-		t.Errorf("EventType = %q, want completed", got.EventType)
+	if got.EventType != "task" {
+		t.Errorf("EventType = %q, want task (scope)", got.EventType)
 	}
 	if got.Status != "COMPLETED" {
 		t.Errorf("Status = %q, want COMPLETED", got.Status)
@@ -64,8 +75,8 @@ func TestEmitLifecycleEventForwardsToEmitter(t *testing.T) {
 func TestEmitLifecycleEventNilEmitterIsNoop(t *testing.T) {
 	svc := &IngestionTaskService{}
 	task := &entity.IngestionTask{ID: "t", DocumentID: "d"}
-	svc.emitLifecycleEvent(context.Background(), task, "created", "CREATED", "")
-	svc.emitLifecycleEvent(context.Background(), nil, "created", "CREATED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "CREATED", "")
+	svc.emitLifecycleEvent(context.Background(), nil, "CREATED", "")
 }
 
 // TestSetEventEmitterSwapsSink verifies SetEventEmitter installs a new sink and
@@ -77,12 +88,15 @@ func TestSetEventEmitterSwapsSink(t *testing.T) {
 	svc.SetEventEmitter(rec)
 
 	task := &entity.IngestionTask{ID: "t2", DocumentID: "d2", DatasetID: "kb2", UserID: "u2"}
-	svc.emitLifecycleEvent(context.Background(), task, "running", "RUNNING", "")
+	svc.emitLifecycleEvent(context.Background(), task, "RUNNING", "")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if len(rec.events) != 1 {
 		t.Fatalf("expected 1 emitted event, got %d", len(rec.events))
 	}
-	if rec.last().EventType != "running" {
-		t.Errorf("EventType = %q, want running", rec.last().EventType)
+	if rec.last().EventType != "task" {
+		t.Errorf("EventType = %q, want task (scope)", rec.last().EventType)
 	}
 }

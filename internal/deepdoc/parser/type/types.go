@@ -114,7 +114,12 @@ type TextBox struct {
 	// overrides PageNumber for page-span computation in BoxesToSections, so a
 	// cross-page merged table records every page it occupies (not just the
 	// anchor page).
-	Pages      []int
+	Pages []int
+	// Positions retains each page's own rectangle for a box that spans pages
+	// (a cross-page merged table). BoxesToSections prefers them over Pages so
+	// every page is cropped with its own page-local geometry instead of one
+	// page's rectangle being applied to the whole span.
+	Positions  []Position
 	LayoutType string
 	LayoutNo   string
 	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
@@ -192,9 +197,18 @@ type TableItem struct {
 	CropOffY  float64
 	Caption   string
 
+	// RegionPositions preserves the table crop rectangle on each merged page.
+	// It is a cache derived from Positions (one union rectangle per page,
+	// with the anchor page overridden by Region*); extend it whenever
+	// Positions grows.
+	RegionPositions                                  []Position
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// HeaderRows is the number of leading header rows detected when the table
+	// was assembled. It is used by the cross-page merge guard to compare
+	// table headers without re-deriving them from scratch.
+	HeaderRows int
 	// Page is the 0-based page index this table was detected on. It is set
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.
@@ -205,6 +219,31 @@ type TableItem struct {
 	// tables. It is a plain (non-build-tagged) field so the shared
 	// ConstructTable can dispatch without branching on the edition.
 	RenderVH bool
+	// GridUnified is a reserved hook for an alternate renderer that consumes
+	// a cross-page unified grid. When set, it tells that renderer item.Grid is
+	// the text-bearing, Y-shifted and X-aligned structure to render, instead of
+	// the ragged cell stream (a per-page concat in mixed crop frames). No code
+	// in this tree sets it; a renderer that wants the unified-grid path must
+	// opt in on the TableItem it renders.
+	GridUnified bool
+	// VHPageSpans, when set by MergeTablesAcrossPages for a cross-page V/H
+	// table, records each source page's slice of the flat Cells and the crop
+	// transform for that page. The EE renderer uses it to overlay each page's
+	// boxes onto only that page's cells and to start a fresh <tr> per page,
+	// mirroring Python's per-(img, cells) construct_table. Empty for single
+	// page tables (which use the existing flat path).
+	VHPageSpans []VHPageSpan
+}
+
+// VHPageSpan is one page's contribution to a cross-page V/H table's flat cell
+// list. CellStart/CellEnd index into TableItem.Cells (half-open). Scale and
+// CropOffX/CropOffY are that page's own crop transform, used to map that page's
+// text boxes into the same crop-pixel frame as its cells before overlay.
+type VHPageSpan struct {
+	Page               int
+	CellStart, CellEnd int
+	Scale              float64
+	CropOffX, CropOffY float64
 }
 
 // TSRCell represents one table cell from TSR.
@@ -286,6 +325,9 @@ type ParserConfig struct {
 	// surface parse progress without the parser knowing about any progress
 	// sink; nil disables the callback at zero cost.
 	OnPageDone func(done, total int)
+	// OnModelCall wraps one DeepDOC model operation. It lets the caller report
+	// long-running inference without coupling the parser to a progress sink.
+	OnModelCall func(ctx context.Context, operation string) func()
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.

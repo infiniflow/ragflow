@@ -35,6 +35,7 @@ export interface ParserTreeSelectProps {
   invalid?: boolean;
   placeholder?: string;
   disabled?: boolean;
+  accessUserId?: string;
 }
 
 // ParserTreeSelect is the single dropdown that merges builtin parsers and
@@ -51,6 +52,7 @@ export function ParserTreeSelect({
   invalid,
   placeholder,
   disabled,
+  accessUserId,
 }: ParserTreeSelectProps) {
   const { t } = useTranslation();
   const {
@@ -60,7 +62,7 @@ export function ParserTreeSelect({
     onSearchChange,
     loading,
     selectedLeafExists,
-  } = useParserTreeData({ value });
+  } = useParserTreeData({ value, accessUserId });
 
   const handleChange = useCallback(
     (id: string) => {

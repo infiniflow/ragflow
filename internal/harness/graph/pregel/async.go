@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -18,6 +19,10 @@ type AsyncExecutor struct {
 	results        chan *asyncTaskResult
 	mu             sync.Mutex
 	activeTasks    map[string]*asyncTask
+	// idleCh is closed when activeTasks transitions to empty and replaced
+	// when a new task is registered. Wait captures it under mu so a task
+	// finishing between the count check and the select cannot be missed.
+	idleCh chan struct{}
 }
 
 // asyncTask represents an asynchronous task.
@@ -39,6 +44,29 @@ type asyncTaskResult struct {
 	Duration time.Duration
 }
 
+// addTaskLocked registers a task and replaces the idle channel when the
+// executor was previously idle. Caller must hold e.mu.
+func (e *AsyncExecutor) addTaskLocked(task *asyncTask) {
+	if len(e.activeTasks) == 0 {
+		e.idleCh = make(chan struct{})
+	}
+	e.activeTasks[task.ID] = task
+}
+
+// removeTaskLocked removes a task and broadcasts to all Wait callers when it
+// was the last active task. Caller must hold e.mu.
+func (e *AsyncExecutor) removeTaskLocked(id string) {
+	if _, ok := e.activeTasks[id]; !ok {
+		// Cancel may have already removed the task while its goroutine was
+		// still unwinding; its deferred removal must not close idleCh again.
+		return
+	}
+	delete(e.activeTasks, id)
+	if len(e.activeTasks) == 0 {
+		close(e.idleCh)
+	}
+}
+
 // NewAsyncExecutor creates a new async executor.
 func NewAsyncExecutor(maxConcurrency int) *AsyncExecutor {
 	if maxConcurrency <= 0 {
@@ -50,6 +78,7 @@ func NewAsyncExecutor(maxConcurrency int) *AsyncExecutor {
 		workerPool:     make(chan struct{}, maxConcurrency),
 		results:        make(chan *asyncTaskResult, 100),
 		activeTasks:    make(map[string]*asyncTask),
+		idleCh:         make(chan struct{}),
 	}
 
 	// Pre-fill worker pool
@@ -75,7 +104,7 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 	}
 
 	e.mu.Lock()
-	e.activeTasks[task.ID] = task
+	e.addTaskLocked(task)
 	e.mu.Unlock()
 
 	go func() {
@@ -83,7 +112,7 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 		// Remove from activeTasks on ALL exit paths (success, ctx cancelled, etc.).
 		defer func() {
 			e.mu.Lock()
-			delete(e.activeTasks, task.ID)
+			e.removeTaskLocked(task.ID)
 			e.mu.Unlock()
 		}()
 
@@ -140,7 +169,7 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 	for i := range tasks {
 		tasks[i].ID = uuid.New().String()
 		e.mu.Lock()
-		e.activeTasks[tasks[i].ID] = &tasks[i]
+		e.addTaskLocked(&tasks[i])
 		e.mu.Unlock()
 	}
 
@@ -151,7 +180,7 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 			defer wg.Done()
 			defer func() {
 				e.mu.Lock()
-				delete(e.activeTasks, task.ID)
+				e.removeTaskLocked(task.ID)
 				e.mu.Unlock()
 			}()
 
@@ -208,7 +237,7 @@ func (e *AsyncExecutor) Cancel() {
 		if task.Cancel != nil {
 			task.Cancel()
 		}
-		delete(e.activeTasks, id)
+		e.removeTaskLocked(id)
 	}
 }
 
@@ -221,17 +250,22 @@ func (e *AsyncExecutor) GetActiveTaskCount() int {
 
 // Wait waits for all active tasks to complete.
 func (e *AsyncExecutor) Wait(ctx context.Context) error {
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for {
+		e.mu.Lock()
+		if len(e.activeTasks) == 0 {
+			e.mu.Unlock()
+			return nil
+		}
+		idle := e.idleCh
+		e.mu.Unlock()
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-			if e.GetActiveTaskCount() == 0 {
-				return nil
-			}
+		case <-idle:
 		}
 	}
 }

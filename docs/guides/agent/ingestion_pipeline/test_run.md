@@ -4,7 +4,7 @@ title: Validate the Pipeline
 sidebar_label: Validate the Pipeline
 slug: /test_run
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucidePlay
 }
 ---
 
@@ -17,6 +17,6 @@ Publish a pipeline version, then parse a sample document in a connected Dataset 
 3. Upload a small sample file and start parsing from the Dataset's document controls.
 4. Check the document's parsing status and resulting chunks. Confirm that content, chunk boundaries, and enabled enrichment results meet your needs before processing more files.
 
-Check the functions you actually enabled: PDF reading order and page ranges, OCR or image descriptions, chunk size and heading structure, Transformer enrichment, and Compiler output. Check retrieval after indexing, especially when Indexer uses Questions or Augmented context.
+Check the functions you actually enabled: PDF reading order and page ranges, OCR or image descriptions, chunk size and heading structure, Extractor enrichment, and Compiler output. Check retrieval after indexing, especially when Indexer uses Questions or Augmented context.
 
 If parsing fails, use the reported error to check the parser, model access, and component settings. After changing the pipeline, save and publish a new version, select that version in the test Dataset, and reparse the sample. A saved draft or a newly published version does not update a Dataset's existing selection or document chunks automatically.

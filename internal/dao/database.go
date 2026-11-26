@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -212,6 +213,30 @@ func quoteMetaDSNValue(v string) string {
 	return "'" + r + "'"
 }
 
+// buildMySQLMetaDSN builds the go-sql-driver/mysql DSN for the metadata
+// database. `tls` is optional: managed MySQL offerings often require TLS
+// (issue #22714). go-sql-driver has no allowPublicKeyRetrieval option: it
+// requests the RSA public key itself during plaintext caching_sha2_password
+// authentication, and an unknown DSN parameter would be sent as a system
+// variable and rejected.
+func buildMySQLMetaDSN(cfg config.MySQLConfig) string {
+	params := url.Values{}
+	params.Set("charset", cfg.Charset)
+	params.Set("parseTime", "True")
+	params.Set("loc", "Local")
+	if cfg.TLS != "" {
+		params.Set("tls", cfg.TLS)
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+		cfg.DatabaseName,
+		params.Encode(),
+	)
+}
+
 // buildVastbaseMetaDSN builds the lib/pq keyword DSN for the Vastbase metadata
 // database, mirroring the document engine's DSN contract: quoted values, an
 // empty ssl_mode resolved by host (disable on loopback, verify-full on every
@@ -278,10 +303,6 @@ func autoMigrateModels() []interface{} {
 		&entity.MemoryTask{},
 		&entity.Search{},
 		&entity.PipelineOperationLog{},
-		&entity.EvaluationDataset{},
-		&entity.EvaluationCase{},
-		&entity.EvaluationRun{},
-		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
 		&entity.SkillSpace{},
@@ -302,9 +323,13 @@ func autoMigrateModels() []interface{} {
 		// from these tables at runtime, so the Go side must guarantee they exist.
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
+	dataModels = append(dataModels, chunkVersionDataModelsEE()...)
+	dataModels = append(dataModels, datasetVersionDataModelsEE()...)
 	return dataModels
 }
 
@@ -324,15 +349,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		staleTimeout = vastbaseConfig.StaleTimeout
 	default:
 		databaseConfig := globalConfig.GetMySQLConfig()
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-			databaseConfig.User,
-			databaseConfig.Password,
-			databaseConfig.Host,
-			databaseConfig.Port,
-			databaseConfig.DatabaseName,
-			databaseConfig.Charset,
-		)
-		dialector = newMigrationAwareDialector(dsn)
+		dialector = newMigrationAwareDialector(buildMySQLMetaDSN(databaseConfig))
 		maxConnections = databaseConfig.MaxConnections
 		staleTimeout = databaseConfig.StaleTimeout
 	}
@@ -443,6 +460,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateResourceUserIDs(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill resource user IDs: %w", err)
 		}
+		// Normalize the Python / early-Go ingestion shapes that the earlier
+		// parser-config step deliberately left in component nodes and custom
+		// canvas DSLs. It runs last because its target version sorts above every
+		// other version-gated step.
+		if err = migrateIngestionLegacyConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to normalize legacy ingestion configs: %w", err)
+		}
 		common.Info("Database schema migrated successfully")
 	} else {
 		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
@@ -453,12 +477,23 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
+		// The version columns are written by every versioned change - a chunk
+		// edit, an upload, a dataset configuration change, a content restore - and
+		// only the full --migrate path creates them. Fail here, while the operator
+		// is watching the start, instead of at the first write with an
+		// unknown-column error.
+		if err = requireDatasetVersionColumnEE(ctx, DB); err != nil {
+			return err
+		}
 		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
 		// performed by the standalone --migrate action, so a server-mode process
 		// only converges the tables it needs itself.
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
+	}
+	if err = ensureLastLoginTenantColumn(ctx, DB); err != nil {
+		return fmt.Errorf("failed to ensure user.last_login_tenant: %w", err)
 	}
 	if err = SeedSystemSettings(ctx, DB); err != nil {
 		return fmt.Errorf("failed to seed system settings: %w", err)
@@ -495,6 +530,14 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	common.Info("Model providers loaded successfully")
 
 	return nil
+}
+
+func ensureLastLoginTenantColumn(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&entity.User{}) || migrator.HasColumn(&entity.User{}, "LastLoginTenant") {
+		return nil
+	}
+	return migrator.AddColumn(&entity.User{}, "LastLoginTenant")
 }
 
 // GetDB get database instance
@@ -585,7 +628,18 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.API4ConversationMessage{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
+	// Edition-specific runtime tables: the chunk edit history and the dataset
+	// history are written on every chunk and dataset mutation, but the
+	// data-model migrations only run as the standalone --migrate action.
+	// Without them a server started against a database that never ran the new
+	// --migrate would lose that history silently (the writes are best-effort
+	// and only log).
+	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, permissionRuntimeModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
 			tableName := fmt.Sprintf("%T", m)

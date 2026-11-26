@@ -18,6 +18,7 @@ package parser
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -374,28 +375,18 @@ func TestPDFMarkdownKeepsInlineDataURIImage(t *testing.T) {
 	}
 }
 
-func TestMarkdownParserIngestionFlattenKeepsImageAsText(t *testing.T) {
+func TestMarkdownParserIngestionKeepsImageMedia(t *testing.T) {
 	ctx, cache := recordingMediaContext()
-	p := markdownIngestionParser(t)
-	markdown, ok := p.(*MarkdownParser)
-	if !ok {
-		t.Fatalf("GetParser(FileTypeMarkdown) = %T", p)
-	}
-	markdown.FlattenMediaToText = true
-
-	res := p.ParseWithResult(ctx, "flatten.md", []byte("![figure]("+markdownMediaDataURI+")\n"))
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "image.md", []byte("![figure]("+markdownMediaDataURI+")\n"))
 	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
+		t.Fatal(res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 1 || items[0]["doc_type_kwd"] != DocTypeImage || entity.MediaRefFromAny(items[0]["media_ref"]) == nil {
+		t.Fatalf("image item lost its type or media reference: %+v", items)
 	}
 	if len(cache.puts) != 1 || string(cache.puts[0].data) != "hello" {
 		t.Fatalf("cache puts = %+v", cache.puts)
-	}
-	items := ItemsToMaps(res.JSON)
-	if len(items) != 1 || items[0]["doc_type_kwd"] != DocTypeText {
-		t.Fatalf("flattened items = %+v, want one text item", items)
-	}
-	if entity.MediaRefFromAny(items[0]["media_ref"]) == nil {
-		t.Fatalf("flattened image lost its media_ref: %+v", items[0])
 	}
 }
 
@@ -639,5 +630,54 @@ func TestMarkdownTextParserSkipsImages(t *testing.T) {
 	}
 	if len(res.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none for a text-only parse", res.Warnings)
+	}
+}
+
+func TestMarkdownParserIngestionTranscodesInlineAndRemoteSVG(t *testing.T) {
+	allowLoopbackImages(t)
+	var transcodeCalls atomic.Int32
+	const pngPayload = "\x89PNG\r\n\x1a\ntranscoded"
+	prev := media.RegisterImageTranscoder("image/svg+xml", func(_ context.Context, _ []byte) (string, []byte, error) {
+		transcodeCalls.Add(1)
+		return "image/png", []byte(pngPayload), nil
+	})
+	t.Cleanup(func() { media.RegisterImageTranscoder("image/svg+xml", prev) })
+
+	const inlineSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16"/></svg>`
+	const remoteSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10"/></svg>`
+	inlineURI := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(inlineSVG))
+
+	var hits atomic.Int32
+	server := imageTestServer(t, remoteSVG, &hits)
+	ctx, cache := recordingMediaContext()
+
+	md := "![inline](" + inlineURI + ")\n\n![remote](" + server.URL + "/diagram.svg)\n"
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "diagrams.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if hits.Load() != 1 || transcodeCalls.Load() != 2 {
+		t.Fatalf("hits=%d transcodeCalls=%d, want 1 and 2", hits.Load(), transcodeCalls.Load())
+	}
+	if len(cache.puts) != 2 {
+		t.Fatalf("cache puts = %d, want 2: %+v", len(cache.puts), cache.puts)
+	}
+	for i, put := range cache.puts {
+		if put.format != "markdown" || put.mime != "image/png" || string(put.data) != pngPayload {
+			t.Fatalf("cache.puts[%d] = %+v, want markdown/image/png", i, put)
+		}
+	}
+	images := markdownImageItems(t, res)
+	if len(images) != 2 {
+		t.Fatalf("image items = %d, want 2", len(images))
+	}
+	for i, item := range images {
+		ref := entity.MediaRefFromAny(item["media_ref"])
+		if ref == nil || ref.MIME != "image/png" {
+			t.Fatalf("images[%d] media_ref = %+v, want image/png", i, ref)
+		}
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", res.Warnings)
 	}
 }

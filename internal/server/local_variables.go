@@ -31,13 +31,11 @@ var (
 	localVariablesMu   sync.RWMutex
 )
 
-func InitLocalVariables() error {
-	var initErr error
+func InitLocalVariables() {
 	localVariablesOnce.Do(func() {
 		localVariables = &LocalVariables{}
 		common.Info("Local variables initialized successfully")
 	})
-	return initErr
 }
 
 func SetServerName(serverName string) {
@@ -49,5 +47,8 @@ func SetServerName(serverName string) {
 func GetServerName() string {
 	localVariablesMu.RLock()
 	defer localVariablesMu.RUnlock()
+	if localVariables == nil || localVariables.ServerName == nil {
+		return ""
+	}
 	return *localVariables.ServerName
 }

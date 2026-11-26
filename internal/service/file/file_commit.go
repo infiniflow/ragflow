@@ -19,6 +19,7 @@ package file
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -505,7 +506,49 @@ type PageEditCommitInput struct {
 	AuthorID   string
 	OldContent string
 	NewContent string
+	// Page is the whole page as the engine holds it - content, title, summary,
+	// topic, entities, links, source ids. It is what the snapshot stores, because
+	// a restore has to put the page back whole: the body alone leaves the page's
+	// summary and links describing a version that no longer exists.
+	//
+	// A caller that has no whole page (an edit that only knows the body) leaves it
+	// nil and the snapshot falls back to the body, exactly as the history stored
+	// pages before it carried whole documents.
+	Page map[string]any
+	// CreateTime pins the entry's timestamp instead of taking the database clock.
+	// A restore uses it to land its entries no later than the version row that
+	// closes the restore: a later stamp would sit outside the very version the
+	// entries describe, and restoring that version would then read the state they
+	// replaced.
+	CreateTime *int64
+	// PageChanged says the whole page moved even when the body did not. A page
+	// carries more than its text - title, summary, topic, links - and an edit that
+	// only moves those is still an edit: the engine holds a different page
+	// afterwards.
+	//
+	// Without it such an edit records no version, because the body diff is what the
+	// no-op test looks at and an unchanged body reads as "nothing happened". That
+	// stays right for a body-only caller, whose only evidence is the body; a caller
+	// that compared the whole page (a restore, which reads the engine row first)
+	// knows better and says so here. The entry then stores an empty diff: the text
+	// did not move, and a renderer showing nothing is the honest answer.
+	PageChanged bool
 }
+
+// pageSnapshot is the object a page commit stores: the whole page, plus the
+// format version that says how to read it.
+//
+// The version is what keeps old objects readable. Before this existed the object
+// was the page body itself, so a decoder that finds no format field treats the
+// bytes as content rather than failing - the history is append-only and its older
+// half cannot be rewritten.
+type pageSnapshot struct {
+	Format int            `json:"format"`
+	Page   map[string]any `json:"page"`
+}
+
+// pageSnapshotFormat is the version this build writes.
+const pageSnapshotFormat = 1
 
 // wikiFileID derives the stable file key used to scope page-edit commits to a
 // specific knowledgebase and page, so identical slugs in different
@@ -536,17 +579,28 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 
 	commitID := common.GenerateUUID()
 
+	operation := "modify"
+	switch {
+	case in.OldContent == "" && in.NewContent != "":
+		operation = "add"
+	case in.OldContent != "" && in.NewContent == "":
+		// A page that lost its body was removed. The history has to say so, or a
+		// restore cannot tell a page that was deleted from one that never existed -
+		// and would bring back pages the version never had.
+		operation = "delete"
+	}
 	diffText := unifiedDiff(in.OldContent, in.NewContent)
-	if diffText == "" {
+	if diffText == "" && operation != "delete" && !in.PageChanged {
 		return nil, nil
 	}
-	contentAfterStorage, contentAfterLocation := s.storePageContent(ctx, in.DatasetID, in.NewContent)
+	// A delete stores no body: the page is gone, and the snapshot it would write
+	// is the empty page that follows it, not the one it replaced.
+	var contentAfterStorage, contentAfterLocation string
+	if operation != "delete" {
+		contentAfterStorage, contentAfterLocation = s.storePageSnapshot(ctx, in.DatasetID, pageSnapshotOf(in))
+	}
 	slugKwd := in.Slug
 	pageTypeKwd := in.PageType
-	operation := "modify"
-	if in.OldContent == "" {
-		operation = "add"
-	}
 
 	item := &entity.FileCommitItem{
 		ID:          common.GenerateUUID(),
@@ -595,6 +649,24 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	if parentID != "" {
 		commit.ParentID = &parentID
 	}
+	// Stamp the row with the metadata database's clock, the timeline every other
+	// history row is on (see entity.DBTimeMillis). A restore anchors on
+	// dataset_version.create_time, so a commit stamped a few milliseconds ahead of
+	// it by a fast local clock would fall outside the very version it was written
+	// for - and the page would read as missing at that version. The local clock
+	// stays as the fallback for a dialect the database clock cannot answer. A
+	// caller that already knows which version row its entry belongs to pins the
+	// stamp instead, so the entry cannot land after that row.
+	stamp := in.CreateTime
+	if stamp == nil {
+		if dbStamp, err := entity.DBTimeMillis(dao.DB); err == nil {
+			stamp = &dbStamp
+		}
+	}
+	if stamp != nil {
+		commit.CreateTime = stamp
+		item.CreateTime = stamp
+	}
 
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cerr := tx.Create(commit).Error; cerr != nil {
@@ -611,21 +683,69 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	return commit, nil
 }
 
-// storePageContent saves a page version in the same dataset-scoped object
-// layout used by Python's MinIO-backed artifact history. Missing storage is
-// tolerated because page updates and audit rows are intentionally best-effort.
-func (s *FileCommitService) storePageContent(ctx context.Context, datasetID, content string) (string, string) {
+// pageSnapshotOf is the page a commit stores: the caller's whole page when it has
+// one, otherwise the smallest page that still describes the edit - the body it
+// wrote plus the identity the item already carries.
+func pageSnapshotOf(in PageEditCommitInput) map[string]any {
+	if len(in.Page) > 0 {
+		page := make(map[string]any, len(in.Page)+3)
+		for key, value := range in.Page {
+			page[key] = value
+		}
+		applyPageSnapshotDefaults(page, in)
+		return page
+	}
+	page := map[string]any{"content_with_weight": in.NewContent}
+	applyPageSnapshotDefaults(page, in)
+	return page
+}
+
+// applyPageSnapshotDefaults fills the fields the caller's page may leave out, so
+// a snapshot always knows which page it belongs to and what it says.
+func applyPageSnapshotDefaults(page map[string]any, in PageEditCommitInput) {
+	if value, ok := page["slug_kwd"]; !ok || value == "" {
+		page["slug_kwd"] = in.PageType + "/" + in.Slug
+	}
+	if value, ok := page["page_type_kwd"]; !ok || value == "" {
+		page["page_type_kwd"] = in.PageType
+	}
+	if value, ok := page["title_kwd"]; !ok || value == "" {
+		page["title_kwd"] = in.Title
+	}
+}
+
+// storePageSnapshot saves a page version in the same dataset-scoped object layout
+// used by Python's MinIO-backed artifact history. Missing storage is tolerated
+// because page updates and audit rows are intentionally best-effort.
+func (s *FileCommitService) storePageSnapshot(ctx context.Context, datasetID string, page map[string]any) (string, string) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return "", ""
 	}
-	hash := sha256.Sum256([]byte(content))
+	encoded, err := json.Marshal(pageSnapshot{Format: pageSnapshotFormat, Page: page})
+	if err != nil {
+		common.Warn("Failed to encode wiki page snapshot", zap.Error(err))
+		return "", ""
+	}
+	hash := sha256.Sum256(encoded)
 	location := wikiCommitBucketPrefix + "/" + hex.EncodeToString(hash[:])
-	if err := storageImpl.Put(ctx, datasetID, location, []byte(content)); err != nil {
-		common.Warn("failed to store wiki commit content", zap.Error(err))
+	if err := storageImpl.Put(ctx, datasetID, location, encoded); err != nil {
+		common.Warn("Failed to store wiki page snapshot", zap.Error(err))
 		return "", ""
 	}
 	return wikiContentStorage, location
+}
+
+// decodePageSnapshot reads the object a commit points at. An object that carries
+// no format version is a body written before snapshots existed, so it is read as
+// content rather than refused: the history is append-only and its older half
+// cannot be rewritten into the new shape.
+func decodePageSnapshot(raw []byte) map[string]any {
+	var snapshot pageSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err == nil && snapshot.Format > 0 && snapshot.Page != nil {
+		return snapshot.Page
+	}
+	return map[string]any{"content_with_weight": string(raw)}
 }
 
 // pageCommitLocks is a per-page-file-key mutex registry that serializes
@@ -681,6 +801,13 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 		}
 	}
 
+	// The page's own chain numbers the edits a reader sees: the first one is v1,
+	// and a later page of the history keeps the absolute number instead of
+	// restarting at 1. Read here rather than stored, because the chain is what
+	// orders the edits - a commit row only knows its clock.
+	numbered, _ := s.PageCommitPositions(ctx, datasetID, []PageRef{{PageType: pageType, Slug: slug}})
+	positions := numbered[WikiPageKey(pageType, slug)]
+
 	rows := make([]*entity.WikiPageCommit, 0, len(commits))
 	for _, c := range commits {
 		row := &entity.WikiPageCommit{
@@ -689,6 +816,9 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 			CreateTime:   c.CreateTime,
 			CreateDate:   c.CreateDate,
 			UserNickname: nicknames[c.AuthorID],
+		}
+		if position, ok := positions[c.ID]; ok {
+			row.Version = &position
 		}
 		if c.Title != nil {
 			row.Title = *c.Title
@@ -701,131 +831,179 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 	return rows, total, nil
 }
 
-type unifiedDiffLine struct {
-	prefix  byte
-	text    string
-	oldLine int
-	newLine int
+// PageRef names one wiki page: its type and bare slug.
+type PageRef struct {
+	PageType string
+	Slug     string
+}
+
+// PageChainEntry is one commit in a page's own chain, oldest first.
+type PageChainEntry struct {
+	CommitID string
+	// CreateTime is the commit's stamp; nil for a row the column predates.
+	CreateTime *int64
+	Operation  string
+}
+
+// PageChains reads the commit chain of every page named, oldest first, keyed by
+// WikiPageKey. One query covers all of them, so a version or a restore that names
+// hundreds of pages costs what one page costs.
+//
+// The error belongs to the batch: a partial answer would number some pages and
+// leave others unnumbered for no visible reason.
+func (s *FileCommitService) PageChains(ctx context.Context, datasetID string, pages []PageRef) (map[string][]PageChainEntry, error) {
+	if datasetID == "" || len(pages) == 0 || dao.DB == nil {
+		return nil, nil
+	}
+	fileIDs := make([]string, 0, len(pages))
+	pageKeys := make(map[string]string, len(pages))
+	for _, page := range pages {
+		if page.PageType == "" || page.Slug == "" {
+			continue
+		}
+		fileID := wikiFileID(datasetID, page.PageType, page.Slug)
+		if _, seen := pageKeys[fileID]; seen {
+			continue
+		}
+		pageKeys[fileID] = WikiPageKey(page.PageType, page.Slug)
+		fileIDs = append(fileIDs, fileID)
+	}
+	if len(fileIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.commitDAO.PageCommitRows(ctx, dao.DB, datasetID, fileIDs)
+	if err != nil {
+		return nil, err
+	}
+	chains := make(map[string][]PageChainEntry, len(fileIDs))
+	for _, row := range rows {
+		key, ok := pageKeys[row.FileID]
+		if !ok || row.CommitID == "" {
+			continue
+		}
+		entry := PageChainEntry{CommitID: row.CommitID, Operation: row.Operation.String}
+		if row.CreateTime.Valid {
+			at := row.CreateTime.Int64
+			entry.CreateTime = &at
+		}
+		chains[key] = append(chains[key], entry)
+	}
+	return chains, nil
+}
+
+// ChainPositions numbers a page's chain: its first edit is v1. A commit that
+// touched the page twice repeats in the chain and is counted once.
+func ChainPositions(chain []PageChainEntry) map[string]int {
+	positions := make(map[string]int, len(chain))
+	position := 0
+	for _, entry := range chain {
+		if entry.CommitID == "" {
+			continue
+		}
+		if _, seen := positions[entry.CommitID]; seen {
+			continue
+		}
+		position++
+		positions[entry.CommitID] = position
+	}
+	return positions
+}
+
+// PageCommitPositions numbers several pages' chains in one query, keyed by
+// WikiPageKey and then by commit id. Each page numbers its edits from v1.
+func (s *FileCommitService) PageCommitPositions(ctx context.Context, datasetID string, pages []PageRef) (map[string]map[string]int, error) {
+	chains, err := s.PageChains(ctx, datasetID, pages)
+	if err != nil {
+		return nil, err
+	}
+	positions := make(map[string]map[string]int, len(chains))
+	for key, chain := range chains {
+		positions[key] = ChainPositions(chain)
+	}
+	return positions, nil
+}
+
+// WikiPageKey is how one page is keyed across the history: the page type and the
+// bare slug. The key is built rather than read because the two are stored apart -
+// the page type in page_type_kwd beside a bare slug_kwd, or both joined as
+// "page_type/slug" inside slug_kwd - and a key that does not match what
+// PageContentsUntil reports would silently prune every page away.
+func WikiPageKey(pageType, slug string) string {
+	if pageType == "" {
+		return strings.TrimPrefix(slug, "/")
+	}
+	return pageType + "/" + strings.TrimPrefix(slug, pageType+"/")
+}
+
+// PageSlugsChangedSince names the pages whose commit chain moved at or after the
+// given time, keyed by WikiPageKey. A restore uses it to leave the pages that
+// cannot differ from the state it is putting back alone: only a page whose history
+// moved past the anchor holds something the anchor does not describe.
+//
+// A row written before the page columns existed names its page only through the
+// file key, and splitWikiPageFileID is what reads that shape back - the same
+// helper PageContentsUntil uses, so a page is named the same way on both sides and
+// the key a restore compares against matches. Skipping those rows would report the
+// page as unmoved, and the restore would leave the edit in place.
+func (s *FileCommitService) PageSlugsChangedSince(ctx context.Context, datasetID string, sinceMillis int64) (map[string]struct{}, error) {
+	if datasetID == "" {
+		return nil, nil
+	}
+	var rows []struct {
+		FileID      string
+		SlugKwd     sql.NullString
+		PageTypeKwd sql.NullString
+	}
+	if err := dao.DB.WithContext(ctx).
+		Table("file_commit_item AS item").
+		Select("DISTINCT item.file_id, item.slug_kwd, item.page_type_kwd").
+		Joins("JOIN file_commit AS commit_row ON commit_row.id = item.commit_id").
+		Where("commit_row.folder_id = ? AND commit_row.create_time IS NOT NULL AND commit_row.create_time >= ?", datasetID, sinceMillis).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	changed := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		pageType, slug, ok := splitWikiPageFileID(datasetID, wikiPageCommitRow{
+			FileID:      row.FileID,
+			PageTypeKwd: row.PageTypeKwd,
+			SlugKwd:     row.SlugKwd,
+		})
+		if !ok {
+			continue
+		}
+		changed[WikiPageKey(pageType, slug)] = struct{}{}
+	}
+	return changed, nil
+}
+
+// PageCommitAt names the commit a page's chain stood at atMillis: the newest entry
+// at or before the moment, for a caller that has the moment but not the commit.
+// A deletion there means the page did not exist then, so nothing is named; a row
+// with no clock cannot be placed and is passed over.
+func PageCommitAt(chain []PageChainEntry, atMillis int64) (string, bool) {
+	if atMillis <= 0 {
+		return "", false
+	}
+	for i := len(chain) - 1; i >= 0; i-- {
+		entry := chain[i]
+		if entry.CreateTime == nil || *entry.CreateTime > atMillis {
+			continue
+		}
+		// The newest entry at or before the anchor decides, whatever it says.
+		if entry.Operation == "delete" || entry.CommitID == "" {
+			return "", false
+		}
+		return entry.CommitID, true
+	}
+	return "", false
 }
 
 // unifiedDiff produces a standard unified diff that can be parsed by the
 // frontend's wiki diff renderer and Python's artifact history implementation.
+// The implementation is shared with the chunk version diff endpoint.
 func unifiedDiff(oldText, newText string) string {
-	oldLines := strings.Split(oldText, "\n")
-	newLines := strings.Split(newText, "\n")
-
-	const contextLines = 3
-	// Longest common subsequence over lines, then render the diff.
-	cur := make([][]int, len(oldLines)+1)
-	for i := range cur {
-		cur[i] = make([]int, len(newLines)+1)
-	}
-	for i := len(oldLines) - 1; i >= 0; i-- {
-		for j := len(newLines) - 1; j >= 0; j-- {
-			if oldLines[i] == newLines[j] {
-				cur[i][j] = cur[i+1][j+1] + 1
-			} else if cur[i+1][j] >= cur[i][j+1] {
-				cur[i][j] = cur[i+1][j]
-			} else {
-				cur[i][j] = cur[i][j+1]
-			}
-		}
-	}
-
-	lines := make([]unifiedDiffLine, 0, len(oldLines)+len(newLines))
-	i, j := 0, 0
-	for i < len(oldLines) && j < len(newLines) {
-		if oldLines[i] == newLines[j] {
-			lines = append(lines, unifiedDiffLine{' ', oldLines[i], i + 1, j + 1})
-			i++
-			j++
-		} else if cur[i+1][j] >= cur[i][j+1] {
-			lines = append(lines, unifiedDiffLine{'-', oldLines[i], i + 1, 0})
-			i++
-		} else {
-			lines = append(lines, unifiedDiffLine{'+', newLines[j], 0, j + 1})
-			j++
-		}
-	}
-	for ; i < len(oldLines); i++ {
-		lines = append(lines, unifiedDiffLine{'-', oldLines[i], i + 1, 0})
-	}
-	for ; j < len(newLines); j++ {
-		lines = append(lines, unifiedDiffLine{'+', newLines[j], 0, j + 1})
-	}
-
-	changed := make([]int, 0)
-	for index, line := range lines {
-		if line.prefix != ' ' {
-			changed = append(changed, index)
-		}
-	}
-	if len(changed) == 0 {
-		return ""
-	}
-
-	// Group nearby changes into hunks with up to three context lines, matching
-	// the format produced by Python's difflib.unified_diff.
-	type diffHunk struct {
-		start int
-		end   int
-	}
-	hunks := make([]diffHunk, 0)
-	for _, index := range changed {
-		start := index - contextLines
-		if start < 0 {
-			start = 0
-		}
-		end := index + contextLines
-		if end >= len(lines) {
-			end = len(lines) - 1
-		}
-		if len(hunks) > 0 && start <= hunks[len(hunks)-1].end+1 {
-			if end > hunks[len(hunks)-1].end {
-				hunks[len(hunks)-1].end = end
-			}
-			continue
-		}
-		hunks = append(hunks, diffHunk{start: start, end: end})
-	}
-
-	var b strings.Builder
-	b.WriteString("--- a\n+++ b\n")
-	for _, hunk := range hunks {
-		oldStart, oldCount := diffRange(lines, hunk.start, hunk.end, false, len(oldLines))
-		newStart, newCount := diffRange(lines, hunk.start, hunk.end, true, len(newLines))
-		b.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n", oldStart, oldCount, newStart, newCount))
-		for index := hunk.start; index <= hunk.end; index++ {
-			b.WriteByte(lines[index].prefix)
-			b.WriteString(lines[index].text)
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
-}
-
-// diffRange returns the first line number and line count for one side of a
-// unified diff hunk. A zero count is valid for pure insertions or deletions.
-func diffRange(lines []unifiedDiffLine, start, end int, newSide bool, totalLines int) (int, int) {
-	first := 0
-	count := 0
-	for index := start; index <= end; index++ {
-		lineNumber := lines[index].oldLine
-		if newSide {
-			lineNumber = lines[index].newLine
-		}
-		if lineNumber == 0 {
-			continue
-		}
-		if first == 0 {
-			first = lineNumber
-		}
-		count++
-	}
-	if first == 0 {
-		first = totalLines
-	}
-	return first, count
+	return utility.UnifiedDiff(oldText, newText)
 }
 
 // ListCommits lists commits for a workspace folder with pagination
@@ -924,8 +1102,11 @@ func (s *FileCommitService) readPageContent(ctx context.Context, datasetID, tena
 		switch storageKind {
 		case wikiContentStorage, "minio_storage":
 			if storageImpl := storage.GetStorageFactory().GetStorage(); storageImpl != nil {
-				if content, err := storageImpl.Get(ctx, datasetID, location); err == nil {
-					return string(content)
+				if stored, err := storageImpl.Get(ctx, datasetID, location); err == nil {
+					// The object is a whole-page snapshot; the detail view wants the
+					// body, and an object written before snapshots existed is the body
+					// itself (see decodePageSnapshot).
+					return metadataStringOf(decodePageSnapshot(stored), "content_with_weight")
 				}
 			}
 		case "es":

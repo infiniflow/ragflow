@@ -1,9 +1,27 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package dao
 
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +29,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
@@ -19,6 +38,10 @@ import (
 var MigrateIngestionParserConfigsForTest = migrateIngestionParserConfigs
 var MigrateParserChunkerTokenizerConfigForTest = migrateParserChunkerTokenizerConfig
 var MigrateExtractorConfigForTest = migrateExtractorConfig
+
+func IngestionMigrationParserIDsForTest() []string {
+	return slices.Sorted(maps.Keys(ingestionTargets))
+}
 
 // TestMigrateParserChunkerTokenizerConfig pins component ownership, explicit
 // values, existing scoped precedence and idempotence for each supported shape.
@@ -116,10 +139,10 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{
 			name:   "an existing family map is merged, not replaced",
 			parser: "book",
-			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false}}}`,
-			want:   `{"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false,"parse_method":"deepdoc"}}}`,
+			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"remove_header_footer":true,"remove_toc":false}}}`,
+			want:   `{"Parser:HipSignsRhyme":{"pdf":{"remove_header_footer":true,"remove_toc":false,"parse_method":"deepdoc"}}}`,
 		},
-		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"analyze_hyperlink":true,"hyperlink_urls":true,"video_prompt":"x"}`, want: `{}`},
+		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"video_prompt":"x"}`, want: `{}`},
 		{name: "no owned keys", input: `{"chunk_method":"naive","topn_tags":5}`, want: `{"chunk_method":"naive","topn_tags":5}`},
 		{name: "empty config", input: `{}`, want: `{}`},
 		{name: "canvas rows are skipped", pipeline: ptrString("canvas-1"), input: `{"layout_recognize":true,"chunk_token_num":128}`, want: `{"layout_recognize":true,"chunk_token_num":128}`},
@@ -280,6 +303,37 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 	}
 }
 
+func TestMigrateIngestionParserConfigsMistralOCR(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	selectors := map[string]string{
+		"knowledgebase": "mistral-ocr-latest@default@Mistral OCR",
+		"document":      "mistral-ocr-2512@Mistral OCR",
+	}
+	for table, selector := range selectors {
+		insertIngestionConfig(t, db, table, "row-1", "general", fmt.Sprintf(`{"layout_recognize":%q}`, selector))
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for table, selector := range selectors {
+		var row ingestionConfigMigrationRow
+		if err := db.Table(table).Where("id = ?", "row-1").Take(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row.ParserConfig == nil {
+			t.Fatalf("%s: parser config is missing", table)
+		}
+		got := decodeIngestionConfig(t, *row.ParserConfig)
+		want := decodeIngestionConfig(t, fmt.Sprintf(`{"Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":%q}}}`, selector))
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: got %v, want %v", table, got, want)
+		}
+	}
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("version=%s, want %s", got, ingestionParserConfigTargetVersion)
+	}
+}
+
 // TestMigrateIngestionParserConfigsRejectsInvalidRows keeps failed batches and
 // their version unchanged when a supported setting cannot be converted.
 func TestMigrateIngestionParserConfigsRejectsInvalidRows(t *testing.T) {
@@ -434,10 +488,33 @@ func openIngestionMigrationDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.SystemSettings{}); err != nil {
+	if err := db.AutoMigrate(
+		&entity.Knowledgebase{},
+		&entity.Document{},
+		&entity.SystemSettings{},
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func insertCanvasDSL(t *testing.T, db *gorm.DB, table, id, raw string) {
+	t.Helper()
+	values := map[string]any{"id": id, "dsl": raw}
+	if table == "user_canvas" {
+		values["user_id"] = "user"
+		values["tenant_id"] = "tenant"
+		values["title"] = id
+		values["canvas_category"] = "dataflow_canvas"
+	} else {
+		values["user_canvas_id"] = "canvas"
+		values["title"] = id
+	}
+	if err := db.Table(table).Create(values).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func insertIngestionConfig(t *testing.T, db *gorm.DB, table, id, parserID, raw string) {
@@ -492,7 +569,7 @@ func TestMigrateExtractorConfig(t *testing.T) {
 		{name: "flat schema", input: `{"enable_metadata":true,"metadata":{"type":"object","properties":{"author":{"type":"string","description":"who","enum":["A"]}},"additionalProperties":false}}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string","description":"who","enum":["A"]}],"built_in_metadata":[]}}}`},
 		{name: "description alias", input: `{"enable_metadata":true,"metadata":[{"key":"author","descriptions":"who"}]}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","description":"who"}],"built_in_metadata":[]}}}`},
 		{name: "tag settings untouched", input: `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file"}}`, want: `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file"}}`},
-		{name: "early Go nodes untouched", input: `{"Extractor:AutoExtractDefault":{"auto_keywords":8,"keywords_sys_prompt":"saved","enable_summary":true,"sys_prompt":"saved summary","auto_tags":5,"tag_file_id":"file","metadata_config":{"enabled":true}}}`, want: `{"Extractor:AutoExtractDefault":{"auto_keywords":8,"keywords_sys_prompt":"saved","enable_summary":true,"sys_prompt":"saved summary","auto_tags":5,"tag_file_id":"file","metadata_config":{"enabled":true}}}`},
+		{name: "early Go nodes untouched by the flat pass", input: `{"Extractor:AutoExtractDefault":{"auto_keywords":8,"keywords_sys_prompt":"saved","enable_summary":true,"sys_prompt":"saved summary","auto_tags":5,"tag_file_id":"file","metadata_config":{"enabled":true}}}`, want: `{"Extractor:AutoExtractDefault":{"auto_keywords":8,"keywords_sys_prompt":"saved","enable_summary":true,"sys_prompt":"saved summary","auto_tags":5,"tag_file_id":"file","metadata_config":{"enabled":true}}}`},
 		{name: "custom node", pipeline: ptrString("canvas-1"), input: `{"auto_questions":2,"Extractor:Custom":{"summary":{"enabled":true}}}`, want: `{"Extractor:Custom":{"questions":{"top_n":2},"summary":{"enabled":true}}}`},
 		{name: "QA has no target", parser: "qa", input: python027ParserConfig, want: python027ParserConfig},
 		{name: "table has no target", parser: "table", input: python027ParserConfig, want: python027ParserConfig},

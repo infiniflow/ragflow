@@ -33,14 +33,12 @@ import (
 )
 
 func TestMessageSubstringLiteralAndReadErrors(t *testing.T) {
-	if err := common.InitLogger("error", common.FileOutput{}, "sdk_message_contract"); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("error", common.FileOutput{}, "sdk_message_contract")
 	uri := os.Getenv("RAGFLOW_INFINITY_URI")
 	if uri == "" {
 		uri = "localhost:23817"
 	}
-	e, err := NewEngine(t.Context(), config.InfinityConfig{URI: uri, DBName: "sdk_source_contract"})
+	e, err := NewEngine(t.Context(), config.InfinityConfig{URI: uri, DBName: "sdk_message_contract"})
 	if err != nil {
 		t.Fatal(err)
 	}

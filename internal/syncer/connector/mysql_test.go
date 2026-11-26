@@ -68,11 +68,44 @@ func newFixtureMySQLConnector(t *testing.T, config map[string]any, expect func(m
 	return connector
 }
 
+func TestMySQLConnectorNoBackslashEscapes(t *testing.T) {
+	const base = `SELECT id, 'C:\' AS path FROM products ORDER BY id`
+	c := newFixtureMySQLConnector(t, map[string]any{
+		"query":     base + "; -- exported;",
+		"id_column": "id",
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT @@SESSION.sql_mode")).WillReturnRows(
+			sqlmock.NewRows([]string{"sql_mode"}).AddRow("STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES"),
+		)
+		want := "SELECT * FROM (" + base + " -- exported;\n) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		mock.ExpectQuery(regexp.QuoteMeta(want)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "path"}).AddRow(7, `C:\`),
+		)
+		mock.ExpectClose()
+	})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := session.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	batch, err := session.NextBatch(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("got %d documents, want 1", len(batch.Documents))
+	}
+}
+
 // TestMySQLConnectorOpenSyncCustomQuery verifies a custom query produces documents.
 func TestMySQLConnectorOpenSyncCustomQuery(t *testing.T) {
 	query := "SELECT * FROM products WHERE status = 'active'"
 	updatedAt := mustTime(t, "2026-01-02T03:04:05Z")
-	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active') AS ragflow_src ORDER BY ragflow_src.id ASC"
+	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active' ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":             "127.0.0.1",
 		"port":             "3306",
@@ -149,7 +182,7 @@ func TestMySQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src " +
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src " +
 			"WHERE ragflow_src.updated_at >= '2026-01-01 00:00:00' AND ragflow_src.updated_at <= '2026-01-02 00:00:00' " +
 			"ORDER BY ragflow_src.updated_at ASC, ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
@@ -187,10 +220,10 @@ func TestMySQLConnectorOpenSyncAllTables(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta("SHOW TABLES")).WillReturnRows(
 			sqlmock.NewRows([]string{"Tables_in_mydb"}).AddRow("products").AddRow("orders"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM orders) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM orders ) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(2, "Order"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Product"),
 		)
 	})
@@ -231,7 +264,7 @@ func TestMySQLConnectorOpenPrune(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT ragflow_src.id FROM (SELECT * FROM products) AS ragflow_src"
+		expected := "SELECT ragflow_src.id FROM (SELECT * FROM products ) AS ragflow_src"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
 			sqlmock.NewRows([]string{"id"}).AddRow(3).AddRow(4),
 		)
@@ -334,24 +367,6 @@ func TestMySQLConnectorSanitizeQuery(t *testing.T) {
 	}
 }
 
-// TestMySQLConnectorStripOrderBy verifies trailing top-level ORDER BY removal.
-func TestMySQLConnectorStripOrderBy(t *testing.T) {
-	connector := &MySQLConnector{}
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{in: "SELECT * FROM t ORDER BY id", want: "SELECT * FROM t"},
-		{in: "SELECT ROW_NUMBER() OVER (ORDER BY id) FROM t", want: "SELECT ROW_NUMBER() OVER (ORDER BY id) FROM t"},
-		{in: "SELECT * FROM t", want: "SELECT * FROM t"},
-	}
-	for _, tc := range cases {
-		if got := connector.stripOrderBy(tc.in); got != tc.want {
-			t.Fatalf("stripOrderBy(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 // TestMySQLConnectorFileExtension verifies file_extension parsing and its
 // ".txt" default.
 func TestMySQLConnectorFileExtension(t *testing.T) {
@@ -382,7 +397,7 @@ func TestMySQLConnectorFileExtension(t *testing.T) {
 // extension is applied to produced documents.
 func TestMySQLConnectorOpenSyncCustomFileExtension(t *testing.T) {
 	query := "SELECT * FROM products WHERE status = 'active'"
-	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active') AS ragflow_src ORDER BY ragflow_src.id ASC"
+	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active' ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 	connector := newFixtureMySQLConnector(t, map[string]any{
 		"host":            "127.0.0.1",
 		"port":            "3306",
@@ -436,7 +451,7 @@ func TestMySQLConnectorOpenSyncCheckpointEmitted(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src " +
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src " +
 			"WHERE ragflow_src.updated_at >= '2026-01-01 00:00:00' AND ragflow_src.updated_at <= '2026-01-02 00:00:00' " +
 			"ORDER BY ragflow_src.updated_at ASC, ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
@@ -488,7 +503,7 @@ func TestMySQLConnectorOpenSyncResumeSkipsToAnchor(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "A").AddRow(2, "B").AddRow(3, "C"),
 		)
@@ -537,7 +552,7 @@ func TestMySQLConnectorOpenSyncResumeMultiTable(t *testing.T) {
 		)
 		// Tables run sorted (orders, products), and the anchor is in the last
 		// table, so orders is skipped without being executed.
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "P1").AddRow(3, "P3"),
 		)
 	})
@@ -576,7 +591,7 @@ func TestMySQLConnectorOpenSyncResumeAnchorMissing(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "A"),
 		)
@@ -660,8 +675,8 @@ func TestMySQLConnectorOpenSyncOrderingFallback(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		ordered := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
-		unordered := "SELECT * FROM (SELECT * FROM products) AS ragflow_src"
+		ordered := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		unordered := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src"
 		mock.ExpectQuery(regexp.QuoteMeta(ordered)).WillReturnError(
 			&mysql.MySQLError{Number: 1054, Message: "Unknown column 'id' in 'order clause'"},
 		)
@@ -700,7 +715,7 @@ func TestMySQLConnectorOpenSyncResumeOrderingFallback(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		ordered := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		ordered := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(ordered)).WillReturnError(
 			&mysql.MySQLError{Number: 1054, Message: "Unknown column 'id' in 'order clause'"},
 		)
@@ -738,10 +753,10 @@ func TestMySQLConnectorOpenSyncCheckpointQueryName(t *testing.T) {
 		)
 		// Tables run sorted (orders, products); orders holds the last document
 		// and products is empty, so the checkpoint must still point at orders.
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM orders) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM orders ) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "A"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}),
 		)
 	})
@@ -788,7 +803,7 @@ func TestMySQLConnectorOpenSyncIncrementalResumeComposite(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src " +
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src " +
 			"WHERE ragflow_src.updated_at >= '2026-01-01 00:00:00' AND ragflow_src.updated_at <= '2026-01-02 00:00:00' " +
 			"ORDER BY ragflow_src.updated_at ASC, ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(

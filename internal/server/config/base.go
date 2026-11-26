@@ -19,6 +19,7 @@ package config
 import "ragflow/internal/common"
 
 type Config struct {
+	serverNames             map[string]string
 	general                 GeneralConfig
 	generalStorageEngineSet bool
 	database                DatabaseConfig
@@ -33,6 +34,7 @@ type Config struct {
 	apiServer APIServerConfig
 	syncer    SyncerConfig
 	ingestor  IngestorConfig
+	deepdoc   DeepDocConfig
 
 	log  LogConfig
 	smtp common.SMTPConfig
@@ -45,4 +47,14 @@ type Config struct {
 	billing       BillingConfig
 	oAuth         OAuthConfig
 	audit         AuditConfig
+	ingestLog     IngestLogConfig
+}
+
+func (c *Config) InitDefaults() {
+	c.serverNames["admin"] = "ragflow-admin"
+	c.serverNames["api"] = "ragflow-api"
+	c.serverNames["ingestor"] = "ragflow-ingestor"
+	c.serverNames["syncer"] = "ragflow-syncer"
+	c.serverNames["chatter"] = "ragflow-chatter"
+	c.serverNames["deepdoc"] = "ragflow-deepdoc"
 }

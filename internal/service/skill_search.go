@@ -32,8 +32,9 @@ import (
 	"ragflow/internal/permission"
 	"strings"
 
-	"go.uber.org/zap"
 	permissionresponse "ragflow/internal/permission/response"
+
+	"go.uber.org/zap"
 )
 
 // SkillSearchService handles business logic for skill search operations
@@ -418,7 +419,7 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 	}
 
 	// Build MatchDenseExpr for vector search
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	vectorColumnName := common.VectorColumnName(len(vector))
 	matchDense := &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
 		EmbeddingData:     vector,
@@ -489,7 +490,7 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 		zap.Int("dimension", len(vector)))
 
 	// Build MatchDenseExpr for hybrid search
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	vectorColumnName := common.VectorColumnName(len(vector))
 	matchDense := &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
 		EmbeddingData:     vector,
@@ -662,19 +663,28 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
+	var response []models.EmbeddingData
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			// Query: true — getEmbedding is used only by the skill search
+			// legs (vectorSearch / hybridSearch) to embed the user's query.
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}, Query: true}, nil, nil)
+			if invErr != nil {
+				return fmt.Errorf("failed to encode query: %w", invErr)
+			}
+			if len(resp) == 0 {
+				return fmt.Errorf("embedding returned empty result")
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
-	// Query: true — getEmbedding is used only by the skill search legs
-	// (vectorSearch / hybridSearch) to embed the user's query.
-	response, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}, Query: true}, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode query: %w", err)
-	}
-	if len(response) == 0 {
-		return nil, fmt.Errorf("embedding returned empty result")
+		return nil, err
 	}
 
 	return response[0].Embedding, nil

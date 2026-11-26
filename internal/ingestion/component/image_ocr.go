@@ -28,57 +28,79 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// extractSelectedImageOCR accepts an enrolled tenant-model ID, not an engine
-// alias or catalog-only composite. An explicit selection never substitutes the
-// tenant default, another instance, local DeepDoc, or a global server URL.
+// extractSelectedImageOCR accepts an enrolled tenant-model ID or a gp- model
+// group reference, not an engine alias or catalog-only composite. An explicit
+// selection never substitutes the tenant default, another instance, local
+// DeepDoc, or a global server URL.
 func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID string, binary []byte) (string, error) {
 	if strings.TrimSpace(tenantID) == "" || db == nil {
 		return "", fmt.Errorf("selected image OCR requires a tenant and database")
 	}
-	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-	if err != nil {
-		return "", fmt.Errorf("selected image OCR model: %w", err)
+	// Group failover: resolution and endpoint setup run once per attempt and
+	// their errors are terminal; only the OCRFile invocation failure flips a
+	// gp- reference's current member inactive and replays once.
+	type selectedImageOCRTarget struct {
+		driver    modelModule.ModelDriver
+		modelName string
+		apiConfig *modelModule.APIConfig
 	}
-	model, instance := resolved.model, resolved.instance
-	if instance.ProviderID != model.ProviderID {
-		return "", fmt.Errorf("selected image OCR instance does not belong to the model provider")
-	}
-	if instance.Status != "active" {
-		return "", fmt.Errorf("selected image OCR instance is disabled")
-	}
-	driver, modelName, apiConfig := resolved.driver, model.ModelName, resolved.apiConfig
-	if !isPaddleOCRDriver(driver) {
-		return "", fmt.Errorf("selected image OCR requires a PaddleOCR model")
-	}
-	baseURL := strings.TrimSpace(stringValue(apiConfig.BaseURL))
-	if baseURL == "" {
-		baseURL = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig,
-			"paddleocr_base_url", "PADDLEOCR_BASE_URL", "paddleocr_api_url", "PADDLEOCR_API_URL")
-	}
-	if baseURL == "" && driver.Name() == "paddleocr" {
-		if provider := dao.GetModelProviderManager().FindProvider("PaddleOCR"); provider != nil {
-			baseURL = strings.TrimSpace(provider.URL["default"])
-			if baseURL != "" {
-				// An explicitly selected cloud model may still use its catalog
-				// endpoint. Make that choice observable without logging secrets.
-				common.WarnCtx(ctx, "selected image OCR falls back to cloud provider default endpoint",
-					zap.String("tenant_id", tenantID),
-					zap.String("model_id", model.ID),
-					zap.String("instance_id", instance.ID))
+	resolveTarget := func(ctx context.Context) (*selectedImageOCRTarget, error) {
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		if err != nil {
+			return nil, fmt.Errorf("selected image OCR model: %w", err)
+		}
+		model, instance := resolved.model, resolved.instance
+		if instance.ProviderID != model.ProviderID {
+			return nil, fmt.Errorf("selected image OCR instance does not belong to the model provider")
+		}
+		if instance.Status != "active" {
+			return nil, fmt.Errorf("selected image OCR instance is disabled")
+		}
+		target := &selectedImageOCRTarget{driver: resolved.driver, modelName: model.ModelName, apiConfig: resolved.apiConfig}
+		if !isPaddleOCRDriver(target.driver) {
+			return nil, fmt.Errorf("selected image OCR requires a PaddleOCR model")
+		}
+		baseURL := strings.TrimSpace(stringValue(target.apiConfig.BaseURL))
+		if baseURL == "" {
+			baseURL = modelModule.ProviderJSONConfigValueFromAPIConfig(target.apiConfig,
+				"paddleocr_base_url", "PADDLEOCR_BASE_URL", "paddleocr_api_url", "PADDLEOCR_API_URL")
+		}
+		if baseURL == "" && target.driver.Name() == "paddleocr" {
+			if provider := dao.GetModelProviderManager().FindProvider("PaddleOCR"); provider != nil {
+				baseURL = strings.TrimSpace(provider.URL["default"])
+				if baseURL != "" {
+					// An explicitly selected cloud model may still use its catalog
+					// endpoint. Make that choice observable without logging secrets.
+					common.WarnCtx(ctx, "selected image OCR falls back to cloud provider default endpoint",
+						zap.String("tenant_id", tenantID),
+						zap.String("model_id", model.ID),
+						zap.String("instance_id", instance.ID))
+				}
 			}
 		}
+		if baseURL == "" {
+			return nil, fmt.Errorf("selected image OCR instance has no base URL")
+		}
+		target.apiConfig.BaseURL = &baseURL
+		return target, nil
 	}
-	if baseURL == "" {
-		return "", fmt.Errorf("selected image OCR instance has no base URL")
-	}
-	apiConfig.BaseURL = &baseURL
-	response, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig,
-		&modelModule.OCRConfig{Algorithm: modelName}, nil)
+
+	var text string
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelID,
+		resolveTarget, nil,
+		func(ctx context.Context, target *selectedImageOCRTarget) error {
+			response, invErr := target.driver.OCRFile(ctx, &target.modelName, binary, nil, target.apiConfig, nil, nil)
+			if invErr != nil {
+				return fmt.Errorf("selected image OCR: %w", invErr)
+			}
+			if response == nil || response.Text == nil {
+				return fmt.Errorf("selected image OCR returned no text (%w)", errOCRResultNoText)
+			}
+			text = strings.TrimSpace(*response.Text)
+			return nil
+		}, ocrFailoverCanRetry)
 	if err != nil {
-		return "", fmt.Errorf("selected image OCR: %w", err)
+		return "", err
 	}
-	if response == nil || response.Text == nil {
-		return "", fmt.Errorf("selected image OCR returned no text")
-	}
-	return strings.TrimSpace(*response.Text), nil
+	return text, nil
 }

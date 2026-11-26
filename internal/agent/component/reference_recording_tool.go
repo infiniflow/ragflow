@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	einotool "github.com/cloudwego/eino/components/tool"
+
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/utility"
@@ -59,9 +61,19 @@ type toolInvocationRecordingTool struct {
 	recorder *toolInvocationRecorder
 }
 
-func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error) {
+func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (result string, err error) {
+	ctx, finish := runtime.ObserveAgentNode(ctx, "tool:"+t.name, t.name, "Tool", 1, argsJSON)
+	var observationErr error
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			finish(nil, fmt.Errorf("tool panic: %v", recovered))
+			panic(recovered)
+		}
+		finish(result, observationErr)
+	}()
 	started := time.Now()
-	result, err := t.InvokableTool.InvokableRun(ctx, argsJSON, opts...)
+	result, err = t.InvokableTool.InvokableRun(ctx, argsJSON, opts...)
+	observationErr = err
 	finished := time.Now()
 	args := map[string]any{}
 	if json.Unmarshal([]byte(argsJSON), &args) != nil {
@@ -74,6 +86,9 @@ func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON
 		var envelope map[string]any
 		if json.Unmarshal([]byte(result), &envelope) == nil && envelope["_ERROR"] != nil {
 			status = "error"
+			if message := strings.TrimSpace(fmt.Sprint(envelope["_ERROR"])); message != "" {
+				observationErr = fmt.Errorf("tool failed: %s", message)
+			}
 		}
 	}
 	logResult := result

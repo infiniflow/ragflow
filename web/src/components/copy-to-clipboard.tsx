@@ -31,7 +31,12 @@ const CopyToClipboard = ({
   const [copied, setCopied] = useState(false);
   const { t } = useTranslate('common');
 
-  const handleCopy = () => {
+  const handleCopy = (_text: string, result: boolean) => {
+    if (!result) {
+      setCopied(false);
+      return;
+    }
+
     setCopied(true);
     setTimeout(() => {
       setCopied(false);

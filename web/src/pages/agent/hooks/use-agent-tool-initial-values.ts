@@ -17,7 +17,8 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case (Operator.TavilySearch, Operator.TavilyExtract):
+        case Operator.TavilySearch:
+        case Operator.TavilyExtract:
           return {
             api_key: '',
           };
@@ -70,6 +71,16 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
         case Operator.YouComSearch:
           return pick(initialValues, 'api_key', 'freshness', 'top_n');
+        case Operator.PerplexitySearch:
+          return pick(
+            initialValues,
+            'api_key',
+            'search_type',
+            'search_recency_filter',
+            'search_domain_filter',
+            'country',
+            'top_n',
+          );
         case Operator.SofyaSearch:
           return pick(initialValues, 'api_key', 'search_depth', 'top_n');
         case Operator.Search1APISearch:
@@ -86,6 +97,12 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'api_key', 'top_n');
         case Operator.SpecStreamExtract:
           return { api_key: '' };
+        case Operator.AnySearchSearch:
+          return omit(initialValues, 'query', 'outputs');
+        case Operator.AnySearchDiscover:
+          return { api_key: '' };
+        case Operator.AnySearchExtract:
+          return pick(initialValues, 'api_key');
 
         default:
           return initialValues;

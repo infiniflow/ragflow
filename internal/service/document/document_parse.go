@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -223,6 +224,11 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 		return fmt.Errorf("apply dataset parser config for document %s: %w", doc.ID, err)
 	}
 	doc.ParserConfig = merged
+	// This rewrote the document's own settings, so it is a change to their
+	// history like any other. Without the state row, a restore to a version after
+	// this parse would put back the settings from before it and drop the
+	// dataset's metadata binding from the timeline.
+	recordDocumentParserSettingStates(ctx, dao.DB, []*entity.Document{doc})
 	return nil
 }
 
@@ -328,6 +334,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
 	}
+	cleanupPreviewArtifacts(ctx, doc)
 
 	if s.docEngine == nil {
 		return nil
@@ -447,6 +454,13 @@ func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID string, 
 			})
 			continue
 		}
+		if doc.KbID != datasetID {
+			return nil, fmt.Errorf("document %s not found in dataset", docID)
+		}
+		if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
 
 		if doc.Status != nil && *doc.Status != "0" {
 			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
@@ -471,6 +485,12 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	if len(deduped) == 0 {
 		return nil, fmt.Errorf("no document IDs provided")
 	}
+	if _, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, permission.ErrResourceNotFound
+		}
+		return nil, fmt.Errorf("failed to fetch dataset: %w", err)
+	}
 
 	docs, err := s.validateDocsInDataset(ctx, deduped, datasetID)
 	if err != nil {
@@ -484,6 +504,12 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 			return nil, fmt.Errorf("Documents not found: [%s]", strings.Join(quoted, ", "))
 		}
 		return nil, err
+	}
+	for _, doc := range docs {
+		if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
 	}
 
 	var errs []string
@@ -576,6 +602,21 @@ func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID s
 	ids = common.Deduplicate(ids)
 	if len(ids) == 0 {
 		return map[string]interface{}{"success_count": 0}, nil
+	}
+	for _, batch := range chunkDocumentIDs(ids, cancelAllTaskBatchSize) {
+		docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, batch)
+		if err != nil {
+			return nil, err
+		}
+		for _, doc := range docs {
+			if doc == nil || doc.KbID != datasetID {
+				continue
+			}
+			if err := service.CheckDocumentWrite(ctx, doc.ID, datasetID, permission.OperationRun, ""); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return nil, permissionErr
+			}
+		}
 	}
 
 	// Load the latest task per document in bounded batches so the IN-clause never
@@ -802,7 +843,7 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 	}
 
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
-		return errors.New("database error (Document update)")
+		return fmt.Errorf("database error (Document update): %w", err)
 	}
 
 	if s.docEngine != nil {

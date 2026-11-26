@@ -59,6 +59,14 @@ func NewMetadataServiceForTest(kbDAO *dao.KnowledgebaseDAO, docEngine engine.Doc
 	}
 }
 
+// Available reports whether the metadata store is wired. A service built without an
+// engine cannot read or write metadata, so a caller that only wants to know whether
+// a write changed something can skip the store instead of dereferencing a nil
+// engine.
+func (s *MetadataService) Available() bool {
+	return s != nil && s.docEngine != nil
+}
+
 // BuildMetadataIndexName constructs the metadata index name for a tenant
 func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
@@ -375,15 +383,42 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 	return metaByDoc
 }
 
-// FetchDocMetaByKB fetches document metadata from ES for each KB.
+// FetchDocMetaByKB fetches document metadata for every KB while keeping each
+// engine request within the result window. The per-KB document lists are
+// combined into bounded batches keyed by all KB IDs and a slice of document
+// IDs; the store is queried once per window instead of once per KB. A failed
+// batch contributes nothing but does not discard metadata from other batches,
+// matching the old per-KB best-effort behavior.
 func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
-	for kbID, docIDs := range docIDsByKB {
-		result, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+	kbIDs := make([]string, 0, len(docIDsByKB))
+	docIDs := make([]string, 0)
+	for kbID, ids := range docIDsByKB {
+		if len(ids) == 0 {
+			continue
+		}
+		kbIDs = append(kbIDs, kbID)
+		docIDs = append(docIDs, ids...)
+	}
+	if len(kbIDs) == 0 || s.docEngine == nil {
+		return metaByDoc
+	}
+
+	for start := 0; start < len(docIDs); start += common.MAX_RESULT_WINDOW {
+		end := min(start+common.MAX_RESULT_WINDOW, len(docIDs))
+		searchReq := &types.SearchMetadataRequest{
+			TenantID: tenantID,
+			Limit:    end - start,
+			Filter: map[string]interface{}{
+				"kb_id": kbIDs,
+				"id":    docIDs[start:end],
+			},
+		}
+		searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 		if err != nil {
 			continue
 		}
-		for docID, meta := range ConvertSearchResultToDocMeta(result.MetadataRecords) {
+		for docID, meta := range ConvertSearchResultToDocMeta(searchResult.MetadataRecords) {
 			metaByDoc[docID] = meta
 		}
 	}

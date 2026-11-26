@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"ragflow/internal/agent/runtime"
 	"sync"
 	"testing"
 	"time"
@@ -91,6 +92,16 @@ func (m *memCacheStore) Delete(_ context.Context, key string) bool {
 	defer m.mu.Unlock()
 	delete(m.data, key)
 	delete(m.sets, key)
+	return true
+}
+
+func (m *memCacheStore) DeleteMany(_ context.Context, keys ...string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range keys {
+		delete(m.data, k)
+		delete(m.sets, k)
+	}
 	return true
 }
 
@@ -311,3 +322,44 @@ func TestEmbedChunks_MissingChunkIDSkipsCache(t *testing.T) {
 }
 
 var _ chunkcache.Store = (*memCacheStore)(nil)
+
+// TestEmbedChunks_AllCacheHitsReportsTerminalDetail is the adversarial fixture
+// for review finding ④: when every chunk is served from cache (no embedder
+// batch runs), a terminal detail event must still be emitted with
+// current=total=embedTotal, so the progress log shows the finished position.
+func TestEmbedChunks_AllCacheHitsReportsTerminalDetail(t *testing.T) {
+	comp, _ := withStubEmbedder(t, 4)
+	comp.param.Fields = []string{"text"}
+	store := newMemCacheStore()
+	chunks := []schema.ChunkDoc{
+		chunkWithID("chunk-1", "hello world"),
+		chunkWithID("chunk-2", "another passage"),
+	}
+
+	// Prime the cache with one pass (may report details; not what we assert).
+	if _, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+
+	var details []detailObservation
+	ctx := runtime.WithProgressDetailCallback(context.Background(), func(c string, d runtime.ProgressDetail) {
+		details = append(details, detailObservation{c, d.Unit, d.Current, d.Total})
+	})
+	ctx = runtime.BindComponentDetail(ctx, "Tokenizer:cache")
+
+	// Second pass: all cache hits, the embedder batch loop is skipped.
+	out, _, err := comp.embedChunks(ctx, "tenant", "kb", "", chunks, store)
+	if err != nil {
+		t.Fatalf("embedChunks (all hits): %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(out))
+	}
+	if len(details) == 0 {
+		t.Fatal("expected a terminal detail event on all-cache-hit path, got none")
+	}
+	last := details[len(details)-1]
+	if last.component != "Tokenizer:cache" || last.unit != "chunk:embed" || last.current != 2 || last.total != 2 {
+		t.Errorf("terminal detail = %+v, want Tokenizer:cache/chunk/2/2", last)
+	}
+}

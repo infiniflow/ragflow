@@ -15,7 +15,7 @@
 //
 
 // Package extractor provides NER and relation extraction for the ingestion
-// pipeline. It mirrors the Python rag/graphrag/ner package so that both
+// pipeline. It mirrors the rag/graphrag/ner package so that both
 // code paths produce identical output.
 //
 // The C++ ThincNER engine (internal/binding/cpp/) loads spaCy model.ckpt+model.bin

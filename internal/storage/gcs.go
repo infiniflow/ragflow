@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
 	"time"
@@ -74,7 +75,15 @@ func (m *GCSStorage) Health(ctx context.Context) bool {
 }
 
 // Put uploads an object to GCS
-func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
+func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) (err error) {
+	defer func() {
+		// Resumable upload URLs contain credentials; retain only the operation
+		// and transport cause when returning an HTTP client error.
+		var transportErr *url.Error
+		if errors.As(err, &transportErr) {
+			err = fmt.Errorf("GCS upload %s: %w", transportErr.Op, transportErr.Err)
+		}
+	}()
 	uploadCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -216,7 +225,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 	it := bucket.Objects(ctx, nil)
 	for {
 		attrs, err := it.Next()
-		if errors.Is(err, iterator.Done) {
+		if errors.Is(err, iterator.Done) || IsBucketNotFound(err) {
 			break
 		}
 		if err != nil {
@@ -228,7 +237,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 		}
 	}
 
-	if err := bucket.Delete(ctx); err != nil {
+	if err := bucket.Delete(ctx); err != nil && !IsBucketNotFound(err) {
 		return err
 	}
 

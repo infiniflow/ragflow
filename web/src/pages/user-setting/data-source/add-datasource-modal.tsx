@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
 import { useCallback, useMemo, useRef } from 'react';
+import { useVisibleDataSourceFormFields } from '@/ee/hooks/use-visible-data-source-form-fields';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -53,10 +54,11 @@ const AddDataSourceModal = ({
       ...getDataSourceFieldsWithExtras(t, sourceData.id as any),
     ] as FormFieldConfig[];
   }, [sourceData, t]);
+  const visibleFields = useVisibleDataSourceFormFields(sourceData?.id, fields);
   const { loading: testLoading, handleTest } = useTestDataSource(
     formRef,
     sourceData?.id,
-    fields,
+    visibleFields,
   );
 
   const defaultValues = useMemo<FieldValues>(
@@ -111,7 +113,7 @@ const AddDataSourceModal = ({
     >
       <DynamicForm.Root
         ref={formRef}
-        fields={fields}
+        fields={visibleFields}
         onSubmit={handleFormSubmit}
         defaultValues={defaultValues}
         labelClassName="font-normal"

@@ -9,7 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MemoryDropdownGuard } from '@/ee/pages/memories/memory-dropdown-guard';
+import {
+  MemoryDropdownGuard,
+  shouldShowMemoryDropdown,
+} from '@/ee/pages/memories/memory-dropdown-guard';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -41,6 +44,10 @@ export function MemoryDropdown({
     deleteMemory({ memory_id: memory.id });
   }, [memory, deleteMemory]);
 
+  if (!shouldShowMemoryDropdown(memory)) {
+    return null;
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
@@ -49,8 +56,11 @@ export function MemoryDropdown({
           memory={memory}
           showPrivilegeModal={showPrivilegeModal}
           manageItems={
-            <DropdownMenuItem onClick={handleShowChatRenameModal}>
-              {t('common.rename')} <PenLine />
+            <DropdownMenuItem
+              justifyBetween={false}
+              onClick={handleShowChatRenameModal}
+            >
+              <PenLine /> {t('common.rename')}
             </DropdownMenuItem>
           }
           deleteItems={
@@ -70,6 +80,7 @@ export function MemoryDropdown({
                 }}
               >
                 <DropdownMenuItem
+                  justifyBetween={false}
                   className="text-state-error"
                   onSelect={(e) => {
                     e.preventDefault();
@@ -78,7 +89,7 @@ export function MemoryDropdown({
                     e.stopPropagation();
                   }}
                 >
-                  {t('common.delete')} <Trash2 />
+                  <Trash2 /> {t('common.delete')}
                 </DropdownMenuItem>
               </ConfirmDeleteDialog>
             </>

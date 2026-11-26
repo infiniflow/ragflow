@@ -147,11 +147,7 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 // isNonGlobalIP applies the same special-use address policy as the shared
 // host guard without repeating its range list or performing another DNS lookup.
 func isNonGlobalIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	_, err := common.AssertHostSafe(ip.String())
-	return err != nil
+	return !common.IsGlobalIP(ip)
 }
 
 // allowAnyHost reads the shared environment opt-in for private addresses.

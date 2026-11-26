@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Form } from '@/components/ui/form';
 import { FileType } from '@/constants/file';
+import { ParserExtensionFields } from '@/ee/components/parser-extension-fields';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LucideTrash2 } from 'lucide-react';
@@ -70,7 +71,7 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
-      : () => <></>;
+      : null;
 
   const handleRemove = useCallback(() => {
     onRemove(index);
@@ -97,9 +98,11 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
           ) : undefined
         }
       >
-        <div className="space-y-5">
-          <Widget prefix={prefix}></Widget>
-        </div>
+        {Widget && (
+          <div className="space-y-5">
+            <Widget prefix={prefix} />
+          </div>
+        )}
       </Collapse>
     </Card>
   );
@@ -109,6 +112,9 @@ type ParserFormProps = INextOperatorForm & {
   // Dataset-side embeddings (settings page, document pipeline dialog) show a
   // fixed set of file types; only the canvas parser allows add/remove.
   fixedFileFormats?: boolean;
+  // Render only the global vision-enhancement fields. Used by formats whose
+  // file setup has no user-configurable options.
+  visionOnly?: boolean;
 };
 
 type AddFileTypeMenuItemProps = {
@@ -135,6 +141,7 @@ const ParserForm = ({
   hideOutputs,
   externalErrors,
   fixedFileFormats,
+  visionOnly,
 }: ParserFormProps) => {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
@@ -192,35 +199,42 @@ const ParserForm = ({
     <Form {...form}>
       <form className="space-y-5 px-5 pt-4">
         <VisionEnhancementFormFields />
-        {fields.map((field, index) => {
-          return (
-            <ParserItem
-              key={field.id}
-              name={name}
-              index={index}
-              canRemove={canRemove}
-              onRemove={remove}
-            ></ParserItem>
-          );
-        })}
-        {!fixedFileFormats && remainingFileTypes.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <BlockButton type="button">{t('flow.addFileType')}</BlockButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {remainingFileTypes.map((fileType) => (
-                <AddFileTypeMenuItem
-                  key={fileType}
-                  fileType={fileType}
-                  onSelect={handleAddFileType}
-                />
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {!visionOnly && (
+          <>
+            <ParserExtensionFields />
+            {fields.map((field, index) => {
+              return (
+                <ParserItem
+                  key={field.id}
+                  name={name}
+                  index={index}
+                  canRemove={canRemove}
+                  onRemove={remove}
+                ></ParserItem>
+              );
+            })}
+            {!fixedFileFormats && remainingFileTypes.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <BlockButton type="button">
+                    {t('flow.addFileType')}
+                  </BlockButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {remainingFileTypes.map((fileType) => (
+                    <AddFileTypeMenuItem
+                      key={fileType}
+                      fileType={fileType}
+                      onSelect={handleAddFileType}
+                    />
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </>
         )}
       </form>
-      {!hideOutputs && (
+      {!visionOnly && !hideOutputs && (
         <div className="p-5">
           <Output list={outputList}></Output>
         </div>

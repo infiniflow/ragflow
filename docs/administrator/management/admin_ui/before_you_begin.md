@@ -2,6 +2,9 @@
 sidebar_position: 1
 sidebar_label: Before You Begin
 title: Before You Begin
+sidebar_custom_props: {
+  categoryIcon: LucideInfo
+}
 ---
 
 # Before You Begin
@@ -18,7 +21,7 @@ Regular users do not need to enter the Admin UI when they use business features 
 
 ## Initial Administrator Account
 
-When the Admin service starts with `--init-superuser` and no superuser exists,
+When the OSS server starts, it initializes the Admin service automatically. If no superuser exists,
 it creates the administrator account `admin@ragflow.io`. The initial password
 comes from `DEFAULT_SUPERUSER_PASSWORD` or `ADMIN_DEFAULT_PASSWORD`; if neither
 is set, RAGFlow generates a random password and writes it to

@@ -18,20 +18,36 @@
 
 package dataset
 
-import "testing"
+import (
+	"context"
 
-// datasetTestExtraModels adds no tables beyond the community schema.
-func datasetTestExtraModels() []interface{} { return nil }
+	"ragflow/internal/entity"
 
-// datasetTestMembershipRole keeps the caller's membership role: the community
-// edition has no tenant role table.
-func datasetTestMembershipRole(_ *testing.T, _ string, role string) string { return role }
+	"gorm.io/gorm"
+)
 
-// grantDatasetTestResource grants nothing: the community edition has no
-// per-resource permission table to seed.
-func grantDatasetTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ ...string) {
+func accessUserContext(ctx context.Context, _ string) (context.Context, bool) {
+	return ctx, false
 }
 
-// enableDatasetTestModelAccess grants nothing: the community edition has no
-// model group access control.
-func enableDatasetTestModelAccess(_ *testing.T, _ string, _ string, _ string) {}
+func deleteDatasetChunkRuntimeTxEE(_ context.Context, _ *gorm.DB, _ string) error {
+	return nil
+}
+
+func deleteDatasetMetadataStatesEE(_ context.Context, _ string) {}
+
+func (d *DatasetService) datasetConfigBindingsEE(_ context.Context, _ *gorm.DB, _ *entity.Knowledgebase) ([]entity.JSONMap, error) {
+	return nil, nil
+}
+
+func (d *DatasetService) seedDatasetBaselineVersionTxEE(_ context.Context, _ *gorm.DB, _ *entity.Knowledgebase, _ string) error {
+	return nil
+}
+
+func (d *DatasetService) recordDatasetConfigVersionTxEE(_ context.Context, _ *gorm.DB, _, _ *entity.Knowledgebase, _ []entity.JSONMap, _, _ string, _ int64) (int64, error) {
+	return 0, nil
+}
+
+func (d *DatasetService) deleteDatasetVersionsTxEE(_ context.Context, _ *gorm.DB, _ string) error {
+	return nil
+}

@@ -108,11 +108,11 @@ type StructureBucket struct {
 	CompileKwd string
 	// TemplateID is the compilation template id (compilation_template_ids[0]) that
 	// produced this bucket. Stamped on the dataset row so read/delete paths can
-	// filter per template (mirror Python get_dataset_structure).
+	// filter per template (mirror get_dataset_structure)
 	TemplateID string
 	// TemplateKind identifies the producing template and determines CompileKwd.
 	TemplateKind string
-	// RelationType is the relation type (Python default "related"), persisted as
+	// RelationType is the relation type ( default "related"), persisted as
 	// relation_type_kwd and part of the relation bucket/ID identity.
 	RelationType string
 	// MentionCount is the entity mention count (mention_count_int); 0 when unset.
@@ -164,16 +164,163 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 	}
 	eng := w.eng
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	// The pages are named before they go: a delete leaves nothing behind to say
+	// which page it was, and the version timeline needs that to put the page back.
+	w.recordWikiPageRemovals(ctx, tenant, kb, ids, pageRemovalByCompilation)
 	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 		"id": ids, "kb_id": kb, "available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage,
 	}, baseName, kb)
 	return err
 }
 
+// Comments put on the commits that record a page leaving the dataset. They are
+// what tells a removal apart from an edit in the page history.
+const (
+	pageRemovalByCompilation = "Removed by artifact compilation"
+	pageRemovalByDocDelete   = "Removed because its source document was deleted"
+)
+
+// recordWikiPageRemovals records a delete commit for each of ids that is a
+// merged wiki page. Ids that name other kinds of row are ignored, so a caller
+// that deletes a mixed batch does not need to filter it first.
+func (w engineWriter) recordWikiPageRemovals(ctx context.Context, tenant, kb string, ids []string, comment string) {
+	if w.commitService == nil || w.eng == nil || len(ids) == 0 {
+		return
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	const batchSize = 200
+	for start := 0; start < len(ids); start += batchSize {
+		end := start + batchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batchIDs := ids[start:end]
+		res, err := w.eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			Filter: map[string]interface{}{
+				"id":            batchIDs,
+				"available_int": 1,
+				"type_kwd":      compileKwdWikiPage,
+			},
+			// The shape columns are what names the page: WikiPageCategory reads
+			// entity_type_kwd (new rows) or page_type_kwd (old ones), and
+			// CompilationRowType reads compile_kwd/type_kwd. Without them a row the
+			// compiler wrote looks like a non-page and is dropped below.
+			SelectFields: []string{"id", "slug_kwd", "page_type_kwd", "entity_type_kwd", "compile_kwd", "type_kwd", "title_kwd", "content_with_weight", "source_doc_ids"},
+			Limit:        len(batchIDs),
+		})
+		if err != nil {
+			common.Warn("knowledge_compile: failed to read the pages a delete removes",
+				zap.String("kb_id", kb), zap.Error(err))
+			continue
+		}
+		// One attribution lookup per batch, not per page: a delete can name
+		// hundreds of pages at once.
+		docAuthors, owner := pageCommitActors(ctx, w.db, kb, pageCommitDocIDs(res.Chunks...))
+		for _, row := range res.Chunks {
+			w.recordWikiPageRemoval(ctx, kb, row, comment, docAuthors, owner)
+		}
+	}
+}
+
+// recordAllWikiPageRemovals records a delete commit for every merged wiki page of
+// the dataset. It is the sweep behind a full or per-variant clear, where the
+// delete names no ids and the pages have to be enumerated first.
+func (w engineWriter) recordAllWikiPageRemovals(ctx context.Context, tenant, kb string, comment string, includeSections bool) {
+	if w.commitService == nil || w.eng == nil {
+		return
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	rowTypes := []string{compileKwdWikiPage}
+	if includeSections {
+		rowTypes = append(rowTypes, compileKwdWikiSection)
+	}
+	const batchSize = 500
+	offset := 0
+	for {
+		res, err := w.eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			Filter: map[string]interface{}{
+				"available_int": 1,
+				"type_kwd":      rowTypes,
+			},
+			// The shape columns are what names the page: WikiPageCategory reads
+			// entity_type_kwd (new rows) or page_type_kwd (old ones), and
+			// CompilationRowType reads compile_kwd/type_kwd. Without them a row the
+			// compiler wrote looks like a non-page and is dropped below.
+			SelectFields: []string{"id", "slug_kwd", "page_type_kwd", "entity_type_kwd", "compile_kwd", "type_kwd", "title_kwd", "content_with_weight", "source_doc_ids"},
+			// Offset paging needs a total order or the engine may hand the same row
+			// back twice and skip another between requests, and a page skipped here
+			// never gets the removal commit that would keep it out of a later restore.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Limit:   batchSize,
+			Offset:  offset,
+		})
+		if err != nil {
+			common.Warn("knowledge_compile: failed to enumerate the pages a clear removes",
+				zap.String("kb_id", kb), zap.Error(err))
+			return
+		}
+		if len(res.Chunks) == 0 {
+			return
+		}
+		docAuthors, owner := pageCommitActors(ctx, w.db, kb, pageCommitDocIDs(res.Chunks...))
+		for _, row := range res.Chunks {
+			w.recordWikiPageRemoval(ctx, kb, row, comment, docAuthors, owner)
+		}
+		if len(res.Chunks) < batchSize {
+			return
+		}
+		offset += batchSize
+	}
+}
+
+// recordWikiPageRemoval records one page leaving the dataset. A section row is
+// not a page: it is part of one, and its removal is what removing the page
+// already says.
+func (w engineWriter) recordWikiPageRemoval(ctx context.Context, kb string, row map[string]any, comment string, docAuthors map[string]string, owner string) {
+	if types.CompilationRowType(row) != compileKwdWikiPage {
+		return
+	}
+	// The page is named the way every other page path names it: WikiPageCategory
+	// reads the category from whichever column carries it - entity_type_kwd beside
+	// compile_kwd="wiki", or page_type_kwd - and composes the bare slug from the
+	// stored full form. Reading page_type_kwd directly misses every row the
+	// compiler writes, so a page leaving the dataset leaves no commit behind and a
+	// restore cannot put it back.
+	target, ok := wikiPageCommitTargetForRow(
+		types.WikiPageCategory(row),
+		pageEngineString(row["slug_kwd"]),
+	)
+	if !ok {
+		return
+	}
+	if _, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
+		DatasetID: kb,
+		Slug:      target.bareSlug,
+		PageType:  target.pageType,
+		Title:     kccommon.MetaString(row, "title_kwd"),
+		Comments:  comment,
+		// Same rule as a generated revision: the uploader of the page's source
+		// documents, else the dataset's owner. A document-delete removal usually
+		// has no document row left to read, and the owner names the run then.
+		AuthorID:   pageCommitAuthor(pageCommitDocIDs(row), docAuthors, owner),
+		OldContent: kccommon.MetaString(row, "content_with_weight"),
+		NewContent: "",
+	}); err != nil {
+		common.Warn("knowledge_compile: failed to record a Wiki page removal",
+			zap.String("kb_id", kb),
+			zap.String("slug", target.fullSlug),
+			zap.Error(err))
+	}
+}
+
 // datasetStructureSupported reports whether the running doc engine can filter
 // the dataset-structure fields (type_kwd + scope_kwd + raw
-// compile_kwd) this feature writes/deletes. Only infinity and elasticsearch
-// support them today; OceanBase/SeekDB/SereneDB have explicit schemas that lack
+// compile_kwd) this feature writes/deletes. Infinity, Elasticsearch, and
+// OpenSearch support them today; OceanBase/SeekDB/SereneDB have explicit schemas that lack
 // these filter keys and would reject the query or silently drop unknown fields.
 // The guard is checked at every dataset-structure write/delete/rebuild entry so
 // those engines never leave partial state or hit an unknown-filter error (plan §5).
@@ -187,7 +334,7 @@ func (w engineWriter) datasetStructureSupported() bool {
 		return true
 	}
 	switch w.eng.GetType() {
-	case "infinity", "elasticsearch", "":
+	case "infinity", "elasticsearch", "opensearch", "":
 		return true
 	default:
 		return false
@@ -397,11 +544,16 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 
 // recordWikiPageCommits records generated page revisions after their merged
 // rows have been written. Sections and other Wiki products are intentionally
-// excluded because Python's generated-page history is page-level only.
+// excluded because generated-page history is page-level only
 func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, products []kccommon.Product, existing map[string]string) {
 	if w.commitService == nil {
 		return
 	}
+	metas := make([]map[string]any, 0, len(products))
+	for _, product := range products {
+		metas = append(metas, product.Meta)
+	}
+	docAuthors, owner := pageCommitActors(ctx, w.db, kb, pageCommitDocIDs(metas...))
 	seen := make(map[string]struct{})
 	for _, product := range products {
 		target, ok := wikiPageCommitTargetForProduct(product)
@@ -414,13 +566,20 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 		seen[target.key] = struct{}{}
 
 		_, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
-			DatasetID:  kb,
-			Slug:       target.bareSlug,
-			PageType:   target.pageType,
-			Title:      "Regenerated by artifact compilation",
-			Comments:   "Auto-update via incremental wiki compilation",
+			DatasetID: kb,
+			Slug:      target.bareSlug,
+			PageType:  target.pageType,
+			Title:     "Regenerated by artifact compilation",
+			Comments:  "Auto-update via incremental wiki compilation",
+			// A compile runs on a worker whose context carries no request
+			// identity, so the revision names the user whose documents produced
+			// the page instead of leaving the history's author blank.
+			AuthorID:   pageCommitAuthor(pageCommitDocIDs(product.Meta), docAuthors, owner),
 			OldContent: existing[target.key],
 			NewContent: product.Content,
+			// The whole generated page, so a restore of this version brings back
+			// the summary and links the compiler produced with the text.
+			Page: wikiPageSnapshotOfProduct(kb, product, target),
 		})
 		if err != nil {
 			common.Warn("knowledge_compile: failed to record generated Wiki page version",
@@ -428,6 +587,130 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 				zap.String("slug", target.fullSlug),
 				zap.Error(err))
 		}
+	}
+}
+
+// pageCommitDocIDs unions the source document ids the given page metadata maps
+// name, in first-seen order. A page row and a page product carry the same list,
+// so both a generated revision and a removal read their sources the same way.
+func pageCommitDocIDs(metas ...map[string]any) []string {
+	docIDs := make([]string, 0, len(metas))
+	seen := make(map[string]struct{}, len(metas))
+	for _, meta := range metas {
+		for _, docID := range kccommon.MetaStringSlice(meta, "source_doc_ids") {
+			if docID == "" {
+				continue
+			}
+			if _, duplicate := seen[docID]; duplicate {
+				continue
+			}
+			seen[docID] = struct{}{}
+			docIDs = append(docIDs, docID)
+		}
+	}
+	return docIDs
+}
+
+// pageCommitActors reads the attribution a page revision needs: the uploader of
+// every source document in the batch, plus the dataset's owner as the fallback
+// for a run the documents cannot name. Both lookups are batched once per batch
+// rather than per page: a merge can generate hundreds of pages and a clear can
+// remove as many.
+//
+// The compile worker executes on behalf of whoever uploaded and parsed the
+// documents, but its context is the worker's, so the identity can only be
+// recovered from the rows the batch was built from.
+//
+// The connection is the writer's, injected at assembly time: the ingestion layers
+// do not resolve the process-wide dao.DB themselves (see the architecture test).
+func pageCommitActors(ctx context.Context, db *gorm.DB, kb string, docIDs []string) (map[string]string, string) {
+	if db == nil {
+		return nil, ""
+	}
+	authors := make(map[string]string, len(docIDs))
+	if len(docIDs) > 0 {
+		var rows []struct {
+			ID        string
+			CreatedBy string
+		}
+		if err := db.WithContext(ctx).
+			Model(&entity.Document{}).
+			Select("id", "created_by").
+			Where("id IN ?", docIDs).
+			Scan(&rows).Error; err != nil {
+			common.Warn("knowledge_compile: failed to read the uploaders of a Wiki page's source documents",
+				zap.String("kb_id", kb),
+				zap.Error(err))
+		}
+		for _, row := range rows {
+			if row.CreatedBy != "" {
+				authors[row.ID] = row.CreatedBy
+			}
+		}
+	}
+	return authors, datasetOwner(ctx, db, kb)
+}
+
+// datasetOwner names the user a generated revision falls back to: the dataset's
+// creator, who stands for a run whose pages no single uploader can claim.
+func datasetOwner(ctx context.Context, db *gorm.DB, kb string) string {
+	var owners []string
+	if err := db.WithContext(ctx).
+		Model(&entity.Knowledgebase{}).
+		Where("id = ?", kb).
+		Limit(1).
+		Pluck("created_by", &owners).Error; err != nil {
+		return ""
+	}
+	if len(owners) == 0 {
+		return ""
+	}
+	return owners[0]
+}
+
+// pageCommitAuthor picks the user a page revision belongs to: the single
+// uploader of its source documents. A page merged from documents several users
+// uploaded has no one author, and the dataset's owner names the run instead -
+// the same fallback a batch whose documents carry no uploader takes.
+func pageCommitAuthor(docIDs []string, docAuthors map[string]string, owner string) string {
+	author := ""
+	for _, docID := range docIDs {
+		uploader := docAuthors[docID]
+		if uploader == "" {
+			continue
+		}
+		if author == "" {
+			author = uploader
+			continue
+		}
+		if uploader != author {
+			return owner
+		}
+	}
+	if author != "" {
+		return author
+	}
+	return owner
+}
+
+// wikiPageSnapshotOfProduct is the page a generated commit stores: the fields the
+// compiler wrote into the engine for this product, so a restore replays the page
+// the version actually held rather than only its text.
+func wikiPageSnapshotOfProduct(kb string, product kccommon.Product, target wikiPageCommitTarget) map[string]any {
+	return map[string]any{
+		"content_with_weight":  product.Content,
+		"title_kwd":            kccommon.MetaString(product.Meta, "title"),
+		"summary_with_weight":  kccommon.MetaString(product.Meta, "summary"),
+		"topic_kwd":            kccommon.MetaString(product.Meta, "topic"),
+		"entity_names_kwd":     kccommon.MetaStringSlice(product.Meta, "entity_names"),
+		"entity_type_kwd":      kccommon.MetaString(product.Meta, "page_type"),
+		"outlinks_kwd":         kccommon.MetaStringSlice(product.Meta, "outlinks"),
+		"related_kb_pages_kwd": kccommon.MetaStringSlice(product.Meta, "related_kb_pages"),
+		"source_chunk_ids":     kccommon.MetaStringSlice(product.Meta, "source_chunk_ids"),
+		"source_doc_ids":       kccommon.MetaStringSlice(product.Meta, "source_doc_ids"),
+		"slug_kwd":             target.fullSlug,
+		"page_type_kwd":        target.pageType,
+		"kb_id":                kb,
 	}
 }
 
@@ -517,12 +800,12 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		if ckwd == "" {
 			ckwd = compileKwdStructure
 		}
-		// content_with_weight is a JSON payload, matching Python (and the existing
+		// content_with_weight is a JSON payload, matching (and the existing
 		// wiki projection writer below): the structured fields (from/to/type for
 		// relations, name/type for entities) live INSIDE the payload, while
 		// from/to are also copied to from_entity_kwd/to_entity_kwd top-level
 		// columns for filtering. There is NO relation_type_kwd column — the
-		// relation type is carried only in the payload, exactly as Python does.
+		// relation type is carried only in the payload, exactly as does
 		var payloadMap map[string]any
 		if b.FromEntity != "" || b.ToEntity != "" {
 			relType := b.RelationType
@@ -586,7 +869,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			}
 		}
 		if len(b.Vector) > 0 {
-			row["q_"+fmt.Sprintf("%d", len(b.Vector))+"_vec"] = f32ToF64Slice(b.Vector)
+			row[common.VectorColumnName(len(b.Vector))] = f32ToF64Slice(b.Vector)
 		}
 		rows = append(rows, row)
 	}
@@ -594,7 +877,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	// model is keyed by raw kind; template-id granularity is a follow-up when the
 	// bucket key gains a template dimension). The marker is available_int=0 and
 	// carries create_timestamp_flt as its timestamp (build_timestamp_flt is a
-	// Python _META_ROW_KWD legacy field NOT present in the Infinity/ES/OS schemas,
+	// _META_ROW_KWD legacy field NOT present in the Infinity/ES/OS schemas
 	// so writing it would fail with an undefined-column error — see review). It is
 	// a write/delete-side marker — GET discovery does NOT read it (it scans
 	// type_kwd=["entity"] rows instead, per §6).
@@ -781,7 +1064,7 @@ func structureRowType(row map[string]interface{}) string {
 }
 
 func structureRowPayload(row map[string]interface{}) map[string]interface{} {
-	// The payload is content_with_weight verbatim (Python json.dumps's it there);
+	// The payload is content_with_weight verbatim ( json.dumps's it there)
 	// there is no separate payload column.
 	if value := structureString(row["content_with_weight"]); value != "" {
 		var payload map[string]interface{}
@@ -811,7 +1094,7 @@ func structureString(value interface{}) string {
 }
 
 // DeleteStructureForDocs removes dataset-level structure rows whose source docs
-// are all gone (G3, mirroring Python dataset_structure_merger._cleanup_deleted_docs).
+// are all gone (G3, mirroring dataset_structure_merger._cleanup_deleted_docs)
 // A structure dataset row that still has any non-deleted source doc survives; a
 // row whose source_doc_ids are a subset of the deleted set is a ghost and is
 // removed. This is best-effort in the sense that rows without any source_doc_ids
@@ -1002,12 +1285,12 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	// Carry wiki metadata onto the merged row so the dataset-level
 	// products retain their category, topic, title, and rendered page body.
 	//
-	// slug_kwd follows the Python writer contract (api/db/db_models.py): it is
+	// slug_kwd follows the writer contract: it is
 	// stored as the full "<page_type>/<slug>" form so GetWikiPage's filter
 	// (page_type + "/" + slug) matches directly.
 	pageType := kccommon.MetaString(p.Meta, "page_type")
 	if slug := kccommon.MetaString(p.Meta, "slug"); slug != "" {
-		// Normalize to the full "<page_type>/<slug>" form (Python writer
+		// Normalize to the full "<page_type>/<slug>" form ( writer
 		// contract). Idempotent: slugs that already carry the prefix are kept.
 		fullSlug := slug
 		if pageType != "" && !strings.Contains(slug, "/") {
@@ -1047,7 +1330,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	// and the Reader can reconstruct them (otherwise the vector is silently
 	// dropped and KNN search returns nothing for merged rows).
 	if dim := len(p.Vector); dim > 0 {
-		m[fmt.Sprintf("q_%d_vec", dim)] = p.Vector
+		m[common.VectorColumnName(dim)] = p.Vector
 	}
 	return m
 }
@@ -1109,8 +1392,11 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 				"source_doc_ids": deletedDocIDs,
 			},
 			SelectFields: []string{"id", "source_doc_ids"},
-			Limit:        batchSize,
-			Offset:       offset,
+			// Same reason as the clear sweep: an unordered offset scan can miss a
+			// row, and the survivor keeps a deleted document in its sources.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Limit:   batchSize,
+			Offset:  offset,
 		})
 		if err != nil {
 			return err
@@ -1156,6 +1442,9 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 		return err
 	}
 	if len(toDeleteIDs) > 0 {
+		// A page that lost its last source document leaves the dataset here, so the
+		// timeline has to record the removal with the same fidelity as a delete.
+		w.recordWikiPageRemovals(ctx, tenant, kb, toDeleteIDs, pageRemovalByDocDelete)
 		if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
 			"id":    toDeleteIDs,
 			"kb_id": kb,
@@ -1284,7 +1573,7 @@ const (
 	compileKwdWikiSection   = "wiki_section"
 	compileKwdWikiEntity    = "wiki_entity"
 	compileKwdWikiRelation  = "wiki_relation"
-	compileKwdWikiPageGraph = "wiki_page_graph" // legacy Python blob, swept on drop
+	compileKwdWikiPageGraph = "wiki_page_graph" // keyword for the wiki page-graph blob, swept on drop
 	// Structure is the default execution family when no template kind is supplied.
 	compileKwdStructure = "structure"
 )
@@ -1305,7 +1594,7 @@ func compileKwdForVariant(v kccommon.Variant) string {
 	return types.CanonicalCompilationKind(string(v))
 }
 
-// wikiGraphXXHash derives a stable 16-char hex id (matches Python
+// wikiGraphXXHash derives a stable 16-char hex id (matches
 // xxh64().hexdigest()) for a graph node/edge namespaced under the kb.
 func wikiGraphXXHash(namespace, kb, key string) string {
 	return fmt.Sprintf("%016x", xxhash.Sum64String(namespace+":"+kb+":"+key))
@@ -1329,8 +1618,8 @@ func wikiGraphBareKey(slug string) string {
 	return strings.TrimSpace(s)
 }
 
-// tokenizeWikiGraphContent tokenizes Python's entity search text,
-// `slug + " " + description` (dataset_wiki_generator.py:750-773); the entity row
+// tokenizeWikiGraphContent tokenizes entity search text
+// `slug + " " + description`; the entity row
 // gets no title token column.
 func tokenizeWikiGraphContent(tok tokenizer.Tokenizer, slug, description string) (string, string) {
 	content := strings.TrimSpace(strings.Join([]string{slug, description}, " "))
@@ -1505,6 +1794,7 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 		if !w.datasetStructureSupported() {
 			return w.errDatasetStructureUnsupported()
 		}
+		w.recordAllWikiPageRemovals(ctx, tenant, kb, pageRemovalByCompilation, false)
 		_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 			"kb_id": kb,
 			"or": []map[string]interface{}{
@@ -1531,6 +1821,7 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 		case kccommon.VariantWiki:
 			// wiki merged rows are tagged available_int=1 (distinct from
 			// doc-level available_int=0); scope the wiki delete to them only.
+			w.recordAllWikiPageRemovals(ctx, tenant, kb, pageRemovalByCompilation, false)
 			if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
 				"kb_id":         kb,
 				"available_int": 1,
@@ -1573,7 +1864,7 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 // dropWikiGraph is the shared delete path for both ProjectWikiGraph (when the
 // page set is empty, or before re-inserting) and DropWikiGraph. It deletes by
 // kb_id + compile_kwd IN (the graph buckets), also sweeping any legacy
-// wiki_page_graph blob left by an earlier Python writer so the index does not
+// wiki_page_graph blob left by an earlier writer so the index does not
 // accumulate stale state. The dataset-wide full delete of merged rows is owned
 // by DeleteDocLevelForKb elsewhere and is not repeated here.
 func (w engineWriter) dropWikiGraph(ctx context.Context, tenant, kb string) error {
@@ -1673,7 +1964,7 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 // projectWikiGraphRows builds the wiki_entity / wiki_relation chunk documents
 // from a full projection of the dataset's merged wiki pages.
 //
-// Graph model (mirrors the Python writer in dataset_wiki_generator.py):
+// Graph model (mirrors the writer in )
 //   - One wiki_entity row per merged wiki page (node = page).
 //   - One wiki_relation row per inter-page outlink: a page lists another page
 //     in its Outlinks, and that target page also exists in the projection.
@@ -1736,8 +2027,8 @@ func (w engineWriter) projectWikiGraphRows(ctx context.Context, tenant, kb strin
 		}
 		seen[entityID] = true
 
-		weight := len(p.Outlinks) // raw outlink count; 0 is allowed (Python parity)
-		// Python's canvas payload (dataset_wiki_generator.py:751-758): aliases /
+		weight := len(p.Outlinks) // raw outlink count; 0 is allowed
+		// canvas payload: aliases /
 		// description / type live inside it. No such columns exist, and Infinity
 		// rejects an insert naming one.
 		content, err := json.Marshal(map[string]any{
@@ -1794,7 +2085,7 @@ func (w engineWriter) projectWikiGraphRows(ctx context.Context, tenant, kb strin
 				continue // dangling edge: target page not in this projection
 			}
 			if tgt == p.Slug {
-				continue // self-loop: Python skips src == tgt (full or bare slug)
+				continue // self-loop: skip src == tgt (full or bare slug)
 			}
 			relID := wikiGraphXXHash("wiki_relation", kb, p.Slug+":"+tgt)
 			if seen[relID] {

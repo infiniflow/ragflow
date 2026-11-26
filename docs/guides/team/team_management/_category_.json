@@ -6,6 +6,6 @@
     "description": "Guides on managing team members and joining or leaving teams."
   },
   "customProps": {
-    "categoryIcon": "LucideUserCog"
+    "categoryIcon": "LucideUserGroup"
   }
 }

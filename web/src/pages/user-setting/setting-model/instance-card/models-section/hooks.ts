@@ -74,9 +74,11 @@ export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
   LLMFactory.SystemOne,
   LLMFactory.RAGcon,
   LLMFactory.VolcEngine,
+  LLMFactory.Nace,
   LLMFactory.DaoXE,
   LLMFactory.RadeonCloud,
   LLMFactory.DemonRoute,
+  LLMFactory.WorldRouter,
 ];
 
 // ---------------------------------------------------------------------------
@@ -384,6 +386,8 @@ export function useModelsCatalog({
         useStoredCredentials && instance?.is_owner === true;
       const ret = await listProviderModels({
         provider_name: providerName,
+        ...(instance?.provider_id ? { provider_id: instance.provider_id } : {}),
+        ...(instance?.id ? { instance_id: instance.id } : {}),
         ...(!useStoredCredentials ? { api_key: apiKey as any } : {}),
         ...(canOverrideSavedCredentials &&
         apiKeyConfig &&
@@ -415,7 +419,7 @@ export function useModelsCatalog({
 
   // Auto-fetch the provider's available-models catalog when this section
   // mounts (effectively "when the card is expanded"). For VolcEngine and the
-  // providers in API_KEY_GATED_LIST_PROVIDERS (SystemOne, RAGcon) we
+  // providers in API_KEY_GATED_LIST_PROVIDERS (SystemOne, RAGcon, Nace) we
   // wait until an api_key is available (typed in the draft form or loaded
   // from instance details). For providers whose form includes a
   // `base_url` field (e.g. Ollama, Xinference, LocalAI) we defer until a
@@ -901,7 +905,9 @@ export function useModelVerify({
 
 interface UseModelMutationsArgs {
   providerName: string;
+  providerID?: string;
   instanceName: string;
+  instanceID?: string;
   isDraftInstance: boolean;
   hideActions: boolean;
   resolveCreds: () => ResolvedCreds;
@@ -924,7 +930,9 @@ interface UseModelMutationsArgs {
 
 export function useModelMutations({
   providerName,
+  providerID,
   instanceName,
+  instanceID,
   isDraftInstance,
   hideActions,
   resolveCreds,
@@ -963,6 +971,8 @@ export function useModelMutations({
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: model.name,
       model_type: model.model_types ?? [],
       max_tokens: model.max_tokens ?? 0,
@@ -982,6 +992,8 @@ export function useModelMutations({
     await deleteInstanceModels({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: [model.name],
     });
   };
@@ -1010,6 +1022,8 @@ export function useModelMutations({
     await addInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: item.name,
       model_type: item.model_types ?? [],
       max_tokens: item.max_tokens ?? 0,
@@ -1053,7 +1067,9 @@ export function useModelMutations({
     const { apiKey, baseUrl } = resolveCreds();
     await updateProviderInstance({
       provider_name: providerName,
+      provider_id: providerID,
       id: instance!.id,
+      instance_id: instance!.id,
       instance_name: instanceName,
       api_key: apiKey,
       base_url: baseUrl,
@@ -1083,9 +1099,18 @@ export function useModelMutations({
 
 interface UseModelEditArgs {
   providerName: string;
+  providerID?: string;
   instanceName: string;
+  instanceID?: string;
   isModelAdded: (name: string) => boolean;
   isDraftInstance?: boolean;
+  /**
+   * Default tool-calling state for models without an explicit
+   * `extra.is_tools`. Draft instances persist tool calling enabled for
+   * every model (see `buildModelInfo`), so the edit dialog must mirror
+   * that default instead of showing the switch off.
+   */
+  defaultToolsEnabled?: boolean;
   updateCatalogModel: (name: string, item: IProviderModelItem) => void;
   clearCatalogOverride: (name: string) => void;
   updateDraftModel?: (item: IProviderModelItem) => void;
@@ -1093,9 +1118,12 @@ interface UseModelEditArgs {
 
 export function useModelEdit({
   providerName,
+  providerID,
   instanceName,
+  instanceID,
   isModelAdded,
   isDraftInstance,
+  defaultToolsEnabled = false,
   updateCatalogModel,
   clearCatalogOverride,
   updateDraftModel,
@@ -1158,6 +1186,12 @@ export function useModelEdit({
         }
       }
     }
+    // Mirror the persisted default for models that carry no explicit
+    // `extra.is_tools` flag - otherwise the switch reads "off" here but
+    // turns on as soon as the instance is saved.
+    if (defaultToolsEnabled && !featureBooleans.has('is_tools')) {
+      features.push('is_tools');
+    }
     // Remaining extra fields (non-feature: element-format selects, etc.).
     const remainingExtra = Object.fromEntries(
       Object.entries(extra).filter(([k]) => !featureBooleans.has(k)),
@@ -1169,7 +1203,7 @@ export function useModelEdit({
       features,
       ...remainingExtra,
     };
-  }, [editingModel, providerFeatureKeys]);
+  }, [editingModel, providerFeatureKeys, defaultToolsEnabled]);
 
   // Persist edits to an existing model. For drafts the backend has no
   // instance yet, so we update the local `draftModels` list instead of
@@ -1194,6 +1228,8 @@ export function useModelEdit({
     const data = await patchInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
+      provider_id: providerID,
+      instance_id: instanceID,
       model_name: targetName,
       max_tokens: item.max_tokens ?? 0,
       model_type: item.model_types ?? [],
@@ -1201,7 +1237,10 @@ export function useModelEdit({
     });
     if (data.code === 0) {
       queryClient.setQueryData<IInstanceModel[]>(
-        LlmKeys.instanceModels(providerName, instanceName),
+        LlmKeys.instanceModels(
+          providerID ?? providerName,
+          instanceID ?? instanceName,
+        ),
         (prev) => {
           if (!prev) return prev;
           const idx = prev.findIndex(

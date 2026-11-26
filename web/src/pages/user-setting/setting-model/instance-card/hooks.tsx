@@ -575,7 +575,8 @@ export function useVerifyProvider(
  */
 export function useDeleteInstance(
   providerName: string,
-  instanceName: string,
+  providerID: string,
+  instanceID: string,
   isDraft: boolean,
   onDelete?: () => void,
 ) {
@@ -586,10 +587,18 @@ export function useDeleteInstance(
     } else {
       await deleteProviderInstance({
         provider_name: providerName,
-        instances: [instanceName],
+        provider_id: providerID,
+        instances: [instanceID],
       });
     }
-  }, [isDraft, providerName, instanceName, deleteProviderInstance, onDelete]);
+  }, [
+    isDraft,
+    providerName,
+    providerID,
+    instanceID,
+    deleteProviderInstance,
+    onDelete,
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -630,16 +639,19 @@ export function useInstanceSave({
 
   const save = useCallback(async () => {
     if (saving) return;
-    const payload = getSavePayload();
-    if (!payload) return;
-    if (isDraft && existingNames?.has(payload.instanceName)) {
-      message.error(tSetting('instanceNameExists'));
-      return;
-    }
-    if (!(await validate())) return;
-
     setSaving(true);
     try {
+      if (!(await validate())) return;
+      const payload = getSavePayload();
+      if (!payload) {
+        message.info(tSetting('noChangesToSave'));
+        return;
+      }
+      if (isDraft && existingNames?.has(payload.instanceName)) {
+        message.error(tSetting('instanceNameExists'));
+        return;
+      }
+
       const ret =
         payload.apiKind === 'add'
           ? await addProviderInstance(payload.payload as any)
@@ -675,6 +687,7 @@ export function useInstanceSave({
 interface UseInstanceSaveStateArgs {
   formRef: RefObject<DynamicFormRef>;
   providerName: string;
+  providerID?: string;
   /** Persisted instance name - used for the dirty-tracking baseline. */
   instanceName: string;
   /**
@@ -724,6 +737,7 @@ interface UseInstanceSaveStateArgs {
 export function useInstanceSaveState({
   formRef,
   providerName,
+  providerID,
   instanceName,
   editedInstanceName,
   instanceId,
@@ -817,8 +831,10 @@ export function useInstanceSaveState({
         return {
           ...transformed,
           provider_name: providerName,
+          provider_id: providerID,
           instance_name: instanceNameOverride ?? editedNameRef.current,
           id: resolvedId,
+          instance_id: resolvedId,
           base_url: transformed.base_url ?? '',
           region: values.region || 'default',
           model_info: modelInfo,
@@ -850,10 +866,12 @@ export function useInstanceSaveState({
       );
       const payload: Record<string, any> = {
         provider_name: providerName,
+        provider_id: providerID,
         // Use the edited name (may differ from the persisted `instanceName`
         // when the user has renamed the instance via double-click).
         instance_name: instanceNameOverride ?? editedNameRef.current,
         id: resolvedId,
+        instance_id: resolvedId,
         base_url: values.base_url,
         region: values.region || 'default',
         model_info: modelInfo,

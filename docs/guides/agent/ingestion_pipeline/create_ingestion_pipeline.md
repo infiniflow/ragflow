@@ -4,7 +4,7 @@ title: Create an Ingestion Pipeline
 sidebar_label: Create an Ingestion Pipeline
 slug: /create_ingestion_pipeline
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideCirclePlus
 }
 ---
 
@@ -18,7 +18,7 @@ An ingestion pipeline parses documents, splits content into chunks, optionally e
 2. Choose **Create from blank**, enter **Name**, and click **Confirm**.
 3. Open the created card. The canvas starts with **Begin → Parser**.
 4. Click **Parser** and configure the file types you need to process. Use its outgoing connection point to add **Token chunker** or **Title chunker**.
-5. Add **Transformer** if you need to enrich chunks, or **Compiler** for knowledge compilation. Connect the final processing step to **Indexer**.
+5. Add **Extractor** if you need to enrich chunks, or **Compiler** for knowledge compilation. Connect the final processing step to **Indexer**.
 6. Configure each component and click **Save draft**. If **Checklist** appears, open it and resolve the reported configuration issues.
 
 A basic flow is **Begin → Parser → Token chunker → Indexer**. Add optional processing steps according to your document requirements.

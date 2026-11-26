@@ -67,16 +67,7 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
         <div className="flex w-full gap-4 flex-col">
           <div className="flex flex-col space-y-1.5">
             <span className="font-semibold text-[14px]">{t('input')}</span>
-            <div
-              style={
-                theme === 'dark'
-                  ? {
-                      backgroundColor: 'rgba(150, 150, 150, 0.2)',
-                    }
-                  : {}
-              }
-              className={`bg-gray-100 p-1 rounded`}
-            >
+            <div className="p-1 rounded">
               <Table>
                 <TableHeader>
                   <TableRow>

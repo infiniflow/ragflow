@@ -4,7 +4,7 @@ title: Configuration
 sidebar_label: Configuration
 slug: /dataset_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideCog
 }
 ---
 
@@ -49,6 +49,8 @@ The following built-in parsing methods are available:
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
 
+Upload a Docling JSON export (`.json`) and use the **General** parsing method to index its body text and headings in reading order. RAGFlow retains page numbers and valid bounding boxes from the export.
+
 ### Built-in Parsing Configuration
 
 After selecting a built-in template parsing method, you can further configure document parsing, chunking, and content enhancement. Appropriate settings can improve the accuracy and recall of subsequent retrieval.
@@ -76,6 +78,7 @@ Configure how PDF documents are parsed. You can select a parsing method based on
   - **DeepDOC:** RAGFlow's default document parser. It performs OCR, table structure recognition, and document layout analysis. It is suitable for PDFs containing complex layouts, images, scanned content, or tables.
   - **Naive:** Suitable for PDFs that primarily contain plain text. It reduces OCR, table recognition, and complex layout analysis, making it faster for simple text-based PDFs.
   - **Docling:** An open-source document parsing tool that can parse PDFs and other documents and extract structured content.
+  - **Mistral OCR:** Add a Mistral OCR model under **Model providers**, then select it as the PDF parsing method. It uses Mistral's OCR endpoint and supports PDF page ranges.
   - **OpenDataLoader:** Extracts text, layout, and structured information from documents. It can serve as an alternative to other built-in parsing methods.
   - **TCADP Parser:** An open-source parser from Tencent that can parse PDF content.
   - **MonkeyOCRv2:** A vision-based parsing method that combines OCR and visual understanding to process scanned documents, complex layouts, and mixed text and images.

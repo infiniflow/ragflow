@@ -20,7 +20,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,22 +33,18 @@ import (
 	"gorm.io/gorm"
 )
 
-var allDatasetTaskTypes = []string{
+var allDatasetTaskTypes = slices.Concat([]string{
 	kccommon.TaskTypeWiki,
 	kccommon.TaskTypeTree,
 	kccommon.TaskTypeGraph,
 	kccommon.TaskTypeMindmap,
-	kccommon.TaskTypeTimeline,
-	kccommon.TaskTypePageIndex,
-}
+}, additionalStructureTaskTypes, []string{kccommon.TaskTypePageIndex})
 
-var structureTaskTypes = []string{
+var structureTaskTypes = slices.Concat([]string{
 	kccommon.TaskTypeGraph,
-	kccommon.TaskTypeTimeline,
-	kccommon.TaskTypePageIndex,
-}
+}, additionalStructureTaskTypes, []string{kccommon.TaskTypePageIndex})
 
-// Dataset ingestion logs use the status values exposed by the Python API and
+// Dataset ingestion logs use the status values exposed by the API and
 // consumed by the shared frontend. The Go scheduler uses a different set of
 // internal terminal names, so translate them at the persistence boundary.
 func datasetLogOperationStatus(status string) string {
@@ -81,7 +78,7 @@ func taskTypesForVariants(variants []string) []string {
 			taskType = kccommon.TaskTypeMindmap
 		case "structure":
 			// Legacy structure events predate the task-type field and cannot
-			// distinguish graph, timeline, and page-index products.
+			// distinguish individual structure products.
 			for _, structureTaskType := range structureTaskTypes {
 				seen[structureTaskType] = struct{}{}
 			}
@@ -127,11 +124,14 @@ func normalizeTaskType(taskType string) string {
 		return kccommon.TaskTypeGraph
 	case "mindmap", "mind_map":
 		return kccommon.TaskTypeMindmap
-	case "timeline":
-		return kccommon.TaskTypeTimeline
 	case "pageindex", "page_index":
 		return kccommon.TaskTypePageIndex
 	default:
+		for _, additional := range additionalStructureTaskTypes {
+			if strings.EqualFold(strings.TrimSpace(taskType), additional) {
+				return additional
+			}
+		}
 		return ""
 	}
 }
@@ -157,12 +157,10 @@ func taskTypesForEntries(entries []BacklogEntry) []string {
 }
 
 func sortedTaskTypes(seen map[string]struct{}) []string {
-	taskTypes := make([]string, 0, len(seen))
-	for taskType := range seen {
-		taskTypes = append(taskTypes, taskType)
+	if len(seen) == 0 {
+		return []string{}
 	}
-	sort.Strings(taskTypes)
-	return taskTypes
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func (c *Consumer) startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken string, entries []BacklogEntry) error {

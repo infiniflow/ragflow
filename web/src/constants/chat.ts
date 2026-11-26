@@ -19,6 +19,11 @@ export enum MessageType {
   User = 'user',
 }
 
+export enum ChatSessionSource {
+  Normal = 'normal',
+  ChatChannel = 'chat_channel',
+}
+
 export enum ChatVariableEnabledField {
   TemperatureEnabled = 'temperatureEnabled',
   TopPEnabled = 'topPEnabled',
@@ -61,8 +66,10 @@ export enum WebSearchProvider {
   Brave = 'brave',
   Exa = 'exa',
   Firecrawl = 'firecrawl',
+  Keirolabs = 'keirolabs',
   Linkup = 'linkup',
   Parallel = 'parallel',
+  Perplexity = 'perplexity',
   Querit = 'querit',
   Search1API = 'search1api',
   SearchApi = 'searchapi',

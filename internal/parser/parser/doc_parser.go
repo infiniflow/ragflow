@@ -28,19 +28,44 @@ import (
 var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
-	textOnly bool
+	wordOptions        wordParserOptions
+	textOnly           bool
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
 }
 
 func NewDOCParser() *DOCParser {
 	return &DOCParser{}
 }
 
+func NewDOCTextParser() *DOCParser {
+	return &DOCParser{textOnly: true}
+}
+
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
+// ConfigureFromSetup implements parserSetupConfigurer, receiving the
+// DSL "doc" family setup map.
+func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	p.wordOptions.configure(setup)
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
+	}
+}
+
 // ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := checkWPSLicense(filename); err != nil {
+		return ParseResult{Err: err}
+	}
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
@@ -49,9 +74,13 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	text, _, err := extractDocText(irJSON, mdText, plainText)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
+	irJSON, irChanged := p.wordOptions.prepareIR(irJSON, nil)
+	var text string
+	if !irChanged {
+		text, _, err = extractDocText(irJSON, mdText, plainText)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
+		}
 	}
 
 	// Prefer the structured IR, which office_oxide recovers table
@@ -66,9 +95,25 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		if !p.textOnly {
 			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 		}
-		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
+		// Once the structured IR changes, use it as the only text source.
+		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 || irChanged {
 			if sink != nil && sink.err != nil {
 				return ParseResult{Err: sink.err}
+			}
+			if p.RemoveHeaderFooter {
+				// extractDOCXHeaderFooterTexts operates best-effort: for DOCX files
+				// misnamed with a .doc extension it extracts header/footer XML parts.
+				// For native OLE2 .doc binaries without a ZIP structure, it returns
+				// an empty map and preserves sections safely.
+				hfTexts := extractDOCXHeaderFooterTexts(data)
+				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
+			}
+			if p.RemoveTOC {
+				outlines := extractDOCXOutlines(irJSON)
+				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+			}
+			if len(sections) == 0 {
+				sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 			}
 			return ParseResult{
 				File:     map[string]any{"name": filename, "format": "doc"},
@@ -82,6 +127,30 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
+	}
+	if p.RemoveTOC {
+		lines := strings.Split(text, "\n")
+		items := make([]map[string]any, 0, len(lines))
+		for _, line := range lines {
+			items = append(items, map[string]any{"text": line, "doc_type_kwd": "text"})
+		}
+		items = removeContentsTable(items, isEnglishItems(items))
+		if len(items) == 0 {
+			return ParseResult{
+				File: map[string]any{"name": filename, "format": "doc"},
+				JSON: []DocItem{NewTextJSONItem("")},
+			}
+		}
+		var sb strings.Builder
+		for i, it := range items {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			if s, ok := it["text"].(string); ok {
+				sb.WriteString(s)
+			}
+		}
+		text = sb.String()
 	}
 	return ParseResult{
 		File: map[string]any{"name": filename, "format": "doc"},

@@ -164,6 +164,17 @@ beforeEach(() => {
   mockDataset = { id: 'kb-1', document_count: 2, chunk_count: 0 };
 });
 
+it('renders settings without the dataset configuration page header', () => {
+  setup();
+
+  expect(
+    screen.queryByText('knowledgeDetails.nextConfiguration'),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('knowledgeConfiguration.titleDescription'),
+  ).not.toBeInTheDocument();
+});
+
 it('saves before prompting, including existing files without chunks, and defaults to No', async () => {
   let finishSave!: (value: { code: number }) => void;
   mockSave.mockReturnValue(

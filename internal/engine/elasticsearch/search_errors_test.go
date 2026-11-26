@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	elastic "github.com/elastic/go-elasticsearch/v8"
+
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
@@ -22,9 +23,7 @@ func (f searchErrorTransport) RoundTrip(r *http.Request) (*http.Response, error)
 // each index query makes a single controlled request.
 func newSearchErrorEngine(t *testing.T, transport searchErrorTransport) *Engine {
 	t.Helper()
-	if err := common.InitLogger("error", common.FileOutput{}, "elasticsearch_search_test"); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("error", common.FileOutput{}, "elasticsearch_search_test")
 	client, err := elastic.NewClient(elastic.Config{Addresses: []string{"http://search.test"}, Transport: transport, DisableRetry: true})
 	if err != nil {
 		t.Fatal(err)

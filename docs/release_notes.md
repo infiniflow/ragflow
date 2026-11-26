@@ -657,7 +657,7 @@ Released on December 27, 2025.
   - Supports voice input/output.
   - Supports configuring multiple **Retrieval** components per **Agent** component.
 - Ingestion pipeline
-  - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
+  - Supports extracting table of contents in the **Extractor** component to improve long-context RAG performance.
 - Dataset
   - Supports configuring context window for images and tables.
   - Introduces parent-child chunking strategy.
@@ -1152,7 +1152,7 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing.
-- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration).
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration-component).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
@@ -1175,12 +1175,12 @@ The **Tag dataset** feature is *unavailable* on the [Infinity](https://github.co
 - [Retrieval component](./guides/agent/agent_workflow/basic_component.md#retrieval-component)
 - [Categorize component](./guides/agent/agent_workflow/flow_components.md#categorize-component)
 - [Keyword component]
-- [Message component](./guides/agent/agent_workflow/dialogue_component.md#reply-message-component)
+- [Message component](./guides/agent/agent_workflow/dialogue_component.md#message-component)
 - [Rewrite component]
 - [Switch component](./guides/agent/agent_workflow/flow_components.md#switch-component)
 - [Concentrator component]
 - [Template component]
-- [Iteration component](./guides/agent/agent_workflow/flow_components.md#iteration)
+- [Iteration component](./guides/agent/agent_workflow/flow_components.md#iteration-component)
 - [Note component]
 
 ## v0.15.1

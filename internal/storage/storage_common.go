@@ -18,12 +18,45 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"time"
 
 	"ragflow/internal/common"
 
+	gcs "cloud.google.com/go/storage"
+	"github.com/minio/minio-go/v7"
 	"go.uber.org/zap"
+	"google.golang.org/api/googleapi"
 )
+
+// IsNotFound reports whether an object or bucket is missing from storage.
+func IsNotFound(err error) bool {
+	if errors.Is(err, ErrMemoryNotFound) || errors.Is(err, gcs.ErrObjectNotExist) || IsBucketNotFound(err) || isS3NotFound(err) {
+		return true
+	}
+	var minioErr minio.ErrorResponse
+	if errors.As(err, &minioErr) {
+		return minioErr.Code == "NoSuchKey" || minioErr.Code == "NoSuchBucket" || minioErr.Code == "NotFound"
+	}
+	return false
+}
+
+// IsBucketNotFound reports a missing bucket without matching object-level
+// 404s, so a bucket removal cannot mistake a missing object for a missing
+// bucket. GCS's object iterator returns a raw googleapi 404 for this case,
+// while object handles wrap theirs in a typed sentinel.
+func IsBucketNotFound(err error) bool {
+	if errors.Is(err, ErrMemoryNotFound) || errors.Is(err, gcs.ErrBucketNotExist) || isS3BucketNotFound(err) {
+		return true
+	}
+	var minioErr minio.ErrorResponse
+	if errors.As(err, &minioErr) {
+		return minioErr.Code == "NoSuchBucket" || minioErr.Code == "NotFound"
+	}
+	var apiErr *googleapi.Error
+	return errors.As(err, &apiErr) && apiErr.Code == http.StatusNotFound
+}
 
 // retryObjectOp runs op up to attempts times, sleeping one second between
 // attempts and invoking onRetry (e.g. a client reconnect) before each sleep.

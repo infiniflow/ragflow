@@ -183,16 +183,54 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > fi
 >
-> export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
-> export CGO_LDFLAGS="\
->     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
->     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     ${ORT_LINK} \
->     ${SYS_LIBS}"
+> # Native libs are version-keyed under <lib>/v<version>/ (one mounted cache can
+> # hold several versions at once), matching the layout download_dev_deps.py and
+> # build.sh resolve. Resolve each version from its single source of truth — NOT
+> # by glob + `head -1`, which silently pins the lexicographically-oldest version
+> # in the cache (e.g. v0.1.12 over the pinned v0.1.16, dropping PPT97 slide
+> # content). build.sh does exactly this in setup_cgo_env(); mirror it here.
+> # Run this snippet from the ragflow repo root (where go.mod lives).
+> source tools/scripts/native_lib_version.sh
+> REPO_ROOT="$(pwd)"
+> OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go" "$REPO_ROOT")"
+> PDFIUM_STATIC_VERSION="$(pdfium_static_version "$REPO_ROOT")"
+> PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$REPO_ROOT")"
+>
+> OFFICE_OXIDE_PREFIX="${RAGFLOW_DEPS}/office_oxide/v${OFFICE_OXIDE_VERSION}"
+> PDFIUM_PREFIX="${RAGFLOW_DEPS}/pdfium-static/v${PDFIUM_STATIC_VERSION}"
+> PDF_OXIDE_PREFIX="${RAGFLOW_DEPS}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+> # Keep the Go link cache keyed to PDFium contents, even for a reissued archive
+> # with the same version. Resolve the same linker paths as build.sh.
+> if PDFIUM_LINK_DIR="$(pdfium_static_link_dir "${PDFIUM_PREFIX}/lib" "$TARGET_OS" "${REPO_ROOT}/.cache/pdfium")"; then
+>   OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+>   PDFIUM_A="${PDFIUM_LINK_DIR}/libpdfium.a"
+>   PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
+>   # macOS PDFium uses the system libc++ provided by the flags above.
+>   PDFIUM_CXX_ARCHIVES=""
+>   if [ "$TARGET_OS" = "linux" ]; then
+>     PDFIUM_CXX_ARCHIVES="\"${PDFIUM_LINK_DIR}/libc++.a\" \"${PDFIUM_LINK_DIR}/libc++abi.a\""
+>   fi
+>
+>   # Derive the include dir from the resolved office_oxide archive: the shell does
+>   # not expand globs inside double quotes, so a literal
+>   # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
+>   # cgo would fail to find office_oxide.h on the first native compile.
+>   export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
+>   export CGO_LDFLAGS="\
+>       ${OFFICE_OXIDE_A} \
+>       \"${PDFIUM_A}\" \
+>       ${PDFIUM_CXX_ARCHIVES} \
+>       ${PDF_OXIDE_A} \
+>       ${ORT_LINK} \
+>       ${SYS_LIBS}"
+> else
+>   unset CGO_CFLAGS CGO_LDFLAGS
+>   printf '%s\n' 'Could not prepare PDFium linker inputs. Run uv run tools/scripts/download_dev_deps.py.' >&2
+>   false
+> fi
 > ```
+>
+> When sourcing this block from a build script, check its exit status before invoking Go.
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
@@ -214,23 +252,27 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run tools/scripts/download_dev_deps.py` (or pre-seed
-> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
-> no ORT-free production build path — if ORT is absent the binary fails at
-> startup, so the remedy is always to seed the static lib above, never to build
-> without it.
+> `uv run tools/scripts/download_dev_deps.py` (or pre-seed the versioned user
+> cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/static_lib
+> `; CI mounts the host cache into the builder). There is no ORT-free
+> production build path — if ORT is absent the binary fails at startup, so the
+> remedy is always to seed the static lib above, never to build without it.
 
-> **Note**: The ONNX Runtime native version is pinned in a few places that must
-> stay in sync. Bumping it in one spot and not the others fails the build with
+> **Note**: The ONNX Runtime native version is pinned in two places that must
+> stay in sync. Bumping one and not the other fails the build with
 > `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
 > - `Dockerfile` — `ARG ORT_VERSION`
-> - `tools/scripts/download_dev_deps.py` — `ORT_VERSION` (used by the dev downloader to fetch the matching release; build.sh does not grep it, but it must match what gets linked)
+>
+> `build.sh` and `tools/scripts/download_dev_deps.py` derive the ORT version at
+> build/download time from `DeepDocORTVersion` in `environments.go` (the Go const
+> is the single source of truth), so the downloader has no separate `ORT_VERSION`
+> pin to edit. To upgrade ORT, edit the two entries above to the same version,
+> then run the check.
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
-> with `./build.sh --check-ort-version`. To upgrade ORT, edit every entry above
-> to the same version, then run the check. The Python pip `onnxruntime==` pin in
+> with `./build.sh --check-ort-version`. The Python pip `onnxruntime==` pin in
 > `pyproject.toml` is versioned independently and is intentionally not part of
 > this check.
 
@@ -243,9 +285,10 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   published `onnxruntime-v<ver>-<target>.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
 >   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_dev_deps.py`);
->   the build continues checking and linking the extracted static libraries. CI seeds
->   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
->   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   the build continues checking and linking the extracted static libraries. On CI
+>   the version-keyed cache is mounted from the build host and no local ZIP is
+>   present, so the sha256 check is skipped there and the mounted cache seed is
+>   treated as authoritative. This matters because the `onnxruntime_go` binding reaches
 >   ORT only through the OrtApi function-pointer table
 >   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
 >   successfully and only crashes at runtime — not at link time.
@@ -320,13 +363,13 @@ missing from the model directory.
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
-- **Run the binary directly (local dev)** — `./bin/ragflow_server --api`
-  (start `--admin` first, see §2) launches the Go server and registers the
+- **Run the binary directly (local dev)** — `./bin/ragflow_server`
+  (see §2) launches all services in one Go process and registers the
   backend. Run it from the repo root so the weights above are auto-discovered
   (see the CWD caveat); no environment variable is required there.
 
 - **Run the Go Docker image** — the container entrypoint only starts the server
-  (`bin/ragflow_server --api/--ingestor/--admin`)
+  (`bin/ragflow_server`)
 
 - ORT is resolved via `dlopen(NULL)` at runtime, so no `LD_LIBRARY_PATH` /
   `-rpath` is needed and no `libonnxruntime.so` ships with the image.
@@ -367,10 +410,13 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
   and Excelize expose already materialized image bytes, so these budgets bound
   emitted/cached payloads, not native extraction or ZIP decoding peak memory.
-  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures;
-  XLSX-content spreadsheets use an extension allowlist, including EMZ/WMZ
-  which the byte-only Office detector does not recognize. Unsupported images
-  are skipped with warnings.
+  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures,
+  including the decompressed headers of EMZ/WMZ. XLSX-content spreadsheets
+  use an extension allowlist. Unsupported images are skipped with warnings.
+  The shared media sink renders WMF and EMF to PNG before caching. Standalone
+  metafiles use the same renderer before OCR and vision enhancement. The
+  transcoder can substitute installed fonts for missing Windows Chinese font
+  families when the metafile can be rendered without changing glyph identities.
   File text extraction and email attachment re-chunking use text-only parsers;
   Office images skipped by limits produce warnings without placeholder items.
   Debug previews use a temporary `pipeline_<document-id>` run scope and purge
@@ -384,39 +430,59 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   ```
 
 - Start RAGFlow
-Note: Database migrations must complete before starting any server mode.
-After migration, start the admin server before the API and ingestor servers;
-otherwise, they will encounter errors when sending heartbeats.
 
 ```bash
-# Run database migrations (standalone action; does not start a server)
-./bin/ragflow_server --migrate
+./bin/ragflow_server
 ```
-`--migrate` writes the database version marker that server modes check on
-startup, and a development branch regularly records a version for a release
-that has not been tagged yet — a build from a `v0.27.x` commit that writes
-`v1.0.0-rc1` refuses to start afterwards, because the recorded version
-looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
-such a checkout: it turns the "code version must not be older than the database
-version" guard off. Leave it off in production.
 
+The OSS executable runs all services in one Go process. It migrates the database, starts Admin and initializes the
+superuser, waits for API readiness, then starts Ingestor, Syncer and Chatter.
+Services run as goroutines, sharing process-wide connections, model resources and
+tokenizers. They stop together on failure or shutdown.
+Admin defaults to port 9381 and API to 9380. `--port 9400` overrides the API port;
+`--admin --port 9401` overrides the port when running only Admin. Configuration
+and environment values apply when `--port` is omitted.
+`bash build.sh --run` builds and starts this executable.
+
+Chatter executes Chat and Agent turns through the REST API at `api.host` /
+`api.http_port`, using the first tenant API key whose user can run the bound
+chat or agent. A wildcard API host resolves to loopback for these requests. Create an API
+key before adding a channel; if all keys are deleted, channel execution is rejected.
+Channel configuration reconciliation and runtime status still use the existing
+database and Kvrocks paths. Completion requests carry validated channel context so
+conversation history, channel labels, and Agent workflow refresh/resume survive
+the HTTP boundary.
+
+To run an individual service, select exactly one of `--admin`, `--api`,
+`--ingestor`, `--syncer` or `--chatter`. Run `./bin/ragflow_server --migrate`
+before starting individual services; it applies database migrations and exits.
+The `--admin` mode also initializes the superuser. Standalone DeepDoc inference
+servers require the enterprise edition.
+
+Service identities come from `<service>.name` or `RAGFLOW_<SERVICE>_NAME`.
+Admin discovery uses `admin.host` / `admin.http_port` or
+`RAGFLOW_ADMIN_HOST` / `RAGFLOW_ADMIN_HTTP_PORT`. Ingestor concurrency uses
+`ingestor.concurrent_workers` / `ingestor.page_concurrency` or
+`RAGFLOW_INGESTOR_CONCURRENT_WORKERS` / `RAGFLOW_INGESTOR_PAGE_CONCURRENCY`.
+Environment variables override the corresponding configuration values.
+`--profile` enables profiling for the whole process.
+
+The log level defaults to `warn`. Override it with `log.level`,
+`RAGFLOW_LOG_LEVEL`, or `--log-level` (in increasing precedence).
+For `warn` and `error`, startup logs remain at `info` until all services are ready,
+then switch to the selected level. `debug` and `info` apply throughout startup.
+
+Validate startup and shutdown against isolated test dependencies with:
 
 ```bash
-# Start admin server
-./bin/ragflow_server --admin
+RAGFLOW_SINGLE_PROCESS_TEST_CONFIG=/absolute/path/to/test-service-conf.yaml bash build.sh --test-integration-go -run '^TestSingleProcessStartupAndShutdown$' ./cmd
 ```
 
+The test migrates the supplied test database, checks both HTTP listeners and
+verifies that no child RAGFlow server is launched before shutting everything down.
 
-
-```bash
-# Start RAGFlow server
-./bin/ragflow_server --api
-```
-
-```bash
-# Start RAGFlow ingestor
-./bin/ragflow_server --ingestor
-```
+Leave `RAGFLOW_DEV_MODE` unset in production. It bypasses the code-versus-database
+version check and is intended only for development checkouts.
 
 ```bash
 # Run CLI in API mode

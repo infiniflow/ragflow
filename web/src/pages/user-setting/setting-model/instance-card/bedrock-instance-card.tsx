@@ -59,6 +59,7 @@ import {
   InstanceSavePayload,
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
+  canManageProviderInstance,
 } from './interface';
 import {
   applySavedCredentialEdits,
@@ -72,6 +73,7 @@ import {
   pickSavedProviderConfigOverrides,
 } from './saved-provider-config';
 import { InstanceSaveButton } from './components/instance-save-button';
+import { InstanceNameSection } from './components/instance-name-section';
 import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
@@ -130,20 +132,28 @@ export const BedrockInstanceCard = forwardRef<
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
+  const [draftNameError, setDraftNameError] = useState('');
   const modelInfoRef = useRef<IModelInfo[]>([]);
   const modelsLoadedRef = useRef(false);
 
   useEffect(() => {
     if (isDraft) {
       setDraftName('');
+      setDraftNameError('');
     }
   }, [providerName, isDraft]);
 
+  const handleDraftNameChange = useCallback((name: string) => {
+    setDraftName(name);
+    setDraftNameError('');
+  }, []);
+
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
-      isDraft ? '' : providerName,
+      isDraft ? '' : instance.provider_id || providerName,
       isDraft ? '' : instance.id,
     );
+  const canManage = canManageProviderInstance(instance);
 
   const FormSchema = useMemo(
     () =>
@@ -509,7 +519,8 @@ export const BedrockInstanceCard = forwardRef<
     } else {
       await deleteProviderInstance({
         provider_name: providerName,
-        instances: [instance.instance_name],
+        provider_id: instance.provider_id,
+        instances: [instance.id],
       });
     }
   }, [
@@ -623,7 +634,10 @@ export const BedrockInstanceCard = forwardRef<
   // Form validation shared by the header Save button and the
   // imperative API.
   const validate = useCallback(async () => {
-    if (isDraft && !draftNameRef.current.trim()) return false;
+    if (isDraft && !draftNameRef.current.trim()) {
+      setDraftNameError(tSetting('instanceNameMessage'));
+      return false;
+    }
     if (!isDraft && !modelsLoadedRef.current) {
       message.error(tSetting('selectModelBeforeSave'));
       return false;
@@ -886,40 +900,14 @@ export const BedrockInstanceCard = forwardRef<
     >
       {isDraft ? (
         <div className="px-2 py-3 flex flex-col gap-4">
-          <div
-            className="flex flex-col gap-1.5"
-            data-testid="instance-name-section"
-          >
-            <label
-              htmlFor="instance-name-input"
-              className="text-sm font-medium text-text-primary"
-            >
-              <span className="text-destructive mr-0.5">*</span>
-              {tSetting('instanceName')}
-            </label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="instance-name-input"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                placeholder={tSetting('instanceNamePlaceholder')}
-                className="flex-1"
-                data-testid="instance-name-input"
-              />
-              <ConfirmDeleteDialog onOk={handleDelete}>
-                <Button
-                  variant="delete"
-                  size="icon-sm"
-                  className="shrink-0"
-                  aria-label={tSetting('deleteInstance')}
-                  data-testid="draft-delete"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </ConfirmDeleteDialog>
-              <InstanceSaveButton onSave={handleSave} saving={saving} />
-            </div>
-          </div>
+          <InstanceNameSection
+            draftName={draftName}
+            setDraftName={handleDraftNameChange}
+            error={draftNameError}
+            handleDelete={handleDelete}
+            handleSave={handleSave}
+            saving={saving}
+          />
 
           {renderFields()}
 
@@ -968,18 +956,22 @@ export const BedrockInstanceCard = forwardRef<
                   {draftName || instance.instance_name}
                 </span>
               </div>
-              <ConfirmDeleteDialog onOk={handleDelete}>
-                <Button
-                  variant="delete"
-                  size="icon-sm"
-                  aria-label={tSetting('deleteInstance')}
-                  data-testid="instance-delete"
-                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </ConfirmDeleteDialog>
-              <InstanceSaveButton onSave={handleSave} saving={saving} />
+              {canManage && (
+                <ConfirmDeleteDialog onOk={handleDelete}>
+                  <Button
+                    variant="delete"
+                    size="icon-sm"
+                    aria-label={tSetting('deleteInstance')}
+                    data-testid="instance-delete"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </ConfirmDeleteDialog>
+              )}
+              {canManage && (
+                <InstanceSaveButton onSave={handleSave} saving={saving} />
+              )}
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent
@@ -992,10 +984,10 @@ export const BedrockInstanceCard = forwardRef<
               {instanceDetails && (
                 <div className="pt-3">
                   <ModelsSection
-                    providerName={providerName}
+                    providerName={instance.provider_id || providerName}
                     instanceName={instance.instance_name || '__draft__'}
                     instance={{ ...instance, ...(instanceDetails ?? {}) }}
-                    hideActions={false}
+                    hideActions={!canManage}
                     hideIfEmpty={false}
                     instanceDetailsLoaded
                     getFormValues={getModelFormValues}

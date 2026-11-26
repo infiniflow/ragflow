@@ -15,13 +15,11 @@
  */
 
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { LucideIcon } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
 
 export interface PillToggleGroupOption {
   value: string;
   label: ReactNode;
-  icon?: LucideIcon;
 }
 
 // Single-select pill-style tab group built on the shared ToggleGroup. Unlike
@@ -62,14 +60,7 @@ export function PillToggleGroup({
           value={option.value}
           className="flex-initial rounded-full border-0.5 border-border-default px-4 text-text-disabled first:rounded-l-full last:rounded-r-full hover:text-text-primary data-[state=on]:bg-bg-card data-[state=on]:text-text-primary"
         >
-          {option.icon ? (
-            <span className="flex items-center gap-1.5">
-              <option.icon className="size-4" />
-              {option.label}
-            </span>
-          ) : (
-            option.label
-          )}
+          {option.label}
         </ToggleGroupItem>
       ))}
     </ToggleGroup>

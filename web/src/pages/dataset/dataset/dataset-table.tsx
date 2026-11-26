@@ -18,7 +18,6 @@ import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -30,7 +29,9 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
+import { hasManagePermissionPermission } from '@/ee/utils/permission-util';
 import ProcessLogModal from '../process-log-modal';
 import {
   ChangeParserDialog,
@@ -39,6 +40,7 @@ import {
 import { useShowLog } from './hooks';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
+import { hasEditPermission } from '@/ee/utils/permission-util';
 import { useRenameDocument } from './use-rename-document';
 
 export type DatasetTableProps = Pick<
@@ -47,7 +49,6 @@ export type DatasetTableProps = Pick<
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
-    bulkOperateBarVisible?: boolean;
   };
 
 export function DatasetTable({
@@ -57,7 +58,6 @@ export function DatasetTable({
   rowSelection,
   setRowSelection,
   showManageMetadataModal,
-  bulkOperateBarVisible = false,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -87,7 +87,8 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { showLog, logInfo, logVisible, hideLog, datasetId, logId } =
+    useShowLog(documents);
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
@@ -96,7 +97,6 @@ export function DatasetTable({
     showLog,
     setRowSelection,
   });
-
   const currentPagination = useMemo(() => {
     return {
       pageIndex: (pagination.current || 1) - 1,
@@ -113,6 +113,8 @@ export function DatasetTable({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: (row) =>
+      hasEditPermission(row.original.operator_permission ?? 0),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     getRowId: (row) => row.id, // Use document ID instead of row index
@@ -128,12 +130,16 @@ export function DatasetTable({
   });
 
   return (
-    <div className="w-full">
-      <Table
-        rootClassName={
-          bulkOperateBarVisible
-            ? 'max-h-[calc(100vh-320px)]'
-            : 'max-h-[calc(100vh-280px)]'
+    <>
+      <DatasetTableLayout
+        pagination={
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={pagination.total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
         }
       >
         <TableHeader>
@@ -182,25 +188,18 @@ export function DatasetTable({
             </TableRow>
           )}
         </TableBody>
-      </Table>
-      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-8">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...pick(pagination, 'current', 'pageSize')}
-            total={pagination.total}
-            onChange={(page, pageSize) => {
-              setPagination({ page, pageSize });
-            }}
-          ></RAGFlowPagination>
-        </div>
-      </div>
+      </DatasetTableLayout>
       {changeParserVisible && (
         <ChangeParserDialog
           record={changeParserRecord}
-          visible={changeParserVisible}
           onOk={onChangeParserOk}
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
+          readOnly={
+            !hasManagePermissionPermission(
+              changeParserRecord.operator_permission ?? 0,
+            )
+          }
         />
       )}
 
@@ -228,8 +227,10 @@ export function DatasetTable({
           visible={logVisible}
           onCancel={() => hideLog()}
           logInfo={logInfo}
+          datasetId={datasetId}
+          logId={logId}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -21,7 +21,6 @@ package ingestor
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/server/local"
 	"time"
 
 	"go.uber.org/zap"
@@ -33,12 +32,9 @@ import (
 	ingestioncore "ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/ingestion/task"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 	"ragflow/internal/service"
-	"ragflow/internal/service/nav"
-	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
 
@@ -62,28 +58,8 @@ func logTokenizerCounters() {
 // Run starts the RAGFlow ingestion worker. It blocks until ctx is cancelled
 // (OS shutdown signal) or the ingestor receives a shutdown command from the
 // admin, then gracefully stops the ingestor.
-func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, serverType common.ServerType, cancel context.CancelFunc, arguments *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	globalConfig := server.GetConfig()
-	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
-	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
-	bootstrap.SetIngestLog(serverName)
-	defer common.SyncIngestLog()
-
-	// Initialize tokenizer (rag_analyzer)
-	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
-	err := tokenizer.Init(&tokenizer.PoolConfig{})
-	if err != nil {
-		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
-	}
-	defer tokenizer.Close()
-
-	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
-	// TrimContentToTokenLimit now panic rather than degrading silently, so this
-	// trades a mid-request panic for a clear startup failure.
-	err = tokenizer.InitCL100KEncoder()
-	if err != nil {
-		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
-	}
 	logTokenizerCounters()
 
 	// The dataset-level post-processing consumer cluster (§11) is owned and run by
@@ -95,9 +71,15 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.
 	ingestorCfg := globalConfig.GetIngestorConfig()
-	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
+	// Resolve the ingestor worker count (K) from env > config > default(1)
 	// and fail fast on an out-of-range value.
-	workers, err := globalConfig.GetIngestorConcurrentWorkers(args.IngestorConcurrentWorkers)
+	workers, err := globalConfig.GetIngestorConcurrentWorkers()
+	if err != nil {
+		return err
+	}
+	// Resolve the ingestor tier (which lanes this ingestor consumes) from
+	// CLI > env > default(low), failing fast on an invalid value.
+	tier, err := globalConfig.GetIngestorTier(arguments.IngestorTier)
 	if err != nil {
 		return err
 	}
@@ -117,37 +99,12 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		common.Error("Invalid ingestor dependencies", err)
 		return fmt.Errorf("ingestor dependencies invalid: %w", err)
 	}
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), []string{"pdf", "docx", "txt"}, ingestorDeps)
+	ingestor := ingestion.NewIngestor(*arguments.Name, int32(workers), tier, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
 	)
-	// The dataset-level knowledge-compile consumer (tree/structure products) upserts
-	// into the dataset-nav tree, so the Ingestor must install the same ES-backed
-	// NavService the API server installs. Without this, nav.GetNavService() returns
-	// nil and tree/structure products are dropped (the consumer logs "nav service
-	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
-	// The embedder resolves the tenant's embedding model on demand, so both
-	// Search and UpsertDoc can embed queries/summaries automatically.
-	navService := nlp.NewNavService(service.NewNavEmbedder(service.NewModelFactory(), ""))
-	// The cluster namer/merger is the counterpart of Python's
-	// _llm_create_summary / _llm_merge: a new cluster is named after the model's
-	// topic title and an existing cluster's description is fused with the joining
-	// document. Passing an empty model ref resolves each tenant's default chat
-	// model on demand; without one the nav service keeps its deterministic
-	// behavior.
-	navService.SetNavMergeLLM(service.NewNavMergeLLM(service.NewModelFactory(), ""))
-	nav.SetNavService(navService)
-	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
-	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
-	// so there is no longer a dedicated Redis memory consumer to start.
-	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))))
-	// Bind the relational handle and document engine into the production
-	// embedder and knowledge-compiler resolvers. The task package is the
-	// composition root for ingestion runs; it reads these from the explicit
-	// bindings rather than the package globals.
-	task.InitEmbedderResolver(dao.DB)
-	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(services.MemoryService))
 
 	// Start returns immediately (it launches the owned consume/compile
 	// goroutines and joins them via Stop); a provisioning failure here must
@@ -158,21 +115,17 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		return err
 	}
 
-	common.Info("\n    ____                      __  _\n" +
-		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
-		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
-		" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
-		"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
-		"          /____/\n")
+	if serverType == common.ServerTypeIngestion {
+		common.Info("\n    ____                      __  _\n" +
+			"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
+			"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
+			" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
+			"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
+			"          /____/\n")
+	}
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
-
-	// Init admin client status in ingestor
-	local.InitAdminStatus()
-
-	// Set log level
-	bootstrap.SetLogger(serverName, args)
 
 	// Start heartbeat reporter to admin server
 	if hb := bootstrap.StartHeartbeat(
@@ -181,26 +134,35 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
+		defer hb.Wait()
 		defer hb.Stop()
+	}
+
+	var readyErr error
+	if arguments.Ready != nil {
+		readyErr = arguments.Ready()
+		if readyErr != nil {
+			cancel()
+		}
 	}
 
 	// Wait for either an OS shutdown signal or a shutdown command from the admin
 	select {
 	case <-ctx.Done():
 		common.Info("Received shutdown signal")
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *arguments.Name))
 	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.Name))
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *arguments.Name))
 		cancel()
 	}
 
 	// Create context with timeout for graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
 	ingestor.Stop(shutdownCtx)
 
-	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.Name))
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *arguments.Name))
 
-	return nil
+	return readyErr
 }

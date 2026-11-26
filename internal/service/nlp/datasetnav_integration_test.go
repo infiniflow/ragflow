@@ -83,9 +83,7 @@ func findNavRow(t *testing.T, tenantID, kbID, docID string) map[string]interface
 // ("tree"/"page_index") since the #20587 field-name refactor, so the row is
 // located and asserted by type_kwd.
 func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "")
 	configPath := filepath.Join(repoRootOf(t), "conf", "service_conf.yaml")
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config: %v", err)

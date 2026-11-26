@@ -44,8 +44,6 @@ const apiEndpoints = {
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
   // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
-  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
-  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
@@ -59,71 +57,106 @@ const apiEndpoints = {
   listInstanceModels: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
   showProviderInstance: ({
     provider_name,
     id,
+    provider_id,
   }: {
     provider_name: string;
     id: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
+    provider_id?: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${id}`,
   addInstanceModel: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
   editInstanceModel: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
-  deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
-    `${restAPIv1}/providers/${provider_name}/instances`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
+  deleteProviderInstance: ({
+    provider_name,
+    provider_id,
+  }: {
+    provider_name: string;
+    provider_id?: string;
+  }) => `${restAPIv1}/providers/${provider_id || provider_name}/instances`,
   updateProviderInstance: ({
     provider_name,
     id,
+    provider_id,
   }: {
     provider_name: string;
     id: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
+    provider_id?: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${id}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
     model_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
     model_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models/${model_name}`,
   patchInstanceModel: ({
     provider_name,
     instance_name,
     model_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
     model_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models/${model_name}`,
   deleteInstanceModels: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
 
   // data source
   dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -225,6 +258,8 @@ const apiEndpoints = {
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   getPipelineDetail: (datasetId: string, logId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
+  getIngestionProgress: (datasetId: string, logId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}/progress`,
   listIngestionMessages: (datasetId: string, logId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}/messages`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
@@ -513,8 +548,6 @@ const apiEndpoints = {
   adminUpdateRoleDescription: (roleName: string) =>
     `${restAPIv1}/admin/roles/${roleName}`,
 
-  adminUpdateUserRole: (username: string) =>
-    `${restAPIv1}/admin/users/${username}/role`,
   adminGetUserPermissions: (username: string) =>
     `${restAPIv1}/admin/users/${username}/permissions`,
 
@@ -548,9 +581,9 @@ const apiEndpoints = {
   skillReindex: `${restAPIv1}/skills/reindex`,
 };
 
-// Enterprise customization overlays: the enterprise repository carries a real
-// implementation of the same-path file `web/src/ee/utils/api-private.ts`;
-// upstream ships it as an empty object so this import resolves in both trees.
-// Enterprise endpoints must live only in the ee/ file, never here. Keys in
+// Enterprise customization overlays: the enterprise repository carries real
+// implementations under `web/src/ee/utils/`; upstream ships no-op stubs under
+// `web/src/ee-stub/utils/` so this import resolves in both trees. Enterprise
+// endpoints must live only in the enterprise ee/ file, never here. Keys in
 // the overlay override or extend `apiEndpoints`.
 export default merge(apiEndpoints, apiPrivate);

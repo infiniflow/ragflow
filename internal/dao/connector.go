@@ -60,12 +60,12 @@ type ConnectorDatasetListItem struct {
 	Status    string `json:"status" gorm:"column:status"`
 }
 
-// ListByTenantID returns connector summaries for a tenant.
-func (dao *ConnectorDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*ConnectorListItem, error) {
+// ListByTenantIDAndUserID returns connector summaries owned by a user in a tenant.
+func (dao *ConnectorDAO) ListByTenantIDAndUserID(ctx context.Context, db *gorm.DB, tenantID, userID string) ([]*ConnectorListItem, error) {
 	connectors := make([]*ConnectorListItem, 0)
 	err := db.WithContext(ctx).Model(&entity.Connector{}).
 		Select("id", "name", "source", "status").
-		Where("tenant_id = ?", tenantID).
+		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Find(&connectors).Error
 
 	if err != nil {

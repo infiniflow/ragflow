@@ -14,10 +14,9 @@ import (
 // per-box geometry signals those detectors rely on are still intact; they are
 // intentionally not repeated here.
 type pdfPostProcessOptions struct {
-	pageWidth          float64
-	zoom               float64
-	enableMultiColumn  bool
-	flattenMediaToText bool
+	pageWidth         float64
+	zoom              float64
+	enableMultiColumn bool
 	// parseMethod carries the PDFParser.ParseMethod so the DeepDoc analyzer can
 	// be resolved per request (in-process vs a registered external backend).
 	// Empty means the historical in-process default.
@@ -33,7 +32,7 @@ func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOpt
 		reorderPDFMultiColumn(result, opts.pageWidth, opts.zoom)
 	}
 	normalizePDFLayoutTypes(result)
-	assignPDFDocTypeKeywords(result, opts.flattenMediaToText)
+	assignPDFDocTypeKeywords(result)
 }
 
 func normalizePDFLayoutTypes(result *deepdoctype.ParseResult) {
@@ -46,13 +45,9 @@ func normalizePDFLayoutTypes(result *deepdoctype.ParseResult) {
 	}
 }
 
-func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult, flatten bool) {
+func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult) {
 	for i := range result.Sections {
 		section := &result.Sections[i]
-		if flatten {
-			section.DocTypeKwd = "text"
-			continue
-		}
 		switch strings.TrimSpace(section.LayoutType) {
 		case deepdoctype.LayoutTypeTable:
 			section.DocTypeKwd = "table"
@@ -91,6 +86,46 @@ func sortSectionsByPosition(result *deepdoctype.ParseResult) {
 	})
 }
 
+// sectionGeometry caches the geometry used by the multi-column ordering so
+// the O(n^2) comparison loop never rescans every position of a section.
+type sectionGeometry struct {
+	page int
+	left float64
+	top  float64
+}
+
+func sectionGeometryOf(s deepdoctype.Section) sectionGeometry {
+	return sectionGeometry{
+		page: firstSectionPage(s),
+		left: firstSectionLeft(s),
+		top:  firstSectionTop(s),
+	}
+}
+
+// sortedSections keeps sections and their cached geometry in lockstep while
+// sorting, mirroring the original sort.Slice comparator exactly.
+type sortedSections struct {
+	sections []deepdoctype.Section
+	keys     []sectionGeometry
+}
+
+func (s sortedSections) Len() int { return len(s.sections) }
+
+func (s sortedSections) Less(i, j int) bool {
+	if s.keys[i].page != s.keys[j].page {
+		return s.keys[i].page < s.keys[j].page
+	}
+	if math.Abs(s.keys[i].left-s.keys[j].left) > 1e-6 {
+		return s.keys[i].left < s.keys[j].left
+	}
+	return s.keys[i].top < s.keys[j].top
+}
+
+func (s sortedSections) Swap(i, j int) {
+	s.sections[i], s.sections[j] = s.sections[j], s.sections[i]
+	s.keys[i], s.keys[j] = s.keys[j], s.keys[i]
+}
+
 func reorderPDFMultiColumn(result *deepdoctype.ParseResult, pageWidth, _ float64) {
 	if result == nil || len(result.Sections) < 2 {
 		return
@@ -115,29 +150,24 @@ func reorderPDFMultiColumn(result *deepdoctype.ParseResult, pageWidth, _ float64
 		return
 	}
 
-	sort.Slice(result.Sections, func(i, j int) bool {
-		pi, pj := firstSectionPage(result.Sections[i]), firstSectionPage(result.Sections[j])
-		if pi != pj {
-			return pi < pj
-		}
-		xi, xj := firstSectionLeft(result.Sections[i]), firstSectionLeft(result.Sections[j])
-		if math.Abs(xi-xj) > 1e-6 {
-			return xi < xj
-		}
-		return firstSectionTop(result.Sections[i]) < firstSectionTop(result.Sections[j])
-	})
+	keys := make([]sectionGeometry, len(result.Sections))
+	for i := range result.Sections {
+		keys[i] = sectionGeometryOf(result.Sections[i])
+	}
+	sort.Sort(sortedSections{sections: result.Sections, keys: keys})
 
 	threshold := medianWidth / 2
 	for i := len(result.Sections) - 1; i >= 1; i-- {
 		for j := i - 1; j >= 0; j-- {
-			if firstSectionPage(result.Sections[j]) != firstSectionPage(result.Sections[j+1]) {
+			if keys[j].page != keys[j+1].page {
 				continue
 			}
-			if math.Abs(firstSectionLeft(result.Sections[j])-firstSectionLeft(result.Sections[j+1])) >= threshold {
+			if math.Abs(keys[j].left-keys[j+1].left) >= threshold {
 				continue
 			}
-			if firstSectionTop(result.Sections[j+1]) < firstSectionTop(result.Sections[j]) {
+			if keys[j+1].top < keys[j].top {
 				result.Sections[j], result.Sections[j+1] = result.Sections[j+1], result.Sections[j]
+				keys[j], keys[j+1] = keys[j+1], keys[j]
 			}
 		}
 	}

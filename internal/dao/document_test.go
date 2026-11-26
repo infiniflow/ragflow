@@ -17,11 +17,17 @@
 package dao
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -692,5 +698,222 @@ func TestDocumentListParserConfigsByKBIDs(t *testing.T) {
 	}
 	if len(res["kb-2"]) != 1 {
 		t.Fatalf("expected 1 config for kb-2, got %d: %v", len(res["kb-2"]), res["kb-2"])
+	}
+}
+
+// The suffix and status counters are group totals, so they must come out the
+// same whether the database groups them or every row is tallied: a status
+// shared across suffixes is added up, an empty suffix is left out of the
+// suffix counter but still counted, and the list filters still apply.
+func TestGetFilterByKBIDGroupsSuffixAndStatus(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	create := func(value interface{}) {
+		t.Helper()
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("create %T: %v", value, err)
+		}
+	}
+	docs := []struct {
+		id, kb, suffix, status string
+	}{
+		{"pdf-done-1", "kb-1", "pdf", common.COMPLETED},
+		{"pdf-done-2", "kb-1", "pdf", common.COMPLETED},
+		{"pdf-failed", "kb-1", "pdf", common.FAILED},
+		{"txt-done", "kb-1", "txt", common.COMPLETED},
+		{"no-suffix", "kb-1", "", ""},
+		{"other-kb", "kb-2", "pdf", common.COMPLETED},
+	}
+	for _, doc := range docs {
+		create(&entity.Document{ID: doc.id, KbID: doc.kb, Suffix: doc.suffix, ParserConfig: entity.JSONMap{}, Name: sp(doc.id)})
+		create(&entity.File{ID: "file-" + doc.id, ParentID: "parent-1", TenantID: "tenant-1", CreatedBy: "user-1", Name: doc.id, Type: "document"})
+		create(&entity.File2Document{ID: "link-" + doc.id, FileID: sp("file-" + doc.id), DocumentID: sp(doc.id)})
+		if doc.status != "" {
+			create(&entity.IngestionTask{ID: "task-" + doc.id, DocumentID: doc.id, DatasetID: doc.kb, Status: doc.status})
+		}
+	}
+
+	dao := NewDocumentDAO()
+	filters, total, err := dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-1"})
+	if err != nil {
+		t.Fatalf("GetFilterByKBID: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("total = %d, want 5", total)
+	}
+	if got, want := filters["suffix"].(map[string]int64), map[string]int64{"pdf": 3, "txt": 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("suffix = %v, want %v", got, want)
+	}
+	if got, want := filters["ingestion_status"].(map[string]int64), map[string]int64{common.COMPLETED: 3, common.FAILED: 1, "UNSTART": 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ingestion_status = %v, want %v", got, want)
+	}
+
+	filters, total, err = dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-1", Suffixes: []string{"pdf"}})
+	if err != nil || total != 3 {
+		t.Fatalf("GetFilterByKBID(pdf): total %d, err %v", total, err)
+	}
+	if got, want := filters["ingestion_status"].(map[string]int64), map[string]int64{common.COMPLETED: 2, common.FAILED: 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ingestion_status(pdf) = %v, want %v", got, want)
+	}
+}
+
+// TestGetFilterByKBIDGroupsOnDerivedColumns pins the SQL shape the counter
+// aggregation depends on under MySQL's ONLY_FULL_GROUP_BY mode: the status
+// CASE reads ingestion_task.status, so it is computed per row inside a derived
+// table and the outer query aggregates over the derived columns only. Grouping
+// the expression itself - or its SELECT alias - makes MySQL reject the query
+// with error 1055.
+func TestGetFilterByKBIDGroupsOnDerivedColumns(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+
+	var logged bytes.Buffer
+	loggingDB := db.Session(&gorm.Session{
+		Logger: logger.New(log.New(&logged, "", 0), logger.Config{LogLevel: logger.Info, SlowThreshold: time.Minute}),
+	})
+
+	dao := NewDocumentDAO()
+	if _, _, err := dao.GetFilterByKBID(t.Context(), loggingDB, DocumentListOptions{KbID: "kb-1"}); err != nil {
+		t.Fatalf("GetFilterByKBID: %v", err)
+	}
+
+	sql := strings.ToLower(logged.String())
+	groupStart := strings.Index(sql, "group by")
+	if groupStart < 0 {
+		t.Fatalf("no GROUP BY in logged SQL: %s", logged.String())
+	}
+	groupBy := sql[groupStart:]
+	if !strings.HasPrefix(groupBy, "group by doc_rows.suffix") || !strings.Contains(groupBy, "doc_rows.ingestion_status") {
+		t.Fatalf("GROUP BY must aggregate the derived columns, got: %s", logged.String())
+	}
+	// The status expression references ingestion_task.status; grouping on it
+	// is exactly what ONLY_FULL_GROUP_BY rejects.
+	if strings.Contains(groupBy, "ingestion_task") || strings.Contains(groupBy, "case") {
+		t.Fatalf("GROUP BY references the status expression instead of the derived columns: %s", logged.String())
+	}
+	if !strings.Contains(sql, "from (select") {
+		t.Fatalf("status must be computed in a derived table, got: %s", logged.String())
+	}
+}
+
+// TestDocumentListStatusLetsARestoreDecideOnlyForRestoredContent pins where a
+// restore is allowed to change what a document row shows. A document no restore
+// touched keeps the status of its latest run - including a failure - so an
+// ingestion outcome is never re-read from the content counters. A restored
+// document is the one case the run cannot answer for, because a restore is not a
+// run: the marker says the content came from a version, and the chunk count says
+// whether any chunk came back with it.
+func TestDocumentListStatusLetsARestoreDecideOnlyForRestoredContent(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+
+	restored := int64(1)
+	tests := []struct {
+		id              string
+		task            string
+		chunkNum        int64
+		restoredVersion *int64
+		want            string
+	}{
+		{id: "parsed", task: common.COMPLETED, chunkNum: 3, want: common.COMPLETED},
+		{id: "failed", task: common.FAILED, want: common.FAILED},
+		// The run after the restored version failed, but the content is the
+		// version's: the file reads as parsed.
+		{id: "restored-chunks", task: common.FAILED, chunkNum: 2, restoredVersion: &restored, want: common.COMPLETED},
+		// The version held no chunk for the document, so it reads as never parsed
+		// even though the last run completed.
+		{id: "restored-empty", task: common.COMPLETED, restoredVersion: &restored, want: common.UNSTART},
+		// A run in flight still wins: the restore only decides the terminal state.
+		{id: "restored-running", task: common.RUNNING, restoredVersion: &restored, want: common.RUNNING},
+	}
+	for _, test := range tests {
+		documentID := "doc-" + test.id
+		if err := db.Create(&entity.Document{
+			ID: documentID, KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+			SourceType: "local", Type: "document", CreatedBy: "user-1",
+			Name: sp(test.id), Suffix: "pdf",
+			ChunkNum: test.chunkNum, RestoredVersion: test.restoredVersion,
+		}).Error; err != nil {
+			t.Fatalf("create document %s: %v", documentID, err)
+		}
+		if err := db.Create(&entity.File{
+			ID: "file-" + test.id, ParentID: "parent-1", TenantID: "tenant-1",
+			CreatedBy: "user-1", Name: test.id, Type: "document",
+		}).Error; err != nil {
+			t.Fatalf("create file for %s: %v", documentID, err)
+		}
+		if err := db.Create(&entity.File2Document{
+			ID: "link-" + test.id, FileID: sp("file-" + test.id), DocumentID: sp(documentID),
+		}).Error; err != nil {
+			t.Fatalf("link file to %s: %v", documentID, err)
+		}
+		if err := db.Create(&entity.IngestionTask{
+			ID: "task-" + test.id, UserID: "user-1", DocumentID: documentID,
+			DatasetID: "kb-1", Status: test.task,
+		}).Error; err != nil {
+			t.Fatalf("create ingestion task for %s: %v", documentID, err)
+		}
+	}
+
+	dao := NewDocumentDAO()
+	documents, total, err := dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID: "kb-1", OrderBy: "create_time", Desc: true, Limit: len(tests),
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if total != int64(len(tests)) || len(documents) != len(tests) {
+		t.Fatalf("listed %d documents (total %d), want %d", len(documents), total, len(tests))
+	}
+	statusByID := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document.IngestionStatus != nil {
+			statusByID[document.ID] = *document.IngestionStatus
+		}
+	}
+	for _, test := range tests {
+		if got := statusByID["doc-"+test.id]; got != test.want {
+			t.Errorf("status for doc-%s = %q, want %q", test.id, got, test.want)
+		}
+	}
+
+	// The filters and the facet counts read the same expression, so a restored
+	// document is filterable by the status the list shows it as.
+	completedOpts := DocumentListOptions{KbID: "kb-1", RunStatuses: []string{common.COMPLETED}, Limit: len(tests)}
+	ids, err := dao.ListIDsByKBIDWithOptions(t.Context(), db, completedOpts)
+	if err != nil {
+		t.Fatalf("filter completed documents: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("completed documents = %v, want the parsed one and the restored one", ids)
+	}
+	completed := map[string]struct{}{}
+	for _, id := range ids {
+		completed[id] = struct{}{}
+	}
+	for _, want := range []string{"doc-parsed", "doc-restored-chunks"} {
+		if _, ok := completed[want]; !ok {
+			t.Fatalf("completed documents = %v, want %s among them", ids, want)
+		}
 	}
 }

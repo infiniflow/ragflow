@@ -11,7 +11,9 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/component/progress"
 )
 
 // ---- mocks ----
@@ -364,14 +366,14 @@ func TestHypergraphPromptsSetUniquenessAndNoRelations(t *testing.T) {
 			t.Errorf("InferType(kind=%q) = %q, want hypergraph", alias, got)
 		}
 	}
-	// Arbitrary kinds (timeline, page_index) are returned verbatim — Python
+	// Template kinds (page_index, session_graph) are returned verbatim — Python
 	// stamps them as the autotype/compile_kwd.
-	if got := InferType(map[string]any{"kind": "timeline"}); got != Type("timeline") {
-		t.Errorf("InferType(kind=timeline) = %q, want verbatim timeline", got)
+	if got := InferType(map[string]any{"kind": "page_index"}); got != Type("page_index") {
+		t.Errorf("InferType(kind=page_index) = %q, want verbatim page_index", got)
 	}
 	// An unknown compile_type is NOT a compile kind and falls through to kind.
-	if got := InferType(map[string]any{"compile_type": "timeline"}); got != TypeList {
-		t.Errorf("InferType(compile_type=timeline) = %q, want list (falls through)", got)
+	if got := InferType(map[string]any{"compile_type": "page_index"}); got != TypeList {
+		t.Errorf("InferType(compile_type=page_index) = %q, want list (falls through)", got)
 	}
 	if got := InferType(map[string]any{}); got != TypeList {
 		t.Errorf("InferType(empty) = %q, want list", got)
@@ -911,6 +913,113 @@ func TestGroupedDeduperTracksNameAfterSemanticMerge(t *testing.T) {
 	}
 	if ids := common.MetaStringSlice(got[0].Meta, "source_chunk_ids"); len(ids) != 3 {
 		t.Fatalf("semantic and exact-name merges lost provenance: %v", ids)
+	}
+}
+
+// paddedBatchTokens forces the two sentinel chunks into their own batches:
+// budget is 1999 tokens (0.5 * 4000 - 1 prompt overhead) and each sentinel
+// counts as 2000. The empty chunk counts 1 and lands in a batch of its own.
+type paddedBatchTokens struct{}
+
+func (paddedBatchTokens) NumTokens(text string) int {
+	if strings.Contains(text, "PAD_A") || strings.Contains(text, "PAD_C") {
+		return 2000
+	}
+	return 1
+}
+
+func structureEmbedDetails(t *testing.T, chunks []common.Chunk) ([]runtime.ProgressDetail, []string) {
+	t.Helper()
+	var details []runtime.ProgressDetail
+	var messages []string
+	base := runtime.WithProgressDetailCallback(t.Context(), func(_ string, d runtime.ProgressDetail) {
+		if d.Unit == "batch:embed" {
+			details = append(details, d)
+		}
+	})
+	base = runtime.WithProgressMessageCallback(base, func(_, message string) {
+		messages = append(messages, message)
+	})
+	ctx := runtime.BindComponentDetail(base, "Compiler")
+	deps := common.Deps{
+		Chat:            &graphChat{},
+		Embed:           hashEmbedder{dim: 16},
+		TenantID:        "t1",
+		DatasetID:       "d1",
+		ModelContextLen: 4000,
+		Tokenizer:       paddedBatchTokens{},
+		Progress:        progress.Window{Span: 1},
+	}
+	_, err := Run(ctx, deps, testParam(), common.Inputs{
+		DocID:           "doc1",
+		Chunks:          chunks,
+		VariantSpecific: map[string]any{"parser_config": graphParserConfig()},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return details, messages
+}
+
+func TestStructureEmbedPositionCountsOnlyEmbeddableBatches(t *testing.T) {
+	// Three packs, the middle one empty: positions must count only the two
+	// batches that actually embed, not the raw pack index.
+	details, _ := structureEmbedDetails(t, []common.Chunk{
+		{ID: "c1", Text: "Alpha is a Beta. PAD_A"},
+		{ID: "c2", Text: ""},
+		{ID: "c3", Text: "Beta related to Gamma. PAD_C"},
+	})
+	if len(details) != 2 {
+		t.Fatalf("embed details = %+v, want 2 positions", details)
+	}
+	if details[0].Current != 1 || details[0].Total != 2 {
+		t.Errorf("first position = %d/%d, want 1/2", details[0].Current, details[0].Total)
+	}
+	if details[1].Current != 2 || details[1].Total != 2 {
+		t.Errorf("final position = %d/%d, want 2/2", details[1].Current, details[1].Total)
+	}
+}
+
+func TestStructureEmbedPositionReachesTotalWhenLastBatchEmpty(t *testing.T) {
+	// Adversarial: the last pack is empty, so the raw index would stop at 2/3
+	// and the phase would never report a complete position.
+	details, _ := structureEmbedDetails(t, []common.Chunk{
+		{ID: "c1", Text: "Alpha is a Beta. PAD_A"},
+		{ID: "c2", Text: "Beta related to Gamma. PAD_C"},
+		{ID: "c3", Text: ""},
+	})
+	if len(details) != 2 {
+		t.Fatalf("embed details = %+v, want 2 positions", details)
+	}
+	if details[len(details)-1].Current != 2 || details[len(details)-1].Total != 2 {
+		t.Errorf("final position = %d/%d, want 2/2", details[len(details)-1].Current, details[len(details)-1].Total)
+	}
+}
+
+// TestStructureBatchCap locks the STRUCT_MAX_CHUNKS_PER_BATCH env override:
+// invalid or non-positive values disable the cap (return 0), and a positive
+// value sets the cap.
+func TestStructureEmbedMessageUsesEmbeddableTotal(t *testing.T) {
+	_, messages := structureEmbedDetails(t, []common.Chunk{
+		{ID: "c1", Text: "Alpha is a Beta. PAD_A"},
+		{ID: "c2", Text: ""},
+		{ID: "c3", Text: "Beta related to Gamma. PAD_C"},
+	})
+	var embeds []string
+	for _, m := range messages {
+		if strings.Contains(m, "embedded batch") {
+			embeds = append(embeds, m)
+		}
+	}
+	if len(embeds) != 2 {
+		t.Fatalf("embed messages = %v, want 2", embeds)
+	}
+	// Must agree with the detail channel: 2 embeddable batches, not 3 packs.
+	if !strings.Contains(embeds[0], "embedded batch 1/2") {
+		t.Errorf("first embed message = %q, want 1/2", embeds[0])
+	}
+	if !strings.Contains(embeds[len(embeds)-1], "embedded batch 2/2") {
+		t.Errorf("final embed message = %q, want 2/2", embeds[len(embeds)-1])
 	}
 }
 

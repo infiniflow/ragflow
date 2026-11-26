@@ -6,6 +6,9 @@ jest.mock('@/constants/agent', () => ({
     Search1APISearch: 'Search1APISearch',
     SpecStreamExtract: 'SpecStreamExtract',
     SpecStreamSearch: 'SpecStreamSearch',
+    AnySearchSearch: 'AnySearchSearch',
+    AnySearchDiscover: 'AnySearchDiscover',
+    AnySearchExtract: 'AnySearchExtract',
   },
 }));
 
@@ -52,6 +55,27 @@ describe('getToolOperatorName', () => {
     'maps the SpecStream extract timeline name %p to its operator',
     (toolName) => {
       expect(getToolOperatorName(toolName)).toBe(Operator.SpecStreamExtract);
+    },
+  );
+
+  it.each(['AnySearchSearch', 'anysearch_search'])(
+    'maps the AnySearch timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.AnySearchSearch);
+    },
+  );
+
+  it.each(['AnySearchDiscover', 'anysearch_discover'])(
+    'maps the AnySearch Discover timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.AnySearchDiscover);
+    },
+  );
+
+  it.each(['AnySearchExtract', 'anysearch_extract'])(
+    'maps the AnySearch Extract timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.AnySearchExtract);
     },
   );
 

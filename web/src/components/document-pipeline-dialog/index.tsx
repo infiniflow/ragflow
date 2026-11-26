@@ -42,6 +42,8 @@ const FormId = 'DocumentPipelineDialogForm';
 interface IProps
   extends IModalProps<IChangeParserRequestBody>, IDocumentPipelineDialogProps {
   loading: boolean;
+  saveDisabled?: boolean;
+  readOnly?: boolean;
 }
 
 export function DocumentPipelineDialog({
@@ -52,6 +54,8 @@ export function DocumentPipelineDialog({
   pipelineVersionId,
   parserConfig,
   loading,
+  saveDisabled = false,
+  readOnly = false,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -122,51 +126,58 @@ export function DocumentPipelineDialog({
             className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
             id={FormId}
           >
-            <FormField
-              control={form.control}
-              name={
-                parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'
-              }
-              render={({ fieldState }) => (
-                <FormItem>
-                  <ParserTreeSelect
-                    value={parserSelectValue}
-                    onChange={handleParserSelect}
-                    outdated={versionOutdated}
-                    invalid={fieldState.invalid || parserOptionMissing}
-                  />
-                  <FormMessage />
-                  {parserOptionMissing && (
-                    <p className="text-sm font-medium text-state-error">
-                      {t(
-                        'knowledgeConfiguration.parserOptionUnavailableMessage',
-                      )}
-                    </p>
-                  )}
-                </FormItem>
-              )}
-            />
-            {showOperatorTabs && (
-              <PipelineOperatorTabs
-                nodes={operatorNodes}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onOperatorValuesChange={handleOperatorValuesChange}
-                operatorValues={operatorValues}
-                operatorFormErrors={
-                  errors.parser_config as
-                    | Record<string, FieldErrors | undefined>
-                    | undefined
+            <fieldset
+              disabled={readOnly}
+              className="m-0 w-full min-w-0 space-y-6 border-0 p-0"
+            >
+              <FormField
+                control={form.control}
+                name={
+                  parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'
                 }
-                fixedFileFormats
+                render={({ fieldState }) => (
+                  <FormItem>
+                    <ParserTreeSelect
+                      value={parserSelectValue}
+                      onChange={handleParserSelect}
+                      outdated={versionOutdated}
+                      invalid={fieldState.invalid || parserOptionMissing}
+                    />
+                    <FormMessage />
+                    {parserOptionMissing && (
+                      <p className="text-sm font-medium text-state-error">
+                        {t(
+                          'knowledgeConfiguration.parserOptionUnavailableMessage',
+                        )}
+                      </p>
+                    )}
+                  </FormItem>
+                )}
               />
-            )}
+              {showOperatorTabs && (
+                <PipelineOperatorTabs
+                  nodes={operatorNodes}
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  onOperatorValuesChange={handleOperatorValuesChange}
+                  operatorValues={operatorValues}
+                  operatorFormErrors={
+                    errors.parser_config as
+                      | Record<string, FieldErrors | undefined>
+                      | undefined
+                  }
+                  fixedFileFormats
+                />
+              )}
+            </fieldset>
           </form>
         </Form>
         <DialogFooter>
           <ButtonLoading
             type="submit"
             form={FormId}
+            disabled={readOnly || saveDisabled}
+            className={readOnly ? 'hidden' : undefined}
             loading={
               loading || (operatorNodesLoading && operatorNodes.length === 0)
             }

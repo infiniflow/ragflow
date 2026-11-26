@@ -154,11 +154,11 @@ func TestIntegration_MultiInstanceSharedConsumerNoOverExecution(t *testing.T) {
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	engine.SetMessageQueueEngine(engine1)
-	ingestor1 := newUnitIngestor("instance-1", 2, []string{"pdf"})
+	ingestor1 := newUnitIngestor("instance-1", 2)
 	ingestor1.runDocumentTask = runner
 
 	engine.SetMessageQueueEngine(engine2)
-	ingestor2 := newUnitIngestor("instance-2", 2, []string{"pdf"})
+	ingestor2 := newUnitIngestor("instance-2", 2)
 	ingestor2.runDocumentTask = runner
 
 	if err := ingestor1.Start(); err != nil {
@@ -235,7 +235,7 @@ func TestIntegration_SlowTaskHeartbeatPreventsPrematureRedelivery(t *testing.T) 
 	engine.SetMessageQueueEngine(mq)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
-	ingestor := newUnitIngestor("slow-task-ingestor", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("slow-task-ingestor", 1)
 	ingestor.heartbeatInterval = 1 * time.Second // comfortably below BackOff[0] = 5s
 
 	taskExecutionStarted := make(chan struct{})
@@ -345,7 +345,7 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 		}
 	}
 
-	ingestor1 := newUnitIngestor("shutdown-ingestor-1", 2, []string{"pdf"})
+	ingestor1 := newUnitIngestor("shutdown-ingestor-1", 2)
 	ingestor1.heartbeatInterval = 500 * time.Millisecond
 
 	taskBStarted := make(chan struct{})
@@ -445,7 +445,7 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 
 	// Ingestor1 timed out and cancelled taskB, calling stopActiveLeases().
 	// Now start ingestor2 to recover un-acked tasks from the shared consumer.
-	ingestor2 := newUnitIngestor("recovery-ingestor-2", 2, []string{"pdf"})
+	ingestor2 := newUnitIngestor("recovery-ingestor-2", 2)
 	ingestor2.heartbeatInterval = 500 * time.Millisecond
 
 	var (

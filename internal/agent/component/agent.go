@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — Agent (T1).
 //
 // Multi-turn ReAct agent powered by eino's flow/agent/react package.
@@ -17,10 +33,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"ragflow/internal/dao"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -36,6 +55,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/modelcontext"
 
 	"go.uber.org/zap"
 )
@@ -84,8 +104,11 @@ type AgentParam struct {
 	SubAgents                []SubAgentTool
 	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
 	ToolTimeout              time.Duration
+	MaxRetries               int           // retry attempts after a failed model call
+	DelayAfterError          time.Duration // initial retry backoff
 	MaxRounds                int
-	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
+	MessageHistoryWindowSize int    // number of prior conversation turns to include; zero disables history
+	VisualFilesVar           string // canvas-state ref containing image data URIs for the model
 	OptimizeMultiTurn        bool
 	OptimizeHistoryWindow    int
 	// Meta is the OpenAI-style function-call schema the Agent exposes
@@ -117,6 +140,8 @@ type AgentParam struct {
 	// outputs.structured; when set, Invoke populates outputs["structured"]
 	// so downstream Message templates like {Agent:X@structured} resolve.
 	OutputStructure map[string]any
+	visualFiles     []string // image URIs resolved from VisualFilesVar for this invocation
+	contextLength   int
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -188,6 +213,11 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// the final model response, so max_rounds=1 can complete a tool call and
 	// produce its answer instead of failing with "exceeds max steps".
 	maxSteps := p.MaxRounds*2 + 1
+	contextLength := chat.EffectiveContextLength(p.contextLength)
+	outputTokens := min(1024, contextLength/4)
+	if p.MaxTokens != nil && *p.MaxTokens > 0 {
+		outputTokens = *p.MaxTokens
+	}
 	if hasCodeExecTool(p.Tools) {
 		// CodeExec user-code failures return a non-zero tool result, allowing
 		// one repair attempt without changing other agents' step budget.
@@ -195,7 +225,15 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: &roundLimitedChatModel{ToolCallingChatModel: chatModel, remaining: maxSteps / 2},
+		ToolCallingModel: &roundLimitedChatModel{
+			ToolCallingChatModel: chatModel,
+			modelName:            p.ModelID,
+			remaining:            maxSteps / 2,
+			maxRetries:           p.MaxRetries,
+			initialDelay:         p.DelayAfterError,
+			contextLength:        contextLength,
+			outputTokens:         outputTokens,
+		},
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -277,7 +315,13 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 // The reserved final model step must answer rather than schedule more tools.
 type roundLimitedChatModel struct {
 	model.ToolCallingChatModel
-	remaining int
+	modelName        string
+	remaining        int
+	maxRetries       int
+	initialDelay     time.Duration
+	contextLength    int
+	outputTokens     int
+	toolSchemaTokens int
 }
 
 func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
@@ -285,7 +329,20 @@ func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolC
 	if err != nil {
 		return nil, err
 	}
-	return &roundLimitedChatModel{ToolCallingChatModel: bound, remaining: m.remaining}, nil
+	schemaTokens, err := agentToolSchemaTokens(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &roundLimitedChatModel{
+		ToolCallingChatModel: bound,
+		modelName:            m.modelName,
+		remaining:            m.remaining,
+		maxRetries:           m.maxRetries,
+		initialDelay:         m.initialDelay,
+		contextLength:        m.contextLength,
+		outputTokens:         m.outputTokens,
+		toolSchemaTokens:     schemaTokens,
+	}, nil
 }
 
 func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
@@ -298,12 +355,171 @@ func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option
 
 func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	input = m.roundInput(input)
-	return m.ToolCallingChatModel.Generate(ctx, input, m.roundOptions(opts)...)
+	input, fitErr := m.fitAnySearchInput(input)
+	if fitErr != nil {
+		return nil, fitErr
+	}
+	opts = m.roundOptions(opts)
+	inner := m.modelForObservation(ctx)
+	var response *schema.Message
+	err := common.RetryWithBackoff(ctx, m.maxRetries, m.initialDelay, func() error {
+		var err error
+		response, err = inner.Generate(ctx, input, opts...)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	input = m.roundInput(input)
-	return m.ToolCallingChatModel.Stream(ctx, input, m.roundOptions(opts)...)
+	input, fitErr := m.fitAnySearchInput(input)
+	if fitErr != nil {
+		return nil, fitErr
+	}
+	opts = m.roundOptions(opts)
+	return retryChatModelStream(ctx, m.modelForObservation(ctx), input, opts, m.maxRetries, m.initialDelay)
+}
+
+// modelForObservation preserves the original model path when no Agent sink is installed.
+func (m *roundLimitedChatModel) modelForObservation(ctx context.Context) model.ToolCallingChatModel {
+	if !runtime.HasAgentNodeObserver(ctx) {
+		return m.ToolCallingChatModel
+	}
+	return &observedAgentChatModel{ToolCallingChatModel: m.ToolCallingChatModel, modelName: m.modelName}
+}
+
+type observedAgentChatModel struct {
+	model.ToolCallingChatModel
+	modelName string
+	attempt   uint32
+}
+
+func (m *observedAgentChatModel) begin(ctx context.Context) (context.Context, func(any, error)) {
+	m.attempt++
+	return runtime.ObserveAgentNode(ctx, "model:"+m.modelName, m.modelName, "ModelCall", m.attempt, map[string]any{"model": m.modelName})
+}
+
+func (m *observedAgentChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (response *schema.Message, err error) {
+	ctx, finish := m.begin(ctx)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			finish(nil, fmt.Errorf("model panic: %v", recovered))
+			panic(recovered)
+		}
+		finish(agentChatModelOutput(response), err)
+	}()
+	return m.ToolCallingChatModel.Generate(ctx, input, opts...)
+}
+
+func (m *observedAgentChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	ctx, finish := m.begin(ctx)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			finish(nil, fmt.Errorf("model panic: %v", recovered))
+			panic(recovered)
+		}
+	}()
+	stream, err := m.ToolCallingChatModel.Stream(ctx, input, opts...)
+	if err != nil {
+		finish(nil, err)
+		return nil, err
+	}
+	var mu sync.Mutex
+	var chunks []any
+	var lastChunk any
+	truncated, completed := false, false
+	complete := func(err error) {
+		mu.Lock()
+		if completed {
+			mu.Unlock()
+			return
+		}
+		completed = true
+		output := map[string]any{"chunks": chunks, "last_chunk": lastChunk, "truncated": truncated}
+		mu.Unlock()
+		finish(output, err)
+	}
+	stopCancellation := context.AfterFunc(ctx, func() { complete(ctx.Err()) })
+	return schema.StreamReaderWithConvert(stream, func(message *schema.Message) (*schema.Message, error) {
+		if message != nil {
+			snapshot, cut := common.AgentEventSnapshot(agentChatModelOutput(message))
+			mu.Lock()
+			if !completed {
+				truncated = truncated || cut
+				lastChunk = snapshot
+				if len(chunks) < 64 {
+					chunks = append(chunks, snapshot)
+				} else {
+					truncated = true
+				}
+			}
+			mu.Unlock()
+		}
+		return message, nil
+	}, schema.WithOnEOF(func() (any, error) { stopCancellation(); complete(ctx.Err()); return nil, io.EOF }), schema.WithErrWrapper(func(err error) error { stopCancellation(); complete(err); return err })), nil
+}
+
+func agentChatModelOutput(message *schema.Message) any {
+	if message == nil {
+		return nil
+	}
+	output := map[string]any{"content": message.Content, "thinking": message.ReasoningContent, "tool_calls": extractToolCalls(message)}
+	if meta := message.ResponseMeta; meta != nil {
+		output["finish_reason"] = meta.FinishReason
+		if usage := meta.Usage; usage != nil {
+			output["usage"] = map[string]any{"prompt_tokens": usage.PromptTokens, "completion_tokens": usage.CompletionTokens, "total_tokens": usage.TotalTokens}
+		}
+	}
+	return output
+}
+
+// retryChatModelStream retries only before the first message reaches the
+// caller, so a failed partial response is never replayed as duplicate output.
+func retryChatModelStream(ctx context.Context, inner model.ToolCallingChatModel, input []*schema.Message, opts []model.Option, maxRetries int, initialDelay time.Duration) (*schema.StreamReader[*schema.Message], error) {
+	if maxRetries <= 0 {
+		return inner.Stream(ctx, input, opts...)
+	}
+
+	reader, writer := schema.Pipe[*schema.Message](1)
+	go func() {
+		defer writer.Close()
+		emitted := false
+		readerClosed := false
+		err := common.RetryWithBackoff(ctx, maxRetries, initialDelay, func() error {
+			emitted = false
+			stream, err := inner.Stream(ctx, input, opts...)
+			if err != nil {
+				return err
+			}
+			defer stream.Close()
+			for {
+				message, err := stream.Recv()
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if message == nil {
+					continue
+				}
+				emitted = true
+				if writer.Send(message, nil) {
+					readerClosed = true
+					return context.Canceled
+				}
+			}
+		}, func(error) bool {
+			return !emitted && !readerClosed
+		})
+		if err != nil {
+			writer.Send(nil, err)
+		}
+	}()
+	return reader, nil
 }
 
 func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Message {
@@ -389,6 +605,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 			}
 		}
 	}
+	images = dedupStrings(append(images, p.visualFiles...))
 	current := schema.Message{Role: schema.User, Content: userText}
 	if len(images) > 0 {
 		current = userMessageWithImages(userText, images)
@@ -412,6 +629,42 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 		input[i] = &messages[i]
 	}
 	return input
+}
+
+func resolveAgentVisualFiles(state *runtime.CanvasState, variable string) ([]string, error) {
+	variable = strings.TrimSpace(variable)
+	if variable == "" {
+		return nil, nil
+	}
+	if state == nil {
+		return nil, fmt.Errorf("canvas state is required for %q", variable)
+	}
+	value, err := state.GetVar(variable)
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, nil
+	}
+	var files []string
+	switch v := value.(type) {
+	case string:
+		files = []string{v}
+	case []string:
+		files = v
+	case []any:
+		files = make([]string, 0, len(v))
+		for _, item := range v {
+			file, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%q must resolve to a string or string array", variable)
+			}
+			files = append(files, file)
+		}
+	default:
+		return nil, fmt.Errorf("%q must resolve to a string or string array, got %T", variable, value)
+	}
+	return extractDataImages(files), nil
 }
 
 func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool, holdContent bool) <-chan error {
@@ -1059,10 +1312,22 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = resolved
 		}
 	}
+	tenantID := ""
 	if state != nil {
-		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
-			return nil, err
-		}
+		tenantID, _ = state.GetSysString("tenant_id")
+	}
+	p.contextLength = modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
+	p.visualFiles, err = resolveAgentVisualFiles(state, p.VisualFilesVar)
+	if err != nil {
+		return nil, fmt.Errorf("Agent: resolve visual_files_var: %w", err)
+	}
+	var imageFiles []string
+	if state != nil {
+		_, imageFiles = collectSysFiles(state)
+	}
+	imageFiles = append(imageFiles, p.visualFiles...)
+	if err := rejectUnsupportedImageFiles(ctx, db, imageFiles, originalModelID, p.ModelID); err != nil {
+		return nil, err
 	}
 	if hasRuntimeUserPrompt {
 		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
@@ -1208,7 +1473,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			content = cleaned
 		} else {
 			common.Warn("component: Agent: outputs.structured set but no parseable JSON matching schema",
-				zap.Strings("expected_keys", sortedMapKeys(structuredExpectedKeySet(p.OutputStructure))))
+				zap.Strings("expected_keys", slices.Sorted(maps.Keys(structuredExpectedKeySet(p.OutputStructure)))))
 		}
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
@@ -1314,22 +1579,11 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelID, cfg)
-	// Build ChatConfig when a generation parameter or Thinking is set.
-	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
-		chatCfg = &models.ChatConfig{
-			TopP:        p.TopP,
-			MaxTokens:   p.MaxTokens,
-			Temperature: p.Temperature,
-		}
-		switch p.Thinking {
-		case "enabled":
-			t := true
-			chatCfg.Thinking = &t
-		case "disabled":
-			f := false
-			chatCfg.Thinking = &f
-		}
+	chatCfg := &models.ChatConfig{
+		TopP:        p.TopP,
+		MaxTokens:   p.MaxTokens,
+		Temperature: p.Temperature,
+		Thinking:    new(p.Thinking == "enabled"),
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
 }
@@ -1703,8 +1957,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Temperature = &f
 	}
 	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
-	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+	if v, ok := stringFrom(inputs, "thinking"); ok {
 		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
@@ -1726,6 +1983,15 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := intFrom(inputs, "tool_timeout"); ok {
 		p.ToolTimeout = time.Duration(v) * time.Second
+	}
+	if v, ok := intFrom(inputs, "max_retries"); ok {
+		p.MaxRetries = v
+	}
+	if v, ok := floatFrom(inputs, "delay_after_error"); ok {
+		p.DelayAfterError = time.Duration(v * float64(time.Second))
+	}
+	if v, ok := stringFrom(inputs, "visual_files_var"); ok {
+		p.VisualFilesVar = v
 	}
 	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools
@@ -1943,15 +2209,6 @@ func jsonValueMatchesSchemaType(v any, typ string) bool {
 	}
 }
 
-func sortedMapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is
 // []string; the canvas DSL shape stores tool component objects with
 // component_name and params. Child Agent objects are returned separately
@@ -2076,11 +2333,7 @@ func cloneMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
+	return maps.Clone(in)
 }
 
 func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {

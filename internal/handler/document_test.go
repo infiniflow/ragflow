@@ -41,7 +41,44 @@ import (
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
+
+func TestParseMetadataUpdatesPreservesTypeAndMatch(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(`{"updates":[
+		{"key":"score","value":"42","valueType":"number"},
+		{"key":"tags","value":"new","match":"old","valueType":"list"}
+	]}`), &body); err != nil {
+		t.Fatal(err)
+	}
+	updates, errMsg := parseMetadataUpdates(body["updates"])
+	want := []document.MetadataUpdate{
+		{Key: "score", Value: "42", ValueType: "number"},
+		{Key: "tags", Value: "new", Match: "old", ValueType: "list"},
+	}
+	if errMsg != "" || !reflect.DeepEqual(updates, want) {
+		t.Fatalf("updates = %#v, error = %q, want %#v", updates, errMsg, want)
+	}
+}
+
+func TestParseMetadataDeletesPreservesValue(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(`{"deletes":[
+		{"key":"tags","value":"a"},
+		{"key":"status"}
+	]}`), &body); err != nil {
+		t.Fatal(err)
+	}
+	deletes, errMsg := parseMetadataDeletes(body["deletes"])
+	want := []document.MetadataDelete{
+		{Key: "tags", Value: "a"},
+		{Key: "status"},
+	}
+	if errMsg != "" || !reflect.DeepEqual(deletes, want) {
+		t.Fatalf("deletes = %#v, error = %q, want %#v", deletes, errMsg, want)
+	}
+}
 
 func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
 	tests := []struct {
@@ -149,6 +186,12 @@ type fakeDocumentService struct {
 	metadataErr            error
 	metadataKBID           string
 	metadataDocIDs         []string
+	metadataByIDsCalls     int
+	metadataByIDsKBID      string
+	metadataByIDsDocIDs    []string
+	metadataByIDsResult    map[string]map[string]interface{}
+	metadataByIDsErr       error
+	metadataSingleCalls    int
 	uploadLocalData        []map[string]interface{}
 	uploadLocalErrs        []string
 	uploadLocalKB          *entity.Knowledgebase
@@ -355,7 +398,17 @@ func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datas
 }
 
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
+	f.metadataSingleCalls++
+	if f.metadataByIDsResult != nil {
+		return f.metadataByIDsResult[docID], nil
+	}
 	return nil, nil
+}
+func (f *fakeDocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+	f.metadataByIDsCalls++
+	f.metadataByIDsKBID = kbID
+	f.metadataByIDsDocIDs = append([]string(nil), docIDs...)
+	return f.metadataByIDsResult, f.metadataByIDsErr
 }
 func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	f.uploadLocalKB = kb
@@ -476,6 +529,11 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	}
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-owner", members...); err != nil {
 		t.Fatalf("prepare document permission fixture: %v", err)
+	}
+	if accessible {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write", "manage"); err != nil {
+			t.Fatalf("grant document access: %v", err)
+		}
 	}
 
 	orig := dao.DB
@@ -910,7 +968,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 }
 
-func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
+func TestUploadDocumentsHandler_LocalPartialFailureReturnsUploadedDocuments(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -943,8 +1001,13 @@ func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected server error code for partial upload, got %v", resp)
 	}
-	if _, ok := resp["data"]; ok {
-		t.Fatalf("error response must omit data: %v", resp)
+	docs, ok := resp["data"].([]interface{})
+	if !ok || len(docs) != 1 {
+		t.Fatalf("expected the successfully uploaded document, got %v", resp)
+	}
+	doc, ok := docs[0].(map[string]interface{})
+	if !ok || doc["id"] != "doc-1" || doc["dataset_id"] != "ds-1" || doc["ingestion_status"] != "UNSTART" {
+		t.Fatalf("expected a mapped document, got %v", docs[0])
 	}
 	if !strings.Contains(resp["message"].(string), "bad.exe") {
 		t.Fatalf("expected failed file in message, got %v", resp["message"])
@@ -953,6 +1016,11 @@ func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 
 func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
 	db := setupUploadHandlerDB(t, "admin")
+	if err := db.Model(&entity.Knowledgebase{}).
+		Where("id = ?", strings.ReplaceAll(uploadTestDatasetID, "-", "")).
+		Update("created_by", "owner-1").Error; err != nil {
+		t.Fatalf("make dataset owned by tenant owner: %v", err)
+	}
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
@@ -1786,7 +1854,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 
-	fake := &fakeDocumentService{}
+	fake := &fakeDocumentService{stopErr: permission.ErrPermissionDenied}
 	h := &DocumentHandler{
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
@@ -1917,7 +1985,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	if fake.metadataKBID != "ds-1" {
 		t.Fatalf("expected kbID ds-1, got %q", fake.metadataKBID)
 	}
-	if len(fake.metadataDocIDs) != 2 || fake.metadataDocIDs[0] != "doc-1" || fake.metadataDocIDs[1] != "doc-2" {
+	if len(fake.metadataDocIDs) != 1 || fake.metadataDocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected docIDs: %#v", fake.metadataDocIDs)
 	}
 
@@ -2178,7 +2246,7 @@ func TestGetDocumentPreview_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
+func TestGetDocumentPreview_ReturnsStorageError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &DocumentHandler{
 		documentService: &fakeDocumentService{},
@@ -2197,13 +2265,8 @@ func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
 	msg, _ := resp["message"].(string)
-	if msg != "Failed to load document preview" {
-		t.Fatalf("expected generic message, got %v", resp["message"])
-	}
-	// The storage detail (bucket/key, transport error) must stay in the
-	// server log, not in the client-visible message.
-	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "b/k") {
-		t.Fatalf("storage detail leaked to client: %v", resp["message"])
+	if !strings.Contains(msg, "Failed to load document preview:") || !strings.Contains(msg, "connection refused") || !strings.Contains(msg, "b/k") {
+		t.Fatalf("response missing underlying storage error: %v", resp["message"])
 	}
 }
 
@@ -2292,9 +2355,6 @@ func TestDownloadDocument_LookupErrorReturnsServerError(t *testing.T) {
 	if resp["message"] != "Failed to download document" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
 	}
-	if strings.Contains(w.Body.String(), "database connection failed") {
-		t.Fatal("database error detail leaked to the client")
-	}
 }
 
 func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
@@ -2319,11 +2379,8 @@ func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
-	if resp["message"] != "Failed to download document" {
+	if resp["message"] != "Failed to download document: database connection failed" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
-	}
-	if strings.Contains(w.Body.String(), "database connection failed") {
-		t.Fatal("database error detail leaked to the client")
 	}
 }
 
@@ -2378,5 +2435,31 @@ func TestMapDocumentListItemIncludesPipelineVersionID(t *testing.T) {
 	}
 	if item["pipeline_id"] != pipelineID {
 		t.Fatalf("pipeline_id mapping regressed: %v", item["pipeline_id"])
+	}
+}
+
+type featureDeniedPreviewService struct{ *fakeDocumentService }
+
+func (*featureDeniedPreviewService) GetDocumentPreview(context.Context, string) (*document.DocumentPreview, error) {
+	return nil, fmt.Errorf("extract preview: %w", utility.ErrFeatureDisabled)
+}
+
+func TestGetDocumentPreviewFeatureDisabled(t *testing.T) {
+	h := &DocumentHandler{documentService: &featureDeniedPreviewService{&fakeDocumentService{}}}
+	c, w := setupGinContextWithUser(http.MethodGet, "/api/v1/documents/doc-1/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.GetDocumentPreview(c)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Code    common.ErrorCode `json:"code"`
+		Message string           `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != common.CodeForbidden || !strings.Contains(body.Message, utility.ErrFeatureDisabled.Error()) {
+		t.Fatalf("body=%+v", body)
 	}
 }

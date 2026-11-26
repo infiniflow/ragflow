@@ -555,9 +555,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       layoutRecognize: 'Parser PDF',
       layoutRecognizeTip:
         "Usa un modello visivo per l'analisi del layout PDF per individuare efficacemente titoli, blocchi di testo, immagini e tabelle. Se viene scelta l'opzione naive, sarà recuperato solo il testo semplice nel PDF. Nota che questa opzione attualmente funziona SOLO per i documenti PDF.",
-      taskPageSize: 'Dimensione pagina attività',
-      taskPageSizeMessage: 'Inserisci la dimensione della pagina attività!',
-      taskPageSizeTip: `Durante il riconoscimento del layout, un file PDF viene suddiviso in chunk ed elaborato in parallelo per aumentare la velocità di elaborazione. Questo parametro imposta la dimensione di ogni chunk. Una dimensione chunk maggiore riduce la probabilità di dividere il testo continuo tra le pagine.`,
       addPage: 'Aggiungi pagina',
       greaterThan: 'Il valore attuale deve essere maggiore di!',
       greaterThanPrevious:
@@ -584,8 +581,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       childrenDelimiterTip:
         'Un delimitatore può consistere in uno o più caratteri speciali. Se sono più caratteri, assicurati che siano racchiusi tra backtick (``). Ad esempio, se configuri i tuoi delimitatori così: \\n`##`;, i tuoi testi saranno separati a interruzioni di riga, doppio cancelletto (##) e punto e virgola.',
 
-      html4excel: 'Excel in HTML',
-      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
       autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Domande automatiche',
@@ -1303,8 +1298,6 @@ Esempio: Virtual Hosted Style`,
         'Connetti GitHub per sincronizzare pull request e issue per il recupero.',
       airtableDescription:
         "Connettiti ad Airtable e sincronizza i file da una tabella specificata all'interno di un workspace designato.",
-      dingtalkAITableDescription:
-        'Connettiti a Dingtalk AI Table e sincronizza i record da una tabella specificata.',
       gitlabDescription:
         'Connetti GitLab per sincronizzare repository, issue, merge request e documentazione correlata.',
       asanaDescription:
@@ -1772,7 +1765,7 @@ Esempio: Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },
@@ -1843,13 +1836,6 @@ Esempio: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Carica almeno un file',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Pre-elaborazione',
-        mainContent: 'Contenuto principale',
-        abstract: 'Abstract',
-        author: 'Autore',
-        sectionTitle: 'Titolo sezione',
-      },
       editTags: 'Modifica tag',
       editTagsDescription:
         'Aggiungi tag per organizzare e filtrare i tuoi agenti. Premi Invio o virgola per aggiungere.',
@@ -1925,9 +1911,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       oneChunkTitle: 'Nota',
       oneChunkDescription:
         'Tutte le sezioni analizzate saranno unite in ordine in un singolo chunk.',
-      flattenMediaToText: 'Disabilita modello visivo',
-      flattenMediaToTextTip:
-        'Tratta le sezioni di immagini e tabelle come testo semplice e salta il miglioramento visivo.',
       enableChildrenDelimiters: 'I chunk figli sono usati per il recupero',
       merge: 'Unisci',
       split: 'Dividi',
@@ -2012,6 +1995,18 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       retrievalDescription: `Un componente che recupera informazioni da dataset specificati (dataset). Assicurati che i dataset selezionati usino lo stesso modello di embedding.`,
       generateDescription: `Un componente che richiede al LLM di generare risposte. Assicurati che il prompt sia impostato correttamente.`,
       categorizeDescription: `Un componente che usa il LLM per classificare gli input utente in categorie predefinite. Assicurati di specificare il nome, la descrizione e gli esempi per ogni categoria, insieme al componente successivo corrispondente.`,
+      scoredSwitchQuestionRequired:
+        'Ogni domanda aggiuntiva richiede istruzioni',
+      scoredSwitchLevelMinimum: 'Aggiungi almeno due livelli',
+      scoredSwitchFieldMinimum: 'Aggiungi almeno un campo',
+      scoredSwitchFieldNameInvalid:
+        'Il nome del campo deve iniziare con una lettera o un trattino basso',
+      scoredSwitchListItemsRequired: 'Un elenco richiede un tipo di elemento',
+      scoredSwitchEstimateBoundsRequired:
+        'Una stima richiede un minimo e un massimo',
+      scoredSwitchForecastRequired:
+        'Una previsione richiede un orizzonte e un intervallo',
+      scoredSwitchDecimalsRange: 'I decimali devono essere compresi tra 0 e 6',
       relevantDescription: `Un componente che usa il LLM per valutare se l'output a monte è rilevante per l'ultima query dell'utente. Assicurati di specificare il componente successivo per ogni risultato di giudizio.`,
       rewriteQuestionDescription: `Un componente che riscrive una query utente dal componente Interact, basandosi sul contesto dei dialoghi precedenti.`,
       messageDescription:
@@ -2615,7 +2610,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       titleChunkerDescription:
         'Dividi i documenti in sezioni per gerarchia di titoli. Definisci i livelli di intestazione con regole regex, poi scegli la modalità Gerarchia o Gruppo per controllare come sono strutturati i chunk.',
       titleChunker: 'Title Chunker',
-      extractor: 'Trasformatore',
+      extractor: 'Estrattore',
       extractorDescription:
         'Usa un LLM per estrarre insight strutturati dai chunk di documenti—come riassunti, classificazioni, ecc.',
       outputFormat: 'Formato output',

@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -96,7 +97,7 @@ func TestBuildIngestLogHappy(t *testing.T) {
 		ProcessBeginAt:  ptrTime(now.Add(2 * time.Minute)),
 		ProcessDuration: 600,
 	}
-	log := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "", "", "")
+	log := BuildIngestLog(context.Background(), task, doc, run, "task", "COMPLETED", "")
 
 	if log.TaskID != "task-1" {
 		t.Errorf("TaskID = %q, want task-1", log.TaskID)
@@ -119,8 +120,8 @@ func TestBuildIngestLogHappy(t *testing.T) {
 	if log.ParserID != "pdf" {
 		t.Errorf("ParserID = %q, want pdf", log.ParserID)
 	}
-	if log.EventType != "completed" {
-		t.Errorf("EventType = %q, want completed", log.EventType)
+	if log.EventType != "task" {
+		t.Errorf("EventType = %q, want task", log.EventType)
 	}
 	if log.Status != "COMPLETED" {
 		t.Errorf("Status = %q, want COMPLETED", log.Status)
@@ -151,7 +152,7 @@ func TestBuildIngestLogCreatedSkipsClaimTime(t *testing.T) {
 		ProcessBeginAt: ptrTime(now.Add(2 * time.Minute)),
 	}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(now)}
-	log := BuildIngestLog(task, doc, run, "created", "CREATED", "", "", "")
+	log := BuildIngestLog(context.Background(), task, doc, run, "task", "CREATED", "")
 	if !log.BeginTime.IsZero() {
 		t.Errorf("created event BeginTime = %v, want zero", log.BeginTime)
 	}
@@ -162,7 +163,7 @@ func TestBuildIngestLogFailedCarriesErrorInfo(t *testing.T) {
 	task := &entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", UserID: "user-1"}
 	doc := &entity.Document{Name: ptrStr("docname"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf"}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(now)}
-	log := BuildIngestLog(task, doc, run, "failed", "FAILED", "boom", "", "")
+	log := BuildIngestLog(context.Background(), task, doc, run, "task", "FAILED", "boom")
 	if log.ErrorInfo != "boom" {
 		t.Errorf("ErrorInfo = %q, want boom", log.ErrorInfo)
 	}

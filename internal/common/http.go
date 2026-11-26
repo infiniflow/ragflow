@@ -88,8 +88,11 @@ func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) 
 	return limit
 }
 
-var ssrfHttpClient *http.Client
-var schemeSafeHttpClient *http.Client
+var (
+	ssrfHTTPClient               = sync.OnceValue(newSSRFHTTPClient)
+	schemeSafeHTTPClient         = sync.OnceValue(newSchemeSafeHTTPClient)
+	schemeSafeLongCallHTTPClient = sync.OnceValue(newSchemeSafeLongCallHTTPClient)
+)
 
 // llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
 // headers, which is what a hung provider endpoint spends on every retry. Each
@@ -99,49 +102,67 @@ func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
 }
 
 func GetSSRFHTTPClient() *http.Client {
-	if ssrfHttpClient == nil {
-		var t *http.Transport
-		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-			t = dt.Clone()
-		} else {
-			t = &http.Transport{Proxy: http.ProxyFromEnvironment}
-		}
-		t.MaxIdleConns = 100
-		t.MaxIdleConnsPerHost = 10
-		t.IdleConnTimeout = 90 * time.Second
-		t.DisableCompression = false
-		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
-		t.TLSHandshakeTimeout = 30 * time.Second
+	return ssrfHTTPClient()
+}
 
-		var rt http.RoundTripper = t
-		rt = &strictSSRFTransport{base: rt}
-		rt = NewProviderLoggingTransport(rt)
-		ssrfHttpClient = &http.Client{Transport: rt}
+func newSSRFHTTPClient() *http.Client {
+	var t *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = dt.Clone()
+	} else {
+		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
 	}
-	return ssrfHttpClient
+	t.MaxIdleConns = 100
+	t.MaxIdleConnsPerHost = 10
+	t.IdleConnTimeout = 90 * time.Second
+	t.DisableCompression = false
+	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
+	t.TLSHandshakeTimeout = 30 * time.Second
+
+	var rt http.RoundTripper = t
+	rt = &strictSSRFTransport{base: rt}
+	rt = NewProviderLoggingTransport(rt)
+	return &http.Client{Transport: rt}
 }
 
 func GetSchemeSafeHTTPClient() *http.Client {
-	if schemeSafeHttpClient == nil {
-		var t *http.Transport
-		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-			t = dt.Clone()
-		} else {
-			t = &http.Transport{Proxy: http.ProxyFromEnvironment}
-		}
-		t.MaxIdleConns = 5000
-		t.MaxIdleConnsPerHost = 500
-		t.IdleConnTimeout = 90 * time.Second
-		t.DisableCompression = false
-		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
-		t.TLSHandshakeTimeout = 30 * time.Second
+	return schemeSafeHTTPClient()
+}
 
-		var rt http.RoundTripper = t
-		rt = &schemeSafeTransport{base: rt}
-		rt = NewProviderLoggingTransport(rt)
-		schemeSafeHttpClient = &http.Client{Transport: rt}
+func newSchemeSafeHTTPClient() *http.Client {
+	return buildSchemeSafeHTTPClient(llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault))
+}
+
+// GetSchemeSafeLongCallHTTPClient returns the scheme-safe client for endpoints
+// that answer only when the work is done, such as a synchronous OCR parse. It
+// sets no response-header timeout and ignores LLM_HTTP_RESPONSE_HEADER_TIMEOUT,
+// so every request must carry a context deadline.
+func GetSchemeSafeLongCallHTTPClient() *http.Client {
+	return schemeSafeLongCallHTTPClient()
+}
+
+func newSchemeSafeLongCallHTTPClient() *http.Client {
+	return buildSchemeSafeHTTPClient(0)
+}
+
+func buildSchemeSafeHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
+	var t *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = dt.Clone()
+	} else {
+		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
 	}
-	return schemeSafeHttpClient
+	t.MaxIdleConns = 5000
+	t.MaxIdleConnsPerHost = 500
+	t.IdleConnTimeout = 90 * time.Second
+	t.DisableCompression = false
+	t.ResponseHeaderTimeout = responseHeaderTimeout
+	t.TLSHandshakeTimeout = 30 * time.Second
+
+	var rt http.RoundTripper = t
+	rt = &schemeSafeTransport{base: rt}
+	rt = NewProviderLoggingTransport(rt)
+	return &http.Client{Transport: rt}
 }
 
 // providerStreamLogThreshold / providerCallLogThreshold are the durations past
@@ -544,7 +565,7 @@ func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostna
 		if ip == nil {
 			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !IsGlobalIP(effectiveIP(ip)) {
 			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
 		}
 		if resolvedIP == "" {
@@ -573,7 +594,7 @@ var AssertHostSafe = func(host string) (resolvedIP string, err error) {
 
 	allowAny := allowAnyHost()
 	if ip := net.ParseIP(host); ip != nil {
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !IsGlobalIP(effectiveIP(ip)) {
 			return "", fmt.Errorf("host is not a public address (%s), which is not allowed", ip.String())
 		}
 		return ip.String(), nil
@@ -592,7 +613,7 @@ var AssertHostSafe = func(host string) (resolvedIP string, err error) {
 		if ip == nil {
 			return "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, host)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !IsGlobalIP(effectiveIP(ip)) {
 			return "", fmt.Errorf("hostname '%s' resolves to a non-public address (%s), which is not allowed", host, ip.String())
 		}
 		if resolvedIP == "" {
@@ -612,11 +633,11 @@ func effectiveIP(ip net.IP) net.IP {
 	return ip
 }
 
-// isGlobalIP mirrors Python's ipaddress.IPv*Address.is_global: an address is
-// global if it is none of {unspecified, loopback, multicast, link-local,
+// IsGlobalIP reports address routability without consulting ALLOW_ANY_HOST.
+// An address is global if it is none of {unspecified, loopback, multicast, link-local,
 // private (including CGNAT and IPv6 ULA), benchmarking, documentation,
 // reserved}.
-func isGlobalIP(ip net.IP) bool {
+func IsGlobalIP(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsPrivate() {
 		return false
 	}
@@ -664,7 +685,7 @@ func isGlobalIP(ip net.IP) bool {
 		// an arbitrary IPv4 address that none of the checks above look at. Unwrap
 		// and re-check it so 2002:7f00:1::1 is treated as 127.0.0.1.
 		for _, inner := range embeddedIPv4(v6) {
-			if !isGlobalIP(inner) {
+			if !IsGlobalIP(inner) {
 				return false
 			}
 		}

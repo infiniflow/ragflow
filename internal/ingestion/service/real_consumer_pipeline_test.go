@@ -64,7 +64,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		TaskID:   ingestionTask.ID,
 		TaskType: common.TaskTypeIngestionTask,
 	})
-	if err := natsEngine.PublishTask("tasks.RAGFLOW", payload); err != nil {
+	if err := natsEngine.PublishTask(common.DefaultTierSubject(), payload); err != nil {
 		t.Fatalf("PublishTask: %v", err)
 	}
 
@@ -99,7 +99,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		t.Fatalf("task status after UpdateStatusIfCurrent = %s, want %s", task.Status, common.RUNNING)
 	}
 
-	ingestor := newUnitIngestor("queue-test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("queue-test", 1)
 	var routedToPipeline bool
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),

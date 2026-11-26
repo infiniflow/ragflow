@@ -70,11 +70,18 @@ export const initialLlmBaseValues = {
   frequency_penalty: 0.7,
   presence_penalty: 0.4,
   max_tokens: 256,
+  thinking: 'disabled' as const,
 };
 
 export enum AgentCategory {
   AgentCanvas = 'agent_canvas',
   DataflowCanvas = 'dataflow_canvas',
+}
+
+export enum AgentSessionSource {
+  Agent = 'agent',
+  Workflow = 'workflow',
+  ChatChannel = 'chat_channel',
 }
 
 export enum AgentQuery {
@@ -86,6 +93,7 @@ export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
+  ScoredSwitch = 'ScoredSwitch',
   Message = 'Message',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
@@ -119,11 +127,15 @@ export enum Operator {
   BGPT = 'BGPT',
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
+  PerplexitySearch = 'PerplexitySearch',
   SofyaSearch = 'SofyaSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
   SpecStreamSearch = 'SpecStreamSearch',
   SpecStreamExtract = 'SpecStreamExtract',
+  AnySearchSearch = 'AnySearchSearch',
+  AnySearchDiscover = 'AnySearchDiscover',
+  AnySearchExtract = 'AnySearchExtract',
   DocGenerator = 'DocGenerator',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',

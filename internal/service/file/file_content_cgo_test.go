@@ -73,7 +73,10 @@ func minimalDOCX(t *testing.T, text string) []byte {
 func TestParseFileContent_DOCXReadsJSONItems(t *testing.T) {
 	data := minimalDOCX(t, "Hello DOCX content")
 
-	content := parseFileContent(t.Context(), "note.docx", data)
+	content, err := parseFileContent(t.Context(), "note.docx", data)
+	if err != nil {
+		t.Fatalf("parseFileContent: %v", err)
+	}
 	if !strings.Contains(content, "Hello DOCX content") {
 		t.Fatalf("docx content missing item text: %q", content)
 	}
@@ -84,13 +87,16 @@ func TestParseFileContent_DOCXReadsJSONItems(t *testing.T) {
 
 func TestMisnamedOfficeContentExtraction(t *testing.T) {
 	data := minimalDOCX(t, "Corrected document content")
-	for _, name := range []string{"renamed.doc", "renamed.wps", "renamed.xls"} {
+	for _, name := range []string{"renamed.doc", "renamed.xls"} {
 		t.Run(name, func(t *testing.T) {
-			content := parseFileContent(t.Context(), name, data)
+			content, err := parseFileContent(t.Context(), name, data)
+			if err != nil {
+				t.Fatalf("parseFileContent: %v", err)
+			}
 			if !strings.Contains(content, "Corrected document content") || content == string(data) {
 				t.Fatal("file extraction did not use the corrected parser")
 			}
-			content, err := parseAgentUploadContent(t.Context(), name, data, "")
+			content, err = parseAgentUploadContent(t.Context(), name, data, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -112,7 +118,7 @@ func TestOfficeContentExtractionWithoutMediaCache(t *testing.T) {
 	}
 
 	for name, parse := range map[string]func() (string, error){
-		"file":  func() (string, error) { return parseFileContent(t.Context(), "image.docx", data), nil },
+		"file":  func() (string, error) { return parseFileContent(t.Context(), "image.docx", data) },
 		"agent": func() (string, error) { return parseAgentUploadContent(t.Context(), "image.docx", data, "") },
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -19,9 +19,19 @@ import { useSyncExternalStore } from 'react';
 
 // Values mirror the strings persisted under the `thinkingLevel` localStorage
 // key; they double as the reasoning level sent with each message ('0' naive,
-// '5' agentic).
+// '5' agentic). Additional engine levels are contributed by the edition overlay
+// (`@/ee/hooks/use-thinking-modes`), never hard-coded here.
 export const ThinkingMode = { Naive: '0', Agentic: '5' } as const;
 export type ThinkingMode = (typeof ThinkingMode)[keyof typeof ThinkingMode];
+
+// ThinkingOption is one row of the reasoning selector. It carries i18n keys
+// rather than rendered text so the edition overlay can declare options without
+// importing react-i18next; the shared selector resolves them with `t()`.
+export type ThinkingOption = {
+  value: string;
+  labelKey: string;
+  descriptionKey?: string;
+};
 
 const listeners = new Set<() => void>();
 

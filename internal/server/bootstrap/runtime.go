@@ -18,32 +18,22 @@ package bootstrap
 
 import (
 	"fmt"
-	"time"
-
-	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/server"
-	"ragflow/internal/server/local"
-	"ragflow/internal/service"
-	"ragflow/internal/utility"
 )
 
-// SetLogger (re)initializes the process logger for the given server name using
-// the configured log settings plus any CLI overrides carried by args. It was
-// previously a private helper in package main; it lives here so the per-mode
-// runners (now in their own packages) can call it without reaching into main.
-func SetLogger(serverName string, arguments *ServerArgs) {
+// SetLogger opens the configured log destinations and keeps startup INFO logs visible.
+func SetLogger(serverName string, logLevel string) {
 	// log filename
 	logFileName := fmt.Sprintf("%s.log", serverName)
 
 	globalConfig := server.GetConfig()
 	logConfig := globalConfig.GetLogConfig()
 
-	// Reinitialize logger with the configured level and CLI overrides.
-	logLevel := SelectedLogLevel(arguments, logConfig.Level)
-
-	globalConfig.SetLogLevel(logLevel)
+	if common.LogLevelHigherThanInfo(logLevel) {
+		logLevel = "info"
+	}
 
 	fileOut := common.FileOutput{
 		Filename:   logFileName,
@@ -55,9 +45,8 @@ func SetLogger(serverName string, arguments *ServerArgs) {
 	}
 
 	common.SyncLog()
-	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
+
+	common.InitLogger(logLevel, fileOut, serverName)
 }
 
 // SetIngestLog (re)initializes the ingestion lifecycle event sink for the given
@@ -72,35 +61,4 @@ func SetIngestLog(serverName string) {
 	if err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName); err != nil {
 		common.Error("Failed to initialize ingest log sink", err)
 	}
-}
-
-// StartHeartbeat initializes and starts the heartbeat reporter to the admin
-// server. It is shared by the API, ingestor, and syncer server modes. The
-// caller must defer the returned *utility.ScheduledTask's Stop() method.
-func StartHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	service.AdminServiceClient = service.NewAdminClient(
-		serverType,
-		serverID,
-		localIP,
-		port,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-		return nil
-	}
-
-	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
-		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-			local.SetAdminStatus(local.Available, "")
-		} else {
-			local.SetAdminStatus(local.Unavailable, err.Error())
-		}
-	})
-	heartbeatReporter.Start()
-	return heartbeatReporter
 }

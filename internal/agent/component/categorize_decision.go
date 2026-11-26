@@ -1,13 +1,56 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package component
 
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"ragflow/internal/entity/models"
 )
+
+// categorizeDecisionTimeout bounds one classification. Nace holds a request up
+// to 55 s upstream and asks callers for 60 s or more, so it gets a longer cap
+// than SystemOne.
+// categorizeDecisionMaxNaceBudget caps the total Nace classification time so a
+// workflow with very many categories cannot wait for minutes.
+const categorizeDecisionMaxNaceBudget = 5 * time.Minute
+
+func categorizeDecisionTimeout(driver string) time.Duration {
+	if strings.EqualFold(driver, "Nace") {
+		return 90 * time.Second
+	}
+	return 30 * time.Second
+}
+
+// categorizeDecisionBudget bounds a whole classification. Nace can hold each
+// request for up to 55 s, so its budget grows with the number of requests the
+// categories split into, up to categorizeDecisionMaxNaceBudget.
+func categorizeDecisionBudget(driver string, categories int) time.Duration {
+	timeout := categorizeDecisionTimeout(driver)
+	if strings.EqualFold(driver, "Nace") {
+		chunks := max(1, (categories+models.MaxDecisionQuestions-1)/models.MaxDecisionQuestions)
+		timeout = min(timeout*time.Duration(chunks), categorizeDecisionMaxNaceBudget)
+	}
+	return timeout
+}
 
 func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string, history []categorizeHistoryMessage) (string, error) {
 	driver, err := models.GetPreconfiguredDriver(p.Driver, p.BaseURL)
@@ -16,7 +59,8 @@ func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string
 	}
 	// Bound the whole classification, including workflows with more categories
 	// than the endpoint accepts in one request.
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	timeout := categorizeDecisionBudget(p.Driver, len(p.Categories))
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	instructions := buildCategorizeDecisionInstructions(p)
 	state := map[string]string{"query": query, "conversation": buildCategorizePrompt(history)}
@@ -56,7 +100,7 @@ func buildCategorizeDecisionInstructions(p CategorizeParam) string {
 		}
 		b.WriteByte('\n')
 	}
-	if containsCategory(p.Categories, "Other") {
+	if slices.Contains(p.Categories, "Other") {
 		b.WriteString("Use Other only when no other category fits.\n")
 	}
 	for _, example := range categorizeExamples(p, p.Categories) {

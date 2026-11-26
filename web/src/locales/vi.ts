@@ -154,9 +154,6 @@ export default {
       layoutRecognize: 'Nhận dạng bố cục',
       layoutRecognizeTip:
         'Sử dụng các mô hình trực quan để phân tích bố cục nhằm xác định tốt hơn cấu trúc tài liệu, tìm vị trí của tiêu đề, khối văn bản, hình ảnh và bảng. Nếu không có tính năng này, chỉ có thể lấy được văn bản thuần của PDF. Để biết thêm thông tin, hãy xem https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Kích thước trang tác vụ',
-      taskPageSizeMessage: 'Vui lòng nhập kích thước trang tác vụ của bạn!',
-      taskPageSizeTip: `Nếu sử dụng nhận dạng bố cục, tệp PDF sẽ được chia thành các nhóm trang liên tiếp. Phân tích bố cục sẽ được thực hiện song song giữa các nhóm để tăng tốc độ xử lý. 'Kích thước trang tác vụ' xác định kích thước của các nhóm. Kích thước trang càng lớn, khả năng chia tách văn bản liên tục giữa các trang thành các khối khác nhau càng thấp.`,
       addPage: 'Thêm trang',
       greaterThan: 'Giá trị hiện tại phải lớn hơn!',
       greaterThanPrevious: 'Giá trị hiện tại phải lớn hơn giá trị trước đó!',
@@ -174,8 +171,6 @@ export default {
       topK: 'Top-K',
       topKTip: `Sử dụng cùng với Rerank model, thiết lập này xác định số lượng đoạn văn cần gửi đến mô hình reranking được chỉ định.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',
-      html4excel: 'Excel sang HTML',
-      html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel 97-2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng. Để biết thêm thông tin, vui lòng xem https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Từ khóa tự động',
       autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Câu hỏi tự động',
@@ -747,8 +742,6 @@ export default {
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
       modelsToBeAddedTooltip:
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
-      dingtalkAITableDescription:
-        'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -838,6 +831,16 @@ export default {
       retrievalDescription: `Một thành phần truy xuất thông tin từ một cơ sở kiến thức được chỉ định và trả về 'Phản hồi trống' nếu không tìm thấy thông tin. Đảm bảo chọn đúng cơ sở kiến thức.`,
       generateDescription: `Một thành phần nhắc LLM tạo phản hồi. Đảm bảo lời nhắc được đặt chính xác.`,
       categorizeDescription: `Một thành phần sử dụng LLM để phân loại đầu vào của người dùng thành các danh mục được xác định trước. Đảm bảo bạn chỉ định tên, mô tả và ví dụ cho mỗi danh mục, cùng với thành phần tiếp theo tương ứng.`,
+      scoredSwitchQuestionRequired: 'Mỗi câu hỏi bổ sung cần hướng dẫn',
+      scoredSwitchLevelMinimum: 'Thêm ít nhất hai mức',
+      scoredSwitchFieldMinimum: 'Thêm ít nhất một trường',
+      scoredSwitchFieldNameInvalid:
+        'Tên trường phải bắt đầu bằng chữ cái hoặc dấu gạch dưới',
+      scoredSwitchListItemsRequired: 'Danh sách cần kiểu mục',
+      scoredSwitchEstimateBoundsRequired:
+        'Ước lượng cần giá trị nhỏ nhất và lớn nhất',
+      scoredSwitchForecastRequired: 'Dự báo cần khoảng xa và khoảng cách',
+      scoredSwitchDecimalsRange: 'Số chữ số thập phân phải từ 0 đến 6',
       relevantDescription: `Một thành phần sử dụng LLM để đánh giá xem đầu ra phía thượng nguồn có liên quan đến truy vấn mới nhất của người dùng hay không. Đảm bảo bạn chỉ định thành phần tiếp theo cho mỗi kết quả đánh giá.`,
       rewriteQuestionDescription: `Một thành phần tinh chỉnh truy vấn của người dùng nếu không thể truy xuất thông tin liên quan từ cơ sở kiến thức. Nó lặp lại quá trình này cho đến khi đạt đến giới hạn lặp trên được xác định trước. Đảm bảo phía thượng nguồn của nó là 'Liên quan' và phía hạ nguồn là 'Truy xuất'.`,
       messageDescription:

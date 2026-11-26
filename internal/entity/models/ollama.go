@@ -23,10 +23,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
 )
+
+// ollamaDefaultDecisionSuffix is the default System One endpoint path in Ollama.
+const ollamaDefaultDecisionSuffix = "v1/systemone"
 
 // OllamaModel implements ModelDriver for Ollama AI
 type OllamaModel struct {
@@ -35,6 +39,9 @@ type OllamaModel struct {
 
 // NewOllamaModel creates a new Ollama AI model instance
 func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
+	if urlSuffix.Decision == "" {
+		urlSuffix.Decision = ollamaDefaultDecisionSuffix
+	}
 	return &OllamaModel{
 		baseModel: BaseModel{
 			BaseURL:          baseURL,
@@ -212,8 +219,9 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 type ollamaChatMessage struct {
-	Content  string `json:"content"`
-	Thinking string `json:"thinking"`
+	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking"`
+	ToolCalls []map[string]any `json:"tool_calls"`
 }
 
 type ollamaChatResponse struct {
@@ -224,6 +232,41 @@ type ollamaChatResponse struct {
 	EvalCount       int               `json:"eval_count"`
 	TotalDuration   int64             `json:"total_duration"`
 	Error           any               `json:"error"`
+}
+
+// ollamaToolCallsToOpenAI converts Ollama-format tool_calls (function.arguments
+// decoded into map[string]any) into the OpenAI-format slice the chat tool loop
+// expects: function.arguments as a JSON string, which is what appendToolResults
+// reads (chat_tools.go). A call whose function map is missing is skipped; one
+// whose arguments field is absent defaults to "{}" rather than "null"
+// (json.Marshal(nil)), so the tool receives an empty object instead of nil —
+// matching how the request direction normalises empty/missing arguments
+// (#22061). Shared by the non-streaming and streaming response handlers.
+func ollamaToolCallsToOpenAI(calls []map[string]any) ([]map[string]any, error) {
+	converted := make([]map[string]any, 0, len(calls))
+	for _, tc := range calls {
+		fn, ok := tc["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := fn["name"].(string)
+		args := fn["arguments"]
+		if args == nil {
+			args = map[string]any{}
+		}
+		argsBytes, err := json.Marshal(args)
+		if err != nil {
+			return nil, fmt.Errorf("ollama: marshal tool arguments: %w", err)
+		}
+		converted = append(converted, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":      name,
+				"arguments": string(argsBytes),
+			},
+		})
+	}
+	return converted, nil
 }
 
 func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig) (*ChatResponse, error) {
@@ -243,12 +286,17 @@ func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage
 			chatConfig.UsageResult = usage
 		}
 	}
-	if content == "" && reasonContent == "" {
+	toolCalls, err := ollamaToolCallsToOpenAI(result.Message.ToolCalls)
+	if err != nil {
+		return nil, err
+	}
+	if content == "" && reasonContent == "" && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 		Usage:         usage,
 	}, nil
 }
@@ -259,6 +307,7 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 	}
 	var usage *TokenUsage
 	sawDone := false
+	var accumulatedToolCalls []map[string]any
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -283,6 +332,9 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 				return err
 			}
 		}
+		if len(event.Message.ToolCalls) > 0 {
+			accumulatedToolCalls = append(accumulatedToolCalls, event.Message.ToolCalls...)
+		}
 		if event.Done {
 			sawDone = true
 			usage = ollamaTokenUsage(event)
@@ -298,6 +350,15 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 		recordResponseUsage(modelUsage, "", usage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
+		}
+	}
+	if len(accumulatedToolCalls) > 0 {
+		toolCalls, err := ollamaToolCallsToOpenAI(accumulatedToolCalls)
+		if err != nil {
+			return err
+		}
+		if chatConfig != nil {
+			chatConfig.ToolCallsResult = &toolCalls
 		}
 	}
 	endOfStream := "[DONE]"
@@ -530,6 +591,209 @@ func (o *OllamaModel) ShowTask(ctx context.Context, taskID string, apiConfig *AP
 	return nil, fmt.Errorf("%s: no such method: ShowTask", o.Name())
 }
 
+const maxOllamaDecisionQuestions = 64
+
+type ollamaDecisionAnswer struct {
+	Type          string             `json:"type"`
+	Noul          *float64           `json:"noul,omitempty"`
+	Choice        *string            `json:"choice,omitempty"`
+	Score         *float64           `json:"score,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+	Confidence    *float64           `json:"confidence,omitempty"`
+	Legend        map[string]string  `json:"legend,omitempty"`
+}
+
+type ollamaDecisionResponse struct {
+	ID      string                          `json:"id"`
+	Model   string                          `json:"model"`
+	Answers map[string]ollamaDecisionAnswer `json:"answers"`
+	Usage   struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+func serializeOllamaQuestions(questions map[string]Question) (map[string]any, error) {
+	out := make(map[string]any, len(questions))
+	for id, q := range questions {
+		if strings.TrimSpace(id) == "" {
+			return nil, fmt.Errorf("ollama: question id cannot be empty")
+		}
+		if q == nil {
+			return nil, fmt.Errorf("ollama: question %q cannot be nil", id)
+		}
+		switch v := q.(type) {
+		case Noul:
+			out[id] = v
+		case *Noul:
+			if v == nil {
+				return nil, fmt.Errorf("ollama: question %q cannot be nil", id)
+			}
+			out[id] = *v
+		case Choice:
+			out[id] = map[string]any{
+				"type":         "choice",
+				"instructions": v.Instructions,
+				"criteria":     v.Criteria,
+			}
+		case *Choice:
+			if v == nil {
+				return nil, fmt.Errorf("ollama: question %q cannot be nil", id)
+			}
+			out[id] = map[string]any{
+				"type":         "choice",
+				"instructions": v.Instructions,
+				"criteria":     v.Criteria,
+			}
+		case Score:
+			out[id] = map[string]any{
+				"type":         "score",
+				"instructions": v.Instructions,
+				"criteria":     v.Criteria,
+			}
+		case *Score:
+			if v == nil {
+				return nil, fmt.Errorf("ollama: question %q cannot be nil", id)
+			}
+			out[id] = map[string]any{
+				"type":         "score",
+				"instructions": v.Instructions,
+				"criteria":     v.Criteria,
+			}
+		default:
+			return nil, fmt.Errorf("ollama: unsupported question type %T for question %q", q, id)
+		}
+	}
+	return out, nil
+}
+
+// Decide asks probability, choice, or scoring questions about one state in a single
+// request using Ollama's System One decision endpoint (/v1/systemone).
 func (o *OllamaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s: no such method: Decide", o.Name())
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("ollama: model name is required")
+	}
+	if request == nil || len(request.Questions) == 0 || len(request.Questions) > maxOllamaDecisionQuestions {
+		return nil, fmt.Errorf("ollama: between 1 and %d questions are required", maxOllamaDecisionQuestions)
+	}
+
+	serializedQuestions, err := serializeOllamaQuestions(request.Questions)
+	if err != nil {
+		return nil, err
+	}
+
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the access address for Ollama (e.g., http://127.0.0.1:11434)")
+	}
+
+	suffix := strings.Trim(o.baseModel.URLSuffix.Decision, "/")
+	if suffix == "" {
+		suffix = ollamaDefaultDecisionSuffix
+	} else if suffix == "systemone" && !strings.HasSuffix(strings.ToLower(strings.TrimRight(baseURL, "/")), "/v1") {
+		suffix = ollamaDefaultDecisionSuffix
+	}
+
+	url := strings.TrimRight(baseURL, "/")
+	if !strings.HasSuffix(strings.ToLower(url), "/"+strings.ToLower(suffix)) &&
+		!strings.HasSuffix(strings.ToLower(url), "/systemone") {
+		url = joinURL(url, suffix)
+	}
+
+	state := request.State
+	var images []string
+	if stateMap, ok := request.State.(map[string]any); ok {
+		if rawImages, exists := stateMap["images"]; exists {
+			switch imgs := rawImages.(type) {
+			case []string:
+				images = imgs
+			case []any:
+				for _, img := range imgs {
+					if str, ok := img.(string); ok {
+						images = append(images, str)
+					}
+				}
+			}
+		}
+		if rawState, exists := stateMap["state"]; exists {
+			state = rawState
+		}
+	}
+	if state == nil {
+		state = ""
+	}
+
+	reqBody := map[string]any{
+		"model":     strings.TrimSpace(*modelName),
+		"state":     state,
+		"questions": serializedQuestions,
+	}
+	if len(images) > 0 {
+		reqBody["images"] = images
+	}
+
+	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("ollama: %w", err)
+	}
+
+	var errResp struct {
+		Error any `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error != nil && errResp.Error != "" {
+		return nil, fmt.Errorf("ollama: %v", errResp.Error)
+	}
+
+	var rawResp ollamaDecisionResponse
+	if err := json.Unmarshal(body, &rawResp); err != nil {
+		return nil, fmt.Errorf("ollama: decode response: %w", err)
+	}
+	if len(rawResp.Answers) == 0 {
+		return nil, fmt.Errorf("ollama: no answers in response")
+	}
+
+	response := DecideResponse{
+		ID:      rawResp.ID,
+		Answers: make(map[string]DecisionAnswer, len(rawResp.Answers)),
+		Usage: struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		}{
+			InputTokens:  rawResp.Usage.InputTokens,
+			OutputTokens: rawResp.Usage.OutputTokens,
+		},
+	}
+
+	for id, answer := range rawResp.Answers {
+		if answer.Noul != nil && (math.IsNaN(*answer.Noul) || math.IsInf(*answer.Noul, 0) || *answer.Noul < 0 || *answer.Noul > 1) {
+			return nil, fmt.Errorf("ollama: invalid probability for question %q", id)
+		}
+		if answer.Confidence != nil && (math.IsNaN(*answer.Confidence) || math.IsInf(*answer.Confidence, 0) || *answer.Confidence < 0 || *answer.Confidence > 1) {
+			return nil, fmt.Errorf("ollama: invalid confidence for question %q", id)
+		}
+		if answer.Score != nil && (math.IsNaN(*answer.Score) || math.IsInf(*answer.Score, 0) || *answer.Score < 0) {
+			return nil, fmt.Errorf("ollama: invalid score for question %q", id)
+		}
+		for opt, prob := range answer.Probabilities {
+			if math.IsNaN(prob) || math.IsInf(prob, 0) || prob < 0 || prob > 1 {
+				return nil, fmt.Errorf("ollama: invalid probability for option %q in question %q", opt, id)
+			}
+		}
+
+		response.Answers[id] = DecisionAnswer{
+			Type: answer.Type,
+			Noul: answer.Noul,
+		}
+	}
+
+	recordResponseUsage(modelUsage, response.ID, &TokenUsage{
+		PromptTokens:     response.Usage.InputTokens,
+		CompletionTokens: response.Usage.OutputTokens,
+		TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
+	}, "decision")
+
+	return &response, nil
 }

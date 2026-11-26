@@ -64,6 +64,7 @@ export function SavedModeCard({
   editedInstanceName,
   onRename,
   instance,
+  canManage,
   instanceDetailsLoaded,
   modelInfoRef,
   onInstanceModelsStatusChange,
@@ -189,18 +190,22 @@ export function SavedModeCard({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <ConfirmDeleteDialog onOk={handleDelete}>
-              <Button
-                variant="delete"
-                size="icon-sm"
-                aria-label={tSetting('deleteInstance')}
-                data-testid="instance-delete"
-                onClick={(e: React.MouseEvent) => e.stopPropagation()}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </ConfirmDeleteDialog>
-            <InstanceSaveButton onSave={handleSave} saving={saving} />
+            {canManage && (
+              <ConfirmDeleteDialog onOk={handleDelete}>
+                <Button
+                  variant="delete"
+                  size="icon-sm"
+                  aria-label={tSetting('deleteInstance')}
+                  data-testid="instance-delete"
+                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </ConfirmDeleteDialog>
+            )}
+            {canManage && (
+              <InstanceSaveButton onSave={handleSave} saving={saving} />
+            )}
           </div>
         </div>
       </CollapsibleTrigger>
@@ -209,11 +214,15 @@ export function SavedModeCard({
           <DynamicForm.Root
             key={`${providerName}-${instanceName}-false`}
             ref={formRef as RefObject<DynamicFormRef>}
-            fields={formFields}
+            fields={
+              canManage
+                ? formFields
+                : formFields.map((field) => ({ ...field, disabled: true }))
+            }
             onSubmit={() => undefined}
             defaultValues={formDefaultValues}
             labelClassName="font-normal"
-            resetOptions={{ keepDirtyValues: true }}
+            resetOptions={{ keepDirtyValues: true, keepErrors: true }}
           />
 
           {/* {providerName !== LLMFactory.OpenAiAPICompatible && (
@@ -232,7 +241,7 @@ export function SavedModeCard({
                 providerName={providerName}
                 instanceName={instanceName || DRAFT_INSTANCE_SENTINEL}
                 instance={instance}
-                hideActions={false}
+                hideActions={!canManage}
                 hideIfEmpty={false}
                 instanceDetailsLoaded={instanceDetailsLoaded}
                 getFormValues={() => formRef.current?.getValues?.() ?? {}}

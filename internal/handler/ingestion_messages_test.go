@@ -101,8 +101,8 @@ func TestDatasetsHandlerListIngestionLogsDatasourceLogType(t *testing.T) {
 	insertIngestionMessagesHandlerKB(t, db, "kb-1", "user-1")
 
 	connectors := []entity.Connector{
-		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
-		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("insert connectors: %v", err)
@@ -176,7 +176,7 @@ func setupIngestionMessagesHandlerDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}, &entity.User{}, &entity.UserTenant{}, &entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{}); err != nil {
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}, &entity.User{}, &entity.UserTenant{}, &entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{}); err != nil {
 		t.Fatalf("migrate test schema: %v", err)
 	}
 	original := dao.DB
@@ -209,6 +209,12 @@ func insertIngestionMessagesHandlerKB(t *testing.T, db *gorm.DB, id, userID stri
 		Status:       &status,
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID: "doc-1", KbID: id, CreatedBy: userID, ParserID: "naive",
+		ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "text", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("insert document: %v", err)
 	}
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, userID, userID); err != nil {
 		t.Fatalf("prepare ingestion permission fixture: %v", err)

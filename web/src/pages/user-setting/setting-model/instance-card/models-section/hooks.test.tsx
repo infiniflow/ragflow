@@ -338,78 +338,84 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
     );
   });
 
-  it('defers the RAGcon auto-fetch when base_url is set but api_key is missing', async () => {
-    let apiKey = '';
-    const baseUrl = 'https://api.ragcon.ai/v1';
-    const resolveCreds = () => ({ apiKey, baseUrl });
+  it.each(['RAGcon', 'Nace'])(
+    'defers the %s draft auto-fetch without an API key',
+    async (providerName) => {
+      let apiKey = '';
+      const baseUrl = 'https://api.ragcon.ai/v1';
+      const resolveCreds = () => ({ apiKey, baseUrl });
 
-    const { rerender } = renderHook(
-      ({ apiKeyValue }) =>
-        useModelsCatalog({
-          providerName: 'RAGcon',
-          instanceName: DRAFT_INSTANCE_SENTINEL,
-          hideActions: false,
-          resolveCreds,
-          instanceModels: undefined,
-          apiKeyValue,
-          baseUrlValue: baseUrl,
+      const { rerender } = renderHook(
+        ({ apiKeyValue }) =>
+          useModelsCatalog({
+            providerName,
+            instanceName: DRAFT_INSTANCE_SENTINEL,
+            hideActions: false,
+            resolveCreds,
+            instanceModels: undefined,
+            apiKeyValue,
+            baseUrlValue: baseUrl,
+          }),
+        { initialProps: { apiKeyValue: apiKey } },
+      );
+
+      // base_url alone must not trigger the fetch — the key gate still applies.
+      expect(mockListProviderModels).not.toHaveBeenCalled();
+
+      apiKey = 'draft-key';
+      rerender({ apiKeyValue: apiKey });
+
+      await waitFor(() =>
+        expect(mockListProviderModels).toHaveBeenCalledWith({
+          provider_name: providerName,
+          api_key: apiKey,
+          base_url: baseUrl,
         }),
-      { initialProps: { apiKeyValue: apiKey } },
-    );
+      );
+    },
+  );
 
-    // base_url alone must not trigger the fetch — the key gate still applies.
-    expect(mockListProviderModels).not.toHaveBeenCalled();
+  it.each(['RAGcon', 'Nace'])(
+    'auto-fetches a saved %s instance using server-stored credentials',
+    async (providerName) => {
+      let apiKey = '';
+      let hasStoredCredentials = false;
+      const baseUrl = 'https://api.ragcon.ai/v1';
+      const resolveCreds = () => ({ apiKey, baseUrl, hasStoredCredentials });
 
-    apiKey = 'draft-key';
-    rerender({ apiKeyValue: apiKey });
+      const { rerender } = renderHook(
+        ({ apiKeyValue, instanceDetailsLoaded }) =>
+          useModelsCatalog({
+            providerName,
+            instanceName: 'ragcon-instance',
+            hideActions: false,
+            resolveCreds,
+            instanceModels: undefined,
+            instance: { id: 'instance-id', is_owner: true } as any,
+            apiKeyValue,
+            baseUrlValue: baseUrl,
+            regionValue: undefined,
+            instanceDetailsLoaded,
+          }),
+        { initialProps: { apiKeyValue: apiKey, instanceDetailsLoaded: false } },
+      );
 
-    await waitFor(() =>
-      expect(mockListProviderModels).toHaveBeenCalledWith({
-        provider_name: 'RAGcon',
-        api_key: apiKey,
-        base_url: baseUrl,
-      }),
-    );
-  });
+      expect(mockListProviderModels).not.toHaveBeenCalled();
 
-  it('auto-fetches a saved RAGcon instance using server-stored credentials', async () => {
-    let apiKey = '';
-    let hasStoredCredentials = false;
-    const baseUrl = 'https://api.ragcon.ai/v1';
-    const resolveCreds = () => ({ apiKey, baseUrl, hasStoredCredentials });
+      hasStoredCredentials = true;
+      rerender({ apiKeyValue: apiKey, instanceDetailsLoaded: true });
 
-    const { rerender } = renderHook(
-      ({ apiKeyValue, instanceDetailsLoaded }) =>
-        useModelsCatalog({
-          providerName: 'RAGcon',
-          instanceName: 'ragcon-instance',
-          hideActions: false,
-          resolveCreds,
-          instanceModels: undefined,
-          instance: { id: 'instance-id', is_owner: true } as any,
-          apiKeyValue,
-          baseUrlValue: baseUrl,
-          regionValue: undefined,
-          instanceDetailsLoaded,
+      await waitFor(() =>
+        expect(mockListProviderModels).toHaveBeenCalledWith({
+          provider_name: providerName,
+          base_url: 'https://api.ragcon.ai/v1',
+          region: undefined,
+          use_saved_credentials: true,
+          instance_name: 'ragcon-instance',
         }),
-      { initialProps: { apiKeyValue: apiKey, instanceDetailsLoaded: false } },
-    );
-
-    expect(mockListProviderModels).not.toHaveBeenCalled();
-
-    hasStoredCredentials = true;
-    rerender({ apiKeyValue: apiKey, instanceDetailsLoaded: true });
-
-    await waitFor(() =>
-      expect(mockListProviderModels).toHaveBeenCalledWith({
-        provider_name: 'RAGcon',
-        base_url: 'https://api.ragcon.ai/v1',
-        region: undefined,
-        use_saved_credentials: true,
-        instance_name: 'ragcon-instance',
-      }),
-    );
-  });
+      );
+    },
+  );
 
   it('does not send endpoint overrides with saved credentials for a non-owner', async () => {
     const resolveCreds = () => ({
@@ -656,6 +662,67 @@ describe('saved instance model baseline', () => {
     expect(queryClient.getQueryData(queryKey)).toEqual([
       expect.objectContaining({ max_tokens: 8192 }),
     ]);
+  });
+});
+
+describe('model edit tool-calling default', () => {
+  const renderEdit = (defaultToolsEnabled: boolean) => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={new QueryClient()}>
+        {children}
+      </QueryClientProvider>
+    );
+    return renderHook(
+      () =>
+        useModelEdit({
+          providerName: 'DeepSeek',
+          instanceName: DRAFT_INSTANCE_SENTINEL,
+          isModelAdded: () => true,
+          isDraftInstance: true,
+          defaultToolsEnabled,
+          updateCatalogModel: jest.fn(),
+          clearCatalogOverride: jest.fn(),
+          updateDraftModel: jest.fn(),
+        }),
+      { wrapper },
+    );
+  };
+
+  it('pre-selects tool calling for drafts when the model has no explicit flag', () => {
+    const { result } = renderEdit(true);
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model',
+        model_types: ['chat'],
+        max_tokens: 0,
+      });
+    });
+    expect(result.current.editDefaultValues?.features).toEqual(['is_tools']);
+  });
+
+  it('keeps an explicit off state for drafts', () => {
+    const { result } = renderEdit(true);
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model',
+        model_types: ['chat'],
+        max_tokens: 0,
+        extra: { is_tools: false },
+      });
+    });
+    expect(result.current.editDefaultValues?.features).toEqual([]);
+  });
+
+  it('leaves the switch off for saved instances', () => {
+    const { result } = renderEdit(false);
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model',
+        model_types: ['chat'],
+        max_tokens: 0,
+      });
+    });
+    expect(result.current.editDefaultValues?.features).toEqual([]);
   });
 });
 

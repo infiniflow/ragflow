@@ -16,6 +16,7 @@
 
 import message from '@/components/ui/message';
 import { ModelTypeToField } from '@/constants/llm';
+import { useAdditionalModelValidIds } from '@/ee/hooks/use-additional-model-valid-ids';
 import {
   IAddedModel,
   IAvailableProvider,
@@ -42,15 +43,22 @@ import {
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
-  buildModelValue,
   buildValidModelIds,
+  getDefaultModelIdByField,
   parseModelValue,
 } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
+
+export const ModelResourceAccessUserIdContext = createContext<
+  string | undefined | null
+>(undefined);
+export const ModelResourceTenantIdContext = createContext<string | undefined>(
+  undefined,
+);
 
 export const enum LLMApiAction {
   AllModels = 'allModels',
@@ -75,17 +83,24 @@ export const LlmKeys = {
   addedProviders: () => [LLMApiAction.AddedProviders] as const,
   allModels: (modelType?: string) =>
     [LLMApiAction.AllModels, modelType] as const,
-  providerInstances: (providerName: string) =>
-    [LLMApiAction.AddedProviders, providerName, 'instances'] as const,
-  providerInstance: (providerName: string, id: string) =>
-    [LLMApiAction.AddedProviders, providerName, id, 'instance'] as const,
-  instanceModels: (providerName: string, instanceName: string) =>
+  allModelsByScope: (
+    modelType?: string,
+    resourceTenantId?: string,
+    accessUserId?: string,
+    ownerIDs?: string[],
+  ) =>
     [
-      LLMApiAction.AddedProviders,
-      providerName,
-      instanceName,
-      'models',
+      ...LlmKeys.allModels(modelType),
+      resourceTenantId,
+      accessUserId,
+      ownerIDs,
     ] as const,
+  providerInstances: (providerID: string) =>
+    [LLMApiAction.AddedProviders, providerID, 'instances'] as const,
+  providerInstance: (providerID: string, id: string) =>
+    [LLMApiAction.AddedProviders, providerID, id, 'instance'] as const,
+  instanceModels: (providerID: string, instanceID: string) =>
+    [LLMApiAction.AddedProviders, providerID, instanceID, 'models'] as const,
   defaultModels: () => [LLMApiAction.ListDefaultModels] as const,
 };
 
@@ -122,8 +137,20 @@ export const useFetchAddedProviders = () => {
 
 export const useFetchAllAddedModels = (
   modelType?: string,
-  ownerTenantId?: string,
+  resourceTenantId?: string,
+  accessUserId?: string | null,
+  ownerIDs?: string[],
 ) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const modelResourceTenantId = resourceTenantId || contextTenantId;
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
+  const modelAccessUserId =
+    accessUserId === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserId ?? undefined);
   const {
     data,
     isFetching: loading,
@@ -131,18 +158,30 @@ export const useFetchAllAddedModels = (
     isFetched,
     isError,
   } = useQuery<IAddedModel[]>({
-    queryKey: [...LlmKeys.allModels(modelType), ownerTenantId],
+    queryKey: LlmKeys.allModelsByScope(
+      modelType,
+      modelResourceTenantId,
+      modelAccessUserId,
+      ownerIDs,
+    ),
     initialData: [],
     gcTime: 0,
+    enabled: !waitingForAccessUser,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
       if (modelType) {
         params.type = modelType;
       }
-      if (ownerTenantId) {
-        params.tenant_id = ownerTenantId;
+      if (modelAccessUserId) {
+        params.access_user_id = modelAccessUserId;
       }
-      const { data } = await llmService.listAllAddedModels({ params }, true);
+      if (ownerIDs?.length) {
+        params.owner_ids = ownerIDs;
+      }
+      const { data } = await llmService.listAllAddedModels(
+        { params, paramsSerializer: { indexes: null } },
+        true,
+      );
 
       return data?.data ?? [];
     },
@@ -163,28 +202,73 @@ export const useFetchAllAddedModels = (
  */
 export const useModelValidIds = (
   modelTypes: string[],
-  ownerTenantId?: string,
+  resourceTenantId?: string,
+  accessUserId?: string | null,
+  includeAdditionalValidIds = true,
 ) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
   const { data, isFetched, refetch } = useFetchAllAddedModels(
     undefined,
-    ownerTenantId,
+    resourceTenantId,
+    accessUserId,
   );
-  const validIds = useMemo(
+  const directValidIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
+  const {
+    validIds: additionalValidIds,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds: resolveAdditionalValidIds,
+  } = useAdditionalModelValidIds({
+    modelTypes,
+    models: data,
+    modelsFetched: isFetched,
+    enabled: includeAdditionalValidIds,
+    ownerTenantId: resourceTenantId || contextTenantId,
+  });
+  const validIds = useMemo(
+    () => new Set([...directValidIds, ...additionalValidIds]),
+    [additionalValidIds, directValidIds],
+  );
 
   const resolveValidIds = async () => {
+    if (waitingForAccessUser) {
+      throw new Error('Resource owner is not loaded');
+    }
     const result = await refetch();
     if (result.isError) throw result.error;
-    return buildValidModelIds(result.data ?? [], modelTypes);
+    const freshModels = result.data ?? [];
+    const freshAdditionalIds = await resolveAdditionalValidIds(freshModels);
+    return new Set([
+      ...buildValidModelIds(freshModels, modelTypes),
+      ...freshAdditionalIds,
+    ]);
   };
 
-  return { validIds, isFetched, resolveValidIds };
+  return {
+    validIds,
+    isFetched,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds,
+  };
 };
 
-export function useFindLlmByUuid() {
-  const { data: models } = useFetchAllAddedModels();
+export function useFindLlmByUuid(
+  resourceTenantId?: string,
+  accessUserId?: string | null,
+) {
+  const { data: models } = useFetchAllAddedModels(
+    undefined,
+    resourceTenantId,
+    accessUserId,
+  );
 
   return (uuid: string) => {
     const parsed = parseModelValue(uuid);
@@ -218,15 +302,15 @@ export const useFetchProviderInstances = (providerName: string) => {
   return { data, loading };
 };
 
-export const useFetchProviderInstance = (providerName: string, id: string) => {
+export const useFetchProviderInstance = (providerID: string, id: string) => {
   return useQuery<IProviderInstance>({
-    queryKey: LlmKeys.providerInstance(providerName, id),
+    queryKey: LlmKeys.providerInstance(providerID, id),
     initialData: undefined as unknown as IProviderInstance,
     gcTime: 0,
     enabled: false,
     queryFn: async () => {
       const { data } = await llmService.showProviderInstance(
-        { provider_name: providerName, id },
+        { provider_name: providerID, provider_id: providerID, id },
         true,
       );
       return (data?.data ?? {}) as IProviderInstance;
@@ -235,8 +319,8 @@ export const useFetchProviderInstance = (providerName: string, id: string) => {
 };
 
 export const useFetchInstanceModels = (
-  providerName: string,
-  instanceName: string,
+  providerID: string,
+  instanceID: string,
 ) => {
   const {
     data,
@@ -244,13 +328,18 @@ export const useFetchInstanceModels = (
     isSuccess,
     isFetchedAfterMount,
   } = useQuery<IInstanceModel[]>({
-    queryKey: LlmKeys.instanceModels(providerName, instanceName),
+    queryKey: LlmKeys.instanceModels(providerID, instanceID),
     initialData: [],
     gcTime: 0,
-    enabled: !!providerName && !!instanceName && instanceName !== '__draft__',
+    enabled: !!providerID && !!instanceID && instanceID !== '__draft__',
     queryFn: async () => {
       const { data } = await llmService.listInstanceModels(
-        { provider_name: providerName, instance_name: instanceName },
+        {
+          provider_name: providerID,
+          instance_name: instanceID,
+          provider_id: providerID,
+          instance_id: instanceID,
+        },
         true,
       );
       if (data?.code !== 0) {
@@ -387,7 +476,9 @@ export const useListProviderModels = () => {
         region,
         use_saved_credentials,
         api_key_config,
+        provider_id,
         instance_name,
+        instance_id,
         skipGlobalErrorNotification,
       } = params;
       // GET /api/v1/providers/<provider_name>/models
@@ -407,6 +498,8 @@ export const useListProviderModels = () => {
       }
       if (use_saved_credentials) {
         queryParams.use_saved_credentials = 'true';
+        if (provider_id) queryParams.provider_id = provider_id;
+        if (instance_id) queryParams.instance_id = instance_id;
         if (api_key_config !== undefined) {
           queryParams.api_key_config = JSON.stringify(api_key_config);
         }
@@ -445,6 +538,8 @@ export const useAddInstanceModel = () => {
       params: {
         provider_name: string;
         instance_name: string;
+        provider_id?: string;
+        instance_id?: string;
       } & IAddInstanceModelRequestBody,
     ) => {
       const { data } = await llmService.addInstanceModel(params);
@@ -462,8 +557,8 @@ export const useAddInstanceModel = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
-            params.provider_name,
-            params.instance_name,
+            params.provider_id ?? params.provider_name,
+            params.instance_id ?? params.instance_name,
           ),
         });
       }
@@ -487,6 +582,8 @@ export const useEditInstanceModel = () => {
       params: {
         provider_name: string;
         instance_name: string;
+        provider_id?: string;
+        instance_id?: string;
       } & IEditInstanceModelRequestBody,
     ) => {
       const { data } = await llmService.editInstanceModel(params);
@@ -494,8 +591,8 @@ export const useEditInstanceModel = () => {
         message.success(t('message.modified'));
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
-            params.provider_name,
-            params.instance_name,
+            params.provider_id ?? params.provider_name,
+            params.instance_id ?? params.instance_name,
           ),
         });
         queryClient.invalidateQueries({
@@ -561,8 +658,8 @@ export const useUpdateModelStatus = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
-            params.provider_name,
-            params.instance_name,
+            params.provider_id ?? params.provider_name,
+            params.instance_id ?? params.instance_name,
           ),
         });
       }
@@ -595,8 +692,8 @@ export const usePatchInstanceModel = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
-            params.provider_name,
-            params.instance_name,
+            params.provider_id ?? params.provider_name,
+            params.instance_id ?? params.instance_name,
           ),
         });
         queryClient.invalidateQueries({
@@ -634,8 +731,8 @@ export const useDeleteInstanceModels = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
-            params.provider_name,
-            params.instance_name,
+            params.provider_id ?? params.provider_name,
+            params.instance_id ?? params.instance_name,
           ),
         });
       }
@@ -661,12 +758,15 @@ export const useUpdateProviderInstance = () => {
           queryKey: LlmKeys.providerInstances(params.provider_name),
         });
         queryClient.invalidateQueries({
-          queryKey: LlmKeys.providerInstance(params.provider_name, params.id),
+          queryKey: LlmKeys.providerInstance(
+            params.provider_id ?? params.provider_name,
+            params.id,
+          ),
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
-            params.provider_name,
-            params.instance_name,
+            params.provider_id ?? params.provider_name,
+            params.instance_id ?? params.instance_name,
           ),
         });
         queryClient.invalidateQueries({
@@ -709,19 +809,8 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
 
   const result = useMemo(() => {
     const dict: Record<string, string> = {};
-    Object.entries(ModelTypeToField).forEach(([key, field]) => {
-      const model = defaultModels.find((m) => m.model_type === key);
-      if (!model || !model.enable) {
-        dict[field] = '';
-        return;
-      }
-      dict[field] =
-        model.model_id ||
-        buildModelValue({
-          model_name: model.model_name,
-          model_instance: model.model_instance,
-          model_provider: model.model_provider,
-        });
+    Object.values(ModelTypeToField).forEach((field) => {
+      dict[field] = getDefaultModelIdByField(defaultModels, field);
     });
     return dict;
   }, [defaultModels]);

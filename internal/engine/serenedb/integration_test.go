@@ -49,7 +49,7 @@ func liveEngine(t *testing.T) *serenedbEngine {
 		t.Skip("SERENEDB_TEST_DSN not set; skipping live SereneDB integration test")
 	}
 	logOnce.Do(func() {
-		_ = common.InitLogger("info", common.FileOutput{Path: filepath.Join(t.TempDir(), "serenedb-it.log")}, "serenedb-it")
+		common.InitLogger("info", common.FileOutput{Path: filepath.Join(t.TempDir(), "serenedb-it.log")}, "serenedb-it")
 	})
 	t.Setenv("SERENEDB_DSN", dsn)
 	e, err := NewEngine(config.SereneDBConfig{})
@@ -285,7 +285,7 @@ func TestIntegrationMetadata(t *testing.T) {
 		t.Fatalf("InsertMetadata: %v", err)
 	}
 
-	// Merge update preserves untouched keys.
+	// Update replaces the whole map: omitted keys must not survive.
 	if err := e.UpdateMetadata(ctx, "doc1", "kb1", map[string]interface{}{"author": "bob"}, tenant); err != nil {
 		t.Fatalf("UpdateMetadata: %v", err)
 	}
@@ -301,17 +301,28 @@ func TestIntegrationMetadata(t *testing.T) {
 		t.Fatalf("meta_fields not decoded to map: %v", res.MetadataRecords[0]["meta_fields"])
 	}
 	if mf["author"] != "bob" {
-		t.Errorf("merge should set author=bob, got %v", mf["author"])
+		t.Errorf("update should set author=bob, got %v", mf["author"])
 	}
-	if _, ok := mf["year"]; !ok {
-		t.Errorf("merge should preserve year, got %v", mf)
+	if _, ok := mf["year"]; ok {
+		t.Errorf("update must drop omitted key year, got %v", mf)
 	}
 
+	// DeleteMetadataKeys removes the explicitly targeted keys and leaves the
+	// rest of the stored map alone.
+	if err := e.UpdateMetadata(ctx, "doc1", "kb1", map[string]interface{}{"author": "bob", "year": float64(2026)}, tenant); err != nil {
+		t.Fatalf("UpdateMetadata (re-add year): %v", err)
+	}
 	if err := e.DeleteMetadataKeys(ctx, "doc1", "kb1", []string{"year"}, tenant); err != nil {
 		t.Fatalf("DeleteMetadataKeys: %v", err)
 	}
-	after, _ := e.loadMetaFields(ctx, buildMetadataTableName(tenant), "doc1", "kb1")
+	after, err := e.loadMetaFields(ctx, buildMetadataTableName(tenant), "doc1", "kb1")
+	if err != nil {
+		t.Fatalf("loadMetaFields: %v", err)
+	}
 	if _, ok := after["year"]; ok {
-		t.Errorf("year should be removed, got %v", after)
+		t.Errorf("DeleteMetadataKeys must remove year, got %v", after)
+	}
+	if after["author"] != "bob" {
+		t.Errorf("DeleteMetadataKeys must keep author, got %v", after)
 	}
 }

@@ -15,6 +15,7 @@
  */
 
 import { LlmModelType } from '@/constants/knowledge';
+import { ModelReferenceLabel } from '@/ee/components/model-reference-label';
 import { useModelValidIds } from '@/hooks/use-llm-request';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { forwardRef, memo, useMemo, useState } from 'react';
@@ -23,7 +24,7 @@ import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { ModelTypeMap } from '../model-tree-select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
-import LLMLabel, { MissingModelLabel } from './llm-label';
+import { MissingModelLabel } from './llm-label';
 
 export interface NextInnerLLMSelectProps {
   id?: string;
@@ -34,7 +35,7 @@ export interface NextInnerLLMSelectProps {
   filter?: string;
   triggerTestId?: string;
   optionTestIdPrefix?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }
 
 const NextInnerLLMSelect = forwardRef<
@@ -48,7 +49,7 @@ const NextInnerLLMSelect = forwardRef<
       filter,
       triggerTestId,
       optionTestIdPrefix,
-      ownerTenantId,
+      resourceTenantId,
     },
     ref,
   ) => {
@@ -59,9 +60,9 @@ const NextInnerLLMSelect = forwardRef<
       if (filter === LlmModelType.Chat) {
         return ['chat'];
       } else if (filter === LlmModelType.Image2text) {
-        return ['vision'];
+        return ['vlm'];
       } else {
-        return ['chat', 'vision'];
+        return ['chat', 'vlm'];
       }
     }, [filter]);
 
@@ -70,11 +71,14 @@ const NextInnerLLMSelect = forwardRef<
     // importer the owner. Gated on isFetched so a slow list never flashes a
     // false missing state. The filter-derived modelTypes only narrow the
     // dropdown display, not validity.
-    const { validIds, isFetched: ownModelsFetched } = useModelValidIds(
-      ModelTypeMap.llm_id,
-      ownerTenantId,
-    );
-    const isModelMissing = !!value && ownModelsFetched && !validIds.has(value);
+    const {
+      validIds,
+      isFetched: ownModelsFetched,
+      getPendingMessage,
+    } = useModelValidIds(ModelTypeMap.llm_id, resourceTenantId);
+    const pendingMessage = value ? getPendingMessage?.(value) : undefined;
+    const isModelMissing =
+      !!value && !pendingMessage && ownModelsFetched && !validIds.has(value);
 
     return (
       <Select disabled={disabled} value={value}>
@@ -87,15 +91,19 @@ const NextInnerLLMSelect = forwardRef<
               }}
               ref={ref}
               data-testid={triggerTestId}
+              title={pendingMessage}
             >
               <SelectValue placeholder={t('common.pleaseSelect')}>
                 {isModelMissing ? (
                   <MissingModelLabel
                     value={value}
-                    ownerTenantId={ownerTenantId}
+                    resourceTenantId={resourceTenantId}
                   />
                 ) : (
-                  <LLMLabel value={value} ownerTenantId={ownerTenantId} />
+                  <ModelReferenceLabel
+                    value={value}
+                    ownerTenantId={resourceTenantId}
+                  />
                 )}
               </SelectValue>
             </SelectTrigger>
@@ -104,7 +112,7 @@ const NextInnerLLMSelect = forwardRef<
             <LlmSettingFieldItems
               modelTypes={modelTypes}
               llmOptionTestIdPrefix={optionTestIdPrefix}
-              ownerTenantId={ownerTenantId}
+              resourceTenantId={resourceTenantId}
             ></LlmSettingFieldItems>
           </PopoverContent>
         </Popover>

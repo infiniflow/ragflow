@@ -81,6 +81,7 @@ export interface ISearchAppProps {
   avatar: any;
   create_time: number;
   created_by: string;
+  user_id?: string;
   description: string;
   id: string;
   name: string;
@@ -189,6 +190,7 @@ interface IllmSettingEnableProps {
 export interface ISearchAppDetailProps {
   avatar: any;
   created_by: string;
+  user_id?: string;
   description: string;
   id: string;
   name: string;
@@ -219,6 +221,7 @@ export interface ISearchAppDetailProps {
   };
   tenant_id: string;
   update_time: number;
+  operator_permission?: number;
 }
 
 interface SearchDetailResponse {

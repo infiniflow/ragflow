@@ -76,7 +76,7 @@
 
 [https://cloud.ragflow.io](https://cloud.ragflow.io)에서 저희 클라우드 서비스를 이용해 보세요.
 
-로컬 배포는 [자체 호스팅](#-자체-호스팅)을 참조하세요.
+로컬 배포는 [자체 호스팅](#-로컬-배포)을 참조하세요.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -85,6 +85,7 @@
 
 ## 🔥 업데이트
 
+- 2026-11-06 RAGFlow 1.0.0을 출시했습니다.
 - 2026-09-29 RAGFlow 1.0.0-rc1을 출시했습니다.
 
 - 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.
@@ -210,14 +211,15 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
    cd ragflow
    ```
 
-2. Go 빌드가 링크하는 네이티브 정적 라이브러리(`download_dev_deps.py`)와 백엔드가 런타임에 로드하는 모델/토크나이저 리소스(`download_deps.py`)를 의존성 다운로드 스크립트로 준비합니다:
+2. 의존성 다운로드 스크립트를 한 번 실행하여 로컬 Go 서버의 빌드, 실행, 문서 분석, 토큰 수 계산에 필요한 모든 리소스를 준비합니다. `download_dev_deps.py`는 네이티브 정적 라이브러리와 cl100k 어휘집, DeepDoc `.ort` 모델, 임베딩 토크나이저 등의 런타임 리소스를 내려받습니다:
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py`는 pdfium, pdf_oxide, office_oxide, onnxruntime을 `~/ragflow-native-libs`에 내려받아 압축 해제합니다. `download_deps.py`는 cl100k 어휘집, DeepDoc 모델, 임베딩 토크나이저 리소스를 `deps/`에 내려받습니다. 두 스크립트 모두 Python 스크립트이며, `uv run`이 선언된 종속성(`requests`, 모델 및 토크나이저 다운로드에는 `huggingface-hub` 추가)을 자동으로 설치합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛰세요. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
+   로컬 개발에서는 이 스크립트 하나로 준비가 완료됩니다. 다시 실행하면 기존 파일을 건너뛰므로 재다운로드하지 않습니다. 이미지용 `deps/download_deps.py`는 같은 런타임 리소스를 내려받지만 네이티브 `.a` 라이브러리는 제외합니다. 의존성 이미지를 빌드하거나 CI에서만 실행하며, 로컬 개발에서는 추가로 실행할 필요가 없습니다.
+
+   `download_dev_deps.py`는 pdfium, pdf_oxide, office_oxide, onnxruntime을 `~/ragflow-native-libs`에 내려받아 압축 해제하고 cl100k 어휘집, DeepDoc 모델, 임베딩 토크나이저 리소스를 `deps/`에 저장합니다. Python 스크립트이며 `uv run`이 선언된 의존성(`requests`와 `huggingface-hub`)을 자동으로 설치합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛰세요. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
 
 3. 서비스를 빌드합니다:
 
@@ -232,35 +234,15 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. 데이터베이스를 마이그레이션합니다:
+5. RAGFlow를 시작합니다:
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. 네 서비스를 네 터미널에서 시작합니다:
+   오픈 소스 버전은 모든 서비스를 하나의 Go 프로세스에서 실행합니다. 데이터베이스를 마이그레이션하고 Admin을 시작하여 슈퍼유저를 초기화한 다음 API, Ingestor, Syncer, Chatter를 시작합니다. 기본 수신 포트는 Admin `9381`, API `9380`입니다. 프로세스를 중지하면 모든 서비스가 중지됩니다. 서비스 설정은 `conf/service_conf.yaml` 또는 환경 변수로 지정합니다.
 
-   터미널 1: Admin (`9381`).
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   터미널 3: Syncer.
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   터미널 4: API (`9380`).
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
+6. `./bin/ragflow_server --help`를 실행하여 사용 가능한 옵션을 확인합니다.
 
 7. 프런트엔드 개발 시에만 Node.js와 npm을 설치하고 API를 확인합니다:
 
@@ -273,7 +255,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 자세한 내용은 [소스에서 서비스 시작](./docs/develop/launch_ragflow_from_source.md)을 참조하세요.
 
 
-> **운영 참고:** Elasticsearch 설정을 영구 적용하려면 `/etc/sysctl.conf`에 `vm.max_map_count=262144`를 추가하세요. 기본 MySQL 구성에서는 Docker 엔트리포인트가 마이그레이션 후 Admin, Syncer, Ingestor, API를 시작합니다. 오픈 소스 1.0의 DeepDoc은 레이아웃, OCR, 표 인식에 CPU 추론을 사용합니다. Docker 설정 변경 후 재시작과 데이터 유지·삭제는 [Docker 가이드](./docker/README.md)를 따르세요. `download_dev_deps.py`는 네이티브 라이브러리를, `download_deps.py`는 모델과 토크나이저 리소스를 준비합니다. 둘 다 `uv run`으로 실행합니다. `--migrate`는 마이그레이션 후 종료하고, `--admin`은 관리 서비스, `--ingestor`는 수집 서비스, `--syncer`는 외부 데이터 소스 동기화 서비스, `--api`는 Web UI와 SDK용 API 서비스를 시작합니다. HTTP 200은 API 준비 완료를 뜻합니다.
+> **운영 참고:** Elasticsearch 설정을 영구 적용하려면 `/etc/sysctl.conf`에 `vm.max_map_count=262144`를 추가하세요. 오픈 소스 1.0의 DeepDoc은 레이아웃, OCR, 표 인식에 CPU 추론을 사용합니다. Docker 설정 변경 후 재시작과 데이터 유지·삭제는 [Docker 가이드](./docker/README.md)를 따르세요. HTTP 200은 API 준비 완료를 뜻합니다.
 
 ## 📚 문서
 

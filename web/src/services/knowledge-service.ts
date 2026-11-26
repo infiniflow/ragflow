@@ -16,6 +16,7 @@
 
 import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
+import { IngestionProgressResponse } from '@/interfaces/database/ingestion';
 import {
   IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
@@ -157,6 +158,7 @@ const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
       ? undefined
       : payload.available_int === 1),
   image_base64: payload.image_base64,
+  image_update_mode: payload.image_update_mode,
 });
 
 const getAvailableParam = (available?: number) => {
@@ -226,7 +228,14 @@ const chunkService = {
         page_size: params.page_size || params.size,
         keywords: params.keywords,
         available: getAvailableParam(params.available_int),
-        chunk_ids: params.chunk_ids,
+        // axios serialises an array as `chunk_ids[]=a&chunk_ids[]=b`, which the
+        // server never sees: it reads the bare `chunk_ids` name and splits the
+        // value on commas, so one string carries the whole id list. An empty
+        // list is left off entirely, because an empty value would read as "no
+        // filter" on the wire, which is a different thing.
+        chunk_ids: Array.isArray(params.chunk_ids)
+          ? params.chunk_ids.join(',') || undefined
+          : params.chunk_ids,
       },
     });
 
@@ -257,8 +266,17 @@ const chunkService = {
     const datasetId = getDatasetId(payload);
     const documentId = getDocumentId(payload);
     const chunkId = payload.chunk_id || payload.id;
+    // Editing a chunk image replaces the picture the chunk already holds.
+    // The API defaults to append, which would stack the new image below the
+    // old one, so an upload without an explicit mode must ask for replace.
+    const imageUpdateMode =
+      payload.image_update_mode ??
+      (payload.image_base64 ? 'replace' : undefined);
     return request.patch(api.chunkDetail(datasetId, documentId, chunkId), {
-      data: mapChunkPayloadToRest(payload),
+      data: {
+        ...mapChunkPayloadToRest(payload),
+        image_update_mode: imageUpdateMode,
+      },
     });
   },
   getChunk: async (params: Record<string, any>) => {
@@ -305,8 +323,7 @@ const kbService = {
 export const getKbDetail = async (datasetId: string) => {
   const response = await request.get(api.getKbDetail(datasetId));
   // The /api/v1/datasets/<id> endpoint returns chunk_count/document_count,
-  // but legacy consumers (e.g. the GraphRAG/Raptor "magic wand" enable check
-  // in dataset/index.tsx) read chunk_num/doc_num. Normalize both shapes.
+  // but legacy consumers read chunk_num/doc_num. Normalize both shapes.
   if (response.data?.code === 0 && response.data.data) {
     const d = response.data.data;
     response.data.data = {
@@ -348,12 +365,17 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 // Used to echo back already-selected datasets whose names are not present
 // in the first page of the paginated list. `canvasID` limits results to
 // datasets usable by both the canvas owner and the current user.
-export const listDatasetByIds = (ids: string[], canvasID?: string) =>
+export const listDatasetByIds = (
+  ids: string[],
+  canvasID?: string,
+  accessUserID?: string,
+) =>
   request.get(api.kbList, {
     params: {
       ids: ids.join(','),
       page_size: ids.length,
       ...(canvasID ? { canvas_id: canvasID } : {}),
+      ...(accessUserID ? { access_user_id: accessUserID } : {}),
     },
   });
 
@@ -529,6 +551,13 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const getIngestionProgress = (
+  datasetId: string,
+  logId: string,
+): Promise<{
+  data: { code: number; message?: string; data: IngestionProgressResponse };
+}> => request.get(api.getIngestionProgress(datasetId, logId));
 
 export const listIngestionMessages = (
   datasetId: string,
