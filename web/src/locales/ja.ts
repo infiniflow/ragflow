@@ -2751,7 +2751,7 @@ export default {
       titleChunkerDescription:
         '見出しの階層構造に基づいてドキュメントをセクションに分割します。正規表現ルールで見出しレベルを定義し、階層モードまたはグループモードを選択してチャンクの構成方法を制御します。',
       titleChunker: 'タイトルチャンカー',
-      extractor: 'トランスフォーマー',
+      extractor: '抽出器',
       extractorDescription:
         'LLMを使用して、ドキュメントチャンクから要約や分類などの構造化された知見を抽出します。',
       compiler: 'コンパイル',

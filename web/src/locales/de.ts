@@ -2203,7 +2203,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
       titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
       outputFormat: 'Ausgabeformat',

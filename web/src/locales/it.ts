@@ -2610,7 +2610,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       titleChunkerDescription:
         'Dividi i documenti in sezioni per gerarchia di titoli. Definisci i livelli di intestazione con regole regex, poi scegli la modalità Gerarchia o Gruppo per controllare come sono strutturati i chunk.',
       titleChunker: 'Title Chunker',
-      extractor: 'Trasformatore',
+      extractor: 'Estrattore',
       extractorDescription:
         'Usa un LLM per estrarre insight strutturati dai chunk di documenti—come riassunti, classificazioni, ecc.',
       outputFormat: 'Formato output',

@@ -2283,7 +2283,7 @@ export default {
       hierarchicalMergerDescription:
         'Разбивает документы на секции по иерархии заголовков с regex для точного контроля.',
       hierarchicalMerger: 'Заголовок',
-      extractor: 'Трансформер',
+      extractor: 'Экстрактор',
       extractorDescription:
         'Использует LLM для извлечения структурированных данных из чанков — резюме, классификаций и т.д.',
       outputFormat: 'Формат вывода',

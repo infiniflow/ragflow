@@ -657,7 +657,7 @@ Released on December 27, 2025.
   - Supports voice input/output.
   - Supports configuring multiple **Retrieval** components per **Agent** component.
 - Ingestion pipeline
-  - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
+  - Supports extracting table of contents in the **Extractor** component to improve long-context RAG performance.
 - Dataset
   - Supports configuring context window for images and tables.
   - Introduces parent-child chunking strategy.
