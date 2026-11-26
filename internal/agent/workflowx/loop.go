@@ -1007,9 +1007,11 @@ func cloneCheckpointMap(src map[string][]byte) map[string][]byte {
 	}
 	dst := make(map[string][]byte, len(src))
 	for k, v := range src {
-		buf := make([]byte, len(v))
-		copy(buf, v)
-		dst[k] = buf
+		cloned := bytes.Clone(v)
+		if cloned == nil {
+			cloned = []byte{}
+		}
+		dst[k] = cloned
 	}
 	return dst
 }

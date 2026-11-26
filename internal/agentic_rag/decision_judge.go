@@ -199,10 +199,7 @@ func (b *decisionBackend) split(text string) []string {
 	// The cap applies here too: this segment is what gets sent, and a passage
 	// taller than the cap must not reach the endpoint whole just because it
 	// arrived through the sub-segment path.
-	if len([]rune(text)) > b.maxChars {
-		return []string{string([]rune(text)[:b.maxChars])}
-	}
-	return []string{text}
+	return []string{utility.TruncateRunes(text, b.maxChars)}
 }
 
 // splitWhole mirrors decisionhead.SplitWhole's contract — one segment, the text the
@@ -262,9 +259,7 @@ func (b *decisionBackend) judge(ctx context.Context, question string, segments [
 		texts := make([]string, 0, end-start)
 		for i := start; i < end; i++ {
 			text := out[i].Segment
-			if len([]rune(text)) > b.maxChars {
-				text = string([]rune(text)[:b.maxChars])
-			}
+			text = utility.TruncateRunes(text, b.maxChars)
 			texts = append(texts, text)
 		}
 		sent := time.Now()

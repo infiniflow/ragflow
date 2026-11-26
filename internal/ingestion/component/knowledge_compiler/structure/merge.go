@@ -748,16 +748,9 @@ func entityNameValue(p common.Product) string {
 // unionOrdered mirrors _common.union_ordered: concatenated, deduped,
 // first-seen order preserved.
 func unionOrdered(lists ...[]string) []string {
-	seen := map[string]bool{}
 	var out []string
 	for _, lst := range lists {
-		for _, v := range lst {
-			if v == "" || seen[v] {
-				continue
-			}
-			seen[v] = true
-			out = append(out, v)
-		}
+		out = appcommon.AppendUnique(out, lst)
 	}
 	return out
 }

@@ -1274,18 +1274,11 @@ var dataImageRe = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0
 // enhancement (Python's _extract_data_images covers the recursive
 // case).
 func extractDataImages(values []string) []string {
-	seen := make(map[string]struct{})
-	var out []string
+	var matches []string
 	for _, v := range values {
-		for _, m := range dataImageRe.FindAllString(v, -1) {
-			if _, dup := seen[m]; dup {
-				continue
-			}
-			seen[m] = struct{}{}
-			out = append(out, m)
-		}
+		matches = append(matches, dataImageRe.FindAllString(v, -1)...)
 	}
-	return out
+	return common.Deduplicate(matches)
 }
 
 // collectSysFiles splits sys.files from canvas state into text parts

@@ -564,8 +564,7 @@ func renderImmediatelyResponse(cfg map[string]any) (int, string, []byte, error) 
 	// Try JSON parse first (python: parse_body() branch at line 2110).
 	var probe any
 	if err := json.Unmarshal([]byte(bodyTpl), &probe); err == nil {
-		encoded, _ := json.Marshal(probe)
-		return status, "application/json", encoded, nil
+		return status, "application/json", []byte(utility.MustJSON(probe)), nil
 	}
 	return status, "text/plain", []byte(bodyTpl), nil
 }

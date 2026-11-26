@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -448,7 +450,7 @@ func (c *BoxConnector) sourceDocument(file boxFile) (SourceDocument, bool) {
 	if file.Size != nil {
 		size = *file.Size
 	}
-	fetchKey, _ := json.Marshal(boxFetchReference{FileID: file.ID, Name: file.Name, Size: size})
+	fetchKey := utility.MustJSON(boxFetchReference{FileID: file.ID, Name: file.Name, Size: size})
 	metadata := map[string]any{
 		"file_id": file.ID,
 		"name":    file.Name,
@@ -464,7 +466,7 @@ func (c *BoxConnector) sourceDocument(file boxFile) (SourceDocument, bool) {
 		SourceID:           boxSourceID(file.ID),
 		SemanticIdentifier: boxSemanticIdentifier(file),
 		Extension:          boxExtension(file.Name),
-		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: size},
+		FetchRef:           &FetchReference{Key: fetchKey, SizeHint: size},
 		UpdatedAt:          file.updatedAt(),
 		SizeBytes:          size,
 		Metadata:           metadata,

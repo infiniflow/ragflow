@@ -748,13 +748,9 @@ func PatchConfig(base map[string]interface{}, updates map[string]interface{}) ma
 		return base
 	}
 
-	result := make(map[string]interface{}, len(base))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range updates {
-		result[k] = v
-	}
+	result := make(map[string]interface{}, len(base)+len(updates))
+	maps.Copy(result, base)
+	maps.Copy(result, updates)
 	return result
 }
 
