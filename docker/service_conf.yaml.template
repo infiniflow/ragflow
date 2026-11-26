@@ -37,6 +37,7 @@ mysql:
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
   tls: '${MYSQL_TLS:-}'
+  tls_ca_file: '${MYSQL_TLS_CA_FILE:-}'
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'

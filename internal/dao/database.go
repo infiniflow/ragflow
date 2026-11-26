@@ -18,9 +18,12 @@ package dao
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -31,6 +34,8 @@ import (
 	"ragflow/internal/server/config"
 
 	"go.uber.org/zap"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	// The vastbase metadata connection speaks lib/pq (DriverName "postgres"),
 	// matching the document engine's client; the import registers the
@@ -213,18 +218,37 @@ func quoteMetaDSNValue(v string) string {
 	return "'" + r + "'"
 }
 
+// customMySQLTLSConfig is the name under which the CA-backed tls.Config is
+// registered with go-sql-driver/mysql.
+const customMySQLTLSConfig = "ragflow-mysql-custom"
+
 // buildMySQLMetaDSN builds the go-sql-driver/mysql DSN for the metadata
 // database. `tls` is optional: managed MySQL offerings often require TLS
-// (issue #22714). go-sql-driver has no allowPublicKeyRetrieval option: it
-// requests the RSA public key itself during plaintext caching_sha2_password
-// authentication, and an unknown DSN parameter would be sent as a system
-// variable and rejected.
-func buildMySQLMetaDSN(cfg config.MySQLConfig) string {
+// (issue #22714). The built-in modes are passed through verbatim; `custom`
+// verifies the server certificate against a PEM CA bundle in `tls_ca_file`
+// in addition to the system roots. go-sql-driver has no
+// allowPublicKeyRetrieval option: it requests the RSA public key itself
+// during plaintext caching_sha2_password authentication, and an unknown DSN
+// parameter would be sent as a system variable and rejected.
+func buildMySQLMetaDSN(cfg config.MySQLConfig) (string, error) {
 	params := url.Values{}
 	params.Set("charset", cfg.Charset)
 	params.Set("parseTime", "True")
 	params.Set("loc", "Local")
-	if cfg.TLS != "" {
+	switch cfg.TLS {
+	case "", "false":
+		// No TLS, as before TLS was configurable.
+	case "custom":
+		if cfg.TLSCAFile == "" {
+			return "", errors.New(`mysql.tls "custom" requires mysql.tls_ca_file`)
+		}
+		if err := registerMySQLCATLSConfig(cfg.TLSCAFile); err != nil {
+			return "", err
+		}
+		params.Set("tls", customMySQLTLSConfig)
+	default:
+		// "true", "skip-verify" and "preferred" are recognized directly by
+		// the driver. Anything else would be sent as a system variable.
 		params.Set("tls", cfg.TLS)
 	}
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s",
@@ -234,7 +258,25 @@ func buildMySQLMetaDSN(cfg config.MySQLConfig) string {
 		cfg.Port,
 		cfg.DatabaseName,
 		params.Encode(),
-	)
+	), nil
+}
+
+// registerMySQLCATLSConfig registers a tls.Config that verifies the MySQL
+// server certificate against the system root CAs plus the PEM bundle in
+// caFile. Registering again on startup replaces the previous registration.
+func registerMySQLCATLSConfig(caFile string) error {
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("read mysql.tls_ca_file: %w", err)
+	}
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil || rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	if !rootCAs.AppendCertsFromPEM(pemBytes) {
+		return fmt.Errorf("mysql.tls_ca_file contains no valid PEM certificates: %s", caFile)
+	}
+	return mysqldriver.RegisterTLSConfig(customMySQLTLSConfig, &tls.Config{RootCAs: rootCAs})
 }
 
 // buildVastbaseMetaDSN builds the lib/pq keyword DSN for the Vastbase metadata
@@ -349,7 +391,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		staleTimeout = vastbaseConfig.StaleTimeout
 	default:
 		databaseConfig := globalConfig.GetMySQLConfig()
-		dialector = newMigrationAwareDialector(buildMySQLMetaDSN(databaseConfig))
+		dsn, err := buildMySQLMetaDSN(databaseConfig)
+		if err != nil {
+			return fmt.Errorf("build mysql dsn: %w", err)
+		}
+		dialector = newMigrationAwareDialector(dsn)
 		maxConnections = databaseConfig.MaxConnections
 		staleTimeout = databaseConfig.StaleTimeout
 	}

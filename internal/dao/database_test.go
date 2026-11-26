@@ -659,7 +659,10 @@ func TestBuildMySQLMetaDSN(t *testing.T) {
 		Charset:      "utf8mb4",
 	}
 
-	got := buildMySQLMetaDSN(base)
+	got, err := buildMySQLMetaDSN(base)
+	if err != nil {
+		t.Fatalf("default DSN: %v", err)
+	}
 	want := "ragflow:secret@tcp(mysql:3306)/rag_flow?charset=utf8mb4&loc=Local&parseTime=True"
 	if got != want {
 		t.Fatalf("default DSN = %q, want %q", got, want)
@@ -667,7 +670,10 @@ func TestBuildMySQLMetaDSN(t *testing.T) {
 
 	tlsConfig := base
 	tlsConfig.TLS = "skip-verify"
-	got = buildMySQLMetaDSN(tlsConfig)
+	got, err = buildMySQLMetaDSN(tlsConfig)
+	if err != nil {
+		t.Fatalf("TLS DSN: %v", err)
+	}
 	want = "ragflow:secret@tcp(mysql:3306)/rag_flow?charset=utf8mb4&loc=Local&parseTime=True&tls=skip-verify"
 	if got != want {
 		t.Fatalf("TLS DSN = %q, want %q", got, want)
