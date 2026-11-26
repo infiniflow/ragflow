@@ -272,6 +272,12 @@ func scanContent(content string) []Finding {
 	}).Findings
 }
 
+func scanNamed(filename, content string) []Finding {
+	return NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+		filename: []byte(content),
+	}).Findings
+}
+
 func TestScanSkillScalesWithManyCandidateCommands(t *testing.T) {
 	// Every rm here is an argument of echo, so the pass must reject each one
 	// from the words of its own command instead of rescanning the growing line
@@ -450,5 +456,182 @@ func TestScanSkillScansLineAfterCommentInsideSubstitution(t *testing.T) {
 	real := "#!/bin/sh\necho $( # note\n); rm -rf \"label; $T\"\n"
 	if findings := scanContent(real); !hasPattern(findings, "rm_quoted_expansion") {
 		t.Fatalf("command after the substitution was not reported: %v", findings)
+	}
+}
+
+// A finding reports the physical line the offending command is written on, not
+// the line its compound command started on.
+func TestScanSkillReportsTheStageLineOfAPipeline(t *testing.T) {
+	content := "#!/bin/sh\necho start |\n  rm -rf \"a; $T\"\n"
+	findings := scanContent(content)
+	found := false
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			found = true
+			if finding.Line != 3 {
+				t.Fatalf("reported line %d, want the second stage's line 3", finding.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("second pipeline stage was not reported: %v", findings)
+	}
+}
+
+// A comment inside a substitution ends at the newline. The outer command keeps
+// running: text after the closing parenthesis still belongs to it, while a
+// separate command after `;` runs on its own.
+func TestScanSkillKeepsOuterCommandAfterCommentInsideSubstitution(t *testing.T) {
+	negative := "#!/bin/sh\necho $(printf ok # note\n) rm -rf \"label; $T\"\n"
+	if findings := scanContent(negative); hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("argument rm after the substitution raised rm_quoted_expansion: %v", findings)
+	}
+	positive := "#!/bin/sh\necho $(printf ok # note\n); rm -rf \"label; $T\"\n"
+	if findings := scanContent(positive); !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("the command after the closed substitution was not reported: %v", findings)
+	}
+}
+
+// A newline between two complete commands inside a substitution separates
+// them, so the second one runs.
+func TestScanSkillSeparatesCommandsInsideASubstitution(t *testing.T) {
+	content := "#!/bin/sh\necho $(\nprintf ok\nrm -rf \"a; $T\"\n)\n"
+	findings := scanContent(content)
+	found := false
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			found = true
+			if finding.Line != 4 {
+				t.Fatalf("reported line %d, want 4", finding.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("second command inside the substitution was treated as an argument: %v", findings)
+	}
+}
+
+// Prose parentheses are punctuation, not shell syntax: a Markdown file keeps
+// its physical lines, and each destructive line reports its own number.
+func TestScanSkillKeepsProseOnPhysicalLines(t *testing.T) {
+	content := "Example (\nrm -rf \"a; $T\"\nrm -rf \"b; $T\"\n"
+	findings := scanNamed("SKILL.md", content)
+	var got []int
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			got = append(got, finding.Line)
+		}
+	}
+	if len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("rm_quoted_expansion lines = %v, want 2 and 3", got)
+	}
+}
+
+// A here-document body starts at the newline that ends its header, even inside
+// an open subshell, so the commands after the delimiter are still scanned.
+func TestScanSkillDrainsHeredocInsideSubshell(t *testing.T) {
+	content := "#!/bin/sh\n(\ncat <<'DOC'\nrm -rf \"x; $T\"\nDOC\nrm -rf \"a; $T\"\n)\n"
+	findings := scanContent(content)
+	var got []int
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			got = append(got, finding.Line)
+		}
+	}
+	if len(got) != 1 || got[0] != 6 {
+		t.Fatalf("rm_quoted_expansion lines = %v, want only line 6", got)
+	}
+}
+
+// An escaped pipe is an argument to the previous word, not a pipeline
+// operator, so the next physical line is a command of its own.
+func TestScanSkillKeepsNextLineAfterEscapedPipe(t *testing.T) {
+	content := "#!/bin/sh\nprintf '%s\\n' \\|\nrm -rf \"a; $T\"\n"
+	findings := scanContent(content)
+	found := false
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			found = true
+			if finding.Line != 3 {
+				t.Fatalf("reported line %d, want 3", finding.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("command after an escaped pipe was merged into the printf arguments: %v", findings)
+	}
+}
+
+// An even trailing backslash run in an unquoted here-document body is an
+// escaped backslash, not a line continuation, so the delimiter still closes
+// the body.
+func TestScanSkillKeepsEvenBackslashInHeredocBody(t *testing.T) {
+	content := "#!/bin/sh\ncat <<DOC\nx\\\\\nDOC\nrm -rf \"a; $T\"\n"
+	findings := scanContent(content)
+	var got []int
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			got = append(got, finding.Line)
+		}
+	}
+	if len(got) != 1 || got[0] != 5 {
+		t.Fatalf("rm_quoted_expansion lines = %v, want only line 5", got)
+	}
+}
+
+// Inside a double-quoted delimiter only a backslash before `$`, a backtick,
+// `"`, `\` or a newline is removed; before any other character it is literal.
+func TestScanSkillKeepsLiteralBackslashInDoubleQuotedDelimiter(t *testing.T) {
+	content := "#!/bin/sh\ncat <<\"A\\q\"\nrm -rf \"x; $T\"\nA\\q\nrm -rf \"a; $T\"\n"
+	findings := scanContent(content)
+	var got []int
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			got = append(got, finding.Line)
+		}
+	}
+	if len(got) != 1 || got[0] != 5 {
+		t.Fatalf("rm_quoted_expansion lines = %v, want only line 5", got)
+	}
+}
+
+// Deeply nested substitutions are bounded like the env -S rescan: the scan
+// finishes and the operand after the substitution is still inspected.
+func TestScanSkillBoundsNestedSubstitutions(t *testing.T) {
+	line := "rm -r >$(" + strings.Repeat("$(", 64) + "true" + strings.Repeat(")", 65) + " \"label; $T\""
+	start := time.Now()
+	if findings := scanLine(line); !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("operand after the nested substitution was not reported: %v", findings)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("nested substitution scan took %v", elapsed)
+	}
+}
+
+// A substitution is one word of the outer command: separators inside its body
+// do not end the outer scan before the rm.
+func TestScanSkillKeepsNestedSeparatorsOutOfTheOuterScan(t *testing.T) {
+	lines := []string{
+		`rm -r >$(printf ok; true) "label; $T"`,
+		`rm -r <(printf ok; true) "label; $T"`,
+		`env IGNORE=<(printf ok; true) rm -r "label; $T"`,
+	}
+	for _, line := range lines {
+		if findings := scanLine(line); !hasPattern(findings, "rm_quoted_expansion") {
+			t.Fatalf("%q: operand after the substitution was missed: %v", line, findings)
+		}
+	}
+}
+
+// Sibling substitutions in one command must not retokenize the growing prefix
+// for each opener.
+func TestScanSkillScalesWithManySiblingSubstitutions(t *testing.T) {
+	line := "env " + strings.Repeat("A=<(true) ", 20000) + "rm -r \"label; $T\""
+	start := time.Now()
+	if findings := scanLine(line); !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("operand after many sibling substitutions was not reported")
+	}
+	if elapsed := time.Since(start); elapsed > 15*time.Second {
+		t.Fatalf("scanning 20000 sibling substitutions took %v", elapsed)
 	}
 }

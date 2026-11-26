@@ -108,12 +108,12 @@ func (s *Scanner) ScanSkill(skillName, source, trustLevel string, files map[stri
 // scanFile scans a single file for threats
 func (s *Scanner) scanFile(filename, content string) []Finding {
 	var findings []Finding
-	lines := logicalLines(content)
 	// A commented-out example such as "# Example: rm -rf $TARGET" is not a
 	// command, but a destructive-rm finding makes the skill uninstallable for
 	// community sources, so match against the code-only view of each logical
 	// line.
 	prose := isProseFile(filename)
+	lines := logicalLines(content, prose)
 
 	for _, pattern := range s.patterns {
 		for _, line := range lines {
@@ -121,17 +121,19 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 			if !prose {
 				target = maskShellComments(target)
 			}
-			if matches := pattern.re.FindString(target); matches != "" {
-				findings = append(findings, Finding{
-					PatternID:   pattern.PatternID,
-					Severity:    pattern.Severity,
-					Category:    pattern.Category,
-					File:        filename,
-					Line:        line.number,
-					Match:       strings.TrimSpace(matches),
-					Description: pattern.Description,
-				})
+			loc := pattern.re.FindStringIndex(target)
+			if loc == nil {
+				continue
 			}
+			findings = append(findings, Finding{
+				PatternID:   pattern.PatternID,
+				Severity:    pattern.Severity,
+				Category:    pattern.Category,
+				File:        filename,
+				Line:        line.at(loc[0]),
+				Match:       strings.TrimSpace(target[loc[0]:loc[1]]),
+				Description: pattern.Description,
+			})
 		}
 	}
 
@@ -142,12 +144,16 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 			continue
 		}
 		if operand, ok := scanQuotedRmExpansion(line.text); ok {
+			number := line.number
+			if idx := strings.Index(line.text, operand); idx >= 0 {
+				number = line.at(idx)
+			}
 			findings = append(findings, Finding{
 				PatternID:   "rm_quoted_expansion",
 				Severity:    "high",
 				Category:    "destructive",
 				File:        filename,
-				Line:        line.number,
+				Line:        number,
 				Match:       strings.TrimSpace(operand),
 				Description: "recursive rm of a quoted operand with a separator before an expansion",
 			})
@@ -230,11 +236,33 @@ func isProseFile(filename string) bool {
 // folded: number is the physical line the logical line starts on, text no
 // longer carries the removed `\<newline>` pairs. data marks a line that sits
 // inside a here-document body, which the shell hands to a program as literal
-// input instead of running as a command.
+// input instead of running as a command. folds records where each following
+// physical line starts in text, so a match reports the physical line it is
+// written on rather than the line its command started on.
 type logicalLine struct {
 	number int
 	text   string
 	data   bool
+	folds  []lineFold
+}
+
+// lineFold is the offset in a logical line's text where the physical line
+// number starts.
+type lineFold struct {
+	offset int
+	number int
+}
+
+// at maps a byte offset in text to the physical line it was written on.
+func (l logicalLine) at(offset int) int {
+	number := l.number
+	for _, fold := range l.folds {
+		if offset < fold.offset {
+			break
+		}
+		number = fold.number
+	}
+	return number
 }
 
 // heredocTerm is one pending here-document: the delimiter that ends its body,
@@ -255,7 +283,13 @@ type heredocTerm struct {
 // string that spans physical newlines stays in the same command. A
 // here-document body is marked as data and the command line ends at its
 // delimiter.
-func logicalLines(content string) []logicalLine {
+//
+// Prose files keep physical lines: their parentheses and backslashes are
+// punctuation, not shell syntax, so folding them would merge unrelated lines.
+func logicalLines(content string, prose bool) []logicalLine {
+	if prose {
+		return physicalLines(content)
+	}
 	var lines []logicalLine
 	number := 1
 	// parenDepth keeps a command that spans physical lines inside `$(...)`, a
@@ -265,6 +299,7 @@ func logicalLines(content string) []logicalLine {
 	for pos := 0; pos < len(content); {
 		start := number
 		var buf []byte
+		var folds []lineFold
 		var heredocs []heredocTerm
 		// Double-quote state matters: an apostrophe is literal text inside a
 		// double-quoted span, so it must not open single-quote mode and swallow
@@ -274,11 +309,14 @@ func logicalLines(content string) []logicalLine {
 		// state from before the backslash still applies: `echo \<newline># c`
 		// leaves `#` after a blank, where it opens a comment.
 		wordStartBeforeEscape := true
+		commentStart := 0
 
 		for pos < len(content) {
 			c := content[pos]
 			if c == '\n' {
 				if escaped && !inSingle && !comment {
+					// A backslash-newline is removed by the shell: the same
+					// word, and the same command, continue on the next line.
 					buf = buf[:len(buf)-1]
 					escaped = false
 					if !inDouble {
@@ -297,15 +335,48 @@ func logicalLines(content string) []logicalLine {
 					continue
 				}
 				if comment {
-					// A comment ends at the physical newline. End the logical
-					// line here so the comment does not mask the next line;
-					// the open parentheses still carry over.
-					break
+					// A comment runs to the physical newline. Drop it from the
+					// buffer and keep going: an enclosing substitution or
+					// subshell is still open, and the next line belongs to the
+					// same command the shell is still reading.
+					buf = buf[:commentStart]
+					comment = false
+					wordStart = true
+					if parenDepth == 0 && !continuesShellCommand(buf) {
+						break
+					}
+				}
+				if len(heredocs) > 0 {
+					// A here-document body starts at the newline that ends its
+					// header command, even inside an open substitution or
+					// subshell: the shell reads the body before it resumes the
+					// enclosing compound command.
+					lines = append(lines, logicalLine{number: start, text: string(buf), folds: folds})
+					pos++
+					number++
+					for _, term := range heredocs {
+						pos, number = appendHeredocBody(content, pos, number, term, &lines)
+					}
+					heredocs = nil
+					start = number
+					buf = nil
+					folds = nil
+					inSingle, inDouble, escaped, comment, wordStart = false, false, false, false, true
+					wordStartBeforeEscape = true
+					continue
 				}
 				if parenDepth > 0 || continuesShellCommand(buf) {
 					// The shell reads the next physical line as part of this
-					// command; the newline is plain whitespace there.
-					buf = append(buf, ' ')
+					// command. Two complete commands on separate lines are
+					// separated by the newline, so the fold keeps a command
+					// boundary; after a pipe or `&&` the next line is the same
+					// command, where the newline is plain whitespace.
+					sep := byte(';')
+					if continuesShellCommand(buf) {
+						sep = ' '
+					}
+					buf = append(buf, sep)
+					folds = append(folds, lineFold{offset: len(buf), number: number + 1})
 					wordStart = true
 					number++
 					pos++
@@ -350,6 +421,7 @@ func logicalLines(content string) []logicalLine {
 				wordStart = false
 			case c == '#' && wordStart:
 				comment = true
+				commentStart = len(buf) - 1
 			case c == '(':
 				parenDepth++
 				wordStart = true
@@ -365,7 +437,7 @@ func logicalLines(content string) []logicalLine {
 			}
 			pos++
 		}
-		lines = append(lines, logicalLine{number: start, text: string(buf)})
+		lines = append(lines, logicalLine{number: start, text: string(buf), folds: folds})
 		if pos >= len(content) {
 			break
 		}
@@ -378,17 +450,49 @@ func logicalLines(content string) []logicalLine {
 	return lines
 }
 
+// physicalLines keeps every physical line as it is written. Prose files are
+// not shell scripts, so a later review-by-line keeps their meaning.
+func physicalLines(content string) []logicalLine {
+	var lines []logicalLine
+	number := 1
+	for pos := 0; pos < len(content); {
+		eol := strings.IndexByte(content[pos:], '\n')
+		if eol < 0 {
+			lines = append(lines, logicalLine{number: number, text: content[pos:]})
+			break
+		}
+		lines = append(lines, logicalLine{number: number, text: content[pos : pos+eol]})
+		pos += eol + 1
+		number++
+	}
+	return lines
+}
+
 // continuesShellCommand reports whether the line ends with an operator that
-// makes the shell read the next physical line as the same command.
+// makes the shell read the next physical line as the same command. A trailing
+// pipe that is escaped (`printf '%s\n' \|`) is an argument to the previous
+// word, not a pipeline operator.
 func continuesShellCommand(buf []byte) bool {
 	trimmed := bytes.TrimRight(buf, " \t\r")
 	if len(trimmed) == 0 {
 		return false
 	}
 	if trimmed[len(trimmed)-1] == '|' {
-		return true
+		run := 0
+		for i := len(trimmed) - 2; i >= 0 && trimmed[i] == '\\'; i-- {
+			run++
+		}
+		return run%2 == 0
 	}
 	return len(trimmed) >= 2 && trimmed[len(trimmed)-2] == '&' && trimmed[len(trimmed)-1] == '&'
+}
+
+// hasOddTrailingBackslash reports whether text ends in an odd run of
+// backslashes. Only that run is a line continuation in an unquoted
+// here-document body; an even run is an escaped backslash.
+func hasOddTrailingBackslash(text string) bool {
+	run := len(text) - len(strings.TrimRight(text, `\`))
+	return run%2 == 1
 }
 
 // appendHeredocBody consumes the physical lines of one here-document body. A
@@ -402,7 +506,9 @@ func appendHeredocBody(content string, pos, number int, term heredocTerm, lines 
 		match, nextPos, matchEOL, used := text, next, hasEOL, 1
 		// An unquoted delimiter has its `\`-newline pairs removed before the
 		// shell compares it, so the terminator may be split over two lines.
-		for !term.quoted && matchEOL && strings.HasSuffix(match, "\\") {
+		// Only an odd trailing backslash run is such a continuation; an even run
+		// ends the line.
+		for !term.quoted && matchEOL && hasOddTrailingBackslash(match) {
 			match = match[:len(match)-1]
 			continued, after, afterEOL := readPhysicalLine(content, nextPos)
 			match += continued
@@ -528,7 +634,10 @@ scan:
 			switch {
 			case c == quote:
 				quote = 0
-			case c == '\\' && quote == '"' && j+1 < len(content):
+			case c == '\\' && quote == '"' && j+1 < len(content) && doubleQuoteEscapee(content[j+1]):
+				// Inside double quotes only `$`, a backtick, `"`, `\` and a
+				// newline lose the backslash; before any other character it is
+				// literal (`<<"A\q"` ends at the line `A\q`).
 				j++
 				word = append(word, content[j])
 			default:
@@ -566,6 +675,16 @@ scan:
 	}
 	term.delimiter = string(word)
 	return term, true
+}
+
+// doubleQuoteEscapee reports whether c loses a preceding backslash inside a
+// double-quoted word. Any other character keeps the backslash literally.
+func doubleQuoteEscapee(c byte) bool {
+	switch c {
+	case '$', '`', '"', '\\', '\n':
+		return true
+	}
+	return false
 }
 
 // maxSplitDepth bounds env -S recursion: every level strips at least its own
@@ -620,8 +739,13 @@ func scanQuotedRmExpansionDepth(line string, depth int) (string, bool) {
 			// written after it still belong to the rm.
 			if line[i] == '(' && isSubstitutionOpener(line, i) && substitutionFollowsRedirection(line, start, i) {
 				if close, ok := matchingParen(line, i); ok {
-					if operand, found := scanQuotedRmExpansionDepth(line[i+1:close], depth); found {
-						return operand, true
+					// Every level rescans its own slice, so nesting is bounded
+					// like the env -S rescan: a hostile line cannot grow the
+					// stack or the scan time without limit.
+					if depth < maxSplitDepth {
+						if operand, found := scanQuotedRmExpansionDepth(line[i+1:close], depth+1); found {
+							return operand, true
+						}
 					}
 					i = close
 					continue
@@ -697,6 +821,37 @@ func scanQuotedRmExpansionDepth(line string, depth int) (string, bool) {
 	return "", false
 }
 
+// maskSubstitutionBodies returns line with the blanks and separators inside
+// every command or process substitution replaced by 'x', keeping the length so
+// offsets still address the original line. A substitution is one word of the
+// outer command; the nested command is scanned on its own.
+func maskSubstitutionBodies(line string, start, end int) string {
+	var masked []byte
+	for i := start; i < end; i++ {
+		if line[i] != '(' || !isSubstitutionOpener(line, i) {
+			continue
+		}
+		close, ok := matchingParen(line, i)
+		if !ok || close >= end {
+			continue
+		}
+		if masked == nil {
+			masked = []byte(line)
+		}
+		for j := i + 1; j < close; j++ {
+			switch masked[j] {
+			case ' ', '\t', '\n', ';', '|', '&':
+				masked[j] = 'x'
+			}
+		}
+		i = close
+	}
+	if masked == nil {
+		return line
+	}
+	return string(masked)
+}
+
 // substitutionWord stands for a command or process substitution when the outer
 // command is evaluated: it is a plain word, never a variable assignment.
 const substitutionWord = "x"
@@ -731,7 +886,12 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 	first := true
 	sawCase := false
 	lastWordEnd := 0
-	for _, word := range shellWordSpans(line, start, end) {
+	// A substitution is one word of the outer command. Mask the blanks and
+	// separators inside it before tokenizing, so a body such as
+	// `printf ok; true` cannot end the outer command before an operand written
+	// after the substitution.
+	scanText := maskSubstitutionBodies(line, start, end)
+	for _, word := range shellWordSpans(scanText, start, end) {
 		lastWordEnd = word.end
 		if skipWord {
 			skipWord = false
@@ -752,7 +912,7 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 			for _, v := range split {
 				words = append(words, cmdWord{text: v, literal: true})
 			}
-			for _, span := range shellWordSpans(line, word.end, end) {
+			for _, span := range shellWordSpans(scanText, word.end, end) {
 				words = append(words, cmdWord{text: span.text})
 			}
 			if depth < maxSplitDepth {
@@ -764,7 +924,7 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 		}
 		if !chain.broken && !chain.wrapperConsumes(word.text) {
 			if after, ok := rmExecutable(line, word); ok {
-				if operand, found := quotedRmOperand(line, after, end); found {
+				if operand, found := quotedRmOperand(line, scanText, after, end); found {
 					return operand, true, lastWordEnd, chain, inCase
 				}
 			}
@@ -822,10 +982,13 @@ func isRedirection(word string) bool {
 
 // quotedRmOperand returns the first recursive operand after the executable rm
 // whose operand hides an expansion behind a separator inside a quoted span.
-func quotedRmOperand(line string, after, end int) (string, bool) {
+// Word boundaries come from scan, the line with substitution bodies masked;
+// the operand itself is returned from line.
+func quotedRmOperand(line, scan string, after, end int) (string, bool) {
 	recursive, endOfOptions, target := false, false, false
 	var operands []string
-	for _, word := range shellWords(line[after:end]) {
+	for _, span := range shellWordSpans(scan[after:end], 0, end-after) {
+		word := span.text
 		if target {
 			target = false
 			continue
@@ -844,7 +1007,7 @@ func quotedRmOperand(line string, after, end int) (string, bool) {
 			}
 			continue
 		}
-		operands = append(operands, word)
+		operands = append(operands, line[after+span.start:after+span.end])
 	}
 	if !recursive {
 		return "", false
@@ -1188,11 +1351,12 @@ func unquoteShellWord(word string) string {
 
 // shellWordSpan is one word of a command segment with its byte offsets.
 type shellWordSpan struct {
-	text string
-	end  int
+	text  string
+	start int
+	end   int
 }
 
-// shellWordSpans splits line[start:end] into words the way shellWords does:
+// shellWordSpans splits line[start:end] into words:
 // quoted and escaped bytes stay part of the word, and a `#` at a word start
 // opens a comment.
 func shellWordSpans(line string, start, end int) []shellWordSpan {
@@ -1242,7 +1406,7 @@ func shellWordSpans(line string, start, end int) []shellWordSpan {
 				i++
 			}
 		}
-		spans = append(spans, shellWordSpan{text: line[wordStart:i], end: i})
+		spans = append(spans, shellWordSpan{text: line[wordStart:i], start: wordStart, end: i})
 	}
 	return spans
 }
@@ -1357,12 +1521,19 @@ func isSubstitutionOpener(line string, pos int) bool {
 // written after it still belongs to the rm. A command-position substitution
 // (`$(cmd) rm ...`) or one inside an assignment does not qualify.
 func substitutionFollowsRedirection(line string, start, pos int) bool {
-	spans := shellWordSpans(line, start, pos)
-	if len(spans) == 0 {
-		return false
+	// The word before the opener is read backwards rather than retokenizing
+	// the whole prefix: several sibling substitutions in one command would
+	// otherwise tokenize the same leading words once per substitution.
+	i := pos - 1
+	for i >= start && (line[i] == ' ' || line[i] == '\t') {
+		i--
 	}
-	last := strings.TrimSuffix(spans[len(spans)-1].text, "$")
-	return isRedirection(last)
+	end := i + 1
+	for i >= start && !isWordBreak(line[i]) {
+		i--
+	}
+	last := strings.TrimSuffix(line[i+1:end], "$")
+	return last != "" && isRedirection(last)
 }
 
 // matchingParen returns the offset of the `)` that closes the `(` at pos,
@@ -1480,83 +1651,6 @@ func shellCodeMask(line string) []bool {
 		}
 	}
 	return mask
-}
-
-// shellWords splits one simple command into words. Quoted spans are kept
-// whole, a backslash hides the next character outside single quotes, an
-// unquoted separator ends the command, and an unquoted `#` at a word start
-// opens a comment.
-func shellWords(s string) []string {
-	var words []string
-	var word strings.Builder
-	inWord := false
-	flush := func() {
-		if inWord {
-			words = append(words, word.String())
-			word.Reset()
-			inWord = false
-		}
-	}
-
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case ' ', '\t', '\r':
-			flush()
-		case ';', '&', '|', '\n':
-			flush()
-			return words
-		case '#':
-			if !inWord {
-				return words
-			}
-			inWord = true
-			word.WriteByte(c)
-		case '\'':
-			inWord = true
-			word.WriteByte(c)
-			j := i + 1
-			for j < len(s) && s[j] != '\'' {
-				word.WriteByte(s[j])
-				j++
-			}
-			if j < len(s) {
-				word.WriteByte(s[j])
-			}
-			i = j
-		case '"':
-			inWord = true
-			word.WriteByte(c)
-			j := i + 1
-			for j < len(s) {
-				if s[j] == '\\' && j+1 < len(s) {
-					word.WriteByte(s[j])
-					word.WriteByte(s[j+1])
-					j += 2
-					continue
-				}
-				if s[j] == '"' {
-					word.WriteByte(s[j])
-					j++
-					break
-				}
-				word.WriteByte(s[j])
-				j++
-			}
-			i = j - 1
-		case '\\':
-			inWord = true
-			word.WriteByte(c)
-			if i+1 < len(s) {
-				i++
-				word.WriteByte(s[i])
-			}
-		default:
-			inWord = true
-			word.WriteByte(c)
-		}
-	}
-	flush()
-	return words
 }
 
 // isDoubleQuoteEscapable reports whether a backslash gives the next byte
