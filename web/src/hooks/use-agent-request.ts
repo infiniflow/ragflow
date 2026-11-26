@@ -939,7 +939,7 @@ export const useUpdateVersion = () => {
 };
 
 // Shared query options for a single canvas version's detail (IFlow, dsl
-// included). Both useFetchVersion (canvas version dialog) and
+// included). Both useFetchVersion (canvas version history page) and
 // useFetchPipelineDslByPipelineId (operator tabs) must cache the same shape
 // under AgentKeys.version so they can share the entry safely.
 const canvasVersionQuery = (agentId?: string, versionId?: string) => ({
