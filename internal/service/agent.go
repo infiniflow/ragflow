@@ -1252,6 +1252,17 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	if err != nil {
 		return err
 	}
+	if agentSettingsChanged(canvasInstance, patch) {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+			Kind: permission.ResourceKindCanvas,
+			ID:   canvasID,
+		}, permission.OperationDelete); err != nil {
+			if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) {
+				return dao.ErrUserCanvasNotFound
+			}
+			return fmt.Errorf("check agent settings permission: %w", err)
+		}
+	}
 	ownerUserID := canvasInstance.UserID
 
 	if v, ok := patch["permission"]; ok {
@@ -1441,6 +1452,30 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	return nil
 }
 
+func agentSettingsChanged(canvas *entity.UserCanvas, patch map[string]interface{}) bool {
+	for key, current := range map[string]*string{
+		"title":       canvas.Title,
+		"avatar":      canvas.Avatar,
+		"description": canvas.Description,
+	} {
+		value, ok := patch[key]
+		if !ok || value == nil {
+			continue
+		}
+		requested, ok := value.(string)
+		if !ok {
+			return true
+		}
+		if key == "title" {
+			requested = strings.TrimSpace(requested)
+		}
+		if current == nil || *current != requested {
+			return true
+		}
+	}
+	return false
+}
+
 // ResetAgent clears the per-run state of a canvas (history, retrieval,
 // memory, path) and zeroes every "sys.*" / "env.*" global, mirroring
 // the Python handler at api/apps/restful_apis/agent_api.py:992. The
@@ -1481,7 +1516,7 @@ func (s *AgentService) ResetAgent(ctx context.Context, canvasID string) (entity.
 // orphan version rows. Canvas delete access is decided by the permission
 // policy, including its sharing rules.
 func (s *AgentService) DeleteAgent(ctx context.Context, canvasID string) error {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationDelete); err != nil {
+	if err := checkAgentDeleteAccess(ctx, canvasID); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return ErrAgentNotOwner
 		}
@@ -1649,7 +1684,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, canvasID, versionID st
 	if versionID == "" {
 		return dao.ErrUserCanvasVersionNotFound
 	}
-	canvas, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationUpdate)
+	canvas, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationDelete)
 	if err != nil {
 		return err
 	}
@@ -2826,11 +2861,7 @@ func deriveAgentSessionName(userInput any) string {
 	} else {
 		text = stringifyAgentUserInput(userInput)
 	}
-	runes := []rune(text)
-	if len(runes) > 250 {
-		runes = runes[:250]
-	}
-	return string(runes)
+	return utility.TruncateRunes(text, 250)
 }
 
 // alone for first-touch runs, canvasID + sessionID for resumed runs

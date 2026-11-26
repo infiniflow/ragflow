@@ -1034,11 +1034,9 @@ export const useFetchSessionsByCanvasId = () => {
     enabled:
       !!canvasId && !isEmpty(tenantInfo) && operatorPermission !== undefined,
     fetchPage: async (params) => {
-      const shouldListAllSessions = operatorPermission !== Permission.Read;
       const { data } = await fetchAgentLogsByCanvasId(canvasId!, {
         ...params,
         include_history: false,
-        ...(shouldListAllSessions ? {} : { exp_user_id: tenantInfo.tenant_id }),
       });
 
       return { total: data?.total ?? 0, items: data?.data ?? [] };
@@ -1166,7 +1164,11 @@ export const BuiltinPipelineKeys = {
 };
 
 export const useFetchBuiltinPipelines = () => {
-  const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
+  const {
+    data,
+    isFetching: loading,
+    isError,
+  } = useQuery<IBuiltinPipelineListResponse>({
     queryKey: BuiltinPipelineKeys.list('builtin'),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
@@ -1185,7 +1187,7 @@ export const useFetchBuiltinPipelines = () => {
       value: item.id,
     })) ?? [];
 
-  return { data, loading, options };
+  return { data, loading, isError, options };
 };
 
 export const useCancelDataflow = () => {

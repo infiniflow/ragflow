@@ -100,7 +100,7 @@ export default {
       reselectParserAfterUploadHint:
         '可繼續上傳，系統將自動切換至支援這些檔案類型的內建解析配置。',
       dataset: '數據集',
-      testing: '檢索測試',
+      testing: '檢索',
       configuration: '配置',
       knowledgeGraph: '知識圖譜',
       files: '文件',
@@ -912,6 +912,7 @@ export default {
       destinationFolder: '目標資料夾',
     },
     flow: {
+      historyVersion: '版本',
       line: '單行文本',
       paragraph: '段落文字',
       options: '選項',

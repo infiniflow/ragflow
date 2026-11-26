@@ -363,6 +363,18 @@ func wikiTemplateCustomRules(parserConfig map[string]any, language string) strin
 func wikiTemplateFields(parserConfig map[string]any, section string) []any {
 	cfg := common.GetMap(parserConfig, section)
 	if len(cfg) == 0 {
+		switch strings.ToLower(section) {
+		case "entity":
+			cfg = configSectionFrom(parserConfig, "entity", "EntitySpecification", "entity_specification", "entitySpecification")
+		case "relation":
+			cfg = configSectionFrom(parserConfig, "relation", "RelationSpecification", "relation_specification", "relationSpecification")
+		case "concept":
+			cfg = configSectionFrom(parserConfig, "concept", "ConceptSpecification", "concept_specification", "conceptSpecification")
+		case "claim":
+			cfg = configSectionFrom(parserConfig, "claim", "ClaimSpecification", "claim_specification", "claimSpecification")
+		}
+	}
+	if len(cfg) == 0 {
 		return nil
 	}
 	if fields, ok := cfg["fields"].([]any); ok {
@@ -374,6 +386,20 @@ func wikiTemplateFields(parserConfig map[string]any, section string) []any {
 			out = append(out, f)
 		}
 		return out
+	}
+	return nil
+}
+
+func configSectionFrom(parserConfig map[string]any, keys ...string) map[string]any {
+	if parserConfig == nil {
+		return nil
+	}
+	for _, k := range keys {
+		if v := common.Get(parserConfig, k); v != nil {
+			if m := common.GetMap(parserConfig, k); m != nil {
+				return m
+			}
+		}
 	}
 	return nil
 }

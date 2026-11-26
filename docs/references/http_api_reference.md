@@ -1894,6 +1894,8 @@ curl --request GET \
   The maximum number of chunks on each page. Defaults to `30`.
 - `id`(*Query parameter*), `string`
   The ID of the chunk to retrieve. You can also use `GET /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` to retrieve one chunk.
+- `chunk_id_prefix`(*Query parameter*), `string`
+  A 1 to 16 hexadecimal character prefix of a chunk ID. Chunks whose ID starts with it are returned; an invalid or repeated value matches nothing. Supported by the Elasticsearch and Infinity document engines.
 
 #### Response
 

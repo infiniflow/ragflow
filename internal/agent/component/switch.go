@@ -40,6 +40,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 
 	"gorm.io/gorm"
 )
@@ -416,10 +417,10 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		return !equalFoldValues(lv, right), nil
 	case "contains":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return strings.Contains(strings.ToLower(ls), strings.ToLower(rs)), nil
+		return common.ContainsFold(ls, rs), nil
 	case "not contains":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return !strings.Contains(strings.ToLower(ls), strings.ToLower(rs)), nil
+		return !common.ContainsFold(ls, rs), nil
 	case "start with":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
 		return strings.HasPrefix(strings.ToLower(ls), strings.ToLower(rs)), nil

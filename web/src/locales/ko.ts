@@ -575,7 +575,7 @@ export default {
         'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요.',
       Parse: '파싱',
       dataset: '데이터셋',
-      testing: '검색 테스트',
+      testing: '검색',
       files: '파일',
       configuration: '설정',
       knowledgeGraph: '지식 그래프',
@@ -3681,7 +3681,7 @@ export default {
       mergePath: '경로 병합',
       mergePathTip:
         '활성화하면 변수 바로 뒤의 점 접미사가 경로 쿼리로 병합됩니다. 예: {node@result.name}.',
-      historyVersion: '버전 이력',
+      historyVersion: '버전',
       version: {
         created: '생성됨',
         details: '버전 세부 사항',

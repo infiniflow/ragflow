@@ -89,7 +89,7 @@ export default {
       reselectParserAfterUploadHint:
         'Continue o envio e o sistema mudará automaticamente esses arquivos para uma configuração de análise integrada compatível.',
       dataset: 'Conjunto de dados',
-      testing: 'Teste de recuperação',
+      testing: 'Recuperação',
       files: 'Arquivos',
       configuration: 'Configuração',
       name: 'Nome',
@@ -710,6 +710,7 @@ export default {
       destinationFolder: 'Pasta de destino',
     },
     flow: {
+      historyVersion: 'Versões',
       cite: 'Mostrar citações',
       citeTip: 'dicaDeCitação',
       name: 'Nome',

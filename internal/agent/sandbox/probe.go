@@ -26,6 +26,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/utility"
 )
 
 const connectionProbeCode = `import json
@@ -118,6 +119,5 @@ func testConnectionWithProvider(ctx context.Context, provider SandboxProvider) (
 }
 
 func preview(value string) string {
-	runes := []rune(strings.TrimSpace(value))
-	return string(runes[:min(200, len(runes))])
+	return utility.TruncateRunes(strings.TrimSpace(value), 200)
 }

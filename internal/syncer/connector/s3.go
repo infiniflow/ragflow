@@ -35,6 +35,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -554,12 +556,12 @@ func newS3SourceDocument(sourceID string, object s3Object, prefix string, allowI
 	}
 	fileName := path.Base(object.Key)
 	fetch := s3FetchReference{Key: object.Key}
-	fetchKey, _ := json.Marshal(fetch)
+	fetchKey := utility.MustJSON(fetch)
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: s3SemanticIdentifier(prefix, object.Key, fileName),
 		Extension:          strings.ToLower(filepath.Ext(fileName)),
-		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: object.Size},
+		FetchRef:           &FetchReference{Key: fetchKey, SizeHint: object.Size},
 		UpdatedAt:          object.LastModified,
 		SizeBytes:          object.Size,
 		Metadata:           metadata,

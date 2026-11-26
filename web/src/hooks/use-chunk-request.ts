@@ -172,9 +172,9 @@ export const useFetchNextChunkList = (
   // The enterprise build can read the box as a chunk id lookup; upstream's stub
   // answers undefined here, which leaves this a text search.
   const idQuery = useChunkIdQuery(debouncedSearchString);
-  // A search for ids replaces the ids a caller pinned: the box is the newer
-  // intent. Without one, the pinned set still narrows the list.
-  const chunkIds = idQuery ? idQuery.ids : optionChunkIds;
+  // An id search sends no pinned ids: an exact list would intersect two intents.
+  // Otherwise the pinned set still narrows the list.
+  const chunkIds = idQuery ? undefined : optionChunkIds;
 
   const {
     data,
@@ -190,6 +190,10 @@ export const useFetchNextChunkList = (
       debouncedSearchString,
       available,
       chunkIds,
+      // The mode, not only the text: it lives in the URL, so without it a switch
+      // changes the request but not the key, and the list keeps the previous
+      // mode's rows.
+      idQuery?.prefix,
     ],
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
@@ -206,6 +210,9 @@ export const useFetchNextChunkList = (
         // must not also match prose, or the result set stops being explainable.
         keywords: idQuery ? undefined : searchString,
         chunk_ids: chunkIds,
+        // Matched by the server at the start of the id. An empty string (nothing
+        // typed) sends no filter; anything else goes out so the server decides.
+        chunk_id_prefix: idQuery?.prefix || undefined,
       });
       if (data.code === 0) {
         const res = data.data;

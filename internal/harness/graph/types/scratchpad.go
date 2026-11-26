@@ -1,6 +1,7 @@
 package types
 
 import (
+	"maps"
 	"sync"
 	"time"
 
@@ -85,9 +86,7 @@ func (p *PregelScratchpad) GetAll() map[string]interface{} {
 	defer p.mu.RUnlock()
 
 	copied := make(map[string]interface{}, len(p.data))
-	for k, v := range p.data {
-		copied[k] = v
-	}
+	maps.Copy(copied, p.data)
 	return copied
 }
 
@@ -187,9 +186,7 @@ func (p *PregelScratchpad) GetAllMetadata() map[string]interface{} {
 	defer p.mu.RUnlock()
 
 	copied := make(map[string]interface{}, len(p.metadata))
-	for k, v := range p.metadata {
-		copied[k] = v
-	}
+	maps.Copy(copied, p.metadata)
 	return copied
 }
 

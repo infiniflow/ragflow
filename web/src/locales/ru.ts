@@ -315,7 +315,7 @@ export default {
         'Проведите тест извлечения, чтобы проверить, может ли RAGFlow восстановить целевой контент для LLM.',
       Parse: 'Парсинг',
       dataset: 'Датасет',
-      testing: 'Тестирование извлечения',
+      testing: 'Извлечение',
       files: 'файлы',
       configuration: 'Конфигурация',
       knowledgeGraph: 'Граф знаний',
@@ -2123,7 +2123,7 @@ export default {
       }`,
       datatype: 'MIME тип HTTP запроса',
       insertVariableTip: `Введите / Вставьте переменные`,
-      historyVersion: 'История версий',
+      historyVersion: 'Версии',
       version: {
         created: 'Создано',
         details: 'Детали версии',

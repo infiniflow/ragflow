@@ -41,7 +41,7 @@ func RelationExpectsEvidence(parserConfig map[string]any) bool {
 	if parserConfig == nil {
 		return false
 	}
-	relations, _ := common.Get(parserConfig, "relation").(map[string]any)
+	relations := configSection(parserConfig, "relation", "RelationSpecification", "relation_specification", "relationSpecification")
 	if relations == nil {
 		return false
 	}

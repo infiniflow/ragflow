@@ -175,6 +175,15 @@ func (dao *API4ConversationDAO) ListIDsByAgentID(ctx context.Context, db *gorm.D
 	return ids, err
 }
 
+// ListIDsByAgentIDAndUserID lists one user's conversation IDs for an agent.
+func (dao *API4ConversationDAO) ListIDsByAgentIDAndUserID(ctx context.Context, db *gorm.DB, agentID, userID string) ([]string, error) {
+	var ids []string
+	err := db.WithContext(ctx).Model(&entity.API4Conversation{}).
+		Where("dialog_id = ? AND user_id = ?", agentID, userID).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
 // DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
 func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (int64, error) {
 	var rowsAffected int64

@@ -9,12 +9,15 @@ const noOperators = () => false;
 const onlyExtractor = (operator: Operator) => operator === Operator.Extractor;
 
 describe('buildPipelineNextOperators', () => {
-  it('offers Extractor when the canvas has none', () => {
+  it('offers only the next stages allowed by the source operator', () => {
     const { operators } = buildPipelineNextOperators(
       Operator.TokenChunker,
       noOperators,
     );
     expect(operators).toContain(Operator.Extractor);
+    expect(operators).toContain(Operator.Tokenizer);
+    expect(operators).toContain(Operator.Compiler);
+    expect(operators).not.toContain(Operator.Parser);
   });
 
   it('hides Extractor when one is already on the canvas', () => {
@@ -23,23 +26,20 @@ describe('buildPipelineNextOperators', () => {
       onlyExtractor,
     );
     expect(operators).not.toContain(Operator.Extractor);
-    // Other operators are unaffected.
     expect(operators).toEqual(
-      expect.arrayContaining([
-        Operator.Parser,
-        Operator.Tokenizer,
-        Operator.Compiler,
-      ]),
+      expect.arrayContaining([Operator.Tokenizer, Operator.Compiler]),
     );
+    expect(operators).not.toContain(Operator.Parser);
   });
 
   it('still hides the chunker group from an Extractor source', () => {
-    const { operators, showChunker } = buildPipelineNextOperators(
+    const { operators } = buildPipelineNextOperators(
       Operator.Extractor,
       onlyExtractor,
     );
     expect(operators).not.toContain(Operator.Extractor);
-    expect(showChunker).toBe(false);
+    expect(operators).not.toContain(Operator.TokenChunker);
+    expect(operators).not.toContain(Operator.TitleChunker);
   });
 });
 

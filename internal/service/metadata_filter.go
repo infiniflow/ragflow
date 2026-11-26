@@ -397,7 +397,7 @@ func applySingleCondition(metaData map[string]interface{}, condition MetaFilterC
 		}
 	case "contains":
 		for val, docIDs := range valueMap {
-			if strings.Contains(strings.ToLower(val), strings.ToLower(strValue)) {
+			if common.ContainsFold(val, strValue) {
 				switch v := docIDs.(type) {
 				case []interface{}:
 					for _, id := range v {
@@ -412,7 +412,7 @@ func applySingleCondition(metaData map[string]interface{}, condition MetaFilterC
 		}
 	case "not contains":
 		for val, docIDs := range valueMap {
-			if !strings.Contains(strings.ToLower(val), strings.ToLower(strValue)) {
+			if !common.ContainsFold(val, strValue) {
 				switch v := docIDs.(type) {
 				case []interface{}:
 					for _, id := range v {

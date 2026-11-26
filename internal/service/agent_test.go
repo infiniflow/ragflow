@@ -1904,7 +1904,7 @@ func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentTeamMemberCanUpdateButCannotChangePermission(t *testing.T) {
+func TestUpdateAgentTeamMemberCannotUpdateSettings(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	ctx := t.Context()
 
@@ -1947,14 +1947,14 @@ func TestUpdateAgentTeamMemberCanUpdateButCannotChangePermission(t *testing.T) {
 	if err := NewAgentService().UpdateAgent(memberCtx, "canvas-team-edit", map[string]interface{}{
 		"description": "member edit",
 		"permission":  samePermission,
-	}); err != nil {
-		t.Fatalf("UpdateAgent with same permission failed: %v", err)
+	}); err == nil {
+		t.Fatal("UpdateAgent allowed a team member to update agent settings")
 	}
 
 	if err := NewAgentService().UpdateAgent(memberCtx, "canvas-team-edit", map[string]interface{}{
 		"title": "Owner Duplicate",
-	}); err == nil || err.Error() != "Owner Duplicate already exists." {
-		t.Fatalf("UpdateAgent duplicate title error = %v, want Owner Duplicate already exists.", err)
+	}); err == nil {
+		t.Fatal("UpdateAgent allowed a team member to change the title")
 	}
 
 	ownerCtx := serviceTestContext(t, "owner-1", "owner-1", "member-1")
@@ -1970,6 +1970,16 @@ func TestUpdateAgentTeamMemberCanUpdateButCannotChangePermission(t *testing.T) {
 	}
 	if canvas.Permission != string(entity.TenantPermissionTeam) {
 		t.Fatalf("canvas permission = %q, want unchanged %q", canvas.Permission, entity.TenantPermissionTeam)
+	}
+	if err := NewAgentService().UpdateAgent(ownerCtx, "canvas-team-edit", map[string]interface{}{
+		"description": "owner edit",
+	}); err != nil {
+		t.Fatalf("canvas owner could not update settings: %v", err)
+	}
+	if err := NewAgentService().UpdateAgent(ownerCtx, "canvas-team-edit", map[string]interface{}{
+		"title": "Owner Duplicate",
+	}); err == nil || err.Error() != "Owner Duplicate already exists." {
+		t.Fatalf("UpdateAgent duplicate title error = %v, want Owner Duplicate already exists.", err)
 	}
 	if err := NewAgentService().UpdateAgent(ownerCtx, "canvas-team-edit", map[string]interface{}{
 		"permission": nextPermission,
@@ -3049,27 +3059,39 @@ func TestDeleteAgent_SharedCanvasMemberCannotDeleteAgent(t *testing.T) {
 	}
 }
 
-func TestDeleteAgentSessionItem_SharedCanvasGrantsDeleteAccess(t *testing.T) {
+func TestDeleteAgentSessionItem_SharedCanvasMemberCannotDeleteAnotherUsersSession(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "owner-1")
 
-	deleted, code, err := NewAgentService().DeleteAgentSessionItem(serviceTestContext(t, "user-1", "owner-1", "owner-1", "user-1"), "canvas-1", "session-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if code != common.CodeSuccess {
-		t.Fatalf("code=%v", code)
-	}
-	if !deleted {
-		t.Fatal("team member with access to the shared canvas should be able to delete its session")
+	ctx := serviceTestContext(t, "user-1", "owner-1", "owner-1", "user-1")
+	_, canDeleteAll, accessErr := checkAgentSessionDeleteAccess(ctx, "canvas-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "canvas-1", "session-1")
+	switch {
+	case accessErr != nil:
+		if err == nil || deleted {
+			t.Fatalf("member without delete access = (%v, %v, %v), want denial", deleted, code, err)
+		}
+	case canDeleteAll:
+		if err != nil || code != common.CodeSuccess || !deleted {
+			t.Fatalf("privileged member delete = (%v, %v, %v), want successful deletion", deleted, code, err)
+		}
+	default:
+		if err == nil || deleted {
+			t.Fatalf("member cannot delete another user's session = (%v, %v, %v), want denial", deleted, code, err)
+		}
 	}
 
 	var count int64
 	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count session: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("session should be deleted, count=%d", count)
+	wantCount := int64(1)
+	if deleted {
+		wantCount = 0
+	}
+	if count != wantCount {
+		t.Fatalf("session count = %d, want %d", count, wantCount)
 	}
 }
 

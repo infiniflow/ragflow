@@ -32,9 +32,10 @@ const stopPropagation: MouseEventHandler<HTMLButtonElement> = (e) => {
 export type IGlobalParamModalProps = {
   data: any;
   hideModal: (open: boolean) => void;
+  readOnly?: boolean;
 };
 export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
-  const { hideModal } = props;
+  const { hideModal, readOnly = false } = props;
   const { data, refetch } = useFetchAgent();
   const { t } = useTranslation();
   const { visible, showModal, hideModal: hideAddModal } = useSetModalState();
@@ -93,17 +94,19 @@ export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
             </SheetTitle>
           </SheetHeader>
 
-          <div className="px-5 pb-5">
-            <BlockButton
-              onClick={() => {
-                setFields(GlobalFormFields(t));
-                setDefaultValues(GlobalVariableFormDefaultValues);
-                showModal();
-              }}
-            >
-              {t('flow.add')}
-            </BlockButton>
-          </div>
+          {!readOnly && (
+            <div className="px-5 pb-5">
+              <BlockButton
+                onClick={() => {
+                  setFields(GlobalFormFields(t));
+                  setDefaultValues(GlobalVariableFormDefaultValues);
+                  showModal();
+                }}
+              >
+                {t('flow.add')}
+              </BlockButton>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2 px-5 ">
             {data?.dsl?.variables &&
@@ -113,9 +116,11 @@ export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
                   <div
                     key={key}
                     className="flex items-center gap-3 min-h-14 justify-between px-5 py-3 border border-border-default rounded-lg  hover:bg-bg-card group"
-                    onClick={() => {
-                      handleEditGlobalVariable(item);
-                    }}
+                    onClick={
+                      readOnly
+                        ? undefined
+                        : () => handleEditGlobalVariable(item)
+                    }
                   >
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
@@ -138,32 +143,36 @@ export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
                         </div>
                       )}
                     </div>
-                    <div>
-                      <ConfirmDeleteDialog
-                        onOk={() => handleDeleteGlobalVariable(key)}
-                      >
-                        <Button
-                          variant={'secondary'}
-                          className="bg-transparent hidden text-text-secondary border-none group-hover:bg-bg-card group-hover:text-text-primary group-hover:border group-hover:block"
-                          onClick={stopPropagation}
+                    {!readOnly && (
+                      <div>
+                        <ConfirmDeleteDialog
+                          onOk={() => handleDeleteGlobalVariable(key)}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </ConfirmDeleteDialog>
-                    </div>
+                          <Button
+                            variant={'secondary'}
+                            className="bg-transparent hidden text-text-secondary border-none group-hover:bg-bg-card group-hover:text-text-primary group-hover:border group-hover:block"
+                            onClick={stopPropagation}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </ConfirmDeleteDialog>
+                      </div>
+                    )}
                   </div>
                 );
               })}
           </div>
         </SheetContent>
-        <AddVariableModal
-          visible={visible}
-          hideModal={hideAddModal}
-          fields={fields}
-          setFields={setFields}
-          defaultValues={defaultValues}
-          setDefaultValues={setDefaultValues}
-        />
+        {!readOnly && (
+          <AddVariableModal
+            visible={visible}
+            hideModal={hideAddModal}
+            fields={fields}
+            setFields={setFields}
+            defaultValues={defaultValues}
+            setDefaultValues={setDefaultValues}
+          />
+        )}
       </Sheet>
     </>
   );
