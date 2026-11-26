@@ -334,3 +334,7 @@ desktop/src-tauri/conf/
 desktop/src-tauri/deepdoc/
 desktop/src-tauri/deps/
 desktop/src-tauri/.resource-stamp
+# Bundle icons are derived from desktop/app-icon.png: regen_icons in
+# desktop/build.sh regenerates the whole declared set whenever one of its files
+# is missing or older than the source image, so only the source is tracked.
+desktop/src-tauri/icons/

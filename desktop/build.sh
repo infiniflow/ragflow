@@ -46,12 +46,21 @@ EOF
 fi
 
 # bundle.icon names the generated set under src-tauri/icons, not app-icon.png:
-# replacing the source image alone changes nothing until this runs. `tauri icon`
-# also emits mobile and Windows-Store sets this app never uses; they are dropped
-# so the icons directory stays the five files the bundle declares.
+# replacing the source image alone changes nothing until this runs. The set is not
+# tracked (see .gitignore): app-icon.png is the only source, and this rebuilds the
+# whole set when any declared file is missing or older than it. Checking all five
+# rather than just icon.icns matters because a partially deleted set would
+# otherwise never be repaired. `tauri icon` also emits mobile, Windows-Store and a
+# plain icon.png the bundle never references; they are dropped so the directory
+# holds exactly the five files bundle.icon declares.
 regen_icons() {
-  local force="${1:-}"
-  if [ -z "$force" ] && [ ! "$here/app-icon.png" -nt "$here/src-tauri/icons/icon.icns" ]; then
+  local force="${1:-}" need=0 icon
+  for icon in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico; do
+    if [ ! -f "$here/src-tauri/icons/$icon" ] || [ "$here/app-icon.png" -nt "$here/src-tauri/icons/$icon" ]; then
+      need=1
+    fi
+  done
+  if [ -z "$force" ] && [ "$need" = 0 ]; then
     echo "icons: up to date"
     return 0
   fi
@@ -59,7 +68,7 @@ regen_icons() {
   cargo tauri icon -o "$here/src-tauri/icons" "$here/app-icon.png"
   rm -rf "$here/src-tauri/icons/android" "$here/src-tauri/icons/ios"
   rm -f "$here"/src-tauri/icons/Square*.png "$here"/src-tauri/icons/StoreLogo.png \
-    "$here"/src-tauri/icons/64x64.png
+    "$here"/src-tauri/icons/64x64.png "$here"/src-tauri/icons/icon.png
 }
 
 # appimagetool needs the AppImage type-2 runtime and fetches it from GitHub every
