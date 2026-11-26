@@ -3918,7 +3918,7 @@ export default {
       qAChunkerDescription: '이 Chunker는 추가 설정이 필요하지 않습니다.',
       tableChunkerDescription: '이 Chunker는 추가 설정이 필요하지 않습니다.',
       pageChunkerDescription: '이 Chunker는 추가 설정이 필요하지 않습니다.',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         'LLM을 사용하여 문서 chunk에서 요약, 분류 등 구조화된 인사이트를 추출합니다.',
       compiler: 'Compiler',

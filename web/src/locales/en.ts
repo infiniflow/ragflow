@@ -4032,7 +4032,7 @@ This process aggregates variables from multiple branches into a single variable 
         'No additional configuration is required for this chunker.',
       pageChunkerDescription:
         'No additional configuration is required for this chunker.',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
       compiler: 'Compiler',

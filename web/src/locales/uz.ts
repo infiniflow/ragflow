@@ -3453,7 +3453,7 @@ export default {
         'Bu chunker uchun qo‘shimcha sozlash talab etilmaydi.',
       pageChunkerDescription:
         'Bu chunker uchun qo‘shimcha sozlash talab etilmaydi.',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         'LLM yordamida hujjat bo‘laklaridan tuzilgan tushunchalarni — xulosalar, tasniflar va h.k. — ajratib oladi.',
       compiler: 'Kompilyator',

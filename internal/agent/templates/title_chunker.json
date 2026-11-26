@@ -312,7 +312,7 @@
                                 ]
                             },
                             "label": "Parser",
-                            "name": "Parser_0"
+                            "name": "Parser"
                         },
                         "dragging": false,
                         "id": "Parser:HipSignsRhyme",
@@ -434,7 +434,7 @@
                                 ]
                             },
                             "label": "TitleChunker",
-                            "name": "Title Chunker_0"
+                            "name": "Title Chunker"
                         },
                         "id": "TitleChunker:WideResultsTeach",
                         "measured": {
@@ -475,7 +475,7 @@
                                 "top_p": 0.3
                             },
                             "label": "Extractor",
-                            "name": "Transformer_0"
+                            "name": "Extractor"
                         },
                         "id": "Extractor:DryRatsGive",
                         "measured": {
@@ -503,7 +503,7 @@
                                 ]
                             },
                             "label": "Tokenizer",
-                            "name": "Indexer_0"
+                            "name": "Indexer"
                         },
                         "id": "Tokenizer:WackyOnionsFly",
                         "measured": {
