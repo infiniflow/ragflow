@@ -18,6 +18,7 @@ package metafilter
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -421,7 +422,7 @@ func coerceScalar(value interface{}, flt map[string]interface{}) interface{} {
 	if parsed, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return parsed
 	}
-	if parsed, err := strconv.ParseFloat(s, 64); err == nil {
+	if parsed, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0) {
 		return parsed
 	}
 
@@ -446,7 +447,7 @@ func coerceRangeValue(value interface{}, flt map[string]interface{}) interface{}
 	}
 
 	// Try to parse as number
-	if parsed, err := strconv.ParseFloat(s, 64); err == nil {
+	if parsed, err := strconv.ParseFloat(s, 64); err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0) {
 		return parsed
 	}
 
