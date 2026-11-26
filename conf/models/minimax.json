@@ -14,6 +14,19 @@
   "class": "minimax",
   "models": [
     {
+      "name": "MiniMax-M3.1-Flash",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": false
+      }
+    },
+    {
       "name": "MiniMax-M3",
       "context_length": 1024000,
       "max_output": 131072,
