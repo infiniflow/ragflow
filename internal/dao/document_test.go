@@ -871,6 +871,12 @@ func TestDocumentListStatusLetsARestoreDecideOnlyForRestoredContent(t *testing.T
 
 func TestNameExistsInKBIsCaseInsensitiveAndUsesLowerNameIndex(t *testing.T) {
 	db := setupDocumentTestDB(t)
+	// Twice: the second call must find the index and skip the DDL.
+	createDocumentLowerNameIndex(t.Context(), db)
+	createDocumentLowerNameIndex(t.Context(), db)
+	if !db.Migrator().HasIndex(&entity.Document{}, documentLowerNameIndex) {
+		t.Fatalf("%s was not created", documentLowerNameIndex)
+	}
 	if err := db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Report.PDF"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
 		t.Fatalf("create document: %v", err)
 	}
@@ -909,9 +915,9 @@ func TestNameExistsInKBIsCaseInsensitiveAndUsesLowerNameIndex(t *testing.T) {
 		t.Fatalf("explain %q: %v", countSQL, err)
 	}
 	for _, row := range plan {
-		if strings.Contains(row.Detail, "idx_document_kb_lower_name") {
+		if strings.Contains(row.Detail, documentLowerNameIndex) {
 			return
 		}
 	}
-	t.Fatalf("query %q does not use idx_document_kb_lower_name: %+v", countSQL, plan)
+	t.Fatalf("query %q does not use %s: %+v", countSQL, documentLowerNameIndex, plan)
 }
