@@ -195,50 +195,46 @@ const ParserForm = ({
 
   const canRemove = !fixedFileFormats && fields.length > 1;
 
-  if (visionOnly) {
-    return (
-      <Form {...form}>
-        <form className="space-y-5 px-5 pt-4">
-          <VisionEnhancementFormFields />
-        </form>
-      </Form>
-    );
-  }
-
   return (
     <Form {...form}>
       <form className="space-y-5 px-5 pt-4">
         <VisionEnhancementFormFields />
-        <ParserExtensionFields />
-        {fields.map((field, index) => {
-          return (
-            <ParserItem
-              key={field.id}
-              name={name}
-              index={index}
-              canRemove={canRemove}
-              onRemove={remove}
-            ></ParserItem>
-          );
-        })}
-        {!fixedFileFormats && remainingFileTypes.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <BlockButton type="button">{t('flow.addFileType')}</BlockButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {remainingFileTypes.map((fileType) => (
-                <AddFileTypeMenuItem
-                  key={fileType}
-                  fileType={fileType}
-                  onSelect={handleAddFileType}
-                />
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {!visionOnly && (
+          <>
+            <ParserExtensionFields />
+            {fields.map((field, index) => {
+              return (
+                <ParserItem
+                  key={field.id}
+                  name={name}
+                  index={index}
+                  canRemove={canRemove}
+                  onRemove={remove}
+                ></ParserItem>
+              );
+            })}
+            {!fixedFileFormats && remainingFileTypes.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <BlockButton type="button">
+                    {t('flow.addFileType')}
+                  </BlockButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {remainingFileTypes.map((fileType) => (
+                    <AddFileTypeMenuItem
+                      key={fileType}
+                      fileType={fileType}
+                      onSelect={handleAddFileType}
+                    />
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </>
         )}
       </form>
-      {!hideOutputs && (
+      {!visionOnly && !hideOutputs && (
         <div className="p-5">
           <Output list={outputList}></Output>
         </div>
