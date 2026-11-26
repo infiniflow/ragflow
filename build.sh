@@ -910,6 +910,9 @@ build_cpp() {
     if [ "$(uname -s)" = "Darwin" ]; then
         local goarch
         goarch="$(go env GOARCH 2>/dev/null)"
+        if [ "$goarch" = "amd64" ]; then
+            goarch="x86_64"
+        fi
         [ -n "$goarch" ] && cmake_args+=("-DCMAKE_OSX_ARCHITECTURES=${goarch}")
     fi
     # Extra arguments for the C++ configure step, e.g. to point pcre2 at a
