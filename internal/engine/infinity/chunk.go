@@ -3228,6 +3228,23 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 			}
 			continue
 		}
+		// A prefix needs an anchored regex: `id IN (...)` only names whole ids.
+		if k == "id_prefix" {
+			var prefixConditions []string
+			for _, prefix := range utility.ConvertToStringSlice(v) {
+				prefix = strings.TrimSpace(strings.ToLower(prefix))
+				if prefix == "" {
+					continue
+				}
+				pattern := "^" + strings.NewReplacer("'", `\x27`, `"`, `\x22`).Replace(regexp.QuoteMeta(prefix))
+				prefixConditions = append(prefixConditions, infinity.RegexFilter("id", pattern))
+			}
+			if len(prefixConditions) > 0 {
+				cond = append(cond, joinBalanced(prefixConditions, " OR "))
+			}
+			continue
+		}
+
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {

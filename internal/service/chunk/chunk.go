@@ -900,6 +900,12 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 		}
 	}
 
+	// An unusable prefix matches nothing. Ignoring it would answer with the whole
+	// document, which reads as a successful search.
+	rawPrefix := strings.TrimSpace(req.ChunkIDPrefix)
+	prefix := service.NormalizeChunkIDPrefix(rawPrefix)
+	invalidPrefix := rawPrefix != "" && prefix == ""
+
 	// Build search request - same as retrieval test but filtered by doc_id.
 	// KbIDs is pinned to the document's own dataset: searching every KB of the
 	// tenant also returned rows whose KB context is a different dataset (chunks
@@ -949,16 +955,28 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 	if len(req.ChunkIDs) > 0 {
 		searchReq.Filter["id"] = req.ChunkIDs
 	}
+	// Only the engine can match a prefix before the page window is cut. The filter
+	// keeps the list shape, so the one prefix stays a degenerate list.
+	if prefix != "" {
+		searchReq.Filter["id_prefix"] = []string{prefix}
+	}
 
 	// Add available_int filter if specified
 	if req.AvailableInt != nil {
 		searchReq.Filter["available_int"] = *req.AvailableInt
 	}
 
-	// Execute search through unified engine interface
-	searchResp, err := s.docEngine.Search(ctx, searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
+	// Execute search through unified engine interface. An unusable prefix is
+	// answered as the empty set without asking the engine.
+	var searchResp *types.SearchResult
+	if invalidPrefix {
+		searchResp = &types.SearchResult{}
+	} else {
+		var searchErr error
+		searchResp, searchErr = s.docEngine.Search(ctx, searchReq)
+		if searchErr != nil {
+			return nil, fmt.Errorf("search failed: %w", searchErr)
+		}
 	}
 
 	chunks := make([]map[string]interface{}, 0, len(searchResp.Chunks))
