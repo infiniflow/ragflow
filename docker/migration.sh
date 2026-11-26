@@ -17,9 +17,16 @@ DEFAULT_PROJECT_NAME="docker"
 build_backup_plan() {
     local operation=$1 backup_folder=$2 compose_dir volume_keys base archive saved_engine
     compose_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-    local compose=(docker compose --project-directory "$compose_dir" -p "$PROJECT_NAME" -f "$compose_dir/docker-compose-base.yml")
-    DOC_ENGINE=$("${compose[@]}" config --environment | sed -n 's/^DOC_ENGINE=//p')
-    DOC_ENGINE=${DOC_ENGINE:-elasticsearch}
+    local compose=(docker compose --project-directory "$compose_dir" -p "$PROJECT_NAME")
+    # Ask Compose to interpolate a single profile using the deployment's shell and .env.
+    DOC_ENGINE=$("${compose[@]}" -f - config --profiles <<'YAML'
+services:
+  index:
+    image: alpine
+    profiles: ["${DOC_ENGINE:-elasticsearch}"]
+YAML
+    )
+    compose+=(-f "$compose_dir/docker-compose-base.yml")
 
     local index_volume=""
     local bind_dirs=()
