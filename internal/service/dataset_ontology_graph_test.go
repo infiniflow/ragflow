@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -204,7 +205,7 @@ func TestBuildOntologyPitfalls(t *testing.T) {
 
 	if p, ok := found["dangling_property"]; !ok {
 		t.Error("missing dangling_property for range=nowhere")
-	} else if p.Severity != "error" || !containsStr(p.Subjects, "born_in") {
+	} else if p.Severity != "error" || !slices.Contains(p.Subjects, "born_in") {
 		t.Errorf("dangling_property = %+v", p)
 	}
 	if p, ok := found["dangling_parent"]; !ok {
@@ -301,7 +302,7 @@ func TestBuildOntologyPitfallsStructureNamingAndSemantics(t *testing.T) {
 			t.Errorf("%s carries no message/subjects: %+v", code, p)
 		}
 	}
-	if p := found["datatype_is_class"]; !containsStr(p.Subjects, "area declares datatype place, which is a class") {
+	if p := found["datatype_is_class"]; !slices.Contains(p.Subjects, "area declares datatype place, which is a class") {
 		t.Errorf("datatype_is_class should name the property and the class: %v", p.Subjects)
 	}
 }

@@ -38,7 +38,7 @@ func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
 			registry.StampWebResult(web)
 			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
 			s := &ChatPipelineService{}
-			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			reference, marked := s.buildAgenticReference(t.Context(), []string{"kb"}, answer, registry)
 			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
 				t.Errorf("citation was not compacted to its reference position: %q", marked)
 			}

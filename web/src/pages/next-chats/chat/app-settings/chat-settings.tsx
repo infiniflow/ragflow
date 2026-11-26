@@ -1,3 +1,4 @@
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import { Form } from '@/components/ui/form';
 import {
   ModelResourceAccessUserIdContext,
@@ -10,7 +11,9 @@ import {
   useFetchChat,
   useUpdateChat,
 } from '@/hooks/use-chat-request';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import { useChatSessionAccess } from '@/ee/pages/next-chats/chat-session-access';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
@@ -38,6 +41,11 @@ import { getWebSearchProvider } from '../web-search-api-key';
 
 export function ChatSettings() {
   const { data, loading: chatLoading } = useFetchChat();
+  const { data: userInfo } = useFetchUserInfo();
+  const { canManageAll: canEditSettings } = useChatSessionAccess(
+    data,
+    userInfo?.id,
+  );
 
   const chatSettingSchema = useChatSettingSchema();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
@@ -76,6 +84,7 @@ export function ChatSettings() {
     // deliberate (a user may switch back), but it is why the payload can carry more
     // than one provider key.
     shouldUnregister: false,
+    disabled: !canEditSettings,
     mode: 'onChange',
     defaultValues: {
       name: '',
@@ -104,6 +113,8 @@ export function ChatSettings() {
   });
 
   async function onSubmit(values: FormSchemaType) {
+    if (!canEditSettings) return;
+
     const nextValues: Record<string, any> = removeUselessFieldsFromValues(
       values,
       'llm_setting.',
@@ -196,9 +207,9 @@ export function ChatSettings() {
       <ModelResourceAccessUserIdContext.Provider
         value={chatLoading ? null : (data?.user_id ?? null)}
       >
-        <section
+        <SettingsFormContainer
           data-testid="chat-detail-settings"
-          className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+          className="flex-1 min-h-0 flex flex-col overflow-hidden"
         >
           <Form {...form}>
             <form
@@ -224,12 +235,14 @@ export function ChatSettings() {
                 </section>
               </ScrollArea>
 
-              <div className="p-5 pt-4 text-right">
-                <SavingButton loading={loading}></SavingButton>
-              </div>
+              {canEditSettings && (
+                <div className="p-5 pt-4 text-right">
+                  <SavingButton loading={loading}></SavingButton>
+                </div>
+              )}
             </form>
           </Form>
-        </section>
+        </SettingsFormContainer>
       </ModelResourceAccessUserIdContext.Provider>
     </ModelResourceTenantIdContext.Provider>
   );

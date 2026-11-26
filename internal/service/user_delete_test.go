@@ -77,10 +77,11 @@ type deletionStorage struct {
 	files        []string
 	err          error
 	bucketErr    error
-	missing      bool
-	checkErr     error
 }
 
+func (s *deletionStorage) BucketExistsWithError(context.Context, string) (bool, error) {
+	return true, nil
+}
 func (s *deletionStorage) RemoveBucket(_ context.Context, bucket string) error {
 	if s.bucketErr != nil {
 		return s.bucketErr
@@ -102,19 +103,6 @@ func (s *deletionStorage) Remove(_ context.Context, bucket, name string, _ ...st
 	s.files = append(s.files, bucket+"/"+name)
 	return nil
 }
-func (s *deletionStorage) ObjectExists(_ context.Context, bucket, name string) (bool, error) {
-	if s.checkErr != nil {
-		return false, s.checkErr
-	}
-	return !s.missing, nil
-}
-func (s *deletionStorage) BucketExistsWithError(_ context.Context, bucket string) (bool, error) {
-	if s.checkErr != nil {
-		return false, s.checkErr
-	}
-	return !s.missing, nil
-}
-
 func setupUserDeletionDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := testutil.SetupTestDB(t,
@@ -338,38 +326,20 @@ func TestDeleteUserContinuesWhenStorageItemsAreMissing(t *testing.T) {
 	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
 		t.Fatal(err)
 	}
-	store := &deletionStorage{missing: true}
+	store := &deletionStorage{}
 	service := UserDeletionService{}
 	service.engine = &deletionEngine{}
 	service.storage = store
 	if _, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err != nil {
 		t.Fatalf("DeleteUser with missing storage items: %v", err)
 	}
-	if len(store.files) != 0 || len(store.buckets) != 0 {
-		t.Fatalf("storage deletion attempted for missing items: files=%v buckets=%v", store.files, store.buckets)
+	// Storage backends treat a missing object/bucket as a successful removal,
+	// so the idempotent Remove calls are still issued without a pre-check.
+	if want := []string{"dataset/doc.pdf"}; !slices.Equal(store.files, want) {
+		t.Fatalf("removed objects = %v, want %v", store.files, want)
 	}
-}
-
-func TestDeleteUserStopsOnStorageCheckError(t *testing.T) {
-	db := setupUserDeletionDB(t)
-	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id) VALUES (?, ?, ?, ?, ?, ?, ?)", "dataset", "team", "Dataset", "embd", "me", "user-1", "general").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
-		t.Fatal(err)
-	}
-	service := UserDeletionService{}
-	service.engine = &deletionEngine{}
-	service.storage = &deletionStorage{checkErr: errors.New("storage unavailable")}
-	if _, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err == nil || !strings.Contains(err.Error(), "storage unavailable") {
-		t.Fatalf("DeleteUser error = %v", err)
-	}
-	var count int64
-	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("user deleted after storage check failed: count=%d, err=%v", count, err)
+	if want := []string{"dataset"}; !slices.Equal(store.buckets, want) {
+		t.Fatalf("removed buckets = %v, want %v", store.buckets, want)
 	}
 }
 

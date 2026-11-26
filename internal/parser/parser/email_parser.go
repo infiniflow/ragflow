@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -119,12 +120,12 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		}
 	}
 
-	// Re-chunk attachments so their content becomes retrievable within the
-	// same document (user-oriented; mirrors Python legacy rag/app/email.py
-	// naive_chunk). Each attachment is re-parsed by its file extension via
-	// the shared parser registry; a single unparseable/skipped attachment
-	// never breaks the whole email.
-	extraItems := p.rechunkEmailAttachments(ctx, content, depth)
+	// Re-parse attachments into the same searchable document. Malformed
+	// attachments are skipped; license denial fails the parent operation.
+	extraItems, err := p.rechunkEmailAttachments(ctx, content, depth)
+	if err != nil {
+		return ParseResult{Err: err}
+	}
 
 	// Attachments have been consumed by rechunkEmailAttachments, which
 	// re-parses each one by extension into a searchable item. Keeping their
@@ -651,8 +652,8 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // video) are skipped: they carry no plain text in this pipeline and would
 // require vision/speech models that are out of scope here. A single
 // unparseable, empty, unsupported, or panicking attachment is skipped
-// without failing the whole email (mirrors email.py's per-attachment
-// try/except).
+// without failing the whole email. License denial is propagated so a parent
+// operation cannot silently succeed after a denied attachment parse.
 //
 // The function returns structured JSON items (one per non-empty text
 // segment), each carrying only "text" and "doc_type_kwd".
@@ -662,19 +663,19 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // avoid unbounded recursion through attachments-of-attachments.
 const maxRechunkPayloadBytes = 32 << 20 // 32 MiB
 
-func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) []map[string]any {
+func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) ([]map[string]any, error) {
 	if depth > 0 {
-		return nil
+		return nil, nil
 	}
 	// Honor task cancellation so a long attachment list does not keep
 	// re-parsing after the ingestion task has been stopped/aborted.
 	if ctx.Err() != nil {
-		return nil
+		return nil, nil
 	}
 
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var extra []map[string]any
@@ -720,6 +721,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			})
 		} else {
 			np, actual, err := GetTextOnlyParser(ft, []byte(payload))
+			if errors.Is(err, utility.ErrFeatureDisabled) {
+				return nil, fmt.Errorf("email attachment %q: %w", fn, err)
+			}
 			if err != nil {
 				continue
 			}
@@ -736,6 +740,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// bad file can't fail the whole email — mirrors the .msg
 			// parseMSG recover.
 			common.Warn("email: attachment re-parse panicked, skipping", zap.String("file", fn))
+		}
+		if errors.Is(res.Err, utility.ErrFeatureDisabled) {
+			return nil, fmt.Errorf("email attachment %q: %w", fn, res.Err)
 		}
 		if panicked || res.Err != nil {
 			continue
@@ -759,5 +766,5 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			})
 		}
 	}
-	return extra
+	return extra, nil
 }

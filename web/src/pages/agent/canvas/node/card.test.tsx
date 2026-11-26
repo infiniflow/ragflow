@@ -58,6 +58,21 @@ jest.mock('@/components/svg-icon', () => ({
   LlmIcon: () => null,
 }));
 
+jest.mock('@/ee/components/model-reference-label', () => {
+  const LLMLabel = jest.requireActual(
+    '@/components/llm-select/llm-label',
+  ).default;
+  return {
+    ModelReferenceLabel: ({
+      value,
+      ownerTenantId,
+    }: {
+      value?: string;
+      ownerTenantId?: string;
+    }) => <LLMLabel value={value} resourceTenantId={ownerTenantId} />,
+  };
+});
+
 function renderCard(llmId?: string) {
   return render(
     <ResourceTenantIdContext.Provider value="owner-tenant">
@@ -136,7 +151,7 @@ describe('LLMLabelCard', () => {
     renderCard('m1');
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       'owner-tenant',
     );
   });
@@ -151,13 +166,13 @@ describe('LLMLabelCard', () => {
       <ResourceTenantIdContext.Provider value="owner-tenant">
         <LLMLabelCard
           llmId="decision-model"
-          modelTypes={['chat', 'vision', 'decision']}
+          modelTypes={['chat', 'vlm', 'decision']}
         />
       </ResourceTenantIdContext.Provider>,
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision', 'decision'],
+      ['chat', 'vlm', 'decision'],
       'owner-tenant',
     );
     expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ontology/contract"
@@ -156,7 +157,7 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 	if row == nil {
 		return nil, &ActionEditRejectedError{Code: ActionEditCodeActionNotFound, Message: "no such action in this model"}
 	}
-	rowDataset := strings.TrimSpace(firstStringValue(row["kb_id"]))
+	rowDataset := strings.TrimSpace(common.FirstEngineString(row["kb_id"]))
 	if rowDataset == "" {
 		rowDataset = datasetID
 	}
@@ -182,7 +183,7 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 	if in.Description != nil {
 		changedFields = append(changedFields, "description")
 		before["description"] = map[string]interface{}{
-			"v": strings.TrimSpace(firstStringValue(graphLoadPayload(row)["description"])),
+			"v": strings.TrimSpace(common.FirstEngineString(graphLoadPayload(row)["description"])),
 		}
 		after["description"] = map[string]interface{}{
 			"v": strings.TrimSpace(*in.Description),
@@ -229,7 +230,7 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 		ID:         newOntologyUUID(),
 		TenantID:   in.TenantID,
 		TemplateID: template.ID,
-		ActionName: firstStringValue(row["name_kwd"]),
+		ActionName: common.FirstEngineString(row["name_kwd"]),
 		ActionID:   in.ActionID,
 		DatasetID:  rowDataset,
 		OperatorID: strings.TrimSpace(in.ActorID),
@@ -242,7 +243,7 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 			history.ActionName, in.ActorID, err)
 	}
 	log.Printf("[action-contract] manual edit action=%s fields=%s operator=%s",
-		firstStringValue(row["name_kwd"]), strings.Join(changedFields, ","), in.ActorID)
+		common.FirstEngineString(row["name_kwd"]), strings.Join(changedFields, ","), in.ActorID)
 
 	return &ActionContractEditResult{
 		ID:           in.ActionID,

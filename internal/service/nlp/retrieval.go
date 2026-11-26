@@ -420,7 +420,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["kb_id"]; ok {
 			resultChunk["kb_id"] = v
 		}
-		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
+		if kind := common.FirstEngineString(chunk["compile_kwd"]); kind != "" {
 			resultChunk["compile_kwd"] = kind
 		}
 		if v, ok := chunk["important_kwd"]; ok {
@@ -1370,7 +1370,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		if len(chunk) == 0 || isDatasetCompilationChunk(chunk) {
 			continue
 		}
-		if docID := strings.TrimSpace(firstStringValue(chunk["doc_id"])); docID != "" {
+		if docID := strings.TrimSpace(common.FirstEngineString(chunk["doc_id"])); docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
 	}
@@ -1409,7 +1409,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 			continue
 		}
 		if !isDatasetCompilationChunk(chunk) {
-			docID := strings.TrimSpace(firstStringValue(chunk["doc_id"]))
+			docID := strings.TrimSpace(common.FirstEngineString(chunk["doc_id"]))
 			if _, docExists := existingDocIDs[docID]; docID == "" || !docExists {
 				removed++
 				continue

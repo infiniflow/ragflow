@@ -1635,9 +1635,8 @@ func TestCancel_MultiCall_TimeoutDeadlineJoinAbsolute(t *testing.T) {
 	if !ok2 {
 		t.Fatal("second should contribute")
 	}
-	time.Sleep(50 * time.Millisecond)
-	if !cc.isImmediate() {
-		t.Error("should escalate to immediate after short timeout")
+	if !waitUntil(t, 5*time.Second, cc.isImmediate) {
+		t.Fatal("should escalate to immediate after short timeout")
 	}
 	if atomic.LoadInt32(&cc.timeoutEscalated) != 1 {
 		t.Error("expected timeout escalated")

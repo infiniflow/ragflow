@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 // failingRetrievalService makes every search_chunks query fail the way a dead
 // embedding backend does (e.g. a drained SiliconFlow balance).
 type failingRetrievalService struct {
+	mu              sync.Mutex
 	calls           int
 	chunksPerOKCall []runtime.RetrievalChunk
 	failOnCall      map[int]bool // 1-based; nil = fail every call
@@ -44,8 +46,12 @@ type failingRetrievalService struct {
 }
 
 func (f *failingRetrievalService) Search(_ context.Context, _ *gorm.DB, _ runtime.RetrievalRequest) ([]runtime.RetrievalChunk, error) {
+	f.mu.Lock()
 	f.calls++
-	if f.failOnCall == nil || f.failOnCall[f.calls] {
+	call := f.calls
+	fail := f.failOnCall == nil || f.failOnCall[call]
+	f.mu.Unlock()
+	if fail {
 		return nil, errors.New("SILICONFLOW API error: 402 Payment Required")
 	}
 	return f.chunksPerOKCall, nil
@@ -202,7 +208,7 @@ func TestScoreGrepChunks_ScoreAndDedupe(t *testing.T) {
 }
 
 func TestGrepChunksTool_InvalidRegex(t *testing.T) {
-	out, err := NewGrepChunksTool("", nil).InvokableRun(context.Background(), `{"query":"("}`)
+	out, err := NewGrepChunksTool(nil).InvokableRun(context.Background(), `{"query":"("}`)
 	if err != nil {
 		t.Fatalf("failure must become a result, got error: %v", err)
 	}
@@ -212,7 +218,7 @@ func TestGrepChunksTool_InvalidRegex(t *testing.T) {
 }
 
 func TestGrepChunksTool_EmptyQuery(t *testing.T) {
-	out, err := NewGrepChunksTool("", nil).InvokableRun(context.Background(), `{"query":""}`)
+	out, err := NewGrepChunksTool(nil).InvokableRun(context.Background(), `{"query":""}`)
 	if err != nil {
 		t.Fatalf("failure must become a result, got error: %v", err)
 	}
@@ -395,6 +401,7 @@ type grepFakeEngine struct {
 	searchErr         error
 	searchCalls       int
 	lastReq           *enginetypes.SearchRequest
+	lastRegexpReq     *enginetypes.RegexpSearchRequest
 }
 
 func (e *grepFakeEngine) GetType() string { return string(engine.EngineElasticsearch) }
@@ -461,6 +468,7 @@ func keepByKey(chunks []map[string]interface{}, want []string, keys ...string) [
 	return out
 }
 func (e *grepFakeEngine) SearchByRegexp(_ context.Context, req *enginetypes.RegexpSearchRequest) (*enginetypes.SearchResult, error) {
+	e.lastRegexpReq = req
 	if e.searchByRegexpErr != nil {
 		return nil, e.searchByRegexpErr
 	}
@@ -505,14 +513,13 @@ func TestGrepAdapter_NoFallbackOnRegexpError(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	_, err := adapter.Grep(context.Background(), runtime.GrepRequest{
-		TenantID:   "t",
+	_, err := adapter.Grep(WithDatasetTenants(context.Background(), map[string]string{"kb1": "t"}), runtime.GrepRequest{
 		Pattern:    `\bbeta\b`,
 		DatasetIDs: []string{"kb1"},
 		Limit:      30,
 	})
-	if err == nil {
-		t.Fatal("expected Grep to surface the regexp pushdown error (no in-memory fallback)")
+	if !errors.Is(err, runtime.ErrRegexpPushdown) {
+		t.Fatalf("expected Grep to surface the regexp pushdown error (no in-memory fallback), got %v", err)
 	}
 	if fe.searchCalls != 0 {
 		t.Fatalf("expected no in-memory recall Search after fallback removal, got %d", fe.searchCalls)
@@ -529,8 +536,8 @@ func TestGrepAdapter_RegexpPushdownSucceeds(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	chunks, err := adapter.Grep(context.Background(), runtime.GrepRequest{
-		TenantID: "t", Pattern: "beta", DatasetIDs: []string{"kb1"}, Limit: 30,
+	chunks, err := adapter.Grep(WithDatasetTenants(context.Background(), map[string]string{"kb1": "t"}), runtime.GrepRequest{
+		Pattern: "beta", DatasetIDs: []string{"kb1"}, Limit: 30,
 	})
 	if err != nil {
 		t.Fatalf("Grep: %v", err)
@@ -611,7 +618,7 @@ func TestListChunks_DeepRead(t *testing.T) {
 	defer runtime.SetGrepService(nil)
 	stubOwner(t, "kb1")
 
-	out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1","anchor_chunk_ids":["c1","c3"]}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -654,7 +661,7 @@ func TestListChunks_AnchorNeighbors(t *testing.T) {
 	defer runtime.SetGrepService(nil)
 	stubOwner(t, "kb1")
 
-	tool := NewListChunksTool("t", []string{"kb1"})
+	tool := NewListChunksTool([]string{"kb1"})
 
 	// Single anchor + 1 neighbor → window c2..c4, header carries doc_chunks_total.
 	out, err := tool.InvokableRun(context.Background(),
@@ -775,15 +782,15 @@ func TestListChunks_DocIDRequired(t *testing.T) {
 	stubOwner(t, "kb1")
 
 	// Both required args must be present: doc_id and at least one anchor.
-	if out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	if out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"anchor_chunk_ids":["c1"]}`); err != nil || !strings.Contains(out, "doc_id is required") {
 		t.Fatalf("missing doc_id must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}
-	if out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	if out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1"}`); err != nil || !strings.Contains(out, "anchor_chunk_ids is required") {
 		t.Fatalf("missing anchors must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}
-	if out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(), `{}`); err != nil ||
+	if out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(), `{}`); err != nil ||
 		!strings.Contains(out, toolErrorMarker) {
 		t.Fatalf("everything missing must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}

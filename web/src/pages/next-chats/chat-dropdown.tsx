@@ -9,7 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ChatDropdownGuard } from '@/ee/pages/next-chats/chat-dropdown-guard';
+import {
+  ChatDropdownGuard,
+  shouldShowChatDropdown,
+} from '@/ee/pages/next-chats/chat-dropdown-guard';
 import { useDeleteChat } from '@/hooks/use-chat-request';
 import { IDialog } from '@/interfaces/database/chat';
 import { PenLine, Trash2 } from 'lucide-react';
@@ -43,6 +46,10 @@ export function ChatDropdown({
     deleteChat(chat.id);
   }, [chat.id, deleteChat]);
 
+  if (!shouldShowChatDropdown(chat)) {
+    return null;
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
@@ -51,8 +58,11 @@ export function ChatDropdown({
           chat={chat}
           showPrivilegeModal={showPrivilegeModal}
           manageItems={
-            <DropdownMenuItem onClick={handleShowChatRenameModal}>
-              {t('common.rename')} <PenLine />
+            <DropdownMenuItem
+              justifyBetween={false}
+              onClick={handleShowChatRenameModal}
+            >
+              <PenLine /> {t('common.rename')}
             </DropdownMenuItem>
           }
           deleteItems={
@@ -71,6 +81,7 @@ export function ChatDropdown({
                 }}
               >
                 <DropdownMenuItem
+                  justifyBetween={false}
                   className="text-state-error"
                   onSelect={(e) => {
                     e.preventDefault();
@@ -79,7 +90,7 @@ export function ChatDropdown({
                     e.stopPropagation();
                   }}
                 >
-                  {t('common.delete')} <Trash2 />
+                  <Trash2 /> {t('common.delete')}
                 </DropdownMenuItem>
               </ConfirmDeleteDialog>
             </>

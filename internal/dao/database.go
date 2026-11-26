@@ -322,6 +322,8 @@ func autoMigrateModels() []interface{} {
 		// the compile that produced it, or the list trains its reader to ignore
 		// it.
 		&entity.OntologyDriftDismissal{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
@@ -663,6 +665,8 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		// Dismissals are written by the workspace and read on every panel open,
 		// on the same server.
 		&entity.OntologyDriftDismissal{},
+		// mode 8 session -> Codex thread mapping (runtime table; see codexagent).
+		&entity.CodexThreadMap{},
 	}
 	// Edition-specific runtime tables: the chunk edit history and the dataset
 	// history are written on every chunk and dataset mutation, but the
@@ -672,6 +676,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	// and only log).
 	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
 	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, permissionRuntimeModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
 			tableName := fmt.Sprintf("%T", m)

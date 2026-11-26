@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package tool
 
 import (
@@ -6,7 +22,11 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/dao"
 	modelModule "ragflow/internal/entity/models"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 // TestSplitKeywords_BigramFallback asserts comma terms are used when >=3, and
@@ -150,5 +170,38 @@ func TestNarrowByKeywords_DropsKeywordless(t *testing.T) {
 	}
 	if out[0].ID != "c1" {
 		t.Errorf("kept chunk = %q, want c1", out[0].ID)
+	}
+}
+
+// TestAgenticSearchForwardsTheApplicationDB pins that the retrieval service is
+// handed the application database. The permission checker behind the NLP
+// retrieval adapter loads memberships and dataset rows from it, and every
+// sibling canvas tool already passes dao.DB.
+func TestAgenticSearchForwardsTheApplicationDB(t *testing.T) {
+	previous := GetRetrievalService()
+	service := &capturingRetrievalService{}
+	SetRetrievalService(service)
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	state := runtime.NewCanvasState("run-db", "session-db")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"hello","kb_ids":["kb-1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if service.db == nil {
+		t.Fatal("retrieval service received a nil database")
+	}
+	if service.db != dao.DB {
+		t.Fatal("retrieval service received a database other than the application handle")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -455,7 +456,7 @@ func (s *CompilationTemplateGovernanceService) DecideAssertions(ctx context.Cont
 		verified := map[string]bool{}
 		needsIndividualReview := map[string]bool{}
 		for _, row := range found {
-			rowID := strings.TrimSpace(firstStringValue(row["id"]))
+			rowID := strings.TrimSpace(common.FirstEngineString(row["id"]))
 			verified[rowID] = true
 			if key.action != AssertionReviewAccepted {
 				continue
@@ -768,7 +769,7 @@ func reviewSearch(ctx context.Context, tenantID string, datasetIDs []string, sel
 // datasets, so every item must say which one it is a claim about; the name rides
 // along so the UI does not have to resolve ids it already received.
 func annotateReviewRow(node map[string]interface{}, row map[string]interface{}, names map[string]string) {
-	datasetID := strings.TrimSpace(firstStringValue(row["kb_id"]))
+	datasetID := strings.TrimSpace(common.FirstEngineString(row["kb_id"]))
 	if datasetID == "" {
 		return
 	}

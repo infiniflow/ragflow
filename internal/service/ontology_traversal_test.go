@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 // fakeTraversalScope stands in for the ownership check.
@@ -44,8 +46,8 @@ func (f *fakeTraversalRows) read(
 	}
 	out := make([]map[string]interface{}, 0, len(f.rows))
 	for _, row := range f.rows {
-		from := firstStringValue(row["from_entity_kwd"])
-		to := firstStringValue(row["to_entity_kwd"])
+		from := common.FirstEngineString(row["from_entity_kwd"])
+		to := common.FirstEngineString(row["to_entity_kwd"])
 		if want["from_entity_kwd|"+from] || want["to_entity_kwd|"+to] {
 			out = append(out, row)
 		}

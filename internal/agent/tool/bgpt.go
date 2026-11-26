@@ -24,12 +24,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const bgptToolName = "bgpt_search"
@@ -214,7 +214,7 @@ func buildBGPTReferences(envelope map[string]any) ([]map[string]any, []map[strin
 			continue
 		}
 		content := bgptDataImagePattern.ReplaceAllString(formatBGPTPaper(paper), "")
-		content = truncateBGPTRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -297,13 +297,6 @@ func renderBGPTReferences(chunks []map[string]any, maxTokens int) string {
 		blocks = append(blocks, block)
 	}
 	return strings.Join(blocks, "\n")
-}
-
-func truncateBGPTRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func bgptJSON(env bgptEnv) string {

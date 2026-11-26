@@ -25,3 +25,14 @@ const (
 	TenantPermissionManageRoles
 	TenantPermissionOwner
 )
+
+// CodexThreadMap is the mode 8 session -> Codex thread table. The OSS build has
+// no mode 8, so the model is declared (the shared migration list registers it)
+// but no OSS code path ever reads or writes it.
+type CodexThreadMap struct {
+	TenantID  string `gorm:"column:tenant_id;primaryKey;size:64" json:"tenant_id"`
+	SessionID string `gorm:"column:session_id;primaryKey;size:64" json:"session_id"`
+	ThreadID  string `gorm:"column:thread_id;size:64;not null" json:"thread_id"`
+}
+
+func (CodexThreadMap) TableName() string { return "codex_thread_map" }

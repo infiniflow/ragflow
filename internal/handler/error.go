@@ -23,13 +23,25 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
+func respondFeatureDisabled(c *gin.Context, err error) bool {
+	if !errors.Is(err, utility.ErrFeatureDisabled) {
+		return false
+	}
+	common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, err.Error())
+	return true
+}
+
 // jsonInternalError logs the original error without exposing internal details.
 func jsonInternalError(c *gin.Context, err error) {
+	if respondFeatureDisabled(c, err) {
+		return
+	}
 	common.Warn("handler internal error",
 		zap.Error(err),
 		zap.String("method", c.Request.Method),

@@ -1,4 +1,5 @@
 import { DynamicForm } from '@/components/dynamic-form';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
@@ -26,6 +27,10 @@ import {
   useRevalidatePersistedModels,
 } from './memory-setting-hooks';
 import { MemorySettingProvider } from './memory-setting-context';
+import {
+  canManageMemoryConfig,
+  useCanWriteMemoryRole,
+} from '@/ee/pages/memories/memory-dropdown-guard';
 
 export default function MemoryMessage() {
   const { t } = useTranslation();
@@ -45,6 +50,9 @@ export default function MemoryMessage() {
     } as unknown as IMemory,
   });
   const { onMemoryRenameOk, loading } = useUpdateMemoryConfig();
+  const hasRoleWrite = useCanWriteMemoryRole(data?.tenant_id ?? '');
+  const canEditConfig =
+    hasRoleWrite && canManageMemoryConfig(data?.operator_permission ?? 0);
 
   useEffect(() => {
     form.reset({
@@ -79,7 +87,7 @@ export default function MemoryMessage() {
     onMemoryRenameOk(data);
   };
   return (
-    <section className="h-full flex flex-col">
+    <SettingsFormContainer className="flex h-full flex-col">
       <TopTitle
         title={t('knowledgeDetails.configuration')}
         description={t('memory.config.titleDescription')}
@@ -93,42 +101,44 @@ export default function MemoryMessage() {
               <Form {...form}>
                 <form
                   onSubmit={form.handleSubmit(() => {})}
-                  className="space-y-6 "
+                  className="w-full space-y-6"
                 >
-                  <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
+                  <div className="w-full h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
                     <section className="space-y-5 text-text-secondary !space-y-10">
                       <div className="text-base font-medium text-text-primary">
                         {t('knowledgeConfiguration.baseInfo')}
                       </div>
-                      <BasicInfo></BasicInfo>
+                      <BasicInfo readOnly={!canEditConfig}></BasicInfo>
                       <Divider />
-                      <MemoryModelForm />
-                      <AdvancedSettingsForm />
+                      <MemoryModelForm readOnly={!canEditConfig} />
+                      <AdvancedSettingsForm readOnly={!canEditConfig} />
                     </section>
                   </div>
-                  <div className="text-right items-center flex justify-end gap-3 w-[768px]">
-                    <Button
-                      type="reset"
-                      className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
-                      onClick={() => {
-                        form.reset();
-                      }}
-                    >
-                      {t('knowledgeConfiguration.cancel')}
-                    </Button>
-                    <DynamicForm.SavingButton
-                      submitLoading={loading}
-                      submitFunc={(value) => {
-                        onSubmit(value as IMemory);
-                      }}
-                    ></DynamicForm.SavingButton>
-                  </div>
+                  {canEditConfig && (
+                    <div className="text-right items-center flex justify-end gap-3 w-full">
+                      <Button
+                        type="reset"
+                        className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
+                        onClick={() => {
+                          form.reset();
+                        }}
+                      >
+                        {t('knowledgeConfiguration.cancel')}
+                      </Button>
+                      <DynamicForm.SavingButton
+                        submitLoading={loading}
+                        submitFunc={(value) => {
+                          onSubmit(value as IMemory);
+                        }}
+                      ></DynamicForm.SavingButton>
+                    </div>
+                  )}
                 </form>
               </Form>
             </ModelResourceAccessUserIdContext.Provider>
           </ModelResourceTenantIdContext.Provider>
         </MemorySettingProvider>
       </div>
-    </section>
+    </SettingsFormContainer>
   );
 }

@@ -19,6 +19,7 @@ package router
 import (
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/mcp"
 
 	"github.com/gin-gonic/gin"
 )
@@ -157,6 +158,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
+	// mode 8 Codex MCP bridge. Authenticated by the per-thread ticket carried in the
+	// path, not by a user token: the shared Codex server (not a browser) calls this, and
+	// the ticket scopes every call to one tenant + knowledge-base set. See
+	// docs/develop/mode-8-codex-mcp-agent.md.
+	engine.Any("/mcp/codex/:token", gin.WrapH(mcp.NewCodexHandler(mcp.DefaultCodexTickets())))
+
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
@@ -221,11 +228,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
 		apiBetaAuth.GET("/agents/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
-
-		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
-		// Uses BetaAuthMiddleware to resolve the user from the
-		// Authorization header.
-		apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
 	}
 
 	// Protected routes
@@ -380,6 +382,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id/progress", r.datasetsHandler.GetIngestionProgress)
 				datasets.GET("/:dataset_id/ingestions/:log_id/messages", r.datasetsHandler.ListIngestionMessages)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
@@ -723,6 +726,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.POST("/:connector_id/resume-failed-sync", r.connectorHandler.ResumeFailedSync)
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
+
+			// MCP endpoint exposing RAGFlow capabilities as MCP tools. Its
+			// tools act with the caller's full identity, so it sits behind the
+			// strict middleware: the beta token embedded in share links must
+			// not reach it.
+			v1.POST("/mcp", r.mcpServerHandler.HandleMCP)
 
 			// MCP server routes.
 			mcp := v1.Group("/mcp")

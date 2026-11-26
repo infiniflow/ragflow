@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +18,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if err := server.InitLocalVariables(); err != nil {
-		panic(err)
-	}
+	server.InitLocalVariables()
 	server.SetServerName("test")
 	os.Exit(m.Run())
 }
@@ -313,6 +312,25 @@ func TestRouterSetupPipelinesRoutesRequireAuth(t *testing.T) {
 				t.Fatalf("GET %s: status=%d body=%s; want 401 (route must be behind auth middleware)", path, resp.Code, resp.Body.String())
 			}
 		})
+	}
+}
+
+func TestRouterSetupRegistersMCPRouteWithStrictAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler: handler.NewAuthHandler(),
+	}
+	r.Setup(engine)
+
+	// MCP tools act with the caller's full identity, so the route must sit
+	// behind AuthMiddleware. Behind BetaAuthMiddleware the beta token embedded
+	// in share links would be accepted and answer HTTP 200 with code 102 here.
+	resp := httptest.NewRecorder()
+	engine.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(`{}`)))
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("POST /api/v1/mcp: status=%d body=%s; want 401 from the strict auth middleware", resp.Code, resp.Body.String())
 	}
 }
 

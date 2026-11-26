@@ -113,7 +113,7 @@ func OntologyHyperedgeKindFilter() map[string]interface{} {
 type ontologyRowReader func(ctx context.Context, tenantID string, datasetIDs []string, filter map[string]interface{}, fields []string, limit int) ([]map[string]interface{}, error)
 
 // ontologyChunkReader loads original chunks by id.
-type ontologyChunkReader func(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{}
+type ontologyChunkReader func(ctx context.Context, datasetIDs, ids []string) []map[string]interface{}
 
 // readOntologyRows is the production reader: one filtered search per dataset,
 // merged. It goes through graphRowSearch so it scopes by dataset the same way
@@ -331,15 +331,15 @@ func ontologyHypernodeHitsFromRows(rows []map[string]interface{}, role string) [
 // A row without a path is dropped: the path is what the block selection groups
 // on, and a slot whose path is unknown cannot be placed in any block.
 func ontologyHypernodeHitFromRow(row map[string]interface{}, role string) (ontologyHypernodeHit, bool) {
-	path := strings.TrimSpace(firstStringValue(row["path_kwd"]))
+	path := strings.TrimSpace(common.FirstEngineString(row["path_kwd"]))
 	if path == "" {
 		return ontologyHypernodeHit{}, false
 	}
-	rowID := firstStringValue(row["chunk_id"])
+	rowID := common.FirstEngineString(row["chunk_id"])
 	if rowID == "" {
-		rowID = firstStringValue(row["id"])
+		rowID = common.FirstEngineString(row["id"])
 	}
-	value := strings.TrimSpace(firstStringValue(row["node_value_kwd"]))
+	value := strings.TrimSpace(common.FirstEngineString(row["node_value_kwd"]))
 	if value == "" {
 		// Rows written before node_value_kwd existed carry the value only in
 		// their payload, and only on the value half. Reading it back keeps the
@@ -351,7 +351,7 @@ func ontologyHypernodeHitFromRow(row map[string]interface{}, role string) (ontol
 	return ontologyHypernodeHit{
 		nodeKey:  nodeKey,
 		path:     path,
-		prop:     strings.TrimSpace(firstStringValue(row["prop_kwd"])),
+		prop:     strings.TrimSpace(common.FirstEngineString(row["prop_kwd"])),
 		slot:     ontologyHypergraphSlot(path),
 		value:    value,
 		role:     role,
@@ -359,7 +359,7 @@ func ontologyHypernodeHitFromRow(row map[string]interface{}, role string) (ontol
 		depth:    ontologyIntValue(row["depth_int"]),
 		edgeIDs:  stringSliceValue(row["hyperedge_ids"]),
 		chunkIDs: stringSliceValue(row["source_chunk_ids"]),
-		docID:    strings.TrimSpace(firstStringValue(row["doc_id"])),
+		docID:    strings.TrimSpace(common.FirstEngineString(row["doc_id"])),
 		rowID:    rowID,
 	}, true
 }
@@ -476,14 +476,14 @@ func (s *OntologyABoxRetrievalService) promoteOntologyEntityNames(
 		if ontologyRowKind(row) != "entity" {
 			continue
 		}
-		name := strings.ToLower(strings.TrimSpace(firstStringValue(row["name_kwd"])))
+		name := strings.ToLower(strings.TrimSpace(common.FirstEngineString(row["name_kwd"])))
 		if name == "" {
 			continue
 		}
 		if _, seen := classOf[name]; seen {
 			continue
 		}
-		classOf[name] = strings.TrimSpace(firstStringValue(row["entity_type_kwd"]))
+		classOf[name] = strings.TrimSpace(common.FirstEngineString(row["entity_type_kwd"]))
 		names = append(names, name)
 		if len(names) >= ontologyHypergraphPromotionLimit {
 			break
@@ -504,13 +504,13 @@ func (s *OntologyABoxRetrievalService) promoteOntologyEntityNames(
 	}
 	hits := make([]ontologyHypernodeHit, 0, len(rows))
 	for _, row := range rows {
-		path := strings.TrimSpace(firstStringValue(row["path_kwd"]))
+		path := strings.TrimSpace(common.FirstEngineString(row["path_kwd"]))
 		if !strings.HasSuffix(path, ":name") {
 			// Only a name slot is an entity's identity; an attribute slot that
 			// happens to hold the same value is a different assertion.
 			continue
 		}
-		value := strings.ToLower(strings.TrimSpace(firstStringValue(row["node_value_kwd"])))
+		value := strings.ToLower(strings.TrimSpace(common.FirstEngineString(row["node_value_kwd"])))
 		class, ok := classOf[value]
 		if !ok {
 			continue
@@ -521,7 +521,7 @@ func (s *OntologyABoxRetrievalService) promoteOntologyEntityNames(
 			// identity.
 			continue
 		}
-		rowID := firstStringValue(row["id"])
+		rowID := common.FirstEngineString(row["id"])
 		hits = append(hits, ontologyHypernodeHit{
 			nodeKey:  ontologyHypernodeKey(path, value, rowID),
 			path:     path,
@@ -532,7 +532,7 @@ func (s *OntologyABoxRetrievalService) promoteOntologyEntityNames(
 			depth:    ontologyIntValue(row["depth_int"]),
 			edgeIDs:  stringSliceValue(row["hyperedge_ids"]),
 			chunkIDs: stringSliceValue(row["source_chunk_ids"]),
-			docID:    strings.TrimSpace(firstStringValue(row["doc_id"])),
+			docID:    strings.TrimSpace(common.FirstEngineString(row["doc_id"])),
 			rowID:    rowID,
 			promoted: true,
 		})
@@ -660,7 +660,7 @@ func (s *OntologyABoxRetrievalService) loadOntologyHyperedgeBlocks(
 	}
 	byID := make(map[string]map[string]interface{}, len(rows))
 	for _, row := range rows {
-		if id := firstStringValue(row["id"]); id != "" {
+		if id := common.FirstEngineString(row["id"]); id != "" {
 			byID[id] = row
 		}
 	}
@@ -697,8 +697,8 @@ func ontologyHyperedgeFromRow(edgeID string, row map[string]interface{}, covered
 	}
 	return agentic_rag.OntologyHyperedge{
 		RowID:        edgeID,
-		Root:         strings.TrimSpace(firstStringValue(row["name_kwd"])),
-		RootType:     strings.TrimSpace(firstStringValue(row["entity_type_kwd"])),
+		Root:         strings.TrimSpace(common.FirstEngineString(row["name_kwd"])),
+		RootType:     strings.TrimSpace(common.FirstEngineString(row["entity_type_kwd"])),
 		Depth:        ontologyIntValue(row["depth_int"]),
 		Facts:        facts,
 		CoveredNodes: covered,
@@ -751,12 +751,12 @@ func (s *OntologyABoxRetrievalService) loadOntologyHyperedgeChunks(
 	if s.chunkReader == nil {
 		return []agentic_rag.OntologyHypergraphChunk{}
 	}
-	rows := s.chunkReader(ctx, scope.TenantIDs[0], req.DatasetIDs, order)
+	rows := s.chunkReader(ctx, req.DatasetIDs, order)
 	byID := make(map[string]map[string]interface{}, len(rows))
 	for _, row := range rows {
-		id := firstStringValue(row["chunk_id"])
+		id := common.FirstEngineString(row["chunk_id"])
 		if id == "" {
-			id = firstStringValue(row["id"])
+			id = common.FirstEngineString(row["id"])
 		}
 		if id != "" {
 			byID[id] = row
@@ -770,9 +770,9 @@ func (s *OntologyABoxRetrievalService) loadOntologyHyperedgeChunks(
 		}
 		out = append(out, agentic_rag.OntologyHypergraphChunk{
 			ChunkID:      chunkID,
-			DocID:        strings.TrimSpace(firstStringValue(row["doc_id"])),
-			DocName:      strings.TrimSpace(firstStringValue(row["docnm_kwd"])),
-			Content:      truncateOntologyContent(firstStringValue(row["content_with_weight"])),
+			DocID:        strings.TrimSpace(common.FirstEngineString(row["doc_id"])),
+			DocName:      strings.TrimSpace(common.FirstEngineString(row["docnm_kwd"])),
+			Content:      truncateOntologyContent(common.FirstEngineString(row["content_with_weight"])),
 			CoveredNodes: refs[chunkID].contribution,
 		})
 	}

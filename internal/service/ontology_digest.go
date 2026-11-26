@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
 )
 
 // ontologyAssertionRowFields is what the digest needs from a compiled row.
@@ -68,19 +69,19 @@ func buildOntologyAssertion(row map[string]interface{}) (agentic_rag.OntologyAss
 	}
 	out := agentic_rag.OntologyAssertion{Kind: kind}
 	if kind == "entity" {
-		out.Type = firstStringValue(row["entity_type_kwd"])
-		out.Name = firstStringValue(row["name_kwd"])
+		out.Type = common.FirstEngineString(row["entity_type_kwd"])
+		out.Name = common.FirstEngineString(row["name_kwd"])
 		if out.Name == "" {
-			out.Name = firstStringValue(row["content_with_weight"])
+			out.Name = common.FirstEngineString(row["content_with_weight"])
 		}
 		out.Attributes = ontologyRowAttributes(row["attr"])
 	} else {
-		out.Type = firstStringValue(row["prop_kwd"])
+		out.Type = common.FirstEngineString(row["prop_kwd"])
 		out.Name = out.Type
-		out.From = firstStringValue(row["from_entity_kwd"])
-		out.FromType = firstStringValue(row["from_type_kwd"])
-		out.To = firstStringValue(row["to_entity_kwd"])
-		out.ToType = firstStringValue(row["to_type_kwd"])
+		out.From = common.FirstEngineString(row["from_entity_kwd"])
+		out.FromType = common.FirstEngineString(row["from_type_kwd"])
+		out.To = common.FirstEngineString(row["to_entity_kwd"])
+		out.ToType = common.FirstEngineString(row["to_type_kwd"])
 	}
 	out.ChunkIDs = stringSliceValue(row["source_chunk_ids"])
 	out.DocIDs = ontologyRowDocIDs(row)
@@ -96,7 +97,7 @@ func buildOntologyAssertion(row map[string]interface{}) (agentic_rag.OntologyAss
 		}
 	}
 	out.ReviewStatus = ontologyRowReviewStatus(row)
-	out.ReviewBy = firstStringValue(row["review_by_kwd"])
+	out.ReviewBy = common.FirstEngineString(row["review_by_kwd"])
 	return out, true
 }
 
@@ -106,10 +107,10 @@ func buildOntologyAssertion(row map[string]interface{}) (agentic_rag.OntologyAss
 // Both are read because the filter key of the same name matches either, so a
 // reader that understood only one of them would drop rows the filter returned.
 func ontologyRowKind(row map[string]interface{}) string {
-	if kind := strings.TrimSpace(firstStringValue(row["type_kwd"])); kind != "" {
+	if kind := strings.TrimSpace(common.FirstEngineString(row["type_kwd"])); kind != "" {
 		return kind
 	}
-	return strings.TrimSpace(firstStringValue(row["knowledge_graph_kwd"]))
+	return strings.TrimSpace(common.FirstEngineString(row["knowledge_graph_kwd"]))
 }
 
 // ontologyRowAttributes reads an entity's declared datatype values. They are
@@ -177,7 +178,7 @@ func ontologyPayloadEvidence(row map[string]interface{}) (string, string) {
 // column is "unreviewed", which is the same rule the review queue counts by:
 // an unset status and a reset status are one state, not two.
 func ontologyRowReviewStatus(row map[string]interface{}) string {
-	status := strings.ToLower(strings.TrimSpace(firstStringValue(row["review_status_kwd"])))
+	status := strings.ToLower(strings.TrimSpace(common.FirstEngineString(row["review_status_kwd"])))
 	if status == "" {
 		return string(AssertionReviewUnreviewed)
 	}

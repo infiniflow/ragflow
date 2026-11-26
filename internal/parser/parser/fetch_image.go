@@ -39,10 +39,13 @@ func isRemoteImageSource(src string) bool {
 // still cached and uploaded rather than silently dropped.
 func remoteImageMIME(data []byte) string {
 	mime := http.DetectContentType(data)
-	if !strings.HasPrefix(mime, "image/") {
-		mime = "image/octet-stream"
+	if strings.HasPrefix(mime, "image/") {
+		return mime
 	}
-	return mime
+	if isSVGImage(data) {
+		return "image/svg+xml"
+	}
+	return "image/octet-stream"
 }
 
 // fetchImage fetches a bounded HTTP(S) image payload through the shared

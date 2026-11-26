@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -478,7 +479,7 @@ func (d declaredOntology) effectiveAttributes(class string, entities int, counts
 		}
 		for _, name := range d.propOrder {
 			prop := d.props[name]
-			if !prop.isDatatype() || seen[name] || !containsStr(prop.domains, owner) {
+			if !prop.isDatatype() || seen[name] || !slices.Contains(prop.domains, owner) {
 				continue
 			}
 			seen[name] = true
@@ -513,14 +514,14 @@ func (d declaredOntology) effectiveAttributes(class string, entities int, counts
 func (d declaredOntology) classHasProperty(class string) bool {
 	for name := range d.props {
 		prop := d.props[name]
-		if containsStr(prop.domains, class) || containsStr(prop.ranges, class) {
+		if slices.Contains(prop.domains, class) || slices.Contains(prop.ranges, class) {
 			return true
 		}
 	}
 	for _, ancestor := range append([]string{class}, d.ancestorChain(class)...) {
 		for name := range d.props {
 			prop := d.props[name]
-			if prop.isDatatype() && containsStr(prop.domains, ancestor) {
+			if prop.isDatatype() && slices.Contains(prop.domains, ancestor) {
 				return true
 			}
 		}
@@ -636,7 +637,7 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 		parents := d.classes[class].parents
 		for _, parent := range parents {
 			for _, ancestor := range d.ancestorChain(parent) {
-				if containsStr(parents, ancestor) {
+				if slices.Contains(parents, ancestor) {
 					redundantParents = append(redundantParents, class+" -> "+ancestor+" (already via "+parent+")")
 				}
 			}
@@ -701,7 +702,7 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 		for _, endpoints := range [][]string{prop.domains, prop.ranges} {
 			for _, specific := range endpoints {
 				for _, broader := range endpoints {
-					if specific == broader || !containsStr(d.ancestorChain(specific), broader) {
+					if specific == broader || !slices.Contains(d.ancestorChain(specific), broader) {
 						continue
 					}
 					expandedEndpoints = append(expandedEndpoints, name+" declares "+specific+" and its ancestor "+broader)
@@ -772,12 +773,12 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 		prop := d.props[name]
 		tokens := nameTokens(name)
 		for _, class := range prop.ranges {
-			if containsStr(tokens, strings.ToLower(class)) {
+			if slices.Contains(tokens, strings.ToLower(class)) {
 				rangeInName = append(rangeInName, name+" -> "+class)
 			}
 		}
 		for _, class := range prop.domains {
-			if containsStr(tokens, strings.ToLower(class)) {
+			if slices.Contains(tokens, strings.ToLower(class)) {
 				domainInName = append(domainInName, name+" -> "+class)
 			}
 		}
@@ -931,7 +932,7 @@ func (d declaredOntology) sameOrNarrowerEndpoints(specific, broader []string) bo
 	for _, narrow := range specific {
 		found := false
 		for _, wide := range broader {
-			if narrow == wide || containsStr(d.ancestorChain(narrow), wide) {
+			if narrow == wide || slices.Contains(d.ancestorChain(narrow), wide) {
 				found = true
 				break
 			}
@@ -1097,14 +1098,14 @@ func countDroppedRelations(
 	}
 	for _, row := range rows {
 		samples = append(samples, OntologyDroppedRelation{
-			Property: strings.TrimSpace(firstStringValue(row["prop_kwd"])),
-			From:     strings.TrimSpace(firstStringValue(row["from_entity_kwd"])),
-			To:       strings.TrimSpace(firstStringValue(row["to_entity_kwd"])),
-			FromType: strings.TrimSpace(firstStringValue(row["from_type_kwd"])),
-			ToType:   strings.TrimSpace(firstStringValue(row["to_type_kwd"])),
-			Reason:   strings.TrimSpace(firstStringValue(row["content_with_weight"])),
-			DocID:    strings.TrimSpace(firstStringValue(row["doc_id"])),
-			Side:     strings.TrimSpace(firstStringValue(row["drop_side"])),
+			Property: strings.TrimSpace(common.FirstEngineString(row["prop_kwd"])),
+			From:     strings.TrimSpace(common.FirstEngineString(row["from_entity_kwd"])),
+			To:       strings.TrimSpace(common.FirstEngineString(row["to_entity_kwd"])),
+			FromType: strings.TrimSpace(common.FirstEngineString(row["from_type_kwd"])),
+			ToType:   strings.TrimSpace(common.FirstEngineString(row["to_type_kwd"])),
+			Reason:   strings.TrimSpace(common.FirstEngineString(row["content_with_weight"])),
+			DocID:    strings.TrimSpace(common.FirstEngineString(row["doc_id"])),
+			Side:     strings.TrimSpace(common.FirstEngineString(row["drop_side"])),
 		})
 	}
 	return int(totalCount), samples, int(totalCount) > len(samples), nil
@@ -1218,7 +1219,7 @@ func countOntologyClasses(
 		return nil, nil, 0, false, err
 	}
 	for _, row := range rows {
-		typ := strings.TrimSpace(firstStringValue(row["entity_type_kwd"]))
+		typ := strings.TrimSpace(common.FirstEngineString(row["entity_type_kwd"]))
 		if typ == "" {
 			// Counted rather than skipped: an entity with no class cannot be
 			// placed on the class-level graph, and the quality ledger is where
@@ -1257,7 +1258,7 @@ func attrValues(row map[string]interface{}) map[string]interface{} {
 		}
 		return m
 	default:
-		raw := firstStringValue(row["attr"])
+		raw := common.FirstEngineString(row["attr"])
 		if strings.TrimSpace(raw) == "" {
 			return nil
 		}
@@ -1295,9 +1296,9 @@ func countOntologyEdges(
 		return nil, false, 0, err
 	}
 	for _, row := range rows {
-		prop := strings.TrimSpace(firstStringValue(row["prop_kwd"]))
-		source := strings.TrimSpace(firstStringValue(row["from_type_kwd"]))
-		target := strings.TrimSpace(firstStringValue(row["to_type_kwd"]))
+		prop := strings.TrimSpace(common.FirstEngineString(row["prop_kwd"]))
+		source := strings.TrimSpace(common.FirstEngineString(row["from_type_kwd"]))
+		target := strings.TrimSpace(common.FirstEngineString(row["to_type_kwd"]))
 		if prop == "" || source == "" || target == "" {
 			unattributed++
 			continue

@@ -1690,13 +1690,8 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	if strings.TrimSpace(req.Pattern) == "" {
 		return nil, fmt.Errorf("regexp pattern cannot be empty")
 	}
-	tenantID := strings.TrimSpace(req.TenantID)
-	if tenantID == "" {
-		return nil, fmt.Errorf("tenant id cannot be empty")
-	}
-	// One index per tenant; a list would fan out to unrelated tables.
-	if strings.Contains(tenantID, ",") {
-		return nil, fmt.Errorf("regexp search supports exactly one tenant")
+	if len(req.IndexNames) == 0 {
+		return nil, fmt.Errorf("index names cannot be empty")
 	}
 	// Chunk tables are per dataset: an unscoped request would read the bare
 	// ragflow_<tenant>, which holds no chunks, and report an empty result.
@@ -1722,14 +1717,21 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	}
 	defer release()
 
-	// Chunk tables are per dataset: ragflow_<tenant>_<datasetID>.
-	baseName := chunkTableBaseName(tenantID)
-	tableNames := make([]string, 0, len(req.KbIDs))
-	for _, kbID := range req.KbIDs {
-		if kbID == "" {
-			tableNames = append(tableNames, baseName)
-		} else {
-			tableNames = append(tableNames, fmt.Sprintf("%s_%s", baseName, kbID))
+	// Chunk tables are per dataset: ragflow_<tenant>_<datasetID>. Every index
+	// name is one tenant, and req.KbIDs carries the datasets, so the table list
+	// is index × dataset; a table that does not exist is skipped below.
+	tableNames := make([]string, 0, len(req.IndexNames)*len(req.KbIDs))
+	for _, indexName := range req.IndexNames {
+		indexName = strings.TrimSpace(indexName)
+		if indexName == "" {
+			continue
+		}
+		for _, kbID := range req.KbIDs {
+			if kbID == "" {
+				tableNames = append(tableNames, indexName)
+			} else {
+				tableNames = append(tableNames, fmt.Sprintf("%s_%s", indexName, kbID))
+			}
 		}
 	}
 
@@ -3310,7 +3312,7 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 
 	var cond []string
 
-	for _, k := range sortedConditionKeys(condition) {
+	for _, k := range slices.Sorted(maps.Keys(condition)) {
 		v := condition[k]
 		if k == "and" || k == "or" {
 			var children []string

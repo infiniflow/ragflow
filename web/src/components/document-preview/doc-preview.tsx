@@ -33,6 +33,7 @@ import {
   useDocumentResizeObserver,
   useDocxPreviewZoom,
 } from './hooks';
+import { normalizeDocxVml } from './docx-vml';
 
 interface DocPreviewerProps {
   className?: string;
@@ -134,21 +135,23 @@ const ensureDefaultLineSpacing = (stylesXml: string): string => {
   );
 };
 
-// Repack the docx with a default line spacing so the preview renders
-// consistent line pitch. Falls back to the original blob on any failure.
-const normalizeDocxLineSpacing = async (blob: Blob): Promise<Blob> => {
+// Normalize only the preview copy; the uploaded document stays untouched.
+const normalizeDocxPreview = async (blob: Blob): Promise<Blob> => {
   try {
     const pkg = await parseDocx(await blob.arrayBuffer());
+    let changed = normalizeDocxVml(pkg);
     const stylesPart = pkg.parts.get('word/styles.xml');
-    if (!stylesPart) return blob;
-    const patched = ensureDefaultLineSpacing(stylesPart.content);
-    if (patched === stylesPart.content) return blob;
-    stylesPart.content = patched;
+    if (stylesPart) {
+      const patched = ensureDefaultLineSpacing(stylesPart.content);
+      changed ||= patched !== stylesPart.content;
+      stylesPart.content = patched;
+    }
+    if (!changed) return blob;
     return new Blob([packageToArrayBuffer(pkg)], {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
   } catch (error) {
-    console.warn('Failed to normalize docx line spacing:', error);
+    console.warn('Failed to normalize DOCX preview:', error);
     return blob;
   }
 };
@@ -223,7 +226,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
         return;
       }
 
-      const normalizedBlob = await normalizeDocxLineSpacing(blob);
+      const normalizedBlob = await normalizeDocxPreview(blob);
 
       if (cancelledRef.current) return;
 
@@ -328,7 +331,24 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
 
         {showContent && (
           <div className="flex p-4" style={{ justifyContent: 'safe center' }}>
-            <div style={{ zoom: zoomScale / 100 }}>
+            {/*
+             * @extend-ai/react-docx renders each page into a fixed A4-height
+             * box with an inline `overflow: clip`. The default line spacing we
+             * inject above (see normalizeDocxLineSpacing) makes some pages
+             * render taller than the A4 box, so that clip silently hides the
+             * last lines/table rows of those pages. The viewer can't be told to
+             * re-paginate, so let the page wrappers/surfaces grow to fit their
+             * content instead of clipping it.
+             */}
+            <div
+              className={classNames(
+                '[&_[data-docx-page-wrapper]]:!h-auto',
+                '[&_[data-docx-page-wrapper]]:!overflow-visible',
+                '[&_[data-docx-page-surface]]:!h-auto',
+                '[&_[data-docx-page-surface]]:!overflow-visible',
+              )}
+              style={{ zoom: zoomScale / 100 }}
+            >
               <DocxEditorViewer
                 editor={editor}
                 mode="read-only"

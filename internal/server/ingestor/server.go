@@ -21,7 +21,6 @@ package ingestor
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -38,30 +37,6 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 )
-
-// extraSupportedTypes holds extra document types an edition adds to the
-// ingestor's accepted set. defaultSupportedTypes merges them over the
-// community base so the community list never has to change.
-var extraSupportedTypes = map[string]struct{}{}
-
-// RegisterSupportedType adds a document type to the ingestor's accepted set.
-// Intended for enterprise editions to extend the community supported types.
-func RegisterSupportedType(t string) {
-	if t == "" {
-		return
-	}
-	extraSupportedTypes[strings.ToLower(t)] = struct{}{}
-}
-
-// defaultSupportedTypes returns the community base supported types merged with
-// any edition-registered extras.
-func defaultSupportedTypes() []string {
-	base := []string{"pdf", "docx", "txt"}
-	for t := range extraSupportedTypes {
-		base = append(base, t)
-	}
-	return base
-}
 
 func logTokenizerCounters() {
 	var available, unavailable []string
@@ -83,7 +58,7 @@ func logTokenizerCounters() {
 // Run starts the RAGFlow ingestion worker. It blocks until ctx is cancelled
 // (OS shutdown signal) or the ingestor receives a shutdown command from the
 // admin, then gracefully stops the ingestor.
-func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func Run(ctx context.Context, serverType common.ServerType, cancel context.CancelFunc, arguments *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	globalConfig := server.GetConfig()
 	logTokenizerCounters()
 
@@ -104,7 +79,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 	}
 	// Resolve the ingestor tier (which lanes this ingestor consumes) from
 	// CLI > env > default(low), failing fast on an invalid value.
-	tier, err := globalConfig.GetIngestorTier(args.IngestorTier)
+	tier, err := globalConfig.GetIngestorTier(arguments.IngestorTier)
 	if err != nil {
 		return err
 	}
@@ -124,7 +99,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 		common.Error("Invalid ingestor dependencies", err)
 		return fmt.Errorf("ingestor dependencies invalid: %w", err)
 	}
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), defaultSupportedTypes(), tier, ingestorDeps)
+	ingestor := ingestion.NewIngestor(*arguments.Name, int32(workers), tier, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
@@ -140,7 +115,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 		return err
 	}
 
-	if common.GetRAGFlowType() == common.EnterpriseEdition {
+	if serverType == common.ServerTypeIngestion {
 		common.Info("\n    ____                      __  _\n" +
 			"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
 			"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
@@ -164,8 +139,8 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 	}
 
 	var readyErr error
-	if args.Ready != nil {
-		readyErr = args.Ready()
+	if arguments.Ready != nil {
+		readyErr = arguments.Ready()
 		if readyErr != nil {
 			cancel()
 		}
@@ -175,9 +150,9 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 	select {
 	case <-ctx.Done():
 		common.Info("Received shutdown signal")
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *arguments.Name))
 	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.Name))
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *arguments.Name))
 		cancel()
 	}
 
@@ -187,7 +162,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 
 	ingestor.Stop(shutdownCtx)
 
-	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.Name))
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *arguments.Name))
 
 	return readyErr
 }

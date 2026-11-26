@@ -126,7 +126,22 @@ func loadTemplateDefaults(t *testing.T, ref string) (got, want map[string]map[st
 	if err != nil {
 		t.Fatalf("ComponentParamsDefaults %q: %v", ref, err)
 	}
+	// The golden table pins the shared template JSON. A build may add its own
+	// load-time defaults, so ignore params the golden does not declare.
+	stripBuildTemplateDefaults(got, want)
 	return
+}
+
+// stripBuildTemplateDefaults drops params the golden table does not declare,
+// keeping the comparison focused on the shared template JSON.
+func stripBuildTemplateDefaults(got, want map[string]map[string]any) {
+	for cpnID, component := range got {
+		for key := range component {
+			if _, ok := want[cpnID][key]; !ok {
+				delete(component, key)
+			}
+		}
+	}
 }
 
 func assertComponentsMatch(t *testing.T, label string, got, want map[string]map[string]any) {

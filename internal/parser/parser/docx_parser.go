@@ -32,6 +32,7 @@ var docxExtract = deepdocoffice.OpenAndExtract
 // in cgo-free files (docx_ir.go, docx_postprocess.go, office_table_render.go)
 // so they compile and test without native libraries.
 type DOCXParser struct {
+	wordOptions        wordParserOptions
 	libType            string
 	textOnly           bool
 	RemoveTOC          bool
@@ -48,6 +49,7 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
+	p.wordOptions.configure(setup)
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
 	}
@@ -60,6 +62,9 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 // Embedded images are stored in the run media cache and emitted as media_ref;
 // text-only parsers skip them instead.
 func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := checkWPSLicense(filename); err != nil {
+		return ParseResult{Err: err}
+	}
 	irJSON, _, _, _, err := docxExtract(data, "docx")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
@@ -92,6 +97,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// not emitted as a standalone text section. This replaces the temporary
 	// word/document.xml re-parse that the Go parser used before the field
 	// existed.
+	irJSON, _ = p.wordOptions.prepareIR(irJSON, data)
 	sections := buildDOCXJSONSections(irJSON, sink)
 	if sink != nil && sink.err != nil {
 		return ParseResult{Err: sink.err}

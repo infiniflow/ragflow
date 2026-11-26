@@ -24,13 +24,13 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const tavilyToolName = "tavily_search"
@@ -391,7 +391,7 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 		}
 		content = tavilyDataImagePattern.ReplaceAllString(content, "")
 		content = rewriteTavilyImageURLs(content, tavilyText(item["url"]))
-		content = truncateTavilyRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -472,13 +472,6 @@ func tavilyText(value any) string {
 
 func tavilyPromptField(value any) string {
 	return tavilyNewlinePattern.ReplaceAllString(tavilyText(value), " ")
-}
-
-func truncateTavilyRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 // InvokableRun performs the Tavily Extract request. The api_key may come from

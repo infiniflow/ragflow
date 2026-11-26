@@ -18,6 +18,7 @@ import { memo } from 'react';
 
 import { AudioExtensions, Images } from '@/constants/common';
 import { CadPreview } from '@/ee/components/document-preview/cad-preview';
+import { VisioPreview } from '@/ee/components/document-preview/visio-preview';
 import { AudioPreviewer } from './audio-preview';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
@@ -63,6 +64,12 @@ const DocumentPreview = function ({
         fileType={fileType}
         highlights={highlights}
         setWidthAndHeight={setWidthAndHeight}
+        url={url}
+      />
+      <VisioPreview
+        className={className}
+        fileType={fileType}
+        positions={positions}
         url={url}
       />
       {['doc', 'docx'].indexOf(fileType) > -1 && (

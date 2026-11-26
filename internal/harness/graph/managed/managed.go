@@ -4,6 +4,7 @@ package managed
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 	"strings"
@@ -652,14 +653,7 @@ func (r *Runtime) Override(overrides map[string]interface{}) *Runtime {
 }
 
 func cloneMap(src map[string]any) map[string]any {
-	if src == nil {
-		return nil
-	}
-	clone := make(map[string]any, len(src))
-	for key, val := range src {
-		clone[key] = val
-	}
-	return clone
+	return maps.Clone(src)
 }
 
 // GetTaskID returns the task ID from config.

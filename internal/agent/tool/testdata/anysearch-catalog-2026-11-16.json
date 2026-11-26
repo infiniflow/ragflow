@@ -1,0 +1,381 @@
+[
+  {
+    "tag": "academic.citation",
+    "parameters": [
+      "category",
+      "doi",
+      "filter",
+      "id",
+      "id_type",
+      "min_citations",
+      "op",
+      "open_access",
+      "sort",
+      "type",
+      "venue",
+      "year_from",
+      "year_to"
+    ]
+  },
+  {
+    "tag": "academic.dataset",
+    "parameters": [
+      "client_id",
+      "resource_type",
+      "year_from",
+      "year_to"
+    ]
+  },
+  {
+    "tag": "academic.paper",
+    "parameters": [
+      "authors",
+      "categories",
+      "category",
+      "citation_count",
+      "citation_doi",
+      "data_source",
+      "date_type",
+      "document_type",
+      "doi",
+      "domain",
+      "field",
+      "has_pdf",
+      "journal",
+      "kind",
+      "language",
+      "min_citations",
+      "open_access",
+      "order",
+      "publication_type",
+      "sort",
+      "source",
+      "type",
+      "venue",
+      "year_from",
+      "year_to"
+    ]
+  },
+  {
+    "tag": "academic.person",
+    "parameters": [
+      "affiliations",
+      "name",
+      "orcid",
+      "research_areas",
+      "schools"
+    ]
+  },
+  {
+    "tag": "agriculture.fao",
+    "parameters": [
+      "date_start",
+      "domain",
+      "keyword",
+      "location",
+      "type"
+    ]
+  },
+  {
+    "tag": "business.company",
+    "parameters": [
+      "keyword",
+      "type"
+    ]
+  },
+  {
+    "tag": "business.jobs",
+    "parameters": [
+      "keyword",
+      "location",
+      "salary_min",
+      "type"
+    ]
+  },
+  {
+    "tag": "business.people",
+    "parameters": [
+      "keyword",
+      "location",
+      "seniority",
+      "title",
+      "type"
+    ]
+  },
+  {
+    "tag": "business.trade",
+    "parameters": [
+      "date_start",
+      "flow",
+      "hs_code",
+      "location",
+      "type"
+    ]
+  },
+  {
+    "tag": "code.doc",
+    "parameters": [
+      "library"
+    ]
+  },
+  {
+    "tag": "code.snippet",
+    "parameters": [
+      "lang",
+      "path",
+      "repo"
+    ]
+  },
+  {
+    "tag": "energy.electricity",
+    "parameters": [
+      "date_end",
+      "date_start",
+      "location",
+      "metric",
+      "type"
+    ]
+  },
+  {
+    "tag": "energy.production",
+    "parameters": [
+      "date_start",
+      "frequency",
+      "keyword",
+      "location",
+      "type"
+    ]
+  },
+  {
+    "tag": "environment.aqi",
+    "parameters": [
+      "location",
+      "type"
+    ]
+  },
+  {
+    "tag": "film.torrent",
+    "parameters": []
+  },
+  {
+    "tag": "finance.calendar",
+    "parameters": [
+      "cn_code",
+      "period",
+      "symbol",
+      "type"
+    ]
+  },
+  {
+    "tag": "finance.fundamental",
+    "parameters": [
+      "cn_code",
+      "period",
+      "symbol",
+      "type"
+    ]
+  },
+  {
+    "tag": "finance.macro",
+    "parameters": [
+      "period",
+      "type"
+    ]
+  },
+  {
+    "tag": "finance.news",
+    "parameters": [
+      "cn_code",
+      "news_src",
+      "period",
+      "symbol",
+      "type"
+    ]
+  },
+  {
+    "tag": "finance.quote",
+    "parameters": [
+      "cn_code",
+      "period",
+      "symbol",
+      "type"
+    ]
+  },
+  {
+    "tag": "finance.screen",
+    "parameters": [
+      "country",
+      "sector",
+      "type"
+    ]
+  },
+  {
+    "tag": "gaming.esports",
+    "parameters": [
+      "champion",
+      "division",
+      "game_name",
+      "match_id",
+      "queue",
+      "region",
+      "tier",
+      "type"
+    ]
+  },
+  {
+    "tag": "gaming.store",
+    "parameters": []
+  },
+  {
+    "tag": "general.general",
+    "parameters": []
+  },
+  {
+    "tag": "health.drug",
+    "parameters": [
+      "type"
+    ]
+  },
+  {
+    "tag": "health.stats",
+    "parameters": []
+  },
+  {
+    "tag": "health.trial",
+    "parameters": []
+  },
+  {
+    "tag": "ip.global",
+    "parameters": [
+      "applicant",
+      "date_start",
+      "ipc",
+      "keyword",
+      "type"
+    ]
+  },
+  {
+    "tag": "legal.enforcement",
+    "parameters": [
+      "authority",
+      "currency",
+      "decision_date",
+      "decision_number",
+      "decision_type",
+      "jurisdiction",
+      "legal_basis",
+      "penalty_amount",
+      "penalty_types",
+      "regulatory_domain",
+      "subject_names"
+    ]
+  },
+  {
+    "tag": "legal.judicial",
+    "parameters": [
+      "case_id",
+      "case_number",
+      "case_type",
+      "cause_of_action",
+      "court",
+      "database_id",
+      "doc_type",
+      "document_type",
+      "judgment_date",
+      "jurisdiction",
+      "language",
+      "legal_basis",
+      "procedure",
+      "respondent",
+      "service"
+    ]
+  },
+  {
+    "tag": "legal.legislation",
+    "parameters": [
+      "agency",
+      "article_number",
+      "collection",
+      "congress",
+      "database_id",
+      "date_from",
+      "date_to",
+      "doc_type",
+      "document_number",
+      "effective_from",
+      "effective_status",
+      "effective_to",
+      "historical",
+      "issuing_authority",
+      "jurisdiction",
+      "language",
+      "legal_level",
+      "resource_kind",
+      "service",
+      "title"
+    ]
+  },
+  {
+    "tag": "resource.image",
+    "parameters": []
+  },
+  {
+    "tag": "security.intel",
+    "parameters": [
+      "ioc"
+    ]
+  },
+  {
+    "tag": "security.noise",
+    "parameters": [
+      "ip"
+    ]
+  },
+  {
+    "tag": "security.scan",
+    "parameters": [
+      "ioc"
+    ]
+  },
+  {
+    "tag": "security.vuln",
+    "parameters": [
+      "type",
+      "value"
+    ]
+  },
+  {
+    "tag": "social_media.social_media",
+    "parameters": [
+      "keyword",
+      "region",
+      "type"
+    ]
+  },
+  {
+    "tag": "travel.flight",
+    "parameters": [
+      "adults",
+      "arrival",
+      "cabin_class",
+      "children",
+      "currency",
+      "date",
+      "departure",
+      "destination",
+      "infants",
+      "origin",
+      "return_date",
+      "type"
+    ]
+  },
+  {
+    "tag": "travel.flight_status",
+    "parameters": [
+      "date",
+      "departure",
+      "flight_number",
+      "type"
+    ]
+  }
+]

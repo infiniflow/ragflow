@@ -39,7 +39,7 @@ func TestStopParseDocumentsAll_OutOfScopeStatusNotCancelled(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.SCHEDULED)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", []string{common.SCHEDULED, common.RUNNING, common.COMPLETED})
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)
@@ -76,7 +76,7 @@ func TestStopParseDocumentsAll_StoppingCountedIdempotent(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPING)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocumentsAll(ctx, "kb-1", []string{common.STOPPING})
 	if err != nil {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)

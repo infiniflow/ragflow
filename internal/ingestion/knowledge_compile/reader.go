@@ -830,25 +830,6 @@ func asString(v interface{}) string {
 // float64, accepting float32, float64, numeric strings, and json.Number. It
 // returns 0 when the value is missing or not numeric.
 func toFloat64(v interface{}) float64 {
-	switch t := v.(type) {
-	case nil:
-		return 0
-	case float64:
-		return t
-	case float32:
-		return float64(t)
-	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
-	case string:
-		if f, err := strconv.ParseFloat(t, 64); err == nil {
-			return f
-		}
-	case json.Number:
-		if f, err := t.Float64(); err == nil {
-			return f
-		}
-	}
-	return 0
+	f, _ := common.ToFloat(v)
+	return f
 }

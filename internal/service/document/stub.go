@@ -20,10 +20,18 @@ package document
 
 import (
 	"context"
+
 	"gorm.io/gorm"
+
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 )
+
+func (s *DocumentService) stopIngestionTasks(ctx context.Context, taskIDs []string) ([]*entity.IngestionTask, error) {
+	userID := permission.UserIDFromContext(ctx)
+	return s.ingestionTaskSvc.RequestStopMany(ctx, taskIDs, &userID)
+}
 
 // grantDocumentOwnerEE grants nothing: the community edition has no document
 // permission records.
@@ -33,6 +41,8 @@ func grantDocumentOwnerEE(context.Context, *gorm.DB, *entity.Document) error { r
 // own built-in pipeline. The community build registers no such binding, so the
 // community routing in dedicatedDocumentParserID is unchanged.
 func dedicatedParserExtension(utility.FileType, string) string { return "" }
+
+func inheritFallbackParserOptions(map[string]any, map[string]any, string) {}
 
 // preparePreviewPresentationEE is a no-op outside the enterprise edition.
 func preparePreviewPresentationEE(context.Context, *entity.Document, string) ([]byte, string, bool, error) {

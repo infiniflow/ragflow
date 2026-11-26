@@ -8,6 +8,10 @@ type ChatDropdownGuardProps = {
   deleteItems: ReactNode;
 };
 
+export function shouldShowChatDropdown(_chat: IDialog) {
+  return true;
+}
+
 /**
  * Enterprise seam for the chat dropdown. Open source has no collaborator
  * permissions, so every action the shared file provides is rendered as-is.

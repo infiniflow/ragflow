@@ -665,6 +665,67 @@ describe('saved instance model baseline', () => {
   });
 });
 
+describe('model edit tool-calling default', () => {
+  const renderEdit = (defaultToolsEnabled: boolean) => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={new QueryClient()}>
+        {children}
+      </QueryClientProvider>
+    );
+    return renderHook(
+      () =>
+        useModelEdit({
+          providerName: 'DeepSeek',
+          instanceName: DRAFT_INSTANCE_SENTINEL,
+          isModelAdded: () => true,
+          isDraftInstance: true,
+          defaultToolsEnabled,
+          updateCatalogModel: jest.fn(),
+          clearCatalogOverride: jest.fn(),
+          updateDraftModel: jest.fn(),
+        }),
+      { wrapper },
+    );
+  };
+
+  it('pre-selects tool calling for drafts when the model has no explicit flag', () => {
+    const { result } = renderEdit(true);
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model',
+        model_types: ['chat'],
+        max_tokens: 0,
+      });
+    });
+    expect(result.current.editDefaultValues?.features).toEqual(['is_tools']);
+  });
+
+  it('keeps an explicit off state for drafts', () => {
+    const { result } = renderEdit(true);
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model',
+        model_types: ['chat'],
+        max_tokens: 0,
+        extra: { is_tools: false },
+      });
+    });
+    expect(result.current.editDefaultValues?.features).toEqual([]);
+  });
+
+  it('leaves the switch off for saved instances', () => {
+    const { result } = renderEdit(false);
+    act(() => {
+      result.current.setEditingModel({
+        name: 'model',
+        model_types: ['chat'],
+        max_tokens: 0,
+      });
+    });
+    expect(result.current.editDefaultValues?.features).toEqual([]);
+  });
+});
+
 describe('model name matching', () => {
   it('collapses instance and catalog entries that differ only in case', () => {
     const { result } = renderHook(() =>

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -595,7 +596,7 @@ func ontologyPageCarriesEntityClasses(rows []map[string]interface{}, classes []s
 		if ontologyRowKind(row) != "entity" {
 			continue
 		}
-		if want[strings.ToLower(strings.TrimSpace(firstStringValue(row["entity_type_kwd"])))] {
+		if want[strings.ToLower(strings.TrimSpace(common.FirstEngineString(row["entity_type_kwd"])))] {
 			return true
 		}
 	}
@@ -605,10 +606,10 @@ func ontologyPageCarriesEntityClasses(rows []map[string]interface{}, classes []s
 // ontologyChunkRowKey is the identity used to merge two pages: the row id, or the
 // chunk id when the projection named it that way.
 func ontologyChunkRowKey(row map[string]interface{}) string {
-	if id := strings.TrimSpace(firstStringValue(row["id"])); id != "" {
+	if id := strings.TrimSpace(common.FirstEngineString(row["id"])); id != "" {
 		return id
 	}
-	return strings.TrimSpace(firstStringValue(row["chunk_id"]))
+	return strings.TrimSpace(common.FirstEngineString(row["chunk_id"]))
 }
 
 // describeOntologyConstraints renders a constraint set for the degrade reason:
@@ -714,11 +715,11 @@ func scanOntologyCoverage(ctx context.Context, tenantID string, datasetIDs []str
 			kind := ontologyRowKind(row)
 			switch kind {
 			case "entity":
-				if name := strings.TrimSpace(firstStringValue(row["entity_type_kwd"])); name != "" {
+				if name := strings.TrimSpace(common.FirstEngineString(row["entity_type_kwd"])); name != "" {
 					sample.Classes[name] = true
 				}
 			case "relation":
-				if name := strings.TrimSpace(firstStringValue(row["prop_kwd"])); name != "" {
+				if name := strings.TrimSpace(common.FirstEngineString(row["prop_kwd"])); name != "" {
 					sample.Properties[name] = true
 				}
 			}

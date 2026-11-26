@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	mcpclient "ragflow/internal/mcp/client"
@@ -67,18 +68,18 @@ func LoadCompiledAction(ctx context.Context, db *gorm.DB, tenantID, templateID s
 	row := rows[0]
 	payload := graphLoadPayload(row)
 	action := &compiledAction{
-		ID:             firstStringValue(row["id"]),
-		Name:           firstStringValue(row["name_kwd"]),
+		ID:             common.FirstEngineString(row["id"]),
+		Name:           common.FirstEngineString(row["name_kwd"]),
 		Type:           contract.ActionEntityType,
-		DatasetID:      firstStringValue(row["kb_id"]),
+		DatasetID:      common.FirstEngineString(row["kb_id"]),
 		Contract:       contract.ParseActionContract(row["contract"]),
 		Attributes:     ontologyAttributesOf(row["attr"]),
 		SourceChunkIDs: stringSliceValue(row["source_chunk_ids"]),
 	}
 	if payload != nil {
-		action.Description = strings.TrimSpace(firstStringValue(payload["description"]))
+		action.Description = strings.TrimSpace(common.FirstEngineString(payload["description"]))
 		if action.Name == "" {
-			action.Name = strings.TrimSpace(firstStringValue(payload["name"]))
+			action.Name = strings.TrimSpace(common.FirstEngineString(payload["name"]))
 		}
 	}
 	return action, nil
@@ -146,22 +147,22 @@ func (s *ActionBindingService) ListModelActions(ctx context.Context, db *gorm.DB
 	out := make([]ModelActionView, 0, len(rows))
 	for _, row := range rows {
 		action := &compiledAction{
-			ID:        firstStringValue(row["id"]),
-			Name:      firstStringValue(row["name_kwd"]),
-			DatasetID: firstStringValue(row["kb_id"]),
+			ID:        common.FirstEngineString(row["id"]),
+			Name:      common.FirstEngineString(row["name_kwd"]),
+			DatasetID: common.FirstEngineString(row["kb_id"]),
 			Contract:  contract.ParseActionContract(row["contract"]),
 		}
 		if payload := graphLoadPayload(row); payload != nil {
-			action.Description = strings.TrimSpace(firstStringValue(payload["description"]))
+			action.Description = strings.TrimSpace(common.FirstEngineString(payload["description"]))
 		}
 		view := ModelActionView{
 			ID:           action.ID,
 			Name:         action.Name,
 			DatasetID:    action.DatasetID,
-			Scope:        firstStringValue(row["scope_kwd"]),
+			Scope:        common.FirstEngineString(row["scope_kwd"]),
 			Description:  action.Description,
 			Contract:     action.Contract.View(),
-			ReviewStatus: firstStringValue(row["review_status_kwd"]),
+			ReviewStatus: common.FirstEngineString(row["review_status_kwd"]),
 		}
 		binding, err := s.bindingDAO.FindByAction(ctx, db, tenantID, templateID, action.Name)
 		if err != nil {
@@ -611,12 +612,12 @@ func (s *ActionBindingService) BackfillActionContracts(ctx context.Context, db *
 			// A contract with all six fields needs no missing list.
 			continue
 		}
-		datasetID := firstStringValue(row["kb_id"])
+		datasetID := common.FirstEngineString(row["kb_id"])
 		if datasetID == "" {
 			continue
 		}
 		if err := docEngine.UpdateChunks(ctx,
-			map[string]interface{}{"id": firstStringValue(row["id"]), "kb_id": datasetID},
+			map[string]interface{}{"id": common.FirstEngineString(row["id"]), "kb_id": datasetID},
 			map[string]interface{}{"contract_missing_kwd": missing},
 			wikiIndexName(tenantID), datasetID); err != nil {
 			return updated, err

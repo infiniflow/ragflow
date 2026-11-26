@@ -79,7 +79,7 @@ type fakeOntologyChunkReader struct {
 	ids  []string
 }
 
-func (f *fakeOntologyChunkReader) read(_ context.Context, _ string, _ []string, ids []string) []map[string]interface{} {
+func (f *fakeOntologyChunkReader) read(_ context.Context, _ []string, ids []string) []map[string]interface{} {
 	f.ids = ids
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {

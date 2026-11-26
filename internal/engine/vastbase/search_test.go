@@ -35,7 +35,7 @@ import (
 // common.LogSearchRequest, whose level probe dereferences a nil AtomicLevel
 // until InitLogger runs.
 func TestMain(m *testing.M) {
-	_ = common.InitLogger("info", common.FileOutput{}, "vastbase_test")
+	common.InitLogger("info", common.FileOutput{}, "vastbase_test")
 	m.Run()
 }
 

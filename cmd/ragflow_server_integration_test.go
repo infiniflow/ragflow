@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,8 +30,28 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/server"
-	"ragflow/internal/server/bootstrap"
 )
+
+// This configuration must point to isolated test infrastructure: startup runs migrations.
+func TestMigrateStartupAndExit(t *testing.T) {
+	configPath := os.Getenv("RAGFLOW_SINGLE_PROCESS_TEST_CONFIG")
+	if configPath == "" {
+		t.Skip("set RAGFLOW_SINGLE_PROCESS_TEST_CONFIG to an isolated service configuration")
+	}
+	args, err := parseArgsFrom([]string{"server", "--migrate", "--config", configPath, "--log-level", "warn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args.Ready = func() error { return errors.New("migration mode must not start services") }
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	if err := runServer(ctx, cancel, args); err != nil {
+		t.Fatalf("migration startup: %v", err)
+	}
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("migration mode did not exit before cancellation: %v", err)
+	}
+}
 
 // This configuration must point to isolated test infrastructure: startup runs migrations.
 func TestSingleProcessStartupAndShutdown(t *testing.T) {
@@ -38,15 +59,15 @@ func TestSingleProcessStartupAndShutdown(t *testing.T) {
 	if configPath == "" {
 		t.Skip("set RAGFLOW_SINGLE_PROCESS_TEST_CONFIG to an isolated service configuration")
 	}
+	args, err := parseArgsFrom([]string{"server", "--config", configPath, "--log-level", "warn"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	ready := make(chan struct{})
 	done := make(chan struct{})
 	var runErr error
-	args := &bootstrap.ServerArgs{
-		ConfigPath: &configPath,
-		LogLevel:   new("warn"),
-		Ready:      func() error { close(ready); return nil },
-	}
+	args.Ready = func() error { close(ready); return nil }
 	go func() {
 		defer close(done)
 		runErr = runServer(ctx, cancel, args)

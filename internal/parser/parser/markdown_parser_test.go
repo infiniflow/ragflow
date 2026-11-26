@@ -303,6 +303,35 @@ func TestMarkdownParser_PreservesUnresolvedImageReferences(t *testing.T) {
 	}
 }
 
+func TestMarkdownParser_KeepsLinkDestinations(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "See the [product catalog](https://example.com/products).\n\n" +
+		"Read the [docs][d] or <https://example.com/home>.\n\n[d]: https://example.com/docs\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var textItems []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); text != "" {
+			textItems = append(textItems, text)
+		}
+	}
+	texts := strings.Join(textItems, "\n")
+	for _, want := range []string{
+		"[product catalog](https://example.com/products)",
+		"[docs](https://example.com/docs)",
+		"or https://example.com/home.",
+	} {
+		if !strings.Contains(texts, want) {
+			t.Errorf("%q missing from text items: %q", want, texts)
+		}
+	}
+}
+
 func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
 	p, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {

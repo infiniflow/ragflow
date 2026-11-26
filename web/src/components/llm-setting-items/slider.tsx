@@ -95,6 +95,7 @@ export const SliderInputSwitchFormField = forwardRef<
                     <FormControl>
                       <Switch
                         checked={field.value}
+                        disabled={field.disabled}
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
@@ -112,12 +113,12 @@ export const SliderInputSwitchFormField = forwardRef<
                   max={max}
                   min={min}
                   step={step}
-                  disabled={disabled}
+                  disabled={disabled || field.disabled}
                 ></SingleFormSlider>
               </FormControl>
               <FormControl>
                 <NumberInput
-                  disabled={disabled}
+                  disabled={disabled || field.disabled}
                   className={cn('h-6 w-16', numberInputClassName)}
                   max={max}
                   min={min}

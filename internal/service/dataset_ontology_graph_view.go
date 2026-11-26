@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -614,7 +615,7 @@ func (s *DatasetArtifactService) ontologyNeighborRelations(
 			truncated = true
 		}
 		for _, row := range rows {
-			if id := strings.TrimSpace(firstStringValue(row["id"])); id != "" {
+			if id := strings.TrimSpace(common.FirstEngineString(row["id"])); id != "" {
 				if seen[id] {
 					continue
 				}

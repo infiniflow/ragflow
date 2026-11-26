@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 )
@@ -368,9 +369,9 @@ func (s *OntologyTraversalService) readHop(
 
 // traversalStepFromRow reads one assertion row into a step.
 func traversalStepFromRow(row map[string]interface{}) (OntologyTraversalStep, bool) {
-	from := strings.TrimSpace(firstStringValue(row["from_entity_kwd"]))
-	to := strings.TrimSpace(firstStringValue(row["to_entity_kwd"]))
-	property := strings.TrimSpace(firstStringValue(row["prop_kwd"]))
+	from := strings.TrimSpace(common.FirstEngineString(row["from_entity_kwd"]))
+	to := strings.TrimSpace(common.FirstEngineString(row["to_entity_kwd"]))
+	property := strings.TrimSpace(common.FirstEngineString(row["prop_kwd"]))
 	if from == "" || to == "" || property == "" {
 		return OntologyTraversalStep{}, false
 	}
@@ -378,8 +379,8 @@ func traversalStepFromRow(row map[string]interface{}) (OntologyTraversalStep, bo
 		From:           from,
 		Property:       property,
 		To:             to,
-		FromType:       strings.TrimSpace(firstStringValue(row["from_type_kwd"])),
-		ToType:         strings.TrimSpace(firstStringValue(row["to_type_kwd"])),
+		FromType:       strings.TrimSpace(common.FirstEngineString(row["from_type_kwd"])),
+		ToType:         strings.TrimSpace(common.FirstEngineString(row["to_type_kwd"])),
 		Direction:      "forward",
 		SourceChunkIDs: ontologyRowStringSlice(row["source_chunk_ids"]),
 	}, true

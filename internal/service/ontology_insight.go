@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -496,7 +497,7 @@ func checkCompetencyElement(
 				return result
 			}
 		}
-		if property, isDeclared := declared.props[name]; isDeclared && containsStr(property.domains, owner) {
+		if property, isDeclared := declared.props[name]; isDeclared && slices.Contains(property.domains, owner) {
 			result.Declared = true
 			result.Reason = "not_extracted"
 			return result
@@ -880,7 +881,7 @@ func competencyElementDeclared(element CompetencyElement, declared declaredOntol
 			return false
 		}
 		property, ok := declared.props[strings.TrimSpace(name)]
-		return ok && containsStr(property.domains, strings.TrimSpace(owner))
+		return ok && slices.Contains(property.domains, strings.TrimSpace(owner))
 	case competencyRelation:
 		source, target, found := strings.Cut(element.Name, "->")
 		if !found {
@@ -892,7 +893,7 @@ func competencyElementDeclared(element CompetencyElement, declared declaredOntol
 			if property.isDatatype() {
 				continue
 			}
-			if containsStr(property.domains, source) && containsStr(property.ranges, target) {
+			if slices.Contains(property.domains, source) && slices.Contains(property.ranges, target) {
 				return true
 			}
 		}

@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,7 +39,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/retrievalaccount"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 // Input carries everything Run needs to spin up a one-shot ReAct conversation
@@ -107,9 +110,10 @@ type Input struct {
 	// internet capability from leaking into another's.
 	Tools []tool.BaseTool
 	// TemplateID selects the agent template from conf/agentic_rag.yaml by id
-	// (e.g. "smart-reasoning", "smart-grep"), carried through from the
-	// request's agent_mode. It is mandatory: an empty or unknown id fails the
-	// run with a clear error — there is no default/env/first-template fallback.
+	// (e.g. "smart-reasoning"). The caller names it; a request cannot, because a
+	// turn is selected by reasoning level and the level names no config id. It is
+	// mandatory: an empty or unknown id fails the run with a clear error — there is
+	// no default/env/first-template fallback.
 	TemplateID string
 	// Template is the per-run resolved configuration, shared with model setup.
 	Template *Template
@@ -133,6 +137,23 @@ type Input struct {
 	// of every tool invocation during this agent turn, keyed by tool name. Pair
 	// this with ToolCallCounts to derive per-call average latency per tool.
 	ToolCallDurations *durationAccumulator
+	// RetrievedDocIDs, when non-nil, collects every document identifier any
+	// retrieval tool surfaced during this agent turn (both doc_id and doc_name,
+	// deduplicated). Citation payloads only carry what the final answer quotes,
+	// but benchmarks score retrieval recall against everything the agent ever
+	// pulled, so the tally has to be taken per tool call.
+	RetrievedDocIDs *docIDLedger
+	// ChunkReads, when non-nil, accumulates how many chunks the retrieval
+	// tools put in front of the model, split by read depth (full content =
+	// deep, snippet window = shallow). Benchmarks report both totals per
+	// question next to ToolCallCounts.
+	ChunkReads *chunkReadLedger
+	// Serves, when non-nil, records every chunk the retrieval tools put in
+	// front of the model, keyed by chunk id with the document it belongs to.
+	// The served-unread watchdog reads it, and the final result reports it as
+	// ServedDocIDs so a benchmark can tell a document that was surfaced from
+	// one that was actually opened.
+	Serves *servedLedger
 }
 
 // defaultMaxIterations caps the ReAct loop before the agent must answer. It is
@@ -174,10 +195,10 @@ var runSeq uint64
 const llmRetryMax = 1
 
 // agentModelRetryConfig returns the eino-native retry policy attached to
-// every ChatModelAgent this package builds (the explorer): provider hiccups —
-// MiniMax 529 overload, 429 rate limits, 5xx, connection resets — are retried
-// with seconds-scale backoff, while client errors (400/401) and exhausted
-// deadlines fail fast.
+// every ChatModelAgent this package builds (explorer, repair turns, and the
+// answer_auditor auditor): provider hiccups — MiniMax 529 overload, 429 rate
+// limits, 5xx, connection resets — are retried with seconds-scale backoff,
+// while client errors (400/401) and exhausted deadlines fail fast.
 //
 // Two design guards:
 //  1. Retries are refused once partial content has streamed out
@@ -291,13 +312,315 @@ func (a *durationAccumulator) Snapshot() map[string]time.Duration {
 	return out
 }
 
+// docIDLedger accumulates the set of documents a run's FULL-CONTENT tools
+// (search_chunks, list_chunks) surfaced. Benchmarks (BrowseComp-Plus) score
+// retrieval recall against this union, not just the cited subset, so the
+// tally is taken as results come back. Only the tools' rendered doc_name is
+// stored, normalized to its file stem (see recordedDocIDs): a benchmark
+// corpus keys its evidence on file stems (e.g. "5412" from "5412.md"), which
+// the opaque doc_id cannot match. Locate-only tools (search_bm25_chunks,
+// grep_chunks) do NOT feed the ledger — they surface a snippet window, not
+// the document.
+type docIDLedger struct {
+	mu  sync.Mutex
+	ids map[string]struct{}
+}
+
+// NewDocIDLedger returns an empty document ledger for one run.
+func NewDocIDLedger() *docIDLedger {
+	return &docIDLedger{ids: make(map[string]struct{})}
+}
+
+// Add records the given document identifiers. Empty values are dropped and
+// duplicates collapse, so callers can pass raw tool output matches as-is.
+func (l *docIDLedger) Add(ids ...string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		l.ids[id] = struct{}{}
+	}
+}
+
+// Snapshot returns the recorded identifiers in sorted order. Sorted so the
+// payload a benchmark archives is byte-stable across runs.
+func (l *docIDLedger) Snapshot() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, 0, len(l.ids))
+	for id := range l.ids {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// chunkReadLedger accumulates HOW MANY chunks a run's retrieval tools put in
+// front of the model, split by read depth:
+//   - DEEP reads (list_chunks, search_chunks): full chunk content rendered —
+//     the expensive reads;
+//   - SHALLOW reads (grep_chunks, search_bm25_chunks): <match_snippet> windows
+//     only — the cheap triage reads.
+//
+// Benchmarks report the two totals per question next to tool_call_counts: the
+// split shows whether a run's context weight came from reading documents or
+// from triage traffic, which raw tool call counts cannot distinguish.
+type chunkReadLedger struct {
+	mu      sync.Mutex
+	deep    int
+	shallow int
+	// deepIDs / shallowIDs record WHICH chunks the two counts refer to.
+	//
+	// The counts alone cannot answer the question a failed run actually poses:
+	// did the passage that holds the answer ever reach the model? Measured on
+	// the browsecomp retry batch, 13 of the 20 evidence_in_hand failures had a
+	// gold-bearing document served to the run, only 6 of those cited it and 0
+	// shipped it — the difference between "read and silently dropped" and
+	// "never read", which a total (q1021: 458 chunks) cannot make. The
+	// identifiers are the raw fact; whether an uncited read chunk MATTERS is
+	// the auditor's judgement, not this ledger's.
+	deepIDs    map[string]struct{}
+	shallowIDs map[string]struct{}
+}
+
+// NewChunkReadLedger returns an empty chunk-read ledger for one run.
+func NewChunkReadLedger() *chunkReadLedger {
+	return &chunkReadLedger{
+		deepIDs:    make(map[string]struct{}),
+		shallowIDs: make(map[string]struct{}),
+	}
+}
+
+// AddDeep records n deep-read chunks (full chunk content).
+func (l *chunkReadLedger) AddDeep(n int) {
+	if l == nil || n <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.deep += n
+}
+
+// AddShallow records n shallow-read chunks (snippet windows).
+func (l *chunkReadLedger) AddShallow(n int) {
+	if l == nil || n <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.shallow += n
+}
+
+// servedLedger records the documents the retrieval tools served to the model,
+// counting - per document - the DISTINCT QUERIES that returned it. The
+// served-unread watchdog diffs it against the deep-read document set
+// (RetrievedDocIDs, filled only by full-content tools) and names the documents
+// that kept surfacing and were never opened. A document served once in a
+// passing sweep is noise; one several different searches returned is a
+// candidate.
+//
+// The unit is the QUERY, never the chunk. Counting serves per chunk made the
+// weight a function of how many chunks of one document a single result carried:
+// measured 2026-10-05 on q1093 of a ten-question run, the run's own latched
+// document reached 35 chunk-serves while every unread lead it was supposed to
+// consider stood at 2-4, so the census's top five was one document repeated and
+// the leads it exists to name never made the list. Counting distinct queries
+// drops that same document to 8 - still the loudest, because the run really did
+// ask about it eight times, but the inflation is gone.
+type servedLedger struct {
+	mu   sync.Mutex
+	docs map[string]map[string]struct{} // document stem -> the distinct queries that served it
+}
+
+// NewServedLedger returns an empty served ledger for one run.
+func NewServedLedger() *servedLedger {
+	return &servedLedger{docs: map[string]map[string]struct{}{}}
+}
+
+// Add records one served document (the benchmark's file stem) under the query
+// that returned it. Repeats of the same (query, document) pair collapse: the
+// weight is how many different searches insisted on the document, not how many
+// times one search was re-run.
+func (l *servedLedger) Add(query, docID string) {
+	if l == nil || docID == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	queries, ok := l.docs[docID]
+	if !ok {
+		queries = map[string]struct{}{}
+		l.docs[docID] = queries
+	}
+	queries[query] = struct{}{}
+}
+
+// Serves returns how many DISTINCT queries returned this document during the run
+// (0 when none did). Callers that report a lead's weight read it through this
+// accessor rather than the document map, which Docs() hands out a copy of,
+// unlocked.
+func (l *servedLedger) Serves(docID string) int {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.docs[docID])
+}
+
+// Docs returns the served documents, most-served first (ties broken by id).
+func (l *servedLedger) Docs() []string {
+	if l == nil {
+		return nil
+	}
+	type pair struct {
+		id string
+		n  int
+	}
+	var ps []pair
+	l.mu.Lock()
+	for d, queries := range l.docs {
+		ps = append(ps, pair{d, len(queries)})
+	}
+	l.mu.Unlock()
+	sort.Slice(ps, func(i, j int) bool {
+		if ps[i].n != ps[j].n {
+			return ps[i].n > ps[j].n
+		}
+		return ps[i].id < ps[j].id
+	})
+	out := make([]string, 0, len(ps))
+	for _, x := range ps {
+		out = append(out, x.id)
+	}
+	return out
+}
+
+// servedLedgerContextKey carries one run's served ledger through the
+// context the tools execute under.
+type servedLedgerContextKey struct{}
+
+// withServedLedger returns ctx carrying the run's served ledger.
+func withServedLedger(ctx context.Context, l *servedLedger) context.Context {
+	return context.WithValue(ctx, servedLedgerContextKey{}, l)
+}
+
+// servedLedgerFrom returns the run's served ledger, or nil when the context
+// carries none (a caller that built its own context for a probe).
+func servedLedgerFrom(ctx context.Context) *servedLedger {
+	l, _ := ctx.Value(servedLedgerContextKey{}).(*servedLedger)
+	return l
+}
+
+// AddDeepIDs records the identifiers of deep-read chunks.
+func (l *chunkReadLedger) AddDeepIDs(ids ...string) {
+	l.addIDs(true, ids)
+}
+
+// AddShallowIDs records the identifiers of shallow-read chunks, same contract
+// as AddDeepIDs.
+func (l *chunkReadLedger) AddShallowIDs(ids ...string) {
+	l.addIDs(false, ids)
+}
+
+// addIDs records one tool result's chunk identifiers under the lock, creating
+// the id set on first use — so a bare &chunkReadLedger{} records ids too, not
+// only one built by the constructor. deep selects which of the two sets.
+func (l *chunkReadLedger) addIDs(deep bool, ids []string) {
+	if l == nil || len(ids) == 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	set := &l.shallowIDs
+	if deep {
+		set = &l.deepIDs
+	}
+	if *set == nil {
+		*set = make(map[string]struct{})
+	}
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		(*set)[id] = struct{}{}
+	}
+}
+
+// Snapshot returns (deepReadChunks, shallowReadChunks) accumulated so far.
+func (l *chunkReadLedger) Snapshot() (deep, shallow int) {
+	if l == nil {
+		return 0, 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.deep, l.shallow
+}
+
+// ChunkIDs returns the identifiers of the chunks the run read, split by read
+// depth and sorted so the payload a benchmark archives is byte-stable across
+// runs (same rule as docIDLedger.Snapshot).
+//
+// A deep-read id means the chunk's FULL content was put in front of the model;
+// a shallow one means it appeared as a <match_snippet> window during triage.
+// The split mirrors the counts, and neither list is filtered against what the
+// deliverable ended up citing: the difference between the two is exactly the
+// measurement this exists for, and it is the caller's to draw.
+func (l *chunkReadLedger) ChunkIDs() (deep, shallow []string) {
+	if l == nil {
+		return nil, nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return sortedIDSet(l.deepIDs), sortedIDSet(l.shallowIDs)
+}
+
+// sortedIDSet flattens an id set into a sorted slice.
+func sortedIDSet(ids map[string]struct{}) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for id := range ids {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // instrumentedTool decorates a tool.InvokableTool, accumulating the total
 // wall-clock duration of every InvokableRun into a shared accumulator keyed by
-// the wrapped tool's name. It embeds tool.InvokableTool (which itself embeds
-// tool.BaseTool), promoting Info, then overrides InvokableRun to time the call.
+// the wrapped tool's name, and (when docs is non-nil) recording the documents
+// a FULL-CONTENT tool surfaced into the run's retrieval ledger. It embeds
+// tool.InvokableTool (which itself embeds tool.BaseTool), promoting Info, then
+// overrides InvokableRun to time the call.
+
+// The ledger is fed by regex over the rendered output rather than by each tool
+// reporting its chunks: every locate tool and list_chunks already render
+// doc_id= / doc_name= attributes, so one wrapper covers the whole toolset
+// without touching any tool implementation. web_search renders url/title
+// instead, so web hits are correctly not counted as corpus documents.
 type instrumentedTool struct {
 	tool.InvokableTool
-	acc *durationAccumulator
+	acc    *durationAccumulator
+	docs   *docIDLedger
+	chunks *chunkReadLedger
+	// watch is the run's locate watchdog (see locate_watch.go): it counts
+	// locate calls and, when the meaning-based leg is held but never called,
+	// appends one reminder to the tool result the model is about to read.
+	watch *locateWatch
+	// unread is the run's served-unread watchdog (see served_unread_watch.go):
+	// when documents pile up served-but-never-read, it names them on the tool
+	// result the model is about to read.
+	unread *servedUnreadWatch
 }
 
 func (t *instrumentedTool) InvokableRun(ctx context.Context, args string, opts ...tool.Option) (string, error) {
@@ -309,14 +632,45 @@ func (t *instrumentedTool) InvokableRun(ctx context.Context, args string, opts .
 		name = info.Name
 	}
 	t.acc.Add(name, cost)
+	if err == nil {
+		// Retrieval accounting, one implementation for every engine: see
+		// retrievalaccount.AccountToolOutput. The ledger split (retrieved vs served, deep
+		// vs shallow) and the regexes over the rendered output live in that leaf package,
+		// so the mode-8 runner — which only has the MCP result text — classifies
+		// identically. It is a leaf because this package pulls in dao, which imports
+		// codexagent, so codexagent cannot import this one back.
+		acc := retrievalaccount.AccountToolOutput(name, out)
+		t.docs.Add(acc.RetrievedDocs...)
+		if acc.DeepChunks > 0 {
+			t.chunks.AddDeep(acc.DeepChunks)
+			t.chunks.AddDeepIDs(acc.DeepChunkIDs...)
+		}
+		if acc.ShallowChunks > 0 {
+			t.chunks.AddShallow(acc.ShallowChunks)
+			t.chunks.AddShallowIDs(acc.ShallowChunkIDs...)
+		}
+	}
 	fields := []zap.Field{
 		zap.String("tool", name),
 		zap.Float64("cost_ms", float64(cost.Milliseconds())),
-		// Args are logged IN FULL: they are the run's single variable state - a
-		// truncated copy makes before/after comparisons impossible after the
-		// fact. Tool args are bounded by construction (queries, ids), so the
-		// volume cost is a few kilobytes per call at most.
+		// Args are logged IN FULL: a truncated copy makes a call impossible to
+		// reproduce after the fact. Tool args are bounded by construction
+		// (queries, ids), so the volume cost is a few kilobytes per call at most.
 		zap.String("args", args),
+	}
+	if err == nil && t.watch != nil {
+		// The locate watchdog rides the result, not the prompt: a rule read
+		// once at the top of the system prompt competes with everything else
+		// there, while this line appears in the tool result the model is
+		// looking at when it decides what to query next.
+		if nudge := t.watch.observe(name); nudge != "" {
+			out += "\n" + nudge
+			fields = append(fields, zap.Int("locate_watchdog", 1))
+		}
+		if nudge := t.unread.observe(name); nudge != "" {
+			out += "\n" + nudge
+			fields = append(fields, zap.Int("served_unread_watchdog", 1))
+		}
 	}
 	if err != nil {
 		fields = append(fields, zap.Error(err))
@@ -366,6 +720,11 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 	if in.DocIDs != nil {
 		ctx = withDocumentScope(ctx, in.DocIDs)
 	}
+	// Resolve the corpus scope ONCE per turn: every corpus tool of this run must
+	// read the indexes that actually hold the bound datasets, which is decided by
+	// each dataset's own tenant (a team-shared dataset lives in the sharing
+	// tenant), not by the conversation's tenant.
+	ctx = WithDatasetTenants(ctx, ResolveDatasetTenants(ctx, in.DatasetIDs))
 
 	// Conversation identity for per-conversation compiled-knowledge tool
 	// availability: the chat pipeline passes the chat id; when absent, a unique
@@ -411,11 +770,23 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		}
 	}
 
-	// Shared per-run duration tally: every tool invocation is timed and
-	// accumulated here for per-question usage accounting.
+	// Shared per-run tool ledgers.
 	if in.ToolCallDurations == nil {
 		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
+	if in.RetrievedDocIDs == nil {
+		in.RetrievedDocIDs = NewDocIDLedger()
+	}
+	if in.ChunkReads == nil {
+		in.ChunkReads = NewChunkReadLedger()
+	}
+	if in.Serves == nil {
+		in.Serves = NewServedLedger()
+	}
+	// The serve ledger rides the context: every retrieval tool's serve point
+	// records what it put in front of the model, so the served-unread watchdog
+	// can name the documents the retrieval kept insisting on.
+	ctx = withServedLedger(ctx, in.Serves)
 
 	// The knowledge layer runs before the loop rather than as a tool the model
 	// has to remember to call: a knowledge layer consulted at the model's
@@ -444,6 +815,11 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 	// Template tools plus the injected compiled-knowledge set (toolsForRun owns
 	// both decisions and their logging). The knowledge-layer tool is added here
 	// because it is a property of this run's ontology mode, not of the template.
+	// With no explicit tools, use the requested template. The config reloads
+	// when its mtime changes so operators can change the tool list and prompt.
+	// toolsFor (inside toolsForRun) also injects web_search from the context
+	// when the conversation has a search provider, so that tool is never
+	// declared in the template.
 	tools := toolsForRun(ctx, tmpl, in, engine.Get())
 	tools = ontologyToolsFor(ctx, tools, mode)
 
@@ -510,16 +886,32 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		}
 	}
 
-	// Wrap every invokable tool so each call is timed and emitted as a debug
-	// log, accumulated into in.ToolCallDurations. Tools that aren't
-	// InvokableTool (e.g. streamable-only) are passed through unwrapped — all
-	// agent tools here are InvokableTool.
+	// Wrap every invokable tool so each call is timed, emitted as a debug log,
+	// accumulated into in.ToolCallDurations, and (for the full-content tools
+	// search_chunks/list_chunks) has the documents it surfaced recorded into
+	// in.RetrievedDocIDs. Tools that aren't InvokableTool (e.g.
+	// streamable-only) are passed through unwrapped — all agent tools here are
+	// InvokableTool.
+	// The locate watchdog may only advertise the meaning-based leg if THIS run
+	// holds it, so availability is established while the tools are wrapped —
+	// before the model can call anything (see locate_watch.go).
+	watch := newLocateWatch()
+	unreadWatch := newServedUnreadWatch(in.Serves, in.RetrievedDocIDs)
 	wrapped := make([]tool.BaseTool, len(tools))
 	for i, t := range tools {
 		if it, ok := t.(tool.InvokableTool); ok {
+			// The locate watchdog may only advertise the meaning-based leg if
+			// THIS run actually holds it (see locate_watch.go).
+			if info, ierr := it.Info(ctx); ierr == nil && info != nil && info.Name == searchSemanticChunksToolName {
+				watch.markSemanticAvailable()
+			}
 			timed := &instrumentedTool{
 				InvokableTool: it,
 				acc:           in.ToolCallDurations,
+				docs:          in.RetrievedDocIDs,
+				chunks:        in.ChunkReads,
+				watch:         watch,
+				unread:        unreadWatch,
 			}
 			wrapped[i] = timed
 		} else {
@@ -602,18 +994,20 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		return RunOutput{}, err
 	}
 
-	// The explorer is driven as a MANAGED SESSION. Seed the request-scoped
-	// session with the compacted conversation history, then hand over the new
-	// user turn; subsequent turns in the same session can rely on the event log
-	// replay (see run_session.go).
+	// explorer/auditor are driven as MANAGED SESSIONS: each turn hands over
+	// nothing but its new messages and the Runner replays everything older from
+	// the session's event log (see run_session.go). The caller above therefore
+	// never reassembles a transcript — no history concatenation, no tail
+	// trimming, no tool-result reordering.
 	sess := newRunSession()
 
 	// EnableStreaming lives on RunnerConfig, not ChatModelAgentConfig.
 	explorerHead := sess.explorer.head(ctx)
+	// The turn hands over only the current question and lets the managed
+	// session replay the caller's history.
 	question := schema.UserMessage(lastUserQuestion(in.Messages))
 	seed := in.Messages
 	if len(seed) > 0 {
-		question = seed[len(seed)-1]
 		// The final user message is the new turn and must be appended exactly
 		// once by turnMessages.
 		seed = seed[:len(seed)-1]
@@ -641,6 +1035,12 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 	// discards that work and, once a failover cooldown has set in, may not
 	// even reach a provider (it would be short-circuited with the stale error
 	// that tripped the cooldown).
+	// abortedTurn is captured BEFORE recovery clears runErr: an aborted turn
+	// whose answer was recovered is still an aborted turn. It issued a tool
+	// call whose result never arrived, and that unmatched call replays as a
+	// provider error on the next turn, so the rollback below must run even
+	// when the carried answer makes the turn's RESULT usable.
+	abortedTurn := runErr != nil
 	if final == "" || runErr != nil {
 		if carried := sess.explorer.lastAssistant(ctx, func(m *schema.Message) bool {
 			return !inputMessageIDs[adk.GetMessageID(m)] && strings.TrimSpace(m.Content) != ""
@@ -649,16 +1049,23 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 			runErr = nil
 		}
 	}
-	if runErr != nil {
-		// Read the recovery candidate before rollback removes the failed turn.
+	if abortedTurn {
+		// The aborted turn's events must not reach the next one: a tool call
+		// whose result never arrived is a provider error on replay. This also
+		// drops the caller's history from the session, so the first repair
+		// turn has to carry it again (conversation.turnMessages).
 		sess.explorer.discardFailedTurn(ctx, explorerHead)
 	} else {
 		sess.explorer.markSeeded()
 	}
 
-	// Terminating action: the turn must never end on narration or a blank.
-	// Synthesize deterministically from the question, whatever partial output
-	// exists, and the evidence gathered so far.
+	// Terminating action: the loop ended on narration, on a bare tool call, or
+	// on an error. Synthesize an answer deterministically from the question,
+	// whatever partial output exists, and the evidence gathered so far — the
+	// turn must never end on narration or a blank. A plain-explorer reply is
+	// prose by design, so a missing answer line is not a defect and the
+	// model's own answer ships as written; only a BLANK or errored turn is
+	// recovered here.
 	if final == "" || runErr != nil {
 		// Detach from the run's cancellation entirely: the fallback fires most
 		// often BECAUSE the shared wall-clock budget expired, and a deadline
@@ -699,10 +1106,6 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		}
 	}
 
-	// The answer channel carries exactly one thing: the deliverable this run is
-	// shipping, emitted once. Everything the loop said on the way there already
-	// went out live as thinking, so the user watched the work without being
-	// handed several competing answers.
 	emit(ctx, in.OnDelta, final, "")
 	return RunOutput{Answer: final, Digest: digest}, runErr
 }
@@ -717,22 +1120,6 @@ func withCancellationCause(ctx context.Context, err error) error {
 	return err
 }
 
-var modelFailureRe = regexp.MustCompile(`exceeds max retries|failed on every model|short-circuited by failover cooldown|overloaded_error|status 529|insufficient balance`)
-
-// consumeAgentEvents drains the agent event iterator, streaming assistant
-// deltas through onDelta (falling back to runtime.EmitAgentMessage when nil)
-// and returning the agent's FINAL message plus an evidence digest. A ReAct
-// loop produces one assistant message per turn — tool-call turns interleaved
-// with the last, tool-free answer turn — and the FOS deliverable is exactly
-// that LAST message, so `final` REPLACES the previous content on every
-// completed assistant message instead of concatenating across turns.
-//
-// The transcript this used to return is gone: the conversation is the session's
-// business now (see run_session.go). `evidence` still accumulates tool output
-// because the last-resort synthesis needs a digest, not a message list.
-// When toolCallCounts is non-nil, each tool the model requested is tallied by
-// name (one tally per requested call, which matches one actual tool
-// invocation).
 func consumeAgentEvents(
 	ctx context.Context,
 	iter *adk.AsyncIterator[*adk.AgentEvent],
@@ -748,10 +1135,11 @@ func consumeAgentEvents(
 	// and joined back when the result arrives.
 	toolNames := make(map[string]string)
 	// Everything the agent says goes out LIVE, but on the THINKING channel.
-	// A ReAct turn emits many messages, any of which can already look like an
-	// answer — the loop often renders one, keeps retrieving, and renders a
-	// better one. Routing those to the answer channel is what put several
-	// competing answers in front of the user. On the thinking channel they stay
+	// A ReAct turn emits many messages and any of them can already be a
+	// complete deliverable (Candidate Matrix + Reasoning Chain + Final Answer)
+	// — the loop often renders one, keeps retrieving, and renders a better one.
+	// Routing those to the answer channel is what put several competing "Final
+	// Answer" blocks in front of the user. On the thinking channel they stay
 	// readable as the work unfolds without competing with the answer, which is
 	// emitted exactly once, at the end of the run, by Run itself (the only
 	// place that knows which deliverable is actually being shipped — the gate
@@ -1443,13 +1831,13 @@ func truncateForLog(s string, max int) string {
 }
 
 // truncateRunes caps a string to max runes (not bytes) so CJK content is never
-// cut mid-rune into invalid UTF-8.
+// cut mid-rune into invalid UTF-8. The ellipsis is caller-visible and only
+// appears when truncation actually happened.
 func truncateRunes(s string, max int) string {
-	r := []rune(s)
-	if len(r) <= max {
-		return s
+	if truncated := utility.TruncateRunes(s, max); truncated != s {
+		return truncated + "..."
 	}
-	return string(r[:max]) + "..."
+	return s
 }
 
 // unknownToolResult answers a call to a tool this run never registered.

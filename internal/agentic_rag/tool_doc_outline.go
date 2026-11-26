@@ -163,7 +163,7 @@ func (g *GraphDocOutlineTool) invokableRun(ctx context.Context, argumentsInJSON 
 		if docScope != nil && len(docScope) == 0 {
 			return renderKgDocOutlineLocateMiss(ctx, query), nil
 		}
-		docIDs = locateDocIDsForOutline(ctx, g.tenantID, datasetIDs, docScope, query)
+		docIDs = locateDocIDsForOutline(ctx, datasetIDs, docScope, query)
 		if len(docIDs) == 0 {
 			return renderKgDocOutlineLocateMiss(ctx, query), nil
 		}
@@ -249,13 +249,12 @@ func renderKgDocOutline(ctx context.Context, docIDs []string, result KgExploreRe
 // the model reach the compiled graph before it holds any doc_id. The pass is
 // lexical on purpose - that keeps the entry working on a corpus whose
 // embedding backend is unavailable.
-func locateDocIDsForOutline(ctx context.Context, tenantID string, datasetIDs, docScope []string, query string) []string {
+func locateDocIDsForOutline(ctx context.Context, datasetIDs, docScope []string, query string) []string {
 	chunks, err := runtime.GetBm25Service().SearchBm25(ctx, runtime.Bm25Request{
 		Queries:    []string{query},
 		DatasetIDs: datasetIDs,
 		DocScope:   docScope,
 		TopN:       graphDocOutlineLocateTopN,
-		TenantID:   tenantID,
 	})
 	if err != nil {
 		common.WarnCtx(ctx, "graph_doc_outline: query entry locate failed",

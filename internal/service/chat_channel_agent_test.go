@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,6 +22,7 @@ import (
 
 func TestChatChannelAgentBindingRoundTrip(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
+	createChatChannelTestAPIKey(t, db, "owner")
 	ctx := serviceTestContext(t, "owner", "owner")
 	if err := db.Create(&entity.UserCanvas{ID: "agent", UserID: "owner", Title: new("Workflow")}).Error; err != nil {
 		t.Fatal(err)
@@ -62,6 +66,7 @@ func TestChatChannelAgentBindingRoundTrip(t *testing.T) {
 
 func TestChatChannelRejectsCrossTenantBindingAndExecution(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
+	createChatChannelTestAPIKey(t, db, "other")
 	createServiceTestDialog(t, db, "private", "actor", "Private")
 	ctx := serviceTestContext(t, "actor", "other", "other")
 	svc := NewChatChannelService()
@@ -71,13 +76,15 @@ func TestChatChannelRejectsCrossTenantBindingAndExecution(t *testing.T) {
 	createServiceTestChannel(t, db, &entity.ChatChannel{
 		ID: "historical", TenantID: "other", Channel: "telegram", Config: entity.JSONMap{}, ChatID: new("private"), Status: 1,
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}, nil); !isAccessDeniedOrHidden(err) {
+	keyCtx := serviceTestContext(t, "other", "other")
+	if _, _, err := PrepareChatChannelCompletion(keyCtx, ChatChannelExecutionContext{ChannelID: "historical", ChatID: "external"}, "private", "hello", false); !isAccessDeniedOrHidden(err) {
 		t.Fatalf("historical unauthorized binding: %v", err)
 	}
 }
 
 func TestChatChannelAgentRevokedAccess(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
+	createChatChannelTestAPIKey(t, db, "owner")
 	ctx := serviceTestContext(t, "owner", "owner")
 	agent := &entity.UserCanvas{ID: "shared", UserID: "creator", TenantID: new("owner"), Permission: string(entity.TenantPermissionTeam)}
 	if err := db.Create(agent).Error; err != nil {
@@ -93,11 +100,8 @@ func TestChatChannelAgentRevokedAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	revokeServiceTestResource(t, "owner", "canvas", "shared", "owner")
-	svc.agentRunner = channelAgentRunnerFunc(func(context.Context, string, string, string, any, []map[string]any) (<-chan canvas.RunEvent, error) {
-		t.Fatal("revoked workflow must not execute")
-		return nil, nil
-	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "hello"}, nil); !errors.Is(err, permission.ErrPermissionDenied) {
+
+	if _, _, err := PrepareChatChannelCompletion(ctx, ChatChannelExecutionContext{ChannelID: channel.ID, ChatID: "external"}, "shared", "hello", true); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("revoked workflow binding: %v", err)
 	}
 }
@@ -111,6 +115,7 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	createChatChannelTestAPIKey(t, db, "owner")
 	if err := db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.APIToken{},
 		&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatal(err)
@@ -138,13 +143,13 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 		tracker = nil
 	}
 	runner := NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
-	svc := NewChatChannelServiceWithAgentService(runner)
+	svc := NewChatChannelService()
 	channel, err := svc.CreateChatChannel(ctx, "channel", "telegram", entity.JSONMap{}, nil, new("workflow"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	msg := ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external-one", Text: "start"}
-	answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil)
+	answer, err := runChannelAgentForTest(t, ctx, runner, channel, msg)
 	if err != nil || !strings.Contains(answer, "Your answer?") {
 		t.Fatalf("waiting: %q %v", answer, err)
 	}
@@ -154,7 +159,7 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 	}
 	if mode == "different-process" {
 		// Recover the persisted interrupt without the first process's Runner.
-		svc.agentRunner = NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
+		runner = NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
 	}
 	var session entity.API4Conversation
 	if err := db.First(&session, "id = ?", channelSessionID("workflow", channel.ID, "external-one")).Error; err != nil {
@@ -167,16 +172,16 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 		t.Fatalf("session source = %v, want %q", session.Source, entity.AgentSessionSourceChatChannel)
 	}
 	msg.Text = "hello"
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
+	answer, err = runChannelAgentForTest(t, ctx, runner, channel, msg)
 	if err != nil || answer != "got: hello" {
 		t.Fatalf("resume: %q %v", answer, err)
 	}
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
+	answer, err = runChannelAgentForTest(t, ctx, runner, channel, msg)
 	if err != nil || answer != "updated" {
 		t.Fatalf("fresh turn after resume: %q %v", answer, err)
 	}
 	msg.ChatID = "external-two"
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
+	answer, err = runChannelAgentForTest(t, ctx, runner, channel, msg)
 	if err != nil || answer != "updated" {
 		t.Fatalf("isolated conversation: %q %v", answer, err)
 	}
@@ -188,7 +193,7 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 	if err := db.Model(&entity.ChatChannel{}).Where("id = ?", channel.ID).Update("status", 0).Error; err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); answer != "" || err != nil {
+	if answer, err := runChannelAgentForTest(t, ctx, runner, channel, msg); answer != "" || err == nil {
 		t.Fatalf("disabled channel: %q %v", answer, err)
 	}
 }
@@ -247,6 +252,7 @@ func TestRefreshChannelAgentDSLRetainsOnlyCompatibleConversationState(t *testing
 func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	createChatChannelTestAPIKey(t, db, "owner")
 	if err := db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.APIToken{},
 		&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatal(err)
@@ -258,13 +264,13 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
 	runner := NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
-	svc := NewChatChannelServiceWithAgentService(runner)
+	svc := NewChatChannelService()
 	channel, err := svc.CreateChatChannel(ctx, "channel", "telegram", entity.JSONMap{}, nil, new("workflow"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	msg := ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "first"}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v1" {
+	if answer, err := runChannelAgentForTest(t, ctx, runner, channel, msg); err != nil || answer != "v1" {
 		t.Fatalf("first turn: %q %v", answer, err)
 	}
 	sessionID := channelSessionID("workflow", channel.ID, msg.ChatID)
@@ -291,7 +297,7 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg.Text = "second"
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v2" {
+	if answer, err := runChannelAgentForTest(t, ctx, runner, channel, msg); err != nil || answer != "v2" {
 		t.Fatalf("updated same conversation: %q %v", answer, err)
 	}
 	session = getAPIConversationForTest(t, db, sessionID)
@@ -308,7 +314,7 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 	run("new-ordinary", "", "v2")
 	for _, chatID := range []string{"new-external", "external"} {
 		msg.ChatID = chatID
-		if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v2" {
+		if answer, err := runChannelAgentForTest(t, ctx, runner, channel, msg); err != nil || answer != "v2" {
 			t.Fatalf("conversation %s: %q %v", chatID, answer, err)
 		}
 	}
@@ -319,14 +325,15 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 		}
 		return false
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), msg, nil); !errors.Is(err, ErrAgentStorageError) {
+	if _, err := runChannelAgentForTest(t, ctx, runner, channel, msg); !errors.Is(err, ErrAgentStorageError) {
 		t.Fatalf("unavailable interrupt state must prevent execution: %v", err)
 	}
 	mr.Server().SetPreHook(nil)
-	if _, _, err := svc.UpdateChatChannel(ctx, channel.ID, map[string]any{"agent_id": "other"}); err != nil {
+	channel, _, err = svc.UpdateChatChannel(ctx, channel.ID, map[string]any{"agent_id": "other"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "other" {
+	if answer, err := runChannelAgentForTest(t, ctx, runner, channel, msg); err != nil || answer != "other" {
 		t.Fatalf("switched target: %q %v", answer, err)
 	}
 	otherSession := getAPIConversationForTest(t, db, channelSessionID("other", channel.ID, msg.ChatID))
@@ -335,10 +342,29 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 	}
 }
 
-type channelAgentRunnerFunc func(context.Context, string, string, string, any, []map[string]any) (<-chan canvas.RunEvent, error)
-
-func (f channelAgentRunnerFunc) RunAgent(ctx context.Context, agent, session, version string, input any, files []map[string]any) (<-chan canvas.RunEvent, error) {
-	return f(ctx, agent, session, version, input, files)
+// Exercise channel authorization and session preparation before the real engine.
+func runChannelAgentForTest(t *testing.T, ctx context.Context, runner *AgentService, channel *entity.ChatChannel, msg ChatChannelIncomingMessage) (string, error) {
+	t.Helper()
+	executionCtx, sessionID, err := PrepareChatChannelCompletion(ctx, ChatChannelExecutionContext{ChannelID: channel.ID, ChatID: msg.ChatID}, *channel.AgentID, msg.Text, true)
+	if err != nil {
+		return "", err
+	}
+	events, err := runner.RunAgent(executionCtx, *channel.AgentID, sessionID, "", msg.Text, nil)
+	if err != nil {
+		return "", err
+	}
+	messages, waiting, errs, _, _ := drainAgentEvents(t, events)
+	if len(errs) > 0 {
+		return "", errors.New("channel workflow execution failed")
+	}
+	var answer strings.Builder
+	for _, message := range messages {
+		answer.WriteString(message.Content)
+	}
+	for _, request := range waiting {
+		answer.WriteString(request.Tips)
+	}
+	return answer.String(), nil
 }
 
 func TestChatChannelAgentErrorAndThinking(t *testing.T) {
@@ -354,15 +380,23 @@ func TestChatChannelAgentErrorAndThinking(t *testing.T) {
 		{"form", []canvas.RunEvent{{Type: "waiting_for_user", Data: `{"inputs":{"a":{},"b":{}}}`}}, "This workflow requires structured input. Please continue in RAGFlow.", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := &ChatChannelService{agentRunner: channelAgentRunnerFunc(func(ctx context.Context, agent, session, version string, input any, files []map[string]any) (<-chan canvas.RunEvent, error) {
-				events := make(chan canvas.RunEvent, len(tc.events))
-				for _, ev := range tc.events {
-					events <- ev
+			var stream strings.Builder
+			for _, event := range tc.events {
+				data := jsontext.Value(event.Data)
+				if len(data) == 0 {
+					data = jsontext.Value(`{}`)
 				}
-				close(events)
-				return events, nil
-			})}
-			answer, err := svc.handleChannelAgentMessage(t.Context(), &entity.ChatChannel{ID: "channel", AgentID: new("agent")}, ChatChannelIncomingMessage{ChatID: "chat", Text: "hello"}, nil)
+				payload, err := json.Marshal(struct {
+					Event string         `json:"event"`
+					Data  jsontext.Value `json:"data"`
+				}{event.Type, data})
+				if err != nil {
+					t.Fatal(err)
+				}
+				fmt.Fprintf(&stream, "data:%s\n\n", payload)
+			}
+			stream.WriteString("data:[DONE]\n\n")
+			answer, err := consumeChatChannelRESTStream(strings.NewReader(stream.String()), true, nil)
 			if answer != tc.want || (err != nil) != tc.failed {
 				t.Fatalf("answer=%q err=%v", answer, err)
 			}

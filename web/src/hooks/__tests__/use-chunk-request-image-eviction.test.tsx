@@ -37,6 +37,12 @@ jest.mock('@/hooks/route-hook', () => ({
   }),
 }));
 
+// The list hook asks the enterprise seam whether the box is an id lookup. This
+// test is about the image cache, so the seam answers "text search".
+jest.mock('@/ee/hooks/use-chunk-id-query', () => ({
+  useChunkIdQuery: () => undefined,
+}));
+
 // route-hook (imported by the hook chain) pulls in the app shell — routes
 // constructs a browser router at module scope, which jsdom cannot survive.
 jest.mock('@/routes', () => ({ Routes: {} }));

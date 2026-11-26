@@ -37,6 +37,7 @@ const MaxAvatarFileSize = 4 * 1024 * 1024;
 type AvatarUploadProps = {
   value?: string;
   onChange?: (value: string) => void;
+  disabled?: boolean;
   tips?: string;
   uploadInputTestId?: string;
   removeButtonTestId?: string;
@@ -49,6 +50,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
     {
       value,
       onChange,
+      disabled = false,
       tips,
       uploadInputTestId,
       removeButtonTestId,
@@ -287,6 +289,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
 
           {!avatarBase64Str ? (
             <Button
+              disabled={disabled}
               variant="dashed"
               size="icon"
               className="size-16 flex flex-col items-center gap-1 !bg-transparent"
@@ -302,6 +305,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
           ) : (
             <div className="size-16 relative grid place-content-center">
               <Button
+                disabled={disabled}
                 variant="transparent"
                 size="icon"
                 type="button"
@@ -327,6 +331,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
               </Button>
 
               <Button
+                disabled={disabled}
                 onClick={handleRemove}
                 size="icon"
                 className="border-background focus-visible:border-background absolute -top-2 -right-2 size-6 rounded-full border-2 shadow-none z-10"

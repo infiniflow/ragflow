@@ -23,12 +23,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const sofyaToolName = "sofya_search"
@@ -295,7 +295,7 @@ func buildSofyaReferences(envelope map[string]any) ([]map[string]any, []map[stri
 		if content == "" {
 			content = sofyaText(result["description"])
 		}
-		content = truncateSofyaRunes(strings.Join(strings.Fields(content), " "), 10000)
+		content = utility.TruncateRunes(strings.Join(strings.Fields(content), " "), 10000)
 		if content == "" {
 			continue
 		}
@@ -351,13 +351,6 @@ func sofyaText(value any) string {
 		return strings.TrimSpace(text)
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func truncateSofyaRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func sofyaJSON(env sofyaEnvelope) string {

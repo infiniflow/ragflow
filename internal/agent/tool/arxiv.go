@@ -27,12 +27,12 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const arxivToolName = "arxiv_search"
@@ -309,7 +309,7 @@ func buildArxivReferences(envelope map[string]any) ([]map[string]any, []map[stri
 			continue
 		}
 		content := arxivDataImagePattern.ReplaceAllString(arxivText(paper["summary"]), "")
-		content = truncateArxivRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -360,13 +360,6 @@ func arxivText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateArxivRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func mergeArxivDefaults(defaults, p arxivParams) arxivParams {

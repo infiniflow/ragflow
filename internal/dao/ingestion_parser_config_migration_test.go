@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package dao
 
 import (
@@ -13,6 +29,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
@@ -283,6 +300,37 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 	}
 	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
 		t.Fatalf("version=%s", got)
+	}
+}
+
+func TestMigrateIngestionParserConfigsMistralOCR(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	selectors := map[string]string{
+		"knowledgebase": "mistral-ocr-latest@default@Mistral OCR",
+		"document":      "mistral-ocr-2512@Mistral OCR",
+	}
+	for table, selector := range selectors {
+		insertIngestionConfig(t, db, table, "row-1", "general", fmt.Sprintf(`{"layout_recognize":%q}`, selector))
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for table, selector := range selectors {
+		var row ingestionConfigMigrationRow
+		if err := db.Table(table).Where("id = ?", "row-1").Take(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row.ParserConfig == nil {
+			t.Fatalf("%s: parser config is missing", table)
+		}
+		got := decodeIngestionConfig(t, *row.ParserConfig)
+		want := decodeIngestionConfig(t, fmt.Sprintf(`{"Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":%q}}}`, selector))
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: got %v, want %v", table, got, want)
+		}
+	}
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("version=%s, want %s", got, ingestionParserConfigTargetVersion)
 	}
 }
 

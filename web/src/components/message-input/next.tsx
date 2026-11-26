@@ -48,6 +48,7 @@ import {
   ThinkingMode,
   useThinkingLevel,
 } from '@/hooks/use-thinking-level';
+import { extraThinkingOptions } from '@/ee/hooks/use-thinking-modes';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { AudioButton } from '../ui/audio-button';
 import {
@@ -166,8 +167,14 @@ export function NextMessageInput({
 
   // Level 5 is not a deeper step on the same ladder: the backend hands it to
   // the agentic RAG agent, which runs its own retrieval instead of the
-  // pipeline's.
+  // pipeline's. The edition overlay contributes further engine levels (e.g. 8)
+  // and renders them ahead of these, highest effort first.
   const thinkingOptions = [
+    ...extraThinkingOptions.map((option) => ({
+      label: t(option.labelKey),
+      value: option.value,
+      description: option.descriptionKey ? t(option.descriptionKey) : undefined,
+    })),
     {
       label: t('chat.thinkingLevelAgentic'),
       value: '5',
@@ -177,11 +184,9 @@ export function NextMessageInput({
   ];
 
   const handleThinkingChange = useCallback((value: string) => {
-    setThinkingLevel(
-      value === ThinkingMode.Agentic
-        ? ThinkingMode.Agentic
-        : ThinkingMode.Naive,
-    );
+    // Storage sanitizes anything outside the accepted set on read, so the
+    // selector's own option values pass through unchanged here.
+    setThinkingLevel(value as ThinkingMode);
   }, []);
 
   const handleInternetSelect = useCallback(() => {

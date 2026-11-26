@@ -69,6 +69,7 @@ export function MetadataSemiAutoFields({
         <Button
           variant={'outline'}
           type="button"
+          disabled={form.formState.disabled}
           size="sm"
           onClick={add}
           className="h-8"
@@ -123,6 +124,7 @@ export function MetadataSemiAutoFields({
               <Button
                 variant={'ghost'}
                 size="icon"
+                disabled={form.formState.disabled}
                 onClick={() => remove(index)}
                 className="mt-0 h-8 w-10"
               >

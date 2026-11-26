@@ -16,9 +16,7 @@ import (
 )
 
 func TestCompilationSearchReadsBothGenerationsInOneRequest(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "compilation_test"); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "compilation_test")
 	rows := []map[string]interface{}{
 		{"id": "new", "kb_id": "kb1", "compile_kwd": "wiki", "type_kwd": "wiki_page"},
 		{"id": "old", "kb_id": "kb1", "compile_kwd": "wiki_page"},
