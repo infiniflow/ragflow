@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/server/config"
 
 	"github.com/glebarez/sqlite"
 	"github.com/lib/pq"
@@ -645,5 +646,30 @@ func TestAutoMigrateLeavesEnterpriseEvaluationHistoryUntouched(t *testing.T) {
 		if db.Migrator().HasColumn(table, "user_id") {
 			t.Fatalf("OSS altered %s", table)
 		}
+	}
+}
+
+func TestBuildMySQLMetaDSN(t *testing.T) {
+	base := config.MySQLConfig{
+		User:         "ragflow",
+		Password:     "secret",
+		Host:         "mysql",
+		Port:         3306,
+		DatabaseName: "rag_flow",
+		Charset:      "utf8mb4",
+	}
+
+	got := buildMySQLMetaDSN(base)
+	want := "ragflow:secret@tcp(mysql:3306)/rag_flow?charset=utf8mb4&loc=Local&parseTime=True"
+	if got != want {
+		t.Fatalf("default DSN = %q, want %q", got, want)
+	}
+
+	tlsConfig := base
+	tlsConfig.TLS = "skip-verify"
+	got = buildMySQLMetaDSN(tlsConfig)
+	want = "ragflow:secret@tcp(mysql:3306)/rag_flow?charset=utf8mb4&loc=Local&parseTime=True&tls=skip-verify"
+	if got != want {
+		t.Fatalf("TLS DSN = %q, want %q", got, want)
 	}
 }

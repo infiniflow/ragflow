@@ -185,6 +185,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `max_connections`: The maximum number of concurrent connections in the MySQL connection pool. Defaults to `900` in the Go deployment configuration.
 - `stale_timeout`: The connection stale timeout in seconds. Defaults to `300` in the Go deployment configuration.
 - `max_allowed_packet`: The maximum communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`).
+- `tls`: The TLS mode for the metadata MySQL connection, passed to [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#tls) as the `tls` DSN parameter: empty for no TLS, `true` to require and verify TLS, `skip-verify`, or `preferred`. Required by managed MySQL offerings that enforce TLS. (Custom CA registration and `allowPublicKeyRetrieval` are not needed here: the driver fetches the RSA public key itself during plaintext `caching_sha2_password` authentication.)
 
 ### `minio`
 
