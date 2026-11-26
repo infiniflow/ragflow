@@ -1,11 +1,15 @@
+import { ConversationList } from '@/components/conversation-list';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useClientSearch } from '@/hooks/use-client-search';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
 import { Loader2, Plus } from 'lucide-react';
+import { ReactNode, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelectDerivedSessionList } from '../hooks/use-select-derived-session-list';
-import { SessionCard } from './session-card';
+import { SessionDropdown } from './session-dropdown';
+
+type AgentSessionListItem = IAgentLogResponse & { is_new?: boolean };
 
 interface SessionListProps {
   selectedSessionId?: string;
@@ -29,40 +33,68 @@ export function SessionList({
   } = useSelectDerivedSessionList();
 
   const { filteredData, handleSearchChange, searchKeyword, hasActiveSearch } =
-    useClientSearch<IAgentLogResponse>({
+    useClientSearch<AgentSessionListItem>({
       data: sessions,
       searchFields: ['name'],
     });
   const sessionCount = hasActiveSearch ? filteredData.length : total;
 
+  const getDisplayName = useCallback(
+    (session: AgentSessionListItem) =>
+      session.is_new ? t('explore.newSession') : session.name,
+    [t],
+  );
+
+  const renderActions = useCallback(
+    (session: AgentSessionListItem, trigger: ReactNode) => (
+      <SessionDropdown
+        session={session}
+        removeTemporarySession={removeTemporarySession}
+      >
+        {trigger}
+      </SessionDropdown>
+    ),
+    [removeTemporarySession],
+  );
+
   return (
-    <section className="p-5 flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-bold">{t('explore.sessions')}</h2>
-          <span className="text-xs text-text-secondary">{sessionCount}</span>
-        </div>
-        <Button variant="ghost" size="icon" onClick={addTemporarySession}>
-          <Plus className="h-4 w-4" />
-        </Button>
+    <aside className="flex h-full min-h-0 w-[296px] shrink-0 flex-col border-r-0.5 border-border-button px-5 pb-5 pt-5">
+      <Button
+        variant="outline"
+        size="lg"
+        block
+        onClick={addTemporarySession}
+        data-testid="agent-explore-session-new"
+      >
+        <Plus />
+        {t('chat.newConversation')}
+      </Button>
+
+      <div className="mb-4 flex items-center gap-3 pt-8">
+        <h2 className="text-base">{t('explore.sessions')}</h2>
+        <data className="text-xs text-text-secondary" value={sessionCount}>
+          {sessionCount}
+        </data>
       </div>
-      <div className="mb-4">
+
+      <div className="pb-4">
         <SearchInput
           placeholder={t('explore.searchSessions')}
           onChange={handleSearchChange}
           value={searchKeyword}
         />
       </div>
-      <div className="flex-1 overflow-auto space-y-3" onScroll={handleScroll}>
-        {filteredData.map((session) => (
-          <SessionCard
-            key={session.id}
-            session={session}
-            selected={session.id === selectedSessionId}
-            onClick={() => onSelectSession(session.id, session.is_new)}
-            removeTemporarySession={removeTemporarySession}
-          />
-        ))}
+
+      <div className="min-h-0 flex-1 overflow-auto" onScroll={handleScroll}>
+        <ConversationList
+          items={filteredData}
+          label={t('explore.sessions')}
+          selectedId={selectedSessionId}
+          onSelect={onSelectSession}
+          renderActions={renderActions}
+          getDisplayName={getDisplayName}
+          testIdPrefix="agent-explore-session"
+        />
         {loadingMore && (
           <Loader2
             className="mx-auto size-4 animate-spin"
@@ -71,13 +103,11 @@ export function SessionList({
           />
         )}
         {!loading && filteredData.length === 0 && (
-          <div className="text-center text-text-secondary py-8">
-            {searchKeyword
-              ? t('explore.noSessionsFound')
-              : t('explore.noSessionsFound')}
+          <div className="py-8 text-center text-text-secondary">
+            {t('explore.noSessionsFound')}
           </div>
         )}
       </div>
-    </section>
+    </aside>
   );
 }

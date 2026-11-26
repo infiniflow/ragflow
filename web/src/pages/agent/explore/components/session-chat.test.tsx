@@ -82,12 +82,12 @@ jest.mock('../hooks/use-send-session-message', () => ({
 
 function renderSessionChat(options: {
   sessionId?: string;
-  isNew?: boolean;
+  isNew?: string;
   session?: { id: string; source: string | null; message: unknown[] };
 }) {
   const {
     sessionId = 'session-1',
-    isNew = false,
+    isNew = 'false',
     session = {
       id: sessionId,
       source: AgentSessionSource.Agent,
@@ -143,7 +143,7 @@ describe('SessionChat message input source', () => {
   it('does not carry a previous channel source into a new session', () => {
     const inputProps = renderSessionChat({
       sessionId: undefined,
-      isNew: true,
+      isNew: 'true',
       session: {
         id: 'session-channel',
         source: AgentSessionSource.ChatChannel,

@@ -3339,10 +3339,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       setting: '设置',
       settings: {
         agentSetting: 'Agent设置',
-        title: '标题',
+        title: '名称',
         description: '描述',
         upload: '上传',
-        photo: '照片',
+        photo: '头像',
         permissions: '权限',
         permissionsTip: '可以在这里设置团队访问权限。',
         me: '仅限自己',
@@ -4046,7 +4046,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 
     explore: {
       title: '启动',
-      sessions: '会话列表',
+      sessions: '会话',
       newSession: '新建会话',
       newSessionLabel: '开始新对话',
       deleteSession: '删除会话',
