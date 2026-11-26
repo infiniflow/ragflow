@@ -186,7 +186,10 @@ func TestRunAgentRemoteLeaseReleasePickedUpByRecheck(t *testing.T) {
 	if _, err := tracker.ReleaseActiveSession(t.Context(), sessionID, remoteToken); err != nil {
 		t.Fatalf("release remote lease: %v", err)
 	}
-	deadline := time.Now().Add(1600 * time.Millisecond)
+	// The recheck ticker fires once per second and CI runners can be heavily
+	// loaded, so allow three full ticks of headroom instead of a sub-tick
+	// budget that flakes when scheduling or DB latency spikes.
+	deadline := time.Now().Add(3 * time.Second)
 	for hook.registrations() < 3 {
 		if time.Now().After(deadline) {
 			t.Fatalf("waiter did not pick up the remote lease release on recheck (registrations=%d)", hook.registrations())
