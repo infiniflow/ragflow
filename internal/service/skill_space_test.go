@@ -150,8 +150,8 @@ func TestAsyncDeleteSpaceDeletesTheFolderAsItsCreator(t *testing.T) {
 
 	for _, file := range []*entity.File{
 		{ID: "skills-root", ParentID: "skills-root", TenantID: "tenant-1", CreatedBy: "owner-1", Name: "/", Type: "folder"},
-		{ID: "folder-1", ParentID: "skills-root", TenantID: "tenant-1", CreatedBy: "member-1", Name: "skills", Type: "folder"},
-		{ID: "file-1", ParentID: "folder-1", TenantID: "tenant-1", CreatedBy: "member-1", Name: "skill.md", Type: "doc"},
+		{ID: "folder-1", ParentID: "skills-root", UserID: "member-1", TenantID: "tenant-1", CreatedBy: "member-1", Name: "skills", Type: "folder"},
+		{ID: "file-1", ParentID: "folder-1", UserID: "member-1", TenantID: "tenant-1", CreatedBy: "member-1", Name: "skill.md", Type: "doc"},
 	} {
 		if err := db.Create(file).Error; err != nil {
 			t.Fatalf("create file %s: %v", file.ID, err)

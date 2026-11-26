@@ -84,10 +84,14 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	}
 	userID := user.ID
 
+	ctx := c.Request.Context()
 	parentID := c.Query("parent_id")
 	tenantID := c.Query("tenant_id")
 	if tenantID == "" {
-		tenantID = userID
+		tenantID = permission.TenantIDFromContext(ctx)
+		if tenantID == "" {
+			tenantID = userID
+		}
 	}
 	keywords := c.Query("keywords")
 
@@ -104,7 +108,6 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	}
 	terms := orderTermsFromQuery(c, orderBy, desc)
 
-	ctx := c.Request.Context()
 	result, err := h.fileService.ListFilesForTenant(ctx, tenantID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
 		respondFileServiceError(c, err)

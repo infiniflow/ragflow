@@ -23,6 +23,8 @@ import {
 import { showPipelineRunButton } from '@/ee/constants/feature-flags';
 import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
+import { canEditAgent } from '@/ee/pages/agent/can-edit-agent';
+import { hasReadPermission } from '@/ee/utils/permission-util';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   CirclePlay,
@@ -287,12 +289,6 @@ export default function Agent() {
               <LaptopMinimalCheck /> {t('flow.saveDraft')}
             </ButtonLoading>
 
-            {showRunButton &&
-              (runTooltipKey ? (
-                <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-              ) : (
-                runButton
-              ))}
             {/* <PublishConfirmDialog
               agentDetail={agentDetail}
               loading={loading}
@@ -305,6 +301,12 @@ export default function Agent() {
               onPublish={handlePublish}
             />
           </AgentEditGuard>
+          {showRunButton &&
+            (runTooltipKey ? (
+              <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+            ) : (
+              runButton
+            ))}
           <CanvasChecklist issues={issues} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -317,13 +319,12 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentEditGuard operatorPermission={operatorPermission}>
+              {hasReadPermission(operatorPermission) && (
                 <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
                   <MessageSquareCode />
                   {t('flow.conversationVariable')}
                 </AgentDropdownMenuItem>
-                <DropdownMenuSeparator />
-              </AgentEditGuard>
+              )}
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
@@ -352,6 +353,7 @@ export default function Agent() {
                 <AgentCanvas
                   drawerVisible={chatDrawerVisible}
                   hideDrawer={hideChatDrawer}
+                  readOnly={!canEditAgent(operatorPermission)}
                 ></AgentCanvas>
               </DropdownProvider>
             </ReactFlowProvider>
@@ -394,6 +396,7 @@ export default function Agent() {
         <GlobalParamSheet
           data={{}}
           hideModal={hideGlobalParamSheet}
+          readOnly={!canEditAgent(operatorPermission)}
         ></GlobalParamSheet>
       )}
       {webhookTestSheetVisible && (

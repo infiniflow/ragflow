@@ -178,7 +178,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// link 'file' 2 'file_system'
-	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID, kbFolder.UserID); err != nil {
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// write metadata and do `auto_parse` (or not)
@@ -326,7 +326,7 @@ func (s *DocumentService) updateSyncDocumentFile(ctx context.Context, input serv
 		if folderErr != nil {
 			return folderErr
 		}
-		return s.addFileFromKB(ctx, doc, kbFolder.ID, input.TaskContext.Knowledgebase.TenantID)
+		return s.addFileFromKB(ctx, doc, kbFolder.ID, input.TaskContext.Knowledgebase.TenantID, kbFolder.UserID)
 	}
 
 	name := ""

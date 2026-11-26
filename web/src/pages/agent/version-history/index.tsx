@@ -28,6 +28,7 @@ import {
   useFetchVersionList,
   useUpdateVersion,
 } from '@/hooks/use-agent-request';
+import { useAgentVersionPermissions } from '@/ee/pages/agent/use-agent-version-permissions';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { ConnectionMode, ReactFlow, ReactFlowProvider } from '@xyflow/react';
@@ -87,6 +88,7 @@ export default function AgentVersionHistory() {
   const { deleteVersion, loading: deleting } = useDeleteVersion();
   const { applyVersion, loading: applyRestoring } = useApplyVersion();
   const { updateVersion } = useUpdateVersion();
+  const { canRestore, canDelete } = useAgentVersionPermissions();
 
   // Every version row is listed, including unpublished snapshots saved before
   // draft saves stopped writing user_canvas_version; published rows carry a
@@ -348,32 +350,36 @@ export default function AgentVersionHistory() {
                           <ArrowDownToLine />
                         </Button>
                       </RAGFlowTooltip>
-                      <RAGFlowTooltip
-                        asChild
-                        tooltip={t('flow.version.restore')}
-                      >
-                        <Button
-                          variant={'ghost'}
-                          aria-label={t('flow.version.restore')}
-                          onClick={requestRestore}
-                          disabled={!selectedId || applyRestoring}
+                      {canRestore && (
+                        <RAGFlowTooltip
+                          asChild
+                          tooltip={t('flow.version.restore')}
                         >
-                          <RotateCcw />
-                        </Button>
-                      </RAGFlowTooltip>
-                      <RAGFlowTooltip
-                        asChild
-                        tooltip={t('flow.version.delete')}
-                      >
-                        <Button
-                          variant={'ghost'}
-                          aria-label={t('flow.version.delete')}
-                          onClick={requestDelete}
-                          disabled={!selectedId || deleting}
+                          <Button
+                            variant={'ghost'}
+                            aria-label={t('flow.version.restore')}
+                            onClick={requestRestore}
+                            disabled={!selectedId || applyRestoring}
+                          >
+                            <RotateCcw />
+                          </Button>
+                        </RAGFlowTooltip>
+                      )}
+                      {canDelete && (
+                        <RAGFlowTooltip
+                          asChild
+                          tooltip={t('flow.version.delete')}
                         >
-                          <Trash2 />
-                        </Button>
-                      </RAGFlowTooltip>
+                          <Button
+                            variant={'ghost'}
+                            aria-label={t('flow.version.delete')}
+                            onClick={requestDelete}
+                            disabled={!selectedId || deleting}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </RAGFlowTooltip>
+                      )}
                     </div>
                   </section>
                   <section className="relative min-h-0 flex-1">

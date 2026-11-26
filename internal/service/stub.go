@@ -32,6 +32,23 @@ import (
 	"gorm.io/gorm"
 )
 
+func checkAgentSessionDeleteAccess(ctx context.Context, agentID string) (string, bool, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   agentID,
+	}, permission.OperationUse); err != nil {
+		return "", false, err
+	}
+	return permission.UserIDFromContext(ctx), true, nil
+}
+
+func checkAgentDeleteAccess(ctx context.Context, canvasID string) error {
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   canvasID,
+	}, permission.OperationDelete)
+}
+
 // CheckDocumentWrite checks whether the caller can write the document.
 func CheckDocumentWrite(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
 	checker := permission.NewDatabaseChecker(dao.DB)
