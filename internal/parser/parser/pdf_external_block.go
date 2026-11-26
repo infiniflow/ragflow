@@ -80,6 +80,9 @@ type ExternalBlock struct {
 	// PreserveOrder declares the producer's sequence authoritative, so the
 	// chunker does not sort the items by geometry.
 	PreserveOrder bool
+	// KeepPagePosition retains a zero-area page-only position [page, 0, 0, 0, 0]
+	// for non-figure blocks that have no placed region.
+	KeepPagePosition bool
 }
 
 // ExternalBlockOptions declares, once per producer, the coordinate space of
@@ -143,6 +146,9 @@ func externalBlockMaps(blocks []ExternalBlock, opts ExternalBlockOptions) ([]map
 			if item := externalBlockBody(block, opts.FigurePlaceholder, len(positions) > 0); item != nil {
 				body = []map[string]any{item}
 			}
+		}
+		if len(positions) == 0 && block.KeepPagePosition && block.Page > 0 && (block.Items != nil || block.Type != ExternalBlockFigure) {
+			positions = [][]any{{block.Page, 0.0, 0.0, 0.0, 0.0}}
 		}
 		for _, item := range body {
 			if item == nil {

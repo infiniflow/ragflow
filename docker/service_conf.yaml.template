@@ -32,10 +32,11 @@ mysql:
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: ${MYSQL_PORT:-3306}
+  port: 3306
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
+  tls: '${MYSQL_TLS:-}'
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
@@ -74,7 +75,7 @@ oceanbase:
     user: '${OCEANBASE_USER:-root@ragflow}'
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
-    port: ${OCEANBASE_PORT:-2881}
+    port: 2881
 gaussdb:
   host: '${GAUSSDB_HOST}'
   port: ${GAUSSDB_PORT}
@@ -89,10 +90,10 @@ seekdb:
     user: '${SEEKDB_USER:-root}'
     password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
     host: '${SEEKDB_HOST:-seekdb}'
-    port: ${SEEKDB_PORT:-2881}
+    port: 2881
 vastbase:
   host: '${VB_HOST:-vastbase}'
-  port: ${VB_PORT:-5432}
+  port: 5432
   user: '${VB_USERNAME:-ragflow}'
   password: '${VB_PASSWORD:-Infini_Rag@123}'
   db_name: '${VB_VEC_DBNAME:-ragflow}'
@@ -110,19 +111,19 @@ kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
-  host: '${KVROCKS_HOST:-kvrocks}:${KVROCKS_PORT:-6379}'
+  host: '${KVROCKS_HOST:-kvrocks}:6379'
 nats:
   host: ${NATS_HOST:-0.0.0.0}
-  port: ${NATS_PORT:-4222}
+  port: 4222
 clickhouse:
   host: '${CLICKHOUSE_HOST:-clickhouse}'
-  port: ${CLICKHOUSE_TCP_PORT:-9000}
+  port: 9000
   user: '${CLICKHOUSE_USER:-ragflow}'
   password: '${CLICKHOUSE_PASSWORD:-infini_rag_flow}'
   database: '${CLICKHOUSE_DATABASE:-ragflow}'
 otel:
   host: ${OTEL_HOST:-0.0.0.0}
-  port: ${OTEL_PORT:-4318}
+  port: 4318
   secure: false
   sample_ratio: 1.0
   stdout: false
@@ -147,6 +148,10 @@ ingestor:
     # max_age: 30             # days
 file_syncer:
   max_concurrent_syncs: 5
+deepdoc:
+  name: 'deepdoc'
+  host: 'localhost'
+  port: 9388
 user_default_llm:
   default_models:
     embedding_model:

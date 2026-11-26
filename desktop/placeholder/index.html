@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAGFlow</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        background: #0b6e7a;
+        color: #eef6f7;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+
+      main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        padding: 32px;
+        text-align: center;
+      }
+
+      .mark {
+        display: grid;
+        gap: 12px;
+        width: 72px;
+      }
+
+      .mark span {
+        height: 10px;
+        border-radius: 3px;
+        background: #ffffff;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+
+      .mark span:nth-child(2) {
+        width: 78%;
+        animation-delay: 0.2s;
+      }
+
+      .mark span:nth-child(3) {
+        width: 56%;
+        animation-delay: 0.4s;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.45;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      p {
+        margin: 0;
+        max-width: 34ch;
+        color: rgba(238, 246, 247, 0.72);
+      }
+
+      /* The engine writes its URL only after it listens; the first run also
+         migrates the store, which is slow enough to deserve an explanation. */
+      .slow {
+        opacity: 0;
+        animation: reveal 0.4s ease-out 15s forwards;
+      }
+
+      @keyframes reveal {
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h1>Starting RAGFlow</h1>
+      <p>The window opens as soon as the engine reports its address.</p>
+      <p class="slow">First start takes longer: it sets up the data directory.</p>
+    </main>
+  </body>
+</html>

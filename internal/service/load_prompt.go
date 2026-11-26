@@ -29,13 +29,17 @@ import (
 // by trailing spaces (e.g. "```   \n") is left intact.
 var jsonFenceRE = regexp.MustCompile("```json\\n|```\\n*$")
 
+var (
+	filterPatternRe = regexp.MustCompile(`\{\{\s*(\w+)\s*\|\s*(\w+)\s*\(\s*([^)]*)\s*\)\s*\}\}`)
+	varPatternRe    = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}`)
+)
+
 // RenderPrompt renders a prompt template with the given variables.
 // Supports {{ variable }} and {{ variable | filter(args) }} syntax.
 func RenderPrompt(template string, data map[string]interface{}) string {
 	// Handle {{ variable | filter(args) }} syntax - capture filter arguments too
-	filterPattern := regexp.MustCompile(`\{\{\s*(\w+)\s*\|\s*(\w+)\s*\(\s*([^)]*)\s*\)\s*\}\}`)
-	result := filterPattern.ReplaceAllStringFunc(template, func(match string) string {
-		matches := filterPattern.FindStringSubmatch(match)
+	result := filterPatternRe.ReplaceAllStringFunc(template, func(match string) string {
+		matches := filterPatternRe.FindStringSubmatch(match)
 		if len(matches) < 4 {
 			return match
 		}
@@ -47,9 +51,8 @@ func RenderPrompt(template string, data map[string]interface{}) string {
 	})
 
 	// Handle simple {{ variable }} syntax
-	varPattern := regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}`)
-	result = varPattern.ReplaceAllStringFunc(result, func(match string) string {
-		matches := varPattern.FindStringSubmatch(match)
+	result = varPatternRe.ReplaceAllStringFunc(result, func(match string) string {
+		matches := varPatternRe.FindStringSubmatch(match)
 		if len(matches) < 2 {
 			return match
 		}

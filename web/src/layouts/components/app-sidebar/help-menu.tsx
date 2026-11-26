@@ -110,7 +110,6 @@ export function HelpMenu() {
             <DropdownMenuLabel className="flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-normal text-text-secondary">
               <span className="flex shrink-0 items-center gap-2">
                 <LucideInfo />
-                {t('sidebar.version')}
               </span>
               <span className="min-w-0 truncate" title={version}>
                 {version}

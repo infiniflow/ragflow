@@ -40,8 +40,8 @@ type IngestorOption func(*Ingestor)
 // so real values flow into the ingestor while nil values exercise the
 // nil-dependency guards. Engine stays nil: executor tests stub the index writer
 // or assert the downstream no-engine failure.
-func newUnitIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
-	return NewIngestor(name, maxConcurrency, supportedTypes, common.TierDefault, &ingestion.Deps{
+func newUnitIngestor(name string, maxConcurrency int32) *Ingestor {
+	return NewIngestor(name, maxConcurrency, common.TierDefault, &ingestion.Deps{
 		DB: dao.DB,
 		MQ: engine.GetMessageQueueEngine(),
 		KV: kvrocks.Get(),

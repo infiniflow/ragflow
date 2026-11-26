@@ -1,3 +1,4 @@
+import { PageFrame } from '@/components/page-frame';
 import { useFetchSessionManually } from '@/hooks/use-agent-request';
 import { useCallback } from 'react';
 import { SessionChat } from './components/session-chat';
@@ -17,17 +18,17 @@ export default function AgentExplore() {
   );
 
   return (
-    <section className="flex h-full min-h-0">
-      <div className="w-[296px] min-w-0 border-r">
+    <PageFrame>
+      <section className="flex min-h-0 flex-1">
         <SessionList
           selectedSessionId={sessionId}
           onSelectSession={handleSessionSelect}
         />
-      </div>
 
-      <div className="min-w-0 flex-1">
-        <SessionChat session={session} />
-      </div>
-    </section>
+        <div className="min-h-0 min-w-0 flex-1">
+          <SessionChat session={session} />
+        </div>
+      </section>
+    </PageFrame>
   );
 }

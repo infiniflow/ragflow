@@ -1,12 +1,61 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"testing/fstest"
 )
+
+func TestRegistryIncludesEnrichmentPipelines(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	listed := make(map[string]string)
+	for _, meta := range registry.List().BuiltinPipelines {
+		listed[meta.ParserID] = meta.Title
+	}
+	for _, tc := range []struct {
+		id      string
+		title   string
+		chunker string
+	}{
+		{"outline", "Outline", "TitleChunker:WideResultsTeach"},
+		{"summary", "Summary", "TokenChunker:ModernPetsKneel"},
+		{"enriched", "Enriched", "TokenChunker:BumpyStarsPress"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			if listed[tc.id] != tc.title {
+				t.Errorf("listed title = %q, want %q", listed[tc.id], tc.title)
+			}
+			if !registry.IsValid(tc.id) {
+				t.Fatalf("parser_id %q is not valid", tc.id)
+			}
+			dsl, err := LoadBuiltinDSL(tc.id)
+			if err != nil {
+				t.Fatalf("LoadBuiltinDSL: %v", err)
+			}
+			var root map[string]any
+			if err := json.Unmarshal([]byte(dsl), &root); err != nil {
+				t.Fatalf("decode DSL: %v", err)
+			}
+			components := root["components"].(map[string]any)
+			if len(components) != 5 || components[tc.chunker] == nil {
+				t.Fatalf("pipeline lost its original component chain: %#v", components)
+			}
+			graph := root["graph"].(map[string]any)
+			if len(graph["nodes"].([]any)) != 5 || len(graph["edges"].([]any)) != 4 {
+				t.Fatal("pipeline lost its canvas nodes or connections")
+			}
+			if _, err := NewPipelineFromDSL([]byte(dsl), "builtin-"+tc.id); err != nil {
+				t.Fatalf("build pipeline: %v", err)
+			}
+		})
+	}
+}
 
 func TestRegistryLoadsSummaries(t *testing.T) {
 	dir := t.TempDir()
@@ -72,7 +121,7 @@ func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "custom"} {
+	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "enriched", "summary", "outline", "custom"} {
 		mustWrite("ingestion_pipeline_"+id+".json", `{"title":{"en":"`+id+`"},"dsl":{"components":{}}}`)
 	}
 
@@ -80,7 +129,7 @@ func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistryFromDir: %v", err)
 	}
-	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "custom"}
+	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "outline", "summary", "enriched", "custom"}
 	if got := r.Refs(); len(got) != len(want) {
 		t.Fatalf("Refs() length = %d, want %d (%#v)", len(got), len(want), want)
 	} else {
@@ -314,5 +363,26 @@ func TestRegistryRejectsDuplicateNormalizedParserIDs(t *testing.T) {
 				t.Fatal("two files defining the same parser_id were accepted")
 			}
 		})
+	}
+}
+
+// TestNewRegistryFromFSReadsNestedDirectory pins that the registry addresses its
+// fs.FS with slash-separated paths. io/fs never accepts an OS-specific
+// separator, so building the lookup path with filepath.Join made every builtin
+// template unreadable on Windows ("open template\ingestion_pipeline_general.json:
+// file does not exist") and DefaultRegistry/LoadBuiltinDSL failed for the whole
+// set, not just for one file.
+func TestNewRegistryFromFSReadsNestedDirectory(t *testing.T) {
+	files := fstest.MapFS{
+		"template/ingestion_pipeline_general.json": {
+			Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`),
+		},
+	}
+	r, err := NewRegistryFromFS(files, "template")
+	if err != nil {
+		t.Fatalf("NewRegistryFromFS: %v", err)
+	}
+	if _, ok := r.Get("general"); !ok {
+		t.Fatal("nested builtin template was not loaded")
 	}
 }

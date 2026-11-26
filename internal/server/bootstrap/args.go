@@ -21,11 +21,21 @@ package bootstrap
 // runners and the API server wiring can be moved into their own packages and
 // still receive the parsed arguments.
 type ServerArgs struct {
-	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
-	HelpFlag      *bool   // show help
-	VersionFlag   *bool
-	LogLevel      *string
-	ConfigPath    *string      // Used by admin, api; user defined config path
+	Mode        *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
+	HelpFlag    *bool   // show help
+	VersionFlag *bool
+	LogLevel    *string
+	ConfigPath  *string // Used by admin, api; user defined config path
+	// DataDir is the desktop build's root directory for its in-process
+	// backends. nil means "unspecified": the desktop entry then falls back to
+	// RAGFLOW_DESKTOP_DATA_DIR, then ~/.ragflow/desktop. The server build
+	// never reads it.
+	DataDir *string
+	// UI, when set, serves the frontend bundled into the desktop build on a
+	// loopback port. UIReadyFile is where that port is published for the window
+	// shell; both are no-ops in the server build.
+	UI            *bool
+	UIReadyFile   *string
 	InitSuperUser bool         // Used by admin;
 	Port          *int         // Used by admin, api
 	Name          *string      // server name
@@ -47,16 +57,9 @@ type ServerArgs struct {
 	IngestorTier *string
 }
 
-// SelectedLogLevel resolves the effective log level: an explicit --log-level
-// (non-nil) wins, otherwise the configured level, otherwise "warn".
-func SelectedLogLevel(args *ServerArgs, configured string) string {
+func GetLogLevel(args *ServerArgs) string {
 	if args.LogLevel != nil {
 		return *args.LogLevel
 	}
-
-	if configured == "" {
-		return "warn"
-	}
-
-	return configured
+	return "warn"
 }

@@ -225,7 +225,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 	it := bucket.Objects(ctx, nil)
 	for {
 		attrs, err := it.Next()
-		if errors.Is(err, iterator.Done) {
+		if errors.Is(err, iterator.Done) || IsBucketNotFound(err) {
 			break
 		}
 		if err != nil {
@@ -237,7 +237,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 		}
 	}
 
-	if err := bucket.Delete(ctx); err != nil {
+	if err := bucket.Delete(ctx); err != nil && !IsBucketNotFound(err) {
 		return err
 	}
 

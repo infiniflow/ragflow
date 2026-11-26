@@ -69,6 +69,7 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 	defer session.Close()
 
 	retain := map[string]struct{}{}
+	sourceIDs := map[string]struct{}{}
 	for {
 		if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 			return "", err
@@ -82,6 +83,7 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 			return "", nextErr
 		}
 		for _, doc := range batch.Documents {
+			sourceIDs[doc.SourceID] = struct{}{}
 			service.AddRetainDocumentID(retain, taskContext.Knowledgebase.ID, taskContext.Connector.ID, doc.SourceID)
 		}
 	}
@@ -89,7 +91,7 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
-	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d document IDs to retain", len(retain)))
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d document IDs to retain", len(sourceIDs)))
 	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain, func(docID string, deleteErr error) {
 		message := "File " + docID + " deleted"
 		if deleteErr != nil {

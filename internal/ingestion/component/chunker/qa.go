@@ -33,6 +33,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -278,7 +279,7 @@ func extractQAText(text string) []qaPair {
 		return nil
 	}
 	lines := strings.Split(text, "\n")
-	delimiter := detectDelimiter(lines)
+	delimiter := detectDelimiter(text)
 
 	if delimiter == "\t" {
 		return extractQATextTab(lines)
@@ -381,20 +382,65 @@ func extractQATextCSV(text string, lines []string) []qaPair {
 	return pairs
 }
 
-func detectDelimiter(lines []string) string {
-	comma, tab := 0, 0
-	for _, line := range lines {
-		if len(strings.Split(line, ",")) == 2 {
-			comma++
+// detectDelimiter decides how a text Q&A payload separates question from
+// answer, mirroring Python's csv_pair_delimiter (rag/app/qa.py): TAB is the
+// documented delimiter, but a file that reads as comma separated must keep
+// reading with comma.
+//
+// A file with no TAB anywhere is comma separated. Otherwise the payload is read
+// as comma-separated records, and a record that carries a TAB is TAB separated
+// — unless it is already known to be comma separated (a non-first record with
+// exactly two non-empty values). When the counts disagree, the record shapes
+// decide: comma wins when "two values, no TAB" records outnumber the rest.
+//
+// The whole payload goes through one reader, as in extractQATextCSV, so a
+// quoted field spanning physical lines stays one record instead of fragmenting
+// into row shapes the real file does not have. An unparseable payload falls
+// back to TAB.
+func detectDelimiter(text string) string {
+	if !strings.Contains(text, "\t") {
+		return ","
+	}
+
+	tabFreePairs, otherRows := 0, 0
+	r := csv.NewReader(strings.NewReader(text))
+	r.FieldsPerRecord = -1
+	r.LazyQuotes = true
+	for {
+		row, err := r.Read()
+		if err == io.EOF {
+			break
 		}
-		if len(strings.Split(line, "\t")) == 2 {
-			tab++
+		if err != nil {
+			return "\t"
+		}
+		values := 0
+		rowHasTab := false
+		for _, field := range row {
+			if strings.TrimSpace(field) != "" {
+				values++
+			}
+			if strings.Contains(field, "\t") {
+				rowHasTab = true
+			}
+		}
+		if values == 0 {
+			continue
+		}
+		firstRow := tabFreePairs+otherRows == 0
+		if rowHasTab && (firstRow || values != 2) {
+			return "\t"
+		}
+		if values == 2 && !rowHasTab {
+			tabFreePairs++
+		} else {
+			otherRows++
 		}
 	}
-	if tab >= comma {
-		return "\t"
+	if tabFreePairs > otherRows {
+		return ","
 	}
-	return ","
+	return "\t"
 }
 
 // ---------------------------------------------------------------------------

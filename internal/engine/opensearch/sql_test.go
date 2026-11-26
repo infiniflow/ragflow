@@ -520,7 +520,7 @@ func TestMain(m *testing.M) {
 	// Suppress the client's background node-stats polling so the httptest
 	// servers only observe requests issued by the code under test.
 	_ = os.Setenv("OPENSEARCH_GO_DISCOVERY_CONFIG", "-node_stats")
-	_ = common.InitLogger("info", common.FileOutput{}, "opensearch_test")
+	common.InitLogger("info", common.FileOutput{}, "opensearch_test")
 	tokenizer.SetEngineType("infinity")
 	m.Run()
 }

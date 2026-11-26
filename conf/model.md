@@ -197,6 +197,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **N1N** | Multi-provider aggregator |
 | **Novita** | Open-source model hosting |
 | **Obscurify.ai** | Privacy-focused OpenAI-compatible API, 200+ models |
+| **onomeo** | OpenAI-compatible gateway for Claude, GPT, DeepSeek and other models |
 | **OpenRouter** | Multi-provider router |
 | **OrcaRouter** | Auto-routing layer |
 | **PPIO** | Edge AI platform |
@@ -204,7 +205,9 @@ The following providers are **aggregators** — they host models from multiple u
 | **Replicate** | Open-source model hosting |
 | **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
+| **Straitly** | OpenAI-compatible AI gateway: one key for 150+ models including Claude, GPT, Gemini, Grok and DeepSeek |
 | **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
+| **TeamoRouter** | OpenAI-compatible gateway: one key for GLM, Kimi, DeepSeek, Qwen, Claude, GPT and Gemini |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |

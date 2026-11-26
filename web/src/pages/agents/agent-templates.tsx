@@ -6,11 +6,17 @@ import {
 } from '@/hooks/use-agent-request';
 
 import { CardContainer } from '@/components/card-container';
-import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { PageCloseButton } from '@/components/page-close-button';
+import { SidebarPageFrame } from '@/components/sidebar-page-frame';
+import { TruncatedText } from '@/components/truncated-text';
+import { SearchInput } from '@/components/ui/input';
+import { AgentCategory } from '@/constants/agent';
+import { LanguageAbbreviation } from '@/constants/common';
+import { useClientSearch } from '@/hooks/use-client-search';
 import { DSL, IFlowTemplate } from '@/interfaces/database/agent';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
-import { CanvasCategoryToFlowType } from './constant';
+import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { FlowType, TemplateMenuItemKey, TemplateMenuItems } from './constant';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
 import {
@@ -18,41 +24,33 @@ import {
   collectUnboundRetrievalBindings,
   bindUnboundModel,
 } from './template-retrieval-binding';
-import { MenuItemKey, SideBar } from './template-sidebar';
+import { SideBar } from './template-sidebar';
 
-function resolveSourceCategory(value: string | null): AgentCategory {
-  return value === AgentCategory.DataflowCanvas
-    ? AgentCategory.DataflowCanvas
-    : AgentCategory.AgentCanvas;
-}
-
-function normalizeTemplateCategory(template: IFlowTemplate): AgentCategory {
-  return template.canvas_category === AgentCategory.DataflowCanvas
-    ? AgentCategory.DataflowCanvas
-    : AgentCategory.AgentCanvas;
+function resolveTemplateLanguage(
+  language: string,
+): keyof IFlowTemplate['title'] {
+  if (language === LanguageAbbreviation.Zh) {
+    return 'zh';
+  }
+  if (language === LanguageAbbreviation.De) {
+    return 'de';
+  }
+  return 'en';
 }
 
 export default function AgentTemplates() {
   const list = useFetchAgentTemplates();
   const { loading, createAgent } = useCreateAgent();
-  const [searchParams] = useSearchParams();
-  // canvas_category is the source tab; canvas_type(s) remain the secondary
-  // theme filter rendered by the sidebar.
-  const sourceCategory = resolveSourceCategory(
-    searchParams.get(AgentQuery.CanvasCategory),
-  );
-  const [templateList, setTemplateList] = useState<IFlowTemplate[]>([]);
-  const [selectMenuItem, setSelectMenuItem] = useState<string>(
-    MenuItemKey.Recommended,
+  const { t, i18n } = useTranslation();
+  const [selectMenuItem, setSelectMenuItem] = useState<TemplateMenuItemKey>(
+    TemplateMenuItemKey.Recommended,
   );
 
-  // The Pipeline catalog has no theme breakdown, so it renders without the
-  // sidebar; the theme filter only applies to Workflow templates.
-  const showSidebar = sourceCategory === AgentCategory.AgentCanvas;
-
-  useEffect(() => {
-    setTemplateList(list);
-  }, [list]);
+  const language = resolveTemplateLanguage(i18n.language);
+  const selectedMenuItem =
+    TemplateMenuItems.find((item) => item.key === selectMenuItem) ??
+    TemplateMenuItems[0];
+  const contentTitle = t(`flow.${selectedMenuItem.labelKey}`);
 
   const {
     visible: creatingVisible,
@@ -70,14 +68,15 @@ export default function AgentTemplates() {
     [showCreatingModal],
   );
 
-  const { navigateToAgent } = useNavigatePage();
+  const { navigateToAgent, navigateToAgents } = useNavigatePage();
+
+  const handleClose = useCallback(() => {
+    navigateToAgents();
+  }, [navigateToAgents]);
 
   const handleOk = useCallback(
     async (payload: any) => {
       const dsl = template?.dsl;
-      const canvasCategory = template
-        ? normalizeTemplateCategory(template)
-        : AgentCategory.AgentCanvas;
       const memoryIds: string[] = payload?.memory_ids ?? [];
       const modelId: string = payload?.llm_id ?? '';
       const datasetBlocks = collectUnboundRetrievalBindings(dsl).datasetBlocks;
@@ -101,33 +100,30 @@ export default function AgentTemplates() {
         title: payload.name,
         dsl: boundDsl,
         avatar: template?.avatar,
-        canvas_category: canvasCategory,
+        canvas_category: AgentCategory.AgentCanvas,
       });
 
       if (ret?.code === 0) {
         hideCreatingModal();
-        if (canvasCategory === AgentCategory.DataflowCanvas) {
-          navigateToAgent(ret.data.id, AgentCategory.DataflowCanvas)();
-        } else {
-          navigateToAgent(ret.data.id)();
-        }
+        navigateToAgent(ret.data.id)();
       }
     },
     [hideCreatingModal, navigateToAgent, createAgent, template],
   );
-  const handleSiderBarChange = (keyword: string) => {
+
+  const handleSidebarChange = useCallback((keyword: TemplateMenuItemKey) => {
     setSelectMenuItem(keyword);
-  };
+  }, []);
 
   const tempListFilter = useMemo(() => {
-    const scoped = templateList.filter(
-      (item) => normalizeTemplateCategory(item) === sourceCategory,
-    );
-    if (!showSidebar || !selectMenuItem) {
-      return scoped;
-    }
     const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
-    return scoped.filter((item) => {
+    return list.filter((item) => {
+      if (
+        item.canvas_category &&
+        item.canvas_category !== AgentCategory.AgentCanvas
+      ) {
+        return false;
+      }
       if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
         return item.canvas_types.some(
           (canvasType) =>
@@ -137,48 +133,71 @@ export default function AgentTemplates() {
       }
       return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
     });
-  }, [selectMenuItem, templateList, sourceCategory, showSidebar]);
+  }, [selectMenuItem, list]);
+
+  const templateSearchFields = useMemo(
+    () => [(item: IFlowTemplate) => item.title[language]],
+    [language],
+  );
+  const { filteredData, searchKeyword, handleSearchChange } =
+    useClientSearch<IFlowTemplate>({
+      data: tempListFilter,
+      searchFields: templateSearchFields,
+    });
 
   return (
-    <section>
-      <div className="flex flex-1 h-dvh">
-        {showSidebar && (
+    <>
+      <SidebarPageFrame
+        closeButton={<PageCloseButton onClick={handleClose} />}
+        sidebar={
           <SideBar
-            change={handleSiderBarChange}
+            change={handleSidebarChange}
             selected={selectMenuItem}
           ></SideBar>
-        )}
+        }
+      >
+        <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+          <header className="flex shrink-0 justify-center">
+            <SearchInput
+              value={searchKeyword}
+              onChange={handleSearchChange}
+              className="h-10 rounded-full"
+              rootClassName="w-[400px] min-w-0 max-w-full"
+              role="searchbox"
+            />
+          </header>
 
-        <main className="flex-1 bg-text-title-invert/50 h-dvh">
-          <CardContainer className="max-h-[94vh] overflow-auto px-8 pt-8">
-            {tempListFilter?.map((x) => {
-              return (
-                <TemplateCard
-                  key={x.id}
-                  data={x}
-                  showModal={showModal}
-                ></TemplateCard>
-              );
-            })}
+          <TruncatedText
+            as="h2"
+            className="mb-5 mt-8 min-w-0 truncate text-xl font-medium text-text-primary"
+            tooltip={contentTitle}
+          >
+            {contentTitle}
+          </TruncatedText>
+
+          <CardContainer className="min-h-0 flex-1 overflow-auto sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">
+            {filteredData.map((item) => (
+              <TemplateCard
+                key={item.id}
+                data={item}
+                language={language}
+                showModal={showModal}
+              />
+            ))}
           </CardContainer>
-          {creatingVisible && (
-            <CreateAgentDialog
-              loading={loading}
-              visible={creatingVisible}
-              hideModal={hideCreatingModal}
-              selectedType={
-                CanvasCategoryToFlowType[
-                  template
-                    ? normalizeTemplateCategory(template)
-                    : sourceCategory
-                ]
-              }
-              template={template}
-              onOk={handleOk}
-            ></CreateAgentDialog>
-          )}
         </main>
-      </div>
-    </section>
+      </SidebarPageFrame>
+
+      {creatingVisible && (
+        <CreateAgentDialog
+          loading={loading}
+          visible={creatingVisible}
+          hideModal={hideCreatingModal}
+          selectedType={FlowType.Agent}
+          template={template}
+          onOk={handleOk}
+        ></CreateAgentDialog>
+      )}
+    </>
   );
 }

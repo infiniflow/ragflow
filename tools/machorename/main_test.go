@@ -214,6 +214,51 @@ func TestRenameObjectSharedNameRenamedOnce(t *testing.T) {
 	}
 }
 
+// markDefined turns buildObject's N_EXT-only entries — an undefined reference —
+// into N_ABS|N_EXT definitions, which is what a listing has to report.
+func markDefined(t *testing.T, obj []byte) []byte {
+	t.Helper()
+	const nAbs = 0x02
+	ncmds := int(binary.LittleEndian.Uint32(obj[16:20]))
+	p := 32
+	for i := 0; i < ncmds; i++ {
+		cmd := binary.LittleEndian.Uint32(obj[p : p+4])
+		cmdsize := int(binary.LittleEndian.Uint32(obj[p+4 : p+8]))
+		if cmd == lcSymtab {
+			symoff := int(binary.LittleEndian.Uint32(obj[p+8 : p+12]))
+			nsyms := int(binary.LittleEndian.Uint32(obj[p+12 : p+16]))
+			for j := 0; j < nsyms; j++ {
+				obj[symoff+j*nlist64Len+4] |= nAbs
+			}
+			return obj
+		}
+		p += cmdsize
+	}
+	t.Fatal("object has no LC_SYMTAB")
+	return nil
+}
+
+func TestArchiveSymbolsListsDefinedExternals(t *testing.T) {
+	archive := writeArchive([]arMember{
+		testMember("__.SYMDEF SORTED", []byte("stale table of contents")),
+		testMember("std.o", markDefined(t, buildObject([]string{"_ZSTD_compress", "_rust_eh_personality"}))),
+		testMember("refs.o", buildObject([]string{"_undefined_ref"})),
+	})
+	path := filepath.Join(t.TempDir(), "libinfinity_embedded.a")
+	if err := os.WriteFile(path, archive, 0o644); err != nil {
+		t.Fatalf("write archive: %v", err)
+	}
+
+	got, err := archiveSymbols(path)
+	if err != nil {
+		t.Fatalf("archiveSymbols: %v", err)
+	}
+	want := []string{"_ZSTD_compress", "_rust_eh_personality"}
+	if !equal(got, want) {
+		t.Errorf("archiveSymbols = %v, want %v (definitions only, index skipped)", got, want)
+	}
+}
+
 func TestRenameArchiveRejectsNonArchive(t *testing.T) {
 	if _, _, err := renameArchive([]byte("not an archive"), nil); err == nil {
 		t.Fatal("expected an error for non-archive input")

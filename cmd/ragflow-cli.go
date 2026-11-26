@@ -52,9 +52,7 @@ func main() {
 		logLevel = "info"
 	}
 
-	if err = common.InitLogger(logLevel, common.FileOutput{}, "ragflow-cli"); err != nil {
-		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
-	}
+	common.InitLogger(logLevel, common.FileOutput{}, "ragflow-cli")
 
 	client, err := cli.NewCLIWithConfig(cli.Arguments)
 	if err != nil {

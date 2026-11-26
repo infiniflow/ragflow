@@ -381,6 +381,18 @@ type AgentService struct {
 	runTracker     *canvas.RunTracker
 	runMu          sync.Mutex
 	activeSessions map[string]*activeAgentRun
+	// sessionWaiters groups local waiters for a session around a release
+	// channel. It is guarded by runMu; a wake closes the current channel and
+	// installs a fresh one, and the group is dropped when its last waiter leaves.
+	sessionWaiters map[string]*sessionWaitGroup
+}
+
+// sessionWaitGroup tracks the waiters subscribed to a session's release
+// channel. The channel is replaced (not removed) on each broadcast so a woken
+// waiter always picks up a fresh channel on its next iteration.
+type sessionWaitGroup struct {
+	ch    chan struct{}
+	count int
 }
 
 type activeAgentRun struct {
@@ -400,6 +412,52 @@ func (r *activeAgentRun) requestCancel() {
 	if r.cancelRun != nil {
 		r.cancelRun()
 	}
+}
+
+// acquireSessionWaitLocked subscribes a waiter to sessionID, creating the
+// group when needed. Caller must hold s.runMu.
+func (s *AgentService) acquireSessionWaitLocked(sessionID string) *sessionWaitGroup {
+	if s.sessionWaiters == nil {
+		s.sessionWaiters = make(map[string]*sessionWaitGroup)
+	}
+	g := s.sessionWaiters[sessionID]
+	if g == nil {
+		g = &sessionWaitGroup{ch: make(chan struct{})}
+		s.sessionWaiters[sessionID] = g
+	}
+	g.count++
+	return g
+}
+
+// releaseSessionWaitLocked unsubscribes a waiter and drops the group when the
+// last waiter is gone, so a failed or cancelled wait leaves no stale entry.
+// Caller must hold s.runMu.
+func (s *AgentService) releaseSessionWaitLocked(sessionID string, g *sessionWaitGroup) {
+	g.count--
+	if g.count == 0 && s.sessionWaiters[sessionID] == g {
+		delete(s.sessionWaiters, sessionID)
+	}
+}
+
+// notifySessionReleasedLocked wakes every waiter on sessionID and installs a
+// fresh channel for the next wait cycle. Caller must hold s.runMu.
+func (s *AgentService) notifySessionReleasedLocked(sessionID string) {
+	if g := s.sessionWaiters[sessionID]; g != nil {
+		close(g.ch)
+		g.ch = make(chan struct{})
+	}
+}
+
+// releaseLocalSession drops the local active slot for a finished run and
+// wakes every waiter on that session. It is a no-op when a newer run already
+// owns the slot.
+func (s *AgentService) releaseLocalSession(sessionID string, active *activeAgentRun) {
+	s.runMu.Lock()
+	if s.activeSessions[sessionID] == active {
+		delete(s.activeSessions, sessionID)
+		s.notifySessionReleasedLocked(sessionID)
+	}
+	s.runMu.Unlock()
 }
 
 // NewAgentService create agent service
@@ -436,6 +494,7 @@ func NewAgentServiceWithOptions(
 		compilationTemplateDAO:      dao.NewCompilationTemplateDAO(),
 		runner:                      canvas.NewRunner(),
 		activeSessions:              make(map[string]*activeAgentRun),
+		sessionWaiters:              make(map[string]*sessionWaitGroup),
 		checkpointStore:             cp,
 		stateSerializer:             ser,
 		runTracker:                  rt,
@@ -1193,6 +1252,17 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	if err != nil {
 		return err
 	}
+	if agentSettingsChanged(canvasInstance, patch) {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+			Kind: permission.ResourceKindCanvas,
+			ID:   canvasID,
+		}, permission.OperationDelete); err != nil {
+			if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) {
+				return dao.ErrUserCanvasNotFound
+			}
+			return fmt.Errorf("check agent settings permission: %w", err)
+		}
+	}
 	ownerUserID := canvasInstance.UserID
 
 	if v, ok := patch["permission"]; ok {
@@ -1382,6 +1452,30 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	return nil
 }
 
+func agentSettingsChanged(canvas *entity.UserCanvas, patch map[string]interface{}) bool {
+	for key, current := range map[string]*string{
+		"title":       canvas.Title,
+		"avatar":      canvas.Avatar,
+		"description": canvas.Description,
+	} {
+		value, ok := patch[key]
+		if !ok || value == nil {
+			continue
+		}
+		requested, ok := value.(string)
+		if !ok {
+			return true
+		}
+		if key == "title" {
+			requested = strings.TrimSpace(requested)
+		}
+		if current == nil || *current != requested {
+			return true
+		}
+	}
+	return false
+}
+
 // ResetAgent clears the per-run state of a canvas (history, retrieval,
 // memory, path) and zeroes every "sys.*" / "env.*" global, mirroring
 // the Python handler at api/apps/restful_apis/agent_api.py:992. The
@@ -1422,7 +1516,7 @@ func (s *AgentService) ResetAgent(ctx context.Context, canvasID string) (entity.
 // orphan version rows. Canvas delete access is decided by the permission
 // policy, including its sharing rules.
 func (s *AgentService) DeleteAgent(ctx context.Context, canvasID string) error {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationDelete); err != nil {
+	if err := checkAgentDeleteAccess(ctx, canvasID); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return ErrAgentNotOwner
 		}
@@ -1590,7 +1684,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, canvasID, versionID st
 	if versionID == "" {
 		return dao.ErrUserCanvasVersionNotFound
 	}
-	canvas, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationUpdate)
+	canvas, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationDelete)
 	if err != nil {
 		return err
 	}
@@ -1766,54 +1860,72 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		leaseToken: lockToken,
 		cancelRun:  cancelRun,
 	}
-	releaseLocal := func() {
+	// Subscribe once for the whole wait. The group is dropped on every exit
+	// path (acquire, cancel, registration error), so a cancelled or failed
+	// waiter never leaves a stale entry behind.
+	s.runMu.Lock()
+	waitGroup := s.acquireSessionWaitLocked(sessionID)
+	s.runMu.Unlock()
+	defer func() {
 		s.runMu.Lock()
-		if s.activeSessions[sessionID] == active {
-			delete(s.activeSessions, sessionID)
-		}
+		s.releaseSessionWaitLocked(sessionID, waitGroup)
 		s.runMu.Unlock()
-	}
+	}()
 	// Accept concurrent questions, but serialize stateful runs so checkpoints
 	// and persisted DSL cannot be overwritten by another run of this session.
-	wait := time.NewTicker(100 * time.Millisecond)
-	defer wait.Stop()
+	// Waiters block on the in-process release channel; the slow ticker only
+	// probes distributed leases held by another process.
+	recheck := time.NewTicker(time.Second)
+	defer recheck.Stop()
+	rechecked := false
 	for {
 		if err := ctx.Err(); err != nil {
 			cancelRun()
 			return nil, err
 		}
-		registered := true
-		if s.runTracker != nil {
-			var registerErr error
-			registered, registerErr = s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
-				SessionID: sessionID,
-				Token:     lockToken,
-				UserID:    userID,
-				CanvasID:  canvasID,
-				RunID:     runID,
-			})
-			if registerErr != nil {
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-				_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-				cleanupCancel()
-				cancelRun()
-				return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
-			}
-		}
-		if registered {
-			s.runMu.Lock()
-			_, busy := s.activeSessions[sessionID]
-			if !busy {
-				s.activeSessions[sessionID] = active
-			}
-			s.runMu.Unlock()
-			if !busy {
-				break
-			}
+		s.runMu.Lock()
+		waitCh := waitGroup.ch
+		_, locallyBusy := s.activeSessions[sessionID]
+		s.runMu.Unlock()
+
+		// A recheck only needs to probe the distributed lease. While another
+		// local run still owns the slot, keep waiting for its broadcast instead
+		// of re-registering and re-releasing the lease every second.
+		if !locallyBusy || !rechecked {
+			rechecked = false
+			registered := true
 			if s.runTracker != nil {
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-				_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-				cleanupCancel()
+				var registerErr error
+				registered, registerErr = s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
+					SessionID: sessionID,
+					Token:     lockToken,
+					UserID:    userID,
+					CanvasID:  canvasID,
+					RunID:     runID,
+				})
+				if registerErr != nil {
+					cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+					_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+					cleanupCancel()
+					cancelRun()
+					return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
+				}
+			}
+			if registered {
+				s.runMu.Lock()
+				_, busy := s.activeSessions[sessionID]
+				if !busy {
+					s.activeSessions[sessionID] = active
+				}
+				s.runMu.Unlock()
+				if !busy {
+					break
+				}
+				if s.runTracker != nil {
+					cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+					_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+					cleanupCancel()
+				}
 			}
 		}
 		if err := persistQuestion(); err != nil {
@@ -1824,7 +1936,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		case <-ctx.Done():
 			cancelRun()
 			return nil, ctx.Err()
-		case <-wait.C:
+		case <-waitCh:
+		case <-recheck.C:
+			rechecked = true
 		}
 	}
 
@@ -1848,7 +1962,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			_ = canvas.ClearCancel(cleanupCtx, sessionID)
 		}
 		cleanupCancel()
-		releaseLocal()
+		s.releaseLocalSession(sessionID, active)
 	}
 
 	// Start cancellation and lease watchers as soon as the active registration
@@ -1898,8 +2012,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// The buildRunFunc placeholder branch is reserved for the rare
 	// "canvas exists but has no DSL at all" edge case.
 	var (
-		versionRow *entity.UserCanvasVersion
-		dsl        map[string]any
+		versionRow   *entity.UserCanvasVersion
+		dsl          map[string]any
+		eventVersion = version
 	)
 	channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool)
 	refreshSessionDSL := channelRun && version == ""
@@ -1956,6 +2071,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			} else {
 				// A paused execution must resume the graph that wrote its checkpoint.
 				dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+				eventVersion = ""
 			}
 		}
 	}
@@ -2065,6 +2181,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		case <-lifecycleDone:
 		}
 	}()
+	runCtx = withAgentEventLog(runCtx, agentTenantID, userID, canvasID, eventVersion, dsl)
 	inner := s.runner.Run(runCtx, run, canvasID, sessionID, userInput, root)
 
 	out := make(chan canvas.RunEvent, 8)
@@ -2744,11 +2861,7 @@ func deriveAgentSessionName(userInput any) string {
 	} else {
 		text = stringifyAgentUserInput(userInput)
 	}
-	runes := []rune(text)
-	if len(runes) > 250 {
-		runes = runes[:250]
-	}
-	return string(runes)
+	return utility.TruncateRunes(text, 250)
 }
 
 // alone for first-touch runs, canvasID + sessionID for resumed runs

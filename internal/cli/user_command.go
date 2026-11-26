@@ -3035,6 +3035,9 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
 	}
+	if err := c.refreshLocalParseFeatures(commandCount, filename); err != nil {
+		return nil, err
+	}
 	fileParser, actual, err := parser.GetTextOnlyParser(fileType, fileContent)
 	if err != nil {
 		return nil, err

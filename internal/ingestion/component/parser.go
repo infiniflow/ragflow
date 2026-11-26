@@ -44,13 +44,10 @@
 //
 // docx, image, audio, video, email, epub) — see
 //
-//		  function_map at line ~1273. The Go port is LANDed and LIVE
-//		  in production for the families the ingestor claims (see
-//		  cmd/ragflow_server.go: Ingestor.supportedTypes =
-//		  ["pdf","docx","txt"]); those run their real parsers,
-//		  including the cgo-gated office variants via office_oxide.
-//		  Families not yet ported fall through to the raw-text path
-//		  below rather than printing skeletons.
+//		  function_map at line ~1273. The Go port runs the real parsers for
+//		  supported families, including the cgo-gated office variants via
+//		  office_oxide. Families without a Go parser fall through to the
+//		  raw-text path below rather than printing skeletons.
 //
 //		- For any family NOT yet ported (its Go parser returns no real
 //		  data), the component uses a "raw text" fallback: it treats
@@ -439,7 +436,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 // component does no goroutine fan-out of its own.
 func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(ctx, db, inputs)
+	ctx, binary, err := readParserBinary(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -476,14 +473,14 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     arms are keyed off the utility constants.
 	//
 	requestedType := fileTypeFromInputs(inputs)
-	fileParser, fileTypeExt, selectionErr := parser.GetParser(requestedType, binary)
+	fileParser, fileTypeExt, selectionErr := selectParserForRequest(requestedType, binary, setups)
 	if selectionErr == nil && fileTypeExt != requestedType {
 		warning := fmt.Sprintf("file %q: requested format %s does not match detected format %s; continuing with the %s parser", filename, requestedType, fileTypeExt, fileTypeExt)
 		common.Warn(warning)
 		reportParserWarnings(ctx, []string{warning})
 	}
 	parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
-	enhanceOn := c.enableVisionEnhancement
+	enhanceOn := c.enableVisionEnhancement && !parser.HasParseMethod(fileTypeExt, configuredParserMethod(setups, fileTypeExt))
 	split := progress.NewSplit(parsePagesOn, enhanceOn)
 	pageWin := split.Take(parsePagesOn)
 	visionWin := split.Take(enhanceOn)
@@ -523,6 +520,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		if selectionErr != nil && fileTypeExt != utility.FileTypeOTHER {
 			return nil, fmt.Errorf("parser: resolve %q: %w", fileTypeExt, selectionErr)
 		}
+		langHint, _ := getString(inputs, "lang")
+		configureParserLanguage(fileParser, langHint)
 		dispatched = dispatchParse(ctx, fileParser, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
 			pageWin.Report(ctx, 1.0)
@@ -626,8 +625,9 @@ func reportParserWarnings(ctx context.Context, warnings []string) {
 
 // --- input helpers ---
 
-// readParserBinary pulls the "binary" payload out of the inputs
-// map. The accepted shapes are:
+// readParserBinary loads the input and binds a document preview only when
+// the source was resolved from the document ID. Explicit inputs take priority.
+// The accepted shapes for "binary" are:
 //
 //	[]byte          — the in-process caller's normal form
 //	string          — UTF-8 text (JSON callers' normal form)
@@ -636,34 +636,36 @@ func reportParserWarnings(ctx context.Context, warnings []string) {
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) (context.Context, []byte, error) {
 	if inputs == nil {
-		return nil, nil
+		return ctx, nil, nil
 	}
 	if b, ok := inputs["binary"].([]byte); ok {
-		return b, nil
+		return ctx, b, nil
 	}
 	if s, ok := inputs["binary"].(string); ok {
 		if !utf8.ValidString(s) {
-			return nil, errors.New(
+			return ctx, nil, errors.New(
 				"parser: binary string is not valid UTF-8. " +
 					"Text-page mode only accepts UTF-8 text input")
 		}
-		return []byte(s), nil
+		return ctx, []byte(s), nil
 	}
 	bucket, _ := getString(inputs, "bucket")
 	path, _ := getString(inputs, "path")
 	if bucket != "" && path != "" {
-		return FetchBinary(ctx, bucket, path)
+		data, err := FetchBinary(ctx, bucket, path)
+		return ctx, data, err
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
 		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
-			return nil, fmt.Errorf("parser: resolve doc_id %q: %w", docID, err)
+			return ctx, nil, fmt.Errorf("parser: resolve doc_id %q: %w", docID, err)
 		}
-		return FetchBinary(ctx, ref.Bucket, ref.Path)
+		data, err := FetchBinary(ctx, ref.Bucket, ref.Path)
+		return bindDocumentPreview(ctx, docID, ref.documentLocation), data, err
 	}
-	return nil, nil
+	return ctx, nil, nil
 }
 
 // splitIntoPages segments the input bytes on ASCII form-feed

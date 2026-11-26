@@ -17,8 +17,10 @@
 package parser
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,7 +80,7 @@ func trimCells(row []string) []string {
 // at image anchor boundaries, interleaved with the anchored image items in
 // document order. Every segment repeats the header row (so segment 2+ never
 // loses column names) and carries a row-aligned position matrix — one tuple
-// per row in strict order, header included — so row-level consumers index
+// per row in worksheet order, including title rows before the header — so consumers index
 // positions by row number with no side channel. Each segment's TableData keeps
 // the sheet's merge geometry: an origin cell carries ColSpan/RowSpan and the
 // positions it engulfs are Covered markers. Consumers project those slots with
@@ -110,7 +112,6 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		headerRow = 1
 	}
 	rowByNum, rowNums := sheetRowIndex(records, headerRow, dataRows)
-	ranges = materializeDetachedMerges(rowByNum, headerRow, ranges)
 	header := append([]string(nil), rowByNum[headerRow]...)
 	headerColEnd := len(header)
 	if headerColEnd == 0 {
@@ -212,6 +213,8 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		for _, r := range body {
 			matrix = append(matrix, r.tuple)
 		}
+		// Keep positions aligned with the canonical grid's worksheet order.
+		slices.SortFunc(matrix, func(a, b []float64) int { return cmp.Compare(a[1], b[1]) })
 		td := buildCanonicalTable(headerRow, header, body, ranges, sheet)
 		ti := NewTableDataJSONItem(td, sheet, SpreadsheetPositions(matrix)).(TableItem)
 		ti.Extra = map[string]any{"sheet_index": sheetIndex}
@@ -299,81 +302,6 @@ func sheetRowIndex(records [][]string, headerRow int, dataRows []int) (map[int][
 	return byNum, nums
 }
 
-// materializeDetachedMerges handles a merge that starts above the detected
-// header and crosses it. Reordering the header to records[0] puts such a
-// merge's origin after the row it covers, which a grid cannot represent as a
-// span. The legacy parser filled the text into the header (and data rows) with
-// no span, so mirror that shape: write the master text into the rows the range
-// covers and drop the range from the geometry. All other merges stay canonical.
-func materializeDetachedMerges(rowByNum map[int][]string, headerRow int, ranges []mergeRange) []mergeRange {
-	if len(ranges) == 0 {
-		return ranges
-	}
-	kept := make([]mergeRange, 0, len(ranges))
-	for _, m := range ranges {
-		if m.sr >= headerRow || m.er < headerRow {
-			kept = append(kept, m)
-			continue
-		}
-		masterRow := rowByNum[m.sr]
-		if m.sc < 1 || m.sc > len(masterRow) {
-			continue
-		}
-		master := masterRow[m.sc-1]
-		if strings.TrimSpace(master) == "" {
-			continue
-		}
-		// readSpreadsheetRecords caps merge padding at maxMergeExtentCols so a
-		// pathological far merge cannot allocate one cell per worksheet column.
-		// A detached merge bypasses that padding, so apply the same cap here.
-		endCol := m.ec
-		if endCol > maxMergeExtentCols {
-			endCol = maxMergeExtentCols
-		}
-		if m.sc > endCol {
-			continue
-		}
-		for row := m.sr; row <= m.er; row++ {
-			cells, ok := rowByNum[row]
-			if !ok {
-				continue
-			}
-			if row == headerRow {
-				// The header row carried a merged title across the columns
-				// the range covers; the legacy header-inheritance path filled
-				// every one of them.
-				if endCol > len(cells) {
-					grown := make([]string, endCol)
-					copy(grown, cells)
-					cells = grown
-					rowByNum[row] = cells
-				}
-				for c := m.sc; c <= endCol; c++ {
-					if strings.TrimSpace(cells[c-1]) == "" {
-						cells[c-1] = master
-					}
-				}
-				continue
-			}
-			// Data rows only inherit a vertical merge's master. A horizontal
-			// data merge keeps its value on the origin column, matching the
-			// legacy data-inheritance rule.
-			if m.sc == m.ec || row == m.sr {
-				if m.sc > len(cells) {
-					grown := make([]string, m.sc)
-					copy(grown, cells)
-					cells = grown
-					rowByNum[row] = cells
-				}
-				if strings.TrimSpace(cells[m.sc-1]) == "" {
-					cells[m.sc-1] = master
-				}
-			}
-		}
-	}
-	return kept
-}
-
 // buildCanonicalTable assembles one segment's TableData from the segment's
 // source rows and the sheet's merge rectangles. The grid keeps merge geometry
 // instead of pre-expanding it: an origin cell carries ColSpan/RowSpan and the
@@ -391,6 +319,8 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 		sources = append(sources, sourceRow{num: r.rowNum, cells: r.cells})
 	}
 
+	// Header detection must not move titles or metadata below the column labels.
+	slices.SortFunc(sources, func(a, b sourceRow) int { return cmp.Compare(a.num, b.num) })
 	present := make(map[int]bool, len(sources))
 	for _, src := range sources {
 		present[src.num] = true
@@ -399,7 +329,7 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 
 	logical := make([][]tableutil.CellInput, 0, len(sources))
 	headerFlags := make([]bool, 0, len(sources))
-	for i, src := range sources {
+	for _, src := range sources {
 		cells := trimCells(src.cells)
 		// A merge origin past the row's truncation point still has to be
 		// emitted so the grid can place the span; GetRows truncates at the
@@ -428,18 +358,17 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 			row = append(row, in)
 		}
 		logical = append(logical, row)
-		headerFlags = append(headerFlags, i == 0)
+		headerFlags = append(headerFlags, src.num <= headerRow)
 	}
 
 	td := tableutil.BuildTableData(logical, headerFlags, sheet)
 	if td == nil || len(td.Grid) == 0 {
 		return td
 	}
-	// Preserve the legacy spreadsheet row width: data rows were padded to the
-	// header width so a short trailing column still renders under its <th>.
+	// Pad rows to the column-header width so short rows stay column-aligned.
 	// Only appending is done here, so every existing cell keeps its index.
-	width := len(td.Grid[0])
-	for r := 1; r < len(td.Grid); r++ {
+	width := len(header)
+	for r := 0; r < len(td.Grid); r++ {
 		for len(td.Grid[r]) < width {
 			td.Grid[r] = append(td.Grid[r], entity.TableCell{})
 		}

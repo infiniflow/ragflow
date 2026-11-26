@@ -163,15 +163,50 @@ func TestSearchByRegexpRejectsEmptyScope(t *testing.T) {
 	eng := &Engine{}
 	for _, kbIDs := range [][]string{nil, {}, {""}, {"", "  "}} {
 		_, err := eng.SearchByRegexp(context.Background(), &types.RegexpSearchRequest{
-			TenantID: "tenant1",
-			KbIDs:    kbIDs,
-			Pattern:  "foo.*bar",
+			IndexNames: []string{"ragflow_tenant1"},
+			KbIDs:      kbIDs,
+			Pattern:    "foo.*bar",
 		})
 		if err == nil {
 			t.Fatalf("SearchByRegexp(KbIDs=%v) must reject an empty dataset scope", kbIDs)
 		}
 		if !strings.Contains(err.Error(), "at least one dataset id") {
 			t.Errorf("SearchByRegexp(KbIDs=%v) error = %v, want it to name the missing dataset scope", kbIDs, err)
+		}
+	}
+}
+
+// TestSearchByRegexpRejectsEmptyIndexNames keeps an unresolved corpus scope from
+// turning into an unscoped table read: the tenant index list is the caller's
+// scope, and an empty one must fail before the client is touched.
+func TestSearchByRegexpRejectsEmptyIndexNames(t *testing.T) {
+	eng := &Engine{}
+	if _, err := eng.SearchByRegexp(context.Background(), &types.RegexpSearchRequest{
+		KbIDs:   []string{"kb1"},
+		Pattern: "foo.*bar",
+	}); err == nil {
+		t.Fatal("SearchByRegexp without index names must fail")
+	}
+}
+
+// A prefix must reach Infinity as an anchored regex; the doc scope must survive.
+func TestChunkIDPrefixFilterUsesRegex(t *testing.T) {
+	const docID = "d7c44b97f2544a3e99a8ca698e25ab0f"
+	condition := equivalentConditionToStr(map[string]interface{}{
+		"doc_id":    docID,
+		"id_prefix": []string{"6877", "ABCD"},
+		"must_not":  map[string]interface{}{"exists": "compile_kwd"},
+	}, nil)
+
+	for _, want := range []string{
+		fmt.Sprintf("doc_id='%s'", docID),
+		"regex(id, '^6877')",
+		"regex(id, '^abcd')",
+		" OR ",
+		"NOT (compile_kwd!='')",
+	} {
+		if !strings.Contains(condition, want) {
+			t.Errorf("condition %q is missing %q", condition, want)
 		}
 	}
 }

@@ -203,9 +203,9 @@ func TestConversationTurnMessagesSeedsOnce(t *testing.T) {
 func TestConversationLastAssistant(t *testing.T) {
 	conv := newTestConversation()
 	const deliverable = "## Reasoning Chain\n- Clue: b\n\nFinal Answer: **14 人**"
-	// The predicate is local on purpose: this shared test exercises the
-	// conversation's lastAssistant walk, not the edition-specific answer-line
-	// contract (hasAnswerLine lives with the delivery gate in the EE build).
+	// The predicate is local on purpose: this test exercises the
+	// conversation's lastAssistant walk, not any particular answer-line
+	// contract.
 	carriesAnswer := func(s string) bool { return strings.Contains(s, "Final Answer:") }
 	agent := &scriptedSessionAgent{out: func(turn int) string {
 		if turn == 1 {

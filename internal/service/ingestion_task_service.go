@@ -199,7 +199,7 @@ const emitIngestLogTimeout = 3 * time.Second
 // inside it (slow sink, DB error, panic). The caller snapshots the identity
 // scalars and returns immediately; enrichment + emit run on a detached,
 // panic-recovered goroutine.
-func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, typ, status, errorInfo string) {
+func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, status, errorInfo string) {
 	if s.eventEmitter == nil || task == nil {
 		return
 	}
@@ -218,7 +218,6 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 		userID:        task.UserID,
 		datasetID:     task.DatasetID,
 		pipelineLogID: task.PipelineLogID,
-		typ:           typ,
 		status:        status,
 		errorInfo:     errorInfo,
 	}
@@ -235,7 +234,6 @@ type ingestEventSnapshot struct {
 	userID        string
 	datasetID     string
 	pipelineLogID *string
-	typ           string
 	status        string
 	errorInfo     string
 }
@@ -280,7 +278,9 @@ func (s *IngestionTaskService) emitLifecycleEventAsync(parentCtx context.Context
 		run, _ = s.pipelineLogDAO.GetByID(ctx, db, *logID)
 	}
 	ctx = s.enrichIngestIdentity(ctx, db, task, doc)
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, snap.typ, snap.status, snap.errorInfo))
+	// event_type now carries the event scope, which for lifecycle events is
+	// always "task"; the lifecycle state itself is carried by status.
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, "task", snap.status, snap.errorInfo))
 }
 
 // enrichIngestIdentity attaches the owning user and tenant display names to the
@@ -434,7 +434,7 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		// close the open row. Close it here or it stays RUNNING forever.
 		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, task, "Task stopped by user.")
-		s.emitLifecycleEvent(ctx, task, "stopped", common.STOPPED, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, task, common.STOPPED, "Task stopped by user.")
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -465,7 +465,7 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 	// reflect this run rather than a zero or previous-run value. Emitting here
 	// (guarded by a successful claim in the caller) keeps one running event per
 	// actual run start.
-	s.emitLifecycleEvent(ctx, task, "running", common.RUNNING, "")
+	s.emitLifecycleEvent(ctx, task, common.RUNNING, "")
 }
 
 // ErrTaskNotInScope indicates RequestStopScoped was asked to stop a task whose
@@ -481,18 +481,33 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	if err != nil {
 		return nil, err
 	}
-	return s.stopActiveTask(ctx, task)
+	return s.stopActiveTask(ctx, task, nil)
 }
 
 // stopActiveTask performs the state transition for a task already loaded and known
 // to be in a stoppable state. It centralizes the CREATED/SCHEDULED -> STOPPED and
 // RUNNING -> STOPPING logic so RequestStop (unconditional) and RequestStopScoped
-// (scope-checked) share one implementation and cannot drift apart.
-func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
+// (scope-checked) share one implementation and cannot drift apart. A nil allowed
+// set means no scope restriction; otherwise a redirect to RUNNING is permitted
+// only when RUNNING is in the caller's scope.
+func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.IngestionTask, allowed []string) (*entity.IngestionTask, error) {
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
 		stopped, err := s.transitionFrom(ctx, task.ID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
 		if err != nil {
+			// The CAS can lose a race with the worker promoting the task to
+			// RUNNING between the caller's read and this transition. The
+			// conflict error already re-read the live status; when it is
+			// RUNNING and within the caller's scope, follow the running-stop
+			// path so the user's stop still takes effect instead of failing
+			// spuriously. A narrow scope that excludes RUNNING must leave the
+			// drifted task untouched. Every queued-stop side effect below runs
+			// only after a successful CAS, so redirecting cannot duplicate any.
+			var conflict *TaskStatusConflictError
+			if errors.As(err, &conflict) && conflict.ActualCurrent == common.RUNNING &&
+				(allowed == nil || statusInSet(common.RUNNING, allowed)) {
+				return s.stopRunningTask(ctx, task.ID)
+			}
 			return nil, err
 		}
 		// The stop finalizes without a worker (no RUNNING phase, so no
@@ -500,23 +515,50 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 		// CANCEL here, otherwise the detail page keeps a queued entry.
 		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
-		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
-		task, err := s.transition(ctx, task.ID, common.STOPPING)
-		if err != nil {
-			return nil, err
-		}
-		// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
-		// running worker's pollCancel detects the stop on its next 500ms
-		// tick instead of the slower DB fallback path.
-		if rc := kvrocks.Get(); rc != nil {
-			rc.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 1*time.Hour)
-		}
-		return task, nil
+		return s.stopRunningTask(ctx, task.ID)
 	default:
 		return task, nil
 	}
+}
+
+// stopRunningTask moves an already-running task to STOPPING and raises the
+// cancel flag the worker polls. It serves both the direct RUNNING branch and
+// the redirect taken when a queued-stop CAS loses the race to the worker's
+// RUNNING transition.
+func (s *IngestionTaskService) stopRunningTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.transition(ctx, taskID, common.STOPPING)
+	if err != nil {
+		// A task that reached a terminal state between the decision and the
+		// STOPPING CAS has already satisfied the stop request. Report the live
+		// terminal task as a no-op success rather than a status conflict.
+		var conflict *TaskStatusConflictError
+		var invalid *InvalidTaskTransitionError
+		terminal := ""
+		switch {
+		case errors.As(err, &conflict) && common.IsTerminalTaskStatus(conflict.ActualCurrent):
+			terminal = conflict.ActualCurrent
+		case errors.As(err, &invalid) && common.IsTerminalTaskStatus(invalid.From):
+			terminal = invalid.From
+		}
+		if terminal != "" {
+			live, getErr := s.GetTask(ctx, taskID)
+			if getErr != nil {
+				return nil, getErr
+			}
+			return live, nil
+		}
+		return nil, err
+	}
+	// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
+	// running worker's pollCancel detects the stop on its next 500ms
+	// tick instead of the slower DB fallback path.
+	if rc := kvrocks.Get(); rc != nil {
+		rc.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 1*time.Hour)
+	}
+	return task, nil
 }
 
 // RequestStopScoped stops a task only when its current status is among allowed.
@@ -535,7 +577,7 @@ func (s *IngestionTaskService) RequestStopScoped(ctx context.Context, taskID str
 	if !statusInSet(task.Status, allowed) {
 		return task, ErrTaskNotInScope
 	}
-	return s.stopActiveTask(ctx, task)
+	return s.stopActiveTask(ctx, task, allowed)
 }
 
 // statusInSet reports whether status equals one of the members of set.
@@ -570,7 +612,7 @@ func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskI
 		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel, terminalMessage); err != nil {
 			return nil, err
 		}
-		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, terminalMessage)
+		s.emitLifecycleEvent(ctx, stopped, common.STOPPED, terminalMessage)
 		return stopped, nil
 	case common.RUNNING, common.STOPPING:
 		return nil, fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
@@ -629,7 +671,7 @@ func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string)
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "completed", common.COMPLETED, "")
+	s.emitLifecycleEvent(ctx, updated, common.COMPLETED, "")
 	return nil
 }
 
@@ -657,7 +699,7 @@ func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason st
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "failed", common.FAILED, reason)
+	s.emitLifecycleEvent(ctx, updated, common.FAILED, reason)
 	return nil
 }
 
@@ -676,7 +718,7 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 	if err != nil {
 		return err
 	}
-	s.emitLifecycleEvent(ctx, updated, "stopped", common.STOPPED, "")
+	s.emitLifecycleEvent(ctx, updated, common.STOPPED, "")
 	return nil
 }
 
@@ -919,7 +961,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
+			s.emitLifecycleEvent(ctx, existing, common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -938,7 +980,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			// run identity commits so the re-queued task is not cancelled at
 			// the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
+			s.emitLifecycleEvent(ctx, existing, common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -959,7 +1001,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		}
 		return nil, fmt.Errorf("ensure run identity for task %s: %w", created.ID, err)
 	}
-	s.emitLifecycleEvent(ctx, created, "created", common.CREATED, "")
+	s.emitLifecycleEvent(ctx, created, common.CREATED, "")
 	if err = s.enqueueTask(ctx, created, kbCache); err != nil {
 		s.settlePublishFailure(ctx, created)
 		return nil, err
@@ -1050,7 +1092,7 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		}
 		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
 		s.recordRunMessage(ctx, task, "Task is queued...")
-		s.emitLifecycleEvent(ctx, task, "scheduled", common.SCHEDULED, "")
+		s.emitLifecycleEvent(ctx, task, common.SCHEDULED, "")
 		return task, nil
 	}
 
@@ -1402,9 +1444,10 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
-// RecordTerminal writes the terminal explanation associated with a run.
-func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
-	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
+// RecordTerminal writes a run's terminal explanation and classifies any supplied causes.
+func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string, causes ...error) error {
+	errorCode := ingestionErrorCode(errors.Join(causes...))
+	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message, errorCode); err != nil {
 		return err
 	}
 	foldContext := context.WithoutCancel(ctx)
@@ -1432,7 +1475,7 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 // ensureTerminalEvent serializes terminal writers on the run row and inserts
 // the terminal event only when one is not already present. This makes retrying
 // settlement safe after the operation status has already advanced.
-func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message string) error {
+func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message, errorCode string) error {
 	if dao.DB == nil {
 		return errors.New("ingestion task: nil database")
 	}
@@ -1451,7 +1494,7 @@ func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipeline
 		if count > 0 {
 			return nil
 		}
-		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message)
+		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message, errorCode)
 	})
 }
 
@@ -1466,10 +1509,10 @@ func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error
 }
 
 func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
-	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message)
+	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message, "")
 }
 
-func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
+func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message, errorCode string) error {
 	if pipelineLogID == "" {
 		return rejectIngestionEvent("missing_pipeline_log_id", pipelineLogID, taskID, errors.New("ingestion event requires a pipeline log id"))
 	}
@@ -1497,6 +1540,10 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 		phase = 0
 	}
 	message = s.truncateIngestionEventMessage(message)
+	checkpoint := entity.JSONMap{}
+	if errorCode != "" {
+		checkpoint["error_code"] = errorCode
+	}
 	now := time.Now().Local()
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;
@@ -1504,7 +1551,7 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 	return db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
 		"task_id":         taskID,
 		"pipeline_log_id": pipelineLogID,
-		"checkpoint":      entity.JSONMap{},
+		"checkpoint":      checkpoint,
 		"phase":           phase,
 		"event_type":      eventType,
 		"component":       component,
@@ -1546,8 +1593,5 @@ func (s *IngestionTaskService) truncateIngestionEventMessage(message string) str
 	// The marker is tiny relative to the configured limits for any practical
 	// input. Keep a defensive fallback for an unexpectedly huge rune count.
 	marker := fmt.Sprintf("… [truncated, %d chars dropped]", len(runes))
-	if len([]rune(marker)) > limits.MaxMessageChars {
-		return string([]rune(marker)[:limits.MaxMessageChars])
-	}
-	return marker
+	return utility.TruncateRunes(marker, limits.MaxMessageChars)
 }

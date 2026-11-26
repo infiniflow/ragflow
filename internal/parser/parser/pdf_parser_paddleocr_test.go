@@ -3,12 +3,12 @@ package parser
 import (
 	"context"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
 	"ragflow/internal/entity/models"
 )
-
 
 func TestPaddleOCRPDFResultDropsUnlocatedMedia(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
@@ -149,5 +149,37 @@ func TestPaddleOCRPDFResultRejectsRenderedEmptyText(t *testing.T) {
 				t.Fatalf("empty placeholder survived beside body: %+v", result)
 			}
 		})
+	}
+}
+
+func TestOCRPDFResultKeepPagePosition(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{
+		{
+			Index:            0,
+			KeepPagePosition: true,
+			Blocks: []models.OCRBlock{
+				{Label: "text", Text: "First page text."},
+				{Label: "image", Text: "![figure](https://example.invalid/fig.png)"},
+			},
+		},
+		{
+			Index:            2,
+			KeepPagePosition: true,
+			Blocks:           []models.OCRBlock{{Text: "Third page text."}},
+		},
+	}}
+	result := OCRPDFResult(t.Context(), "Mistral OCR", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	for i, wantPage := range []int{1, 3} {
+		want := [][]any{{wantPage, 0.0, 0.0, 0.0, 0.0}}
+		if got := PDFPositionRows(result.JSON[i].ToMap()["positions"]); !reflect.DeepEqual(got, want) {
+			t.Errorf("item %d positions = %v, want %v", i, got, want)
+		}
 	}
 }

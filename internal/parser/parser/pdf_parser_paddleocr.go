@@ -103,6 +103,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 			}
 			markdownWarnings = append(markdownWarnings, parsed.Warnings...)
 			if block.Items = ocrBlockItems(label, parsed.JSON); len(block.Items) > 0 {
+				block.KeepPagePosition = page.KeepPagePosition
 				blocks = append(blocks, block)
 			}
 		}

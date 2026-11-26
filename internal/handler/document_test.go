@@ -41,6 +41,7 @@ import (
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
 
 func TestParseMetadataUpdatesPreservesTypeAndMatch(t *testing.T) {
@@ -58,6 +59,24 @@ func TestParseMetadataUpdatesPreservesTypeAndMatch(t *testing.T) {
 	}
 	if errMsg != "" || !reflect.DeepEqual(updates, want) {
 		t.Fatalf("updates = %#v, error = %q, want %#v", updates, errMsg, want)
+	}
+}
+
+func TestParseMetadataDeletesPreservesValue(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(`{"deletes":[
+		{"key":"tags","value":"a"},
+		{"key":"status"}
+	]}`), &body); err != nil {
+		t.Fatal(err)
+	}
+	deletes, errMsg := parseMetadataDeletes(body["deletes"])
+	want := []document.MetadataDelete{
+		{Key: "tags", Value: "a"},
+		{Key: "status"},
+	}
+	if errMsg != "" || !reflect.DeepEqual(deletes, want) {
+		t.Fatalf("deletes = %#v, error = %q, want %#v", deletes, errMsg, want)
 	}
 }
 
@@ -512,7 +531,7 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		t.Fatalf("prepare document permission fixture: %v", err)
 	}
 	if accessible {
-		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write"); err != nil {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write", "manage"); err != nil {
 			t.Fatalf("grant document access: %v", err)
 		}
 	}
@@ -1835,7 +1854,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 
-	fake := &fakeDocumentService{}
+	fake := &fakeDocumentService{stopErr: permission.ErrPermissionDenied}
 	h := &DocumentHandler{
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
@@ -2416,5 +2435,31 @@ func TestMapDocumentListItemIncludesPipelineVersionID(t *testing.T) {
 	}
 	if item["pipeline_id"] != pipelineID {
 		t.Fatalf("pipeline_id mapping regressed: %v", item["pipeline_id"])
+	}
+}
+
+type featureDeniedPreviewService struct{ *fakeDocumentService }
+
+func (*featureDeniedPreviewService) GetDocumentPreview(context.Context, string) (*document.DocumentPreview, error) {
+	return nil, fmt.Errorf("extract preview: %w", utility.ErrFeatureDisabled)
+}
+
+func TestGetDocumentPreviewFeatureDisabled(t *testing.T) {
+	h := &DocumentHandler{documentService: &featureDeniedPreviewService{&fakeDocumentService{}}}
+	c, w := setupGinContextWithUser(http.MethodGet, "/api/v1/documents/doc-1/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.GetDocumentPreview(c)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Code    common.ErrorCode `json:"code"`
+		Message string           `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != common.CodeForbidden || !strings.Contains(body.Message, utility.ErrFeatureDisabled.Error()) {
+		t.Fatalf("body=%+v", body)
 	}
 }

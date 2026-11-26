@@ -25,13 +25,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"golang.org/x/net/html"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const googleScholarToolName = "google_scholar_search"
@@ -240,7 +240,7 @@ func buildGoogleScholarReferences(envelope map[string]any) ([]map[string]any, []
 			"Snippet: " + googleScholarText(paper["snippet"]),
 		}, "\n")
 		content = googleScholarDataImagePattern.ReplaceAllString(content, "")
-		content = truncateGoogleScholarRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -293,13 +293,6 @@ func googleScholarText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateGoogleScholarRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func mergeGoogleScholarDefaults(defaults, p googleScholarParams) googleScholarParams {

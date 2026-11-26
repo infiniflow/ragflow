@@ -35,8 +35,6 @@
 // provider is accepted by the other — the model sees the same
 // shape across the two).
 
-//go:build !windows
-
 package sandbox
 
 import (
@@ -52,15 +50,16 @@ import (
 	"ragflow/internal/common"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 // localDefaultWorkDir is the default work directory for local
-// code execution. Matches the Python side's default.
-const localDefaultWorkDir = "/tmp/ragflow-codeexec"
+// code execution. Matches the Python side's default on POSIX;
+// the temp dir is the platform's writable default, which is also
+// what Windows has instead of /tmp.
+var localDefaultWorkDir = filepath.Join(os.TempDir(), "ragflow-codeexec")
 
 // localDefaultTimeout is the per-execution timeout in seconds.
 const localDefaultTimeout = 30
@@ -365,13 +364,13 @@ func (p *LocalProvider) ExecuteCode(
 		}
 	case <-ctx.Done():
 		// Caller cancelled.
-		_ = killProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
+		_ = killProcessTree(cmd.Process.Pid)
 		<-waitDone
 		return nil, fmt.Errorf("local: execution cancelled: %w", ctx.Err())
 	case <-time.After(time.Duration(timeout) * time.Second):
 		// Per-execution timeout. Hard-kill the process group so
 		// the subprocess can't outlive the timer.
-		_ = killProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
+		_ = killProcessTree(cmd.Process.Pid)
 		<-waitDone
 		return nil, fmt.Errorf("local: execution timed out after %d seconds", timeout)
 	}
@@ -472,6 +471,12 @@ func buildLocalChildEnv(instanceDir string) []string {
 	env := []string{
 		"HOME=" + instanceDir,
 		"TMPDIR=" + instanceDir,
+		// Windows children look up the user profile and the temp
+		// dir under their own names; setting them unconditionally
+		// is harmless for the POSIX runtimes, which never read them.
+		"USERPROFILE=" + instanceDir,
+		"TEMP=" + instanceDir,
+		"TMP=" + instanceDir,
 		"MPLBACKEND=Agg",
 		"PYTHONUNBUFFERED=1",
 	}
@@ -571,17 +576,11 @@ func (p *LocalProvider) collectArtifacts(instanceDir string) ([]map[string]any, 
 	return out, err
 }
 
-// killProcessGroup sends signal to the process group of pid.
-// Used by the timeout / cancellation paths in ExecuteCode to
-// hard-kill the child + any descendants. POSIX only.
-func killProcessGroup(pid int, sig syscall.Signal) error {
-	if pid <= 0 {
-		return errors.New("invalid pid")
-	}
-	// Kill the whole group; the negative pid is "send to
-	// process group with id = |pid|" on POSIX.
-	return syscall.Kill(-pid, sig)
-}
+// killProcessTree hard-kills pid and every descendant. It is the
+// escalation path used by the timeout / cancellation branches of
+// ExecuteCode; the platform split lives in local_kill_*.go because
+// POSIX signals the process group while Windows terminates the
+// process tree through taskkill.
 
 // statusFromExitCode matches the Python side's metadata.status
 // string ("ok" or "error").

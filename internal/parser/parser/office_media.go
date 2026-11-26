@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -104,7 +103,6 @@ func officeMediaSource(data []byte) string {
 var (
 	tiffLittleEndian = []byte("II*\x00")
 	tiffBigEndian    = []byte("MM\x00*")
-	emfSignature     = []byte(" EMF")
 	utf8BOM          = []byte{0xEF, 0xBB, 0xBF}
 )
 
@@ -119,10 +117,9 @@ func officeImageMIME(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, tiffLittleEndian), bytes.HasPrefix(data, tiffBigEndian):
 		return "image/tiff"
-	case isEMFImage(data):
-		return "image/x-emf"
-	case isWMFImage(data):
-		return "image/x-wmf"
+	}
+	if mime := media.MetafileMIME(data); mime != "" {
+		return mime
 	}
 	if mime := http.DetectContentType(data); strings.HasPrefix(mime, "image/") {
 		return mime
@@ -131,21 +128,6 @@ func officeImageMIME(data []byte) string {
 		return "image/svg+xml"
 	}
 	return ""
-}
-
-// isEMFImage matches the EMF header: a type DWORD of 1 followed by the
-// " EMF" signature at the fixed header offset.
-func isEMFImage(data []byte) bool {
-	return len(data) >= 44 && binary.LittleEndian.Uint32(data) == 1 && bytes.Equal(data[40:44], emfSignature)
-}
-
-// isWMFImage matches the placeable-metafile magic and the standard WMF
-// header (type 1 or 2, header size 9 words).
-func isWMFImage(data []byte) bool {
-	if bytes.HasPrefix(data, []byte{0xD7, 0xCD, 0xC6, 0x9A}) {
-		return true
-	}
-	return len(data) >= 4 && (data[0] == 1 || data[0] == 2) && data[1] == 0 && data[2] == 9 && data[3] == 0
 }
 
 // isSVGImage matches an XML/SVG document without allocating a copy of the

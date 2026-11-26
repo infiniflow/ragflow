@@ -6,6 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useDeleteAgentSession } from '@/hooks/use-agent-request';
+import { useCanDeleteAgentSession } from '@/ee/pages/agent/use-can-delete-agent-session';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
 import { Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
@@ -25,6 +26,7 @@ export function SessionDropdown({
   const { t } = useTranslation();
   const { canvasId, setSessionId, sessionId } = useExploreUrlParams();
   const { deleteAgentSession } = useDeleteAgentSession();
+  const canDelete = useCanDeleteAgentSession(session);
 
   const handleDelete: MouseEventHandler<HTMLDivElement> =
     useCallback(async () => {
@@ -48,6 +50,10 @@ export function SessionDropdown({
       sessionId,
       setSessionId,
     ]);
+
+  if (!canDelete) {
+    return null;
+  }
 
   return (
     <DropdownMenu>

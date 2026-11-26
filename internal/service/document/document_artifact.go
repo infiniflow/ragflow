@@ -344,6 +344,8 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
 			data = []byte(text)
 			contentType = "text/plain; charset=utf-8"
+		} else if errors.Is(cerr, utility.ErrFeatureDisabled) {
+			return nil, cerr
 		}
 	}
 

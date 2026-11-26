@@ -17,6 +17,7 @@
 import { evictDocumentImage } from '@/components/image';
 import message from '@/components/ui/message';
 import { useChunkHistoryCache } from '@/ee/hooks/use-chunk-history-cache';
+import { useChunkIdQuery } from '@/ee/hooks/use-chunk-id-query';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
@@ -162,12 +163,18 @@ export const useFetchNextChunkList = (
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds?.slice(0, 100);
+  const optionChunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const [available, setAvailable] = useState<number | undefined>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  // The enterprise build can read the box as a chunk id lookup; upstream's stub
+  // answers undefined here, which leaves this a text search.
+  const idQuery = useChunkIdQuery(debouncedSearchString);
+  // An id search sends no pinned ids: an exact list would intersect two intents.
+  // Otherwise the pinned set still narrows the list.
+  const chunkIds = idQuery ? undefined : optionChunkIds;
 
   const {
     data,
@@ -183,6 +190,10 @@ export const useFetchNextChunkList = (
       debouncedSearchString,
       available,
       chunkIds,
+      // The mode, not only the text: it lives in the URL, so without it a switch
+      // changes the request but not the key, and the list keeps the previous
+      // mode's rows.
+      idQuery?.prefix,
     ],
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
@@ -195,8 +206,13 @@ export const useFetchNextChunkList = (
         page: pagination.current,
         size: Math.min(pagination.pageSize, 100),
         available_int: available,
-        keywords: searchString,
+        // The id search and the text search are mutually exclusive: an id query
+        // must not also match prose, or the result set stops being explainable.
+        keywords: idQuery ? undefined : searchString,
         chunk_ids: chunkIds,
+        // Matched by the server at the start of the id. An empty string (nothing
+        // typed) sends no filter; anything else goes out so the server decides.
+        chunk_id_prefix: idQuery?.prefix || undefined,
       });
       if (data.code === 0) {
         const res = data.data;

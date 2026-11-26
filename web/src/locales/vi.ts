@@ -92,7 +92,7 @@ export default {
       reselectParserAfterUploadHint:
         'Tiếp tục tải lên, hệ thống sẽ tự động chuyển các tệp này sang cấu hình phân tích tích hợp được hỗ trợ.',
       dataset: 'Dữ liệu',
-      testing: 'Kiểm tra truy hồi',
+      testing: 'Truy hồi',
       files: 'Các tệp',
       configuration: 'Cấu hình',
       name: 'Tên',
@@ -802,6 +802,7 @@ export default {
       destinationFolder: 'Thư mục đích',
     },
     flow: {
+      historyVersion: 'Phiên bản',
       cite: 'Hiển thị trích dẫn',
       citeTip: 'Mẹo dẫn nguồn',
       name: 'Tên',

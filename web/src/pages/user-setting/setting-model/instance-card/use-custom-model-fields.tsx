@@ -66,7 +66,9 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
     label: 'modelFeatures',
     type: 'switch-group',
     required: false,
-    defaultValue: [],
+    // New models default to tool calling enabled, mirroring the draft
+    // instance default applied by `buildModelInfo`.
+    defaultValue: ['is_tools'],
     options: [
       { value: 'is_tools', label: 'modelFeatureToolCall' },
       { value: 'supports_image', label: 'modelFeatureImageSupport' },

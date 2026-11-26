@@ -140,13 +140,16 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		return
 	}
 
+	chunkIDPrefix := parseChunkIDPrefix(c)
+
 	req := service.ListChunksRequest{
-		DatasetID: datasetID,
-		DocID:     documentID,
-		ChunkIDs:  queryStringList(c, "chunk_ids"),
-		Page:      &page,
-		Size:      &size,
-		Keywords:  c.Query("keywords"),
+		DatasetID:     datasetID,
+		DocID:         documentID,
+		ChunkIDs:      queryStringList(c, "chunk_ids"),
+		ChunkIDPrefix: chunkIDPrefix,
+		Page:          &page,
+		Size:          &size,
+		Keywords:      c.Query("keywords"),
 	}
 	if ids := queryStringList(c, "id"); len(ids) > 0 {
 		req.ChunkIDs = ids
@@ -168,6 +171,14 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		}
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
+	}
+	permissionMask, permissionErr := documentOperatorPermission(ctx, documentID)
+	if permissionErr != nil {
+		respondPermissionError(c, permissionErr, false)
+		return
+	}
+	if resp.Doc != nil {
+		resp.Doc["operator_permission"] = permissionMask
 	}
 
 	common.RespondSuccess(c, resp, "success")
@@ -191,6 +202,18 @@ func queryStringList(c *gin.Context, name string) []string {
 		}
 	}
 	return ids
+}
+
+// parseChunkIDPrefix reads the chunk-id prefix the list matches from the start of
+// the id. Several values are joined into one string so the service sees a single
+// unusable prefix: an id lookup is one prefix, and anything else matches nothing
+// rather than widening to the whole document.
+func parseChunkIDPrefix(c *gin.Context) string {
+	values := c.QueryArray("chunk_id_prefix")
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.Join(values, ",")
 }
 
 func parseAvailableQuery(raw string) (int, bool, error) {

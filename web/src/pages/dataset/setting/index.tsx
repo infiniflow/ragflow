@@ -44,6 +44,7 @@ import { normalizeParserConfigForComparison } from './parser-config';
 import { useFetchPipelineVersionList } from '@/hooks/use-pipeline-version-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
+import { hasManagePermissionPermission } from '@/ee/utils/permission-util';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -84,6 +85,10 @@ export default function DatasetSetting() {
   } = useFetchDatasetSettingOnMount(form);
   const { handleSave, loading: saveLoading } = useSaveDatasetSetting();
   const [applyParserConfigOpen, setApplyParserConfigOpen] = useState(false);
+  const canManageSettings = hasManagePermissionPermission(
+    knowledgeDetails?.operator_permission ?? 0,
+  );
+  const readOnly = !canManageSettings;
 
   const [sourceDataState, setSourceDataState] =
     useState<IDataSourceNodeProps[]>();
@@ -235,6 +240,7 @@ export default function DatasetSetting() {
 
   const handleSubmit = useCallback(
     async (data: DatasetSettingFormValues) => {
+      if (readOnly) return;
       const savedValues = form.formState.defaultValues;
       const operatorDefaults = buildParserConfigFromNodes(operatorNodes);
       const [savedParserConfig, parserConfig] = [
@@ -259,7 +265,14 @@ export default function DatasetSetting() {
         }
       }
     },
-    [form, handleSave, knowledgeDetails.document_count, operatorNodes, t],
+    [
+      form,
+      handleSave,
+      knowledgeDetails.document_count,
+      operatorNodes,
+      readOnly,
+      t,
+    ],
   );
 
   const { errors } = useFormState({
@@ -317,7 +330,10 @@ export default function DatasetSetting() {
                 ref={scrollContainerRef}
                 className="flex-1 min-h-0 w-full px-5 pt-5 overflow-y-auto scrollbar-auto"
               >
-                <section className="space-y-5 text-text-secondary">
+                <fieldset
+                  disabled={readOnly}
+                  className="m-0 w-full min-w-0 space-y-5 border-0 p-0 text-text-secondary"
+                >
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.baseInfo')}
                   </div>
@@ -386,32 +402,34 @@ export default function DatasetSetting() {
                       />
                     </DatasetParserOptions>
                   )}
-                </section>
+                </fieldset>
               </div>
 
-              <div className="p-5 text-right items-center flex justify-end gap-3 w-full">
-                <Button
-                  type="reset"
-                  variant="transparent"
-                  onClick={() => {
-                    form.reset();
-                  }}
-                >
-                  {t('knowledgeConfiguration.cancel')}
-                </Button>
+              {!readOnly && (
+                <div className="p-5 text-right items-center flex justify-end gap-3 w-full">
+                  <Button
+                    type="reset"
+                    variant="transparent"
+                    onClick={() => {
+                      form.reset();
+                    }}
+                  >
+                    {t('knowledgeConfiguration.cancel')}
+                  </Button>
 
-                <ButtonLoading
-                  type="submit"
-                  loading={
-                    datasetSettingLoading ||
-                    saveLoading ||
-                    form.formState.isSubmitting ||
-                    (operatorNodesLoading && operatorNodes.length === 0)
-                  }
-                >
-                  {t('knowledgeConfiguration.save')}
-                </ButtonLoading>
-              </div>
+                  <ButtonLoading
+                    type="submit"
+                    loading={
+                      datasetSettingLoading ||
+                      saveLoading ||
+                      form.formState.isSubmitting ||
+                      (operatorNodesLoading && operatorNodes.length === 0)
+                    }
+                  >
+                    {t('knowledgeConfiguration.save')}
+                  </ButtonLoading>
+                </div>
+              )}
             </SettingsFormContainer>
           </form>
         </Form>

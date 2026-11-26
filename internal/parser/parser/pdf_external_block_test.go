@@ -304,4 +304,24 @@ func TestExternalBlocksToItemsAttribution(t *testing.T) {
 			t.Fatalf("items = %v, want none", items)
 		}
 	})
+	t.Run("KeepPagePosition retains page-only position for non-figure blocks without regions", func(t *testing.T) {
+		items := externalBlockItems(t, ExternalBlockOptions{},
+			ExternalBlock{Text: "body", Page: 3, KeepPagePosition: true},
+			ExternalBlock{Type: ExternalBlockFigure, Page: 3, KeepPagePosition: true},
+			ExternalBlock{Type: ExternalBlockFigure, Text: "caption", Page: 3, KeepPagePosition: true},
+			ExternalBlock{Text: "located", Page: 3, KeepPagePosition: true, Regions: []ExternalRegion{{Page: 3, Box: [4]float64{10, 20, 30, 40}}}},
+		)
+		if len(items) != 3 {
+			t.Fatalf("items = %d, want 3 (unlocated empty figure dropped)", len(items))
+		}
+		if rows, ok := ExtractPDFPositions(items[0]); !ok || !reflect.DeepEqual(rows, [][]any{{3, 0.0, 0.0, 0.0, 0.0}}) {
+			t.Fatalf("text positions = %v, want [[3 0 0 0 0]]", items[0]["positions"])
+		}
+		if _, ok := ExtractPDFPositions(items[1]); ok {
+			t.Fatalf("figure without region should not get a synthetic page position: %v", items[1]["positions"])
+		}
+		if rows, ok := ExtractPDFPositions(items[2]); !ok || !reflect.DeepEqual(rows, [][]any{{3, 10.0, 30.0, 20.0, 40.0}}) {
+			t.Fatalf("located text positions = %v, want real region", items[2]["positions"])
+		}
+	})
 }

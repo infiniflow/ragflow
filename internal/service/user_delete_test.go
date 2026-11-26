@@ -20,11 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
@@ -77,10 +79,11 @@ type deletionStorage struct {
 	files        []string
 	err          error
 	bucketErr    error
-	missing      bool
-	checkErr     error
 }
 
+func (s *deletionStorage) BucketExistsWithError(context.Context, string) (bool, error) {
+	return true, nil
+}
 func (s *deletionStorage) RemoveBucket(_ context.Context, bucket string) error {
 	if s.bucketErr != nil {
 		return s.bucketErr
@@ -102,19 +105,6 @@ func (s *deletionStorage) Remove(_ context.Context, bucket, name string, _ ...st
 	s.files = append(s.files, bucket+"/"+name)
 	return nil
 }
-func (s *deletionStorage) ObjectExists(_ context.Context, bucket, name string) (bool, error) {
-	if s.checkErr != nil {
-		return false, s.checkErr
-	}
-	return !s.missing, nil
-}
-func (s *deletionStorage) BucketExistsWithError(_ context.Context, bucket string) (bool, error) {
-	if s.checkErr != nil {
-		return false, s.checkErr
-	}
-	return !s.missing, nil
-}
-
 func setupUserDeletionDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := testutil.SetupTestDB(t,
@@ -202,9 +192,12 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	service := UserDeletionService{}
 	service.engine = docEngine
 	service.storage = store
-	result, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"})
+	snapshot, result, err := service.DeleteTx(t.Context(), dao.DB, &entity.User{ID: "user-1", Email: "user@example.com"})
 	if err != nil {
-		t.Fatalf("DeleteUser: %v", err)
+		t.Fatalf("DeleteTx: %v", err)
+	}
+	if warnings := service.CleanupUserExternal(t.Context(), snapshot); len(warnings) != 0 {
+		t.Fatalf("CleanupUserExternal warnings: %v", warnings)
 	}
 	for _, table := range []string{"evaluation_datasets", "evaluation_cases", "evaluation_runs", "evaluation_results"} {
 		var count int64
@@ -284,7 +277,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	}
 }
 
-func TestDeleteUserKeepsUserWhenExternalCleanupFails(t *testing.T) {
+func TestDeleteUserCommitsWhenExternalCleanupFails(t *testing.T) {
 	db := setupUserDeletionDB(t)
 	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
 		t.Fatal(err)
@@ -298,16 +291,21 @@ func TestDeleteUserKeepsUserWhenExternalCleanupFails(t *testing.T) {
 	service := UserDeletionService{}
 	service.engine = &deletionEngine{}
 	service.storage = &deletionStorage{err: errors.New("storage unavailable")}
-	if _, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err == nil || !strings.Contains(err.Error(), "storage unavailable") {
-		t.Fatalf("DeleteUser error = %v", err)
+	snapshot, _, err := service.DeleteTx(t.Context(), dao.DB, &entity.User{ID: "user-1", Email: "user@example.com"})
+	if err != nil {
+		t.Fatalf("DeleteTx must commit despite external cleanup failure: %v", err)
 	}
 	var count int64
-	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("user was deleted after external failure: count=%d, err=%v", count, err)
+	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("user should be deleted after DB commit: count=%d, err=%v", count, err)
+	}
+	warnings := service.CleanupUserExternal(t.Context(), snapshot)
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "storage unavailable") {
+		t.Fatalf("cleanup warnings = %v, want storage failure", warnings)
 	}
 }
 
-func TestDeleteUserKeepsUserWhenDatasetBucketRemovalFails(t *testing.T) {
+func TestDeleteUserCommitsWhenBucketRemovalFails(t *testing.T) {
 	db := setupUserDeletionDB(t)
 	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
 		t.Fatal(err)
@@ -318,12 +316,17 @@ func TestDeleteUserKeepsUserWhenDatasetBucketRemovalFails(t *testing.T) {
 	service := UserDeletionService{}
 	service.engine = &deletionEngine{}
 	service.storage = &deletionStorage{bucketErr: errors.New("storage unavailable")}
-	if _, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err == nil || !strings.Contains(err.Error(), "remove dataset bucket Dataset (dataset): storage unavailable") {
-		t.Fatalf("DeleteUser error = %v", err)
+	snapshot, _, err := service.DeleteTx(t.Context(), dao.DB, &entity.User{ID: "user-1", Email: "user@example.com"})
+	if err != nil {
+		t.Fatalf("DeleteTx must commit despite bucket failure: %v", err)
 	}
 	var count int64
-	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("user deleted after bucket failure: count=%d, err=%v", count, err)
+	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("user should be deleted after DB commit: count=%d, err=%v", count, err)
+	}
+	warnings := service.CleanupUserExternal(t.Context(), snapshot)
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "storage unavailable") {
+		t.Fatalf("cleanup warnings = %v, want bucket failure", warnings)
 	}
 }
 
@@ -338,38 +341,24 @@ func TestDeleteUserContinuesWhenStorageItemsAreMissing(t *testing.T) {
 	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
 		t.Fatal(err)
 	}
-	store := &deletionStorage{missing: true}
+	store := &deletionStorage{}
 	service := UserDeletionService{}
 	service.engine = &deletionEngine{}
 	service.storage = store
-	if _, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err != nil {
-		t.Fatalf("DeleteUser with missing storage items: %v", err)
+	snapshot, _, err := service.DeleteTx(t.Context(), dao.DB, &entity.User{ID: "user-1", Email: "user@example.com"})
+	if err != nil {
+		t.Fatalf("DeleteTx with missing storage items: %v", err)
 	}
-	if len(store.files) != 0 || len(store.buckets) != 0 {
-		t.Fatalf("storage deletion attempted for missing items: files=%v buckets=%v", store.files, store.buckets)
+	if warnings := service.CleanupUserExternal(t.Context(), snapshot); len(warnings) != 0 {
+		t.Fatalf("CleanupUserExternal warnings: %v", warnings)
 	}
-}
-
-func TestDeleteUserStopsOnStorageCheckError(t *testing.T) {
-	db := setupUserDeletionDB(t)
-	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
-		t.Fatal(err)
+	// Storage backends treat a missing object/bucket as a successful removal,
+	// so the idempotent Remove calls are still issued without a pre-check.
+	if want := []string{"dataset/doc.pdf"}; !slices.Equal(store.files, want) {
+		t.Fatalf("removed objects = %v, want %v", store.files, want)
 	}
-	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id) VALUES (?, ?, ?, ?, ?, ?, ?)", "dataset", "team", "Dataset", "embd", "me", "user-1", "general").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc", "dataset", "general", "{}", "pdf", "user-1", "pdf", "doc.pdf").Error; err != nil {
-		t.Fatal(err)
-	}
-	service := UserDeletionService{}
-	service.engine = &deletionEngine{}
-	service.storage = &deletionStorage{checkErr: errors.New("storage unavailable")}
-	if _, err := service.Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err == nil || !strings.Contains(err.Error(), "storage unavailable") {
-		t.Fatalf("DeleteUser error = %v", err)
-	}
-	var count int64
-	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
-		t.Fatalf("user deleted after storage check failed: count=%d, err=%v", count, err)
+	if want := []string{"dataset"}; !slices.Equal(store.buckets, want) {
+		t.Fatalf("removed buckets = %v, want %v", store.buckets, want)
 	}
 }
 
@@ -387,7 +376,7 @@ func TestDeleteUserRollsBackDatabaseCleanup(t *testing.T) {
 	if err := db.Migrator().DropTable(&entity.Search{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (UserDeletionService{}).Delete(t.Context(), &entity.User{ID: "user-1", Email: "user@example.com"}); err == nil {
+	if _, _, err := (UserDeletionService{}).DeleteTx(t.Context(), dao.DB, &entity.User{ID: "user-1", Email: "user@example.com"}); err == nil {
 		t.Fatal("expected SQL cleanup failure")
 	}
 	for _, item := range [][2]string{{"user", "user-1"}, {"user_canvas", "agent"}, {"user_canvas_version", "version"}} {
@@ -395,5 +384,19 @@ func TestDeleteUserRollsBackDatabaseCleanup(t *testing.T) {
 		if err := db.Table(item[0]).Where("id = ?", item[1]).Count(&count).Error; err != nil || count != 1 {
 			t.Fatalf("transaction did not preserve %s/%s: count=%d, err=%v", item[0], item[1], count, err)
 		}
+	}
+}
+
+func TestDeleteExternalDataCommentMatchesPostCommitOrder(t *testing.T) {
+	src, err := os.ReadFile("user_delete.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	if strings.Contains(text, "Keep the user row until cleanup succeeds") {
+		t.Fatal("stale comment still claims the user row is kept until cleanup succeeds")
+	}
+	if !strings.Contains(text, "The user row is already committed before external cleanup") {
+		t.Fatal("comment must state that the DB row is committed before external cleanup")
 	}
 }

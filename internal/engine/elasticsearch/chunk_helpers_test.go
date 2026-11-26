@@ -75,9 +75,7 @@ func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -885,9 +883,7 @@ func TestMapMemoryMessageToESDoc(t *testing.T) {
 // of the bool taken when the kNN clause is built and must keep only the scope and
 // lexical predicates.
 func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -948,9 +944,7 @@ func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
 // TestSearchKeepsEveryRankFeatureClause covers the multi-feature case: appending
 // to the pre-loop should header used to keep only the last clause.
 func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	var searchQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
@@ -1020,9 +1014,7 @@ func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
 // through the rank_feature clause and the final similarity through the reranker;
 // folding it in here again would count it twice.
 func TestSearchDoesNotAddPageRankToHitScore(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "elasticsearch_test")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		w.Header().Set("Content-Type", "application/json")
@@ -1272,5 +1264,44 @@ func TestDeleteChunksRejectsEmptyIDs(t *testing.T) {
 				t.Errorf("sent %d delete requests, want 0", deletes.Load())
 			}
 		})
+	}
+}
+
+// A prefix must reach Elasticsearch as a `prefix` query: terms only name whole ids.
+func TestChunkIDPrefixBecomesPrefixQueryOnID(t *testing.T) {
+	got := buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"id_prefix": []string{"6877", "ABCD"},
+	}, nil, false, false)
+
+	want := map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{
+		map[string]interface{}{"bool": map[string]interface{}{
+			"should": []interface{}{
+				map[string]interface{}{"prefix": map[string]interface{}{"id": "6877"}},
+				map[string]interface{}{"prefix": map[string]interface{}{"id": "abcd"}},
+			},
+			"minimum_should_match": 1,
+		}},
+	}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("query = %#v, want %#v", got, want)
+	}
+}
+
+func TestChunkIDPrefixClausesLowercasesAndSkipsEmpty(t *testing.T) {
+	got := idPrefixClauses([]string{" 6877 ", "ABCD", "  "})
+	want := []interface{}{
+		map[string]interface{}{"prefix": map[string]interface{}{"id": "6877"}},
+		map[string]interface{}{"prefix": map[string]interface{}{"id": "abcd"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("clauses = %#v, want %#v", got, want)
+	}
+	if scalar := idPrefixClauses("6877"); !reflect.DeepEqual(scalar, []interface{}{
+		map[string]interface{}{"prefix": map[string]interface{}{"id": "6877"}},
+	}) {
+		t.Fatalf("idPrefixClauses(scalar) = %#v", scalar)
+	}
+	if none := idPrefixClauses([]string{}); none != nil {
+		t.Fatalf("idPrefixClauses(empty) = %#v, want nil", none)
 	}
 }

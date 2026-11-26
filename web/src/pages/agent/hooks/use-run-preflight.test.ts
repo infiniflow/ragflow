@@ -8,7 +8,6 @@ import {
 } from './use-save-graph';
 
 const mockSaveAgent = jest.fn();
-const mockResetAgent = jest.fn();
 const mockBuildDslData = jest.fn();
 
 const mockResolveValidIds = jest.fn().mockResolvedValue(new Set(['model']));
@@ -22,7 +21,6 @@ jest.mock('@/components/model-tree-select', () => ({
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchAgent: () => ({ data: { title: 'Draft' } }),
   useSaveAgent: () => ({ saveAgent: mockSaveAgent, loading: false }),
-  useResetAgent: () => ({ resetAgent: mockResetAgent }),
 }));
 jest.mock('./use-build-dsl', () => ({
   useBuildDslData: () => ({ buildDslData: mockBuildDslData }),
@@ -52,11 +50,10 @@ describe('Run preflight', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSaveAgent.mockResolvedValue({ code: 0 });
-    mockResetAgent.mockResolvedValue({ code: 0 });
     useGraphStore.setState({ nodes: [], edges: [], editedNodeFormIds: [] });
   });
 
-  it('blocks any run-blocking issue before saving, resetting or opening chat', async () => {
+  it('blocks any run-blocking issue before saving or opening chat', async () => {
     jest.mocked(checklist.collectCanvasIssues).mockReturnValueOnce([
       {
         nodeId: 'future-node',
@@ -78,7 +75,6 @@ describe('Run preflight', () => {
       'Future block: future.emptyEntry',
     );
     expect(mockSaveAgent).not.toHaveBeenCalled();
-    expect(mockResetAgent).not.toHaveBeenCalled();
     expect(show).not.toHaveBeenCalled();
   });
 
@@ -94,7 +90,6 @@ describe('Run preflight', () => {
         await result.current.handleRun();
       });
       expect(message.error).toHaveBeenCalledWith('Message: flow.messageMsg');
-      expect(mockResetAgent).not.toHaveBeenCalled();
       expect(show).not.toHaveBeenCalled();
     },
   );
@@ -113,7 +108,6 @@ describe('Run preflight', () => {
     });
     expect(message.error).not.toHaveBeenCalled();
     expect(mockSaveAgent).toHaveBeenCalled();
-    expect(mockResetAgent).toHaveBeenCalled();
     expect(show).toHaveBeenCalledTimes(1);
   });
 
@@ -206,6 +200,5 @@ describe('Run preflight', () => {
       await result.current.handleRun([node('Message', { content: [''] })]);
     });
     expect(show).not.toHaveBeenCalled();
-    expect(mockResetAgent).not.toHaveBeenCalled();
   });
 });

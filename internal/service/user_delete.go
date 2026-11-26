@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -76,11 +75,43 @@ func namedDocument(document entity.Document) string {
 	return namedID(*document.Name, document.ID)
 }
 
-func (s UserDeletionService) Delete(ctx context.Context, user *entity.User) (*DeleteUserResult, error) {
-	data, err := loadUserDeletionData(ctx, user.ID)
+// DeleteTx deletes a user's database rows through the caller-supplied db handle
+// and returns a snapshot of the external resources to clean up. It performs DB
+// mutations only — storage objects, engine data and deletion events are left to
+// CleanupUserExternal, which the caller must invoke after db has really committed.
+// Pass dao.DB for a standalone delete (committed on return), or a transaction
+// handle to join a larger unit of work; if the caller rolls back, discard the
+// snapshot so no external cleanup runs. This keeps a rolled-back delete from
+// leaving external data removed while the DB rows survive.
+func (s UserDeletionService) DeleteTx(ctx context.Context, db *gorm.DB, user *entity.User) (*userDeletionData, *DeleteUserResult, error) {
+	data, err := loadUserDeletionData(ctx, db, user.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	result := &DeleteUserResult{
+		Username:       user.Email,
+		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", user.Email)},
+	}
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return data.deleteDatabaseRows(ctx, tx, user.ID, result)
+	}); err != nil {
+		return nil, nil, fmt.Errorf("failed to delete user data: %w", err)
+	}
+	result.DeletedDetails = append(result.DeletedDetails, "Delete done!")
+	common.Info("Delete user success with all related data")
+	return data, result, nil
+}
+
+// CleanupUserExternal removes the non-transactional resources of a deleted
+// user: storage objects and buckets, engine chunks/metadata, and deletion
+// events. The snapshot comes from DeleteTx. Call this only after the handle
+// behind the snapshot has really committed. The operation is idempotent —
+// already-missing objects and buckets are tolerated — so a caller may replay it.
+// Failures are logged and returned as warnings rather than errors: the DB delete
+// is already committed and cannot be undone.
+func (s UserDeletionService) CleanupUserExternal(ctx context.Context, data *userDeletionData) []string {
+	var warnings []string
 	docEngine := s.engine
 	if docEngine == nil {
 		docEngine = engine.Get()
@@ -90,18 +121,10 @@ func (s UserDeletionService) Delete(ctx context.Context, user *entity.User) (*De
 		store = storage.GetStorageFactory().GetStorage()
 	}
 	if err := data.deleteExternalData(ctx, docEngine, store); err != nil {
-		return nil, err
+		common.Warn("user external cleanup failed", zap.Error(err))
+		warnings = append(warnings, fmt.Sprintf("- Warning: external data cleanup failed: %v", err))
 	}
 
-	result := &DeleteUserResult{
-		Username:       user.Email,
-		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", user.Email)},
-	}
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return data.deleteDatabaseRows(ctx, tx, user.ID, result)
-	}); err != nil {
-		return nil, fmt.Errorf("failed to delete user data: %w", err)
-	}
 	datasetIDs := make(map[string]struct{}, len(data.datasetIDs))
 	for _, id := range data.datasetIDs {
 		datasetIDs[id] = struct{}{}
@@ -124,15 +147,13 @@ func (s UserDeletionService) Delete(ctx context.Context, user *entity.User) (*De
 		}
 	}
 	if publishWarning {
-		result.DeletedDetails = append(result.DeletedDetails, "- Warning: dataset artifact refresh could not be scheduled for some deleted documents.")
+		warnings = append(warnings, "- Warning: dataset artifact refresh could not be scheduled for some deleted documents.")
 	}
-	result.DeletedDetails = append(result.DeletedDetails, "Delete done!")
-	common.Info("Delete user success with all related data")
-	return result, nil
+	return warnings
 }
 
-func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData, error) {
-	db := dao.DB.WithContext(ctx)
+func loadUserDeletionData(ctx context.Context, db *gorm.DB, userID string) (*userDeletionData, error) {
+	db = db.WithContext(ctx)
 	var tenants []entity.UserTenant
 	if err := db.Where("user_id = ? AND role = ?", userID, "owner").Find(&tenants).Error; err != nil {
 		return nil, fmt.Errorf("load owned tenant: %w", err)
@@ -231,8 +252,8 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 }
 
 func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine engine.DocEngine, store storage.Storage) error {
-	// External stores cannot join the SQL transaction. Keep the user row until
-	// cleanup succeeds so a failed request can be retried.
+	// External stores cannot join the SQL transaction. The user row is already committed before external cleanup
+	// runs, so a failure is reported as a warning rather than reverting the deletion.
 	if docEngine == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0) {
 		return fmt.Errorf("document engine is unavailable for user data cleanup")
 	}
@@ -248,14 +269,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 			continue
 		}
 		docNameID := namedDocument(document)
-		exists, err := store.ObjectExists(ctx, document.KbID, *document.Location)
-		if err != nil {
-			return fmt.Errorf("check document %s: %w", document.ID, err)
-		}
-		if !exists {
-			common.Warn("Document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
-			continue
-		}
 		if err := store.Remove(ctx, document.KbID, *document.Location); err != nil {
 			return fmt.Errorf("remove document %s: %w", docNameID, err)
 		}
@@ -263,12 +276,14 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, dataset := range data.datasets {
 		datasetNameID := namedID(dataset.Name, dataset.ID)
+		// Some backends refuse to remove a logical bucket outright. Skip the
+		// call when the physical bucket is already gone, as the caller did
+		// before bucket removal was made unconditional.
 		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
 		if err != nil {
 			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
 		}
 		if !exists {
-			common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 			continue
 		}
 		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
@@ -293,14 +308,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
-			exists, err := store.ObjectExists(ctx, file.ParentID, *file.Location)
-			if err != nil {
-				return fmt.Errorf("check file %s: %w", file.ID, err)
-			}
-			if !exists {
-				common.Warn("File object already missing", zap.String("file", namedID(file.Name, file.ID)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
-				continue
-			}
 			if err := store.Remove(ctx, file.ParentID, *file.Location); err != nil {
 				return fmt.Errorf("remove file %s: %w", file.ID, err)
 			}
@@ -309,14 +316,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, file := range data.files {
 		if file.Type != "folder" || file.SourceType == string(entity.FileSourceKnowledgebase) || file.TenantID != data.ownedTenantID {
-			continue
-		}
-		exists, err := store.BucketExistsWithError(ctx, file.ID)
-		if err != nil {
-			return fmt.Errorf("check folder bucket %s: %w", file.ID, err)
-		}
-		if !exists {
-			common.Warn("Folder bucket already missing", zap.String("folder", namedID(file.Name, file.ID)), zap.String("bucket", file.ID))
 			continue
 		}
 		if err := store.RemoveEmptyBucket(ctx, file.ID); err != nil {

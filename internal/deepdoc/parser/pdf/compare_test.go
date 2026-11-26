@@ -24,9 +24,7 @@ func TestBatchCompareWithPython(t *testing.T) {
 	case "warn":
 		level = "warn"
 	}
-	if err := common.InitLogger(level, common.FileOutput{}, ""); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger(level, common.FileOutput{}, "")
 
 	goVariant := "ocr"
 	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)

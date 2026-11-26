@@ -21,7 +21,7 @@ describe('parser-form utils', () => {
 
     it('prefills the tenant default model for audio only', () => {
       const dictionary = {
-        [ModelTypeToField.vision]: 'gpt-4o@OpenAI',
+        [ModelTypeToField.vlm]: 'gpt-4o@OpenAI',
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       };
       // The vision model is a global parser option, so video no longer gets
@@ -36,7 +36,7 @@ describe('parser-form utils', () => {
 
     it('leaves other file types untouched even with defaults present', () => {
       const dictionary = {
-        [ModelTypeToField.vision]: 'gpt-4o@OpenAI',
+        [ModelTypeToField.vlm]: 'gpt-4o@OpenAI',
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       };
       expect(buildInitialParserSetup(FileType.PDF, dictionary)?.vlm).toBe(
@@ -58,7 +58,7 @@ describe('parser-form utils', () => {
   describe('buildInitialParserValues', () => {
     it('prefills the global vision model and keeps the enhancement off', () => {
       const values = buildInitialParserValues({
-        [ModelTypeToField.vision]: 'gpt-4o@OpenAI',
+        [ModelTypeToField.vlm]: 'gpt-4o@OpenAI',
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       });
 

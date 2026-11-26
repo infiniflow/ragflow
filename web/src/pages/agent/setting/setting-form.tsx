@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { showPermissionField } from '@/ee/constants/feature-flags';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -26,9 +26,10 @@ export const AgentSettingId = 'agentSettingId';
 
 type SettingFormProps = {
   submit: (values: SettingFormSchemaType) => void;
+  readOnly?: boolean;
 };
 
-export function SettingForm({ submit }: SettingFormProps) {
+export function SettingForm({ submit, readOnly = false }: SettingFormProps) {
   const { t } = useTranslation('translation', { keyPrefix: 'flow.settings' });
   const { data } = useFetchAgent();
 
@@ -49,21 +50,38 @@ export function SettingForm({ submit }: SettingFormProps) {
     });
   }, [data, form]);
 
+  const handleSubmit = useCallback(
+    (values: SettingFormSchemaType) => {
+      if (!readOnly) submit(values);
+    },
+    [readOnly, submit],
+  );
+
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(submit)}
+        onSubmit={form.handleSubmit(handleSubmit)}
         className="space-y-8"
         id={AgentSettingId}
       >
-        <RAGFlowFormItem name="title" label={t('title')}>
-          <Input />
+        <RAGFlowFormItem name="title" label={t('title')} horizontal>
+          <Input disabled={readOnly} />
         </RAGFlowFormItem>
-        <RAGFlowFormItem name="avatar" label={t('photo')}>
-          <AvatarUpload></AvatarUpload>
+        <RAGFlowFormItem
+          name="avatar"
+          label={t('photo')}
+          horizontal
+          className="!items-start"
+        >
+          <AvatarUpload disabled={readOnly}></AvatarUpload>
         </RAGFlowFormItem>
-        <RAGFlowFormItem name="description" label={t('description')}>
-          <Textarea rows={4} />
+        <RAGFlowFormItem
+          name="description"
+          label={t('description')}
+          horizontal
+          className="!items-start"
+        >
+          <Textarea rows={4} disabled={readOnly} />
         </RAGFlowFormItem>
 
         {showPermissionField && (
@@ -71,12 +89,14 @@ export function SettingForm({ submit }: SettingFormProps) {
             name="permission"
             label={t('permissions')}
             tooltip={t('permissionsTip')}
+            horizontal
           >
             {(field) => (
               <RadioGroup
                 onValueChange={field.onChange}
                 value={field.value}
                 className="flex"
+                disabled={readOnly}
               >
                 <FormItem className="flex items-center gap-3">
                   <FormControl>

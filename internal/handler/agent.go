@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
+	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -83,7 +84,7 @@ type AgentHandler struct {
 	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
 	// live Redis (mirrors the newExecutor injection pattern).
-	redisGet func(key string) (string, error)
+	redisGet func(ctx context.Context, key string) (string, error)
 	// redisStore writes the debug-run log array. Defaults to the global
 	// client (kvrocks.Get, which satisfies task.DebugLogStore); tests inject a
 	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
@@ -114,7 +115,7 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
+		redisGet:     func(ctx context.Context, key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
 		redisStore:   kvrocks.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize, &ingestion.Deps{
@@ -130,7 +131,7 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 // WithRedisGetter overrides the Redis string getter used by Agent log endpoints.
 // Tests pass a miniredis-backed getter so polling can be exercised end-to-end
 // without a live Redis.
-func (h *AgentHandler) WithRedisGetter(f func(key string) (string, error)) *AgentHandler {
+func (h *AgentHandler) WithRedisGetter(f func(ctx context.Context, key string) (string, error)) *AgentHandler {
 	h.redisGet = f
 	return h
 }
@@ -253,6 +254,9 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 func mapAgentError(err error) (common.ErrorCode, string) {
 	if err == nil {
 		return common.CodeSuccess, ""
+	}
+	if errors.Is(err, utility.ErrFeatureDisabled) {
+		return common.CodeForbidden, err.Error()
 	}
 	if errors.Is(err, service.ErrAgentNotOwner) {
 		return common.CodeOperatingError, "Only the owner of the agent is authorized for this operation."
@@ -484,6 +488,9 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(ctx, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		ec, em := mapAgentError(err)
 		common.RespondError(c, ec, em)
 		return
@@ -609,6 +616,9 @@ func (h *AgentHandler) runCanvasPipelineDebug(ctx context.Context, user *entity.
 // renders the debug output.
 func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err error) {
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -950,7 +960,6 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	desc := !strings.EqualFold(descParam, "false")
 	sessionID := c.Query("id")
 	queryUserID := c.Query("user_id")
-	expUserID := c.Query("exp_user_id")
 	dslParam := c.Query("dsl")
 	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
@@ -969,7 +978,6 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		Desc:             desc,
 		SessionID:        sessionID,
 		UserID:           queryUserID,
-		ExpUserID:        expUserID,
 		IncludeDSL:       includeDSL,
 		IncludeReference: options.IncludeReference,
 		IncludePrompt:    options.IncludePrompt,
@@ -1351,6 +1359,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(ctx, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
 				zap.String("user_id", user.ID),
@@ -1615,7 +1626,7 @@ func (h *AgentHandler) persistAgentToolInvocations(ctx context.Context, canvasID
 	key := fmt.Sprintf("%s-%s-logs", canvasID, ev.MessageID)
 	var entries []map[string]any
 	if h.redisGet != nil {
-		if payload, err := h.redisGet(key); err == nil {
+		if payload, err := h.redisGet(ctx, key); err == nil {
 			_ = json.Unmarshal([]byte(payload), &entries)
 		}
 	}
@@ -1678,7 +1689,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
-	payload, rerr := h.redisGet(key)
+	payload, rerr := h.redisGet(c.Request.Context(), key)
 	var data interface{} = map[string]interface{}{}
 	if rerr == nil {
 		data = parseAgentLogs(payload)
@@ -1721,7 +1732,7 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 		jsonInternalError(c, errors.New("agent webhook trace: redis getter not configured"))
 		return
 	}
-	payload, err := h.redisGet(fmt.Sprintf("webhook-trace-%s-logs", canvasID))
+	payload, err := h.redisGet(ctx, fmt.Sprintf("webhook-trace-%s-logs", canvasID))
 	if err != nil {
 		jsonInternalError(c, fmt.Errorf("read agent webhook trace: %w", err))
 		return

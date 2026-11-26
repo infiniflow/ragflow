@@ -272,47 +272,64 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 }
 
 // GetFilterByKBID returns aggregate filter counts for documents in a dataset.
+//
+// The counters only need group totals, so the database groups them rather than
+// handing every row back to be tallied here: the result has one row per
+// (suffix, status) pair, however many documents the dataset holds.
 func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts DocumentListOptions) (map[string]interface{}, int64, error) {
 	if circuit := opts.documentCircuit(); circuit.IsCircuitOpen() {
 		return circuit.CircuitOpenFilters(), 0, nil
 	}
 
-	var rows []struct {
-		ID              string  `gorm:"column:id"`
+	var groups []struct {
 		IngestionStatus *string `gorm:"column:ingestion_status"`
 		Suffix          string  `gorm:"column:suffix"`
+		DocCount        int64   `gorm:"column:doc_count"`
 	}
 	ingestionStatus := buildDocumentListIngestionStatusExpression(db)
 
-	query := db.WithContext(ctx).Table("document").
-		Select("document.id, " + ingestionStatus + " as ingestion_status, document.suffix").
+	// The status expression reads ingestion_task.status, so the counters must be
+	// aggregated in SQL - but the grouping cannot reference that expression
+	// directly: under ONLY_FULL_GROUP_BY MySQL rejects both a GROUP BY on the
+	// alias (the unqualified name resolves against the FROM tables, not the
+	// SELECT list) and a GROUP BY on the repeated CASE text. Compute the status
+	// per row in a derived table instead, then aggregate over its columns,
+	// which MySQL groups on safely.
+	rows := db.WithContext(ctx).Table("document").
+		Select("document.suffix AS suffix, " + ingestionStatus + " AS ingestion_status").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins(latestIngestionTaskJoin)
-	query = applyDocumentListFilters(query, opts, true, ingestionStatus)
+	rows = applyDocumentListFilters(rows, opts, true, ingestionStatus)
 
-	if err := query.Scan(&rows).Error; err != nil {
+	query := db.WithContext(ctx).Table("(?) AS doc_rows", rows).
+		Select("doc_rows.suffix AS suffix, doc_rows.ingestion_status AS ingestion_status, COUNT(*) AS doc_count").
+		Group("doc_rows.suffix, doc_rows.ingestion_status")
+
+	if err := query.Scan(&groups).Error; err != nil {
 		return nil, 0, err
 	}
 
 	suffixCounter := map[string]int64{}
 	statusCounter := map[string]int64{}
-	for _, row := range rows {
-		if row.Suffix != "" {
-			suffixCounter[row.Suffix]++
+	var total int64
+	for _, group := range groups {
+		total += group.DocCount
+		if group.Suffix != "" {
+			suffixCounter[group.Suffix] += group.DocCount
 		}
 		status := "UNSTART"
-		if row.IngestionStatus != nil && *row.IngestionStatus != "" {
-			status = *row.IngestionStatus
+		if group.IngestionStatus != nil && *group.IngestionStatus != "" {
+			status = *group.IngestionStatus
 		}
-		statusCounter[status]++
+		statusCounter[status] += group.DocCount
 	}
 
 	return map[string]interface{}{
 		"suffix":           suffixCounter,
 		"ingestion_status": statusCounter,
 		"metadata":         map[string]interface{}{},
-	}, int64(len(rows)), nil
+	}, total, nil
 }
 
 // ListIDsByKBIDWithOptions lists matching document IDs without pagination.

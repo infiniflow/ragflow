@@ -168,13 +168,6 @@ func newScheduler(db *gorm.DB, mq engine.MessageQueue, holder string, ttl time.D
 	return &mysqlScheduler{db: db, mq: mq, holder: holder, leaseTTL: ttl, claimBatchSize: defaultClaimBatch}
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // ---- MySQL-backed scheduler ----
 
 type mysqlScheduler struct {
@@ -899,7 +892,7 @@ func (f *FakeScheduler) Claim(_ context.Context, datasetID string) (ClaimResult,
 	if len(r.backlog) == 0 {
 		return ClaimResult{}, false, nil
 	}
-	n := minInt(defaultClaimBatch, len(r.backlog))
+	n := min(defaultClaimBatch, len(r.backlog))
 	batch := append([]BacklogEntry{}, r.backlog[:n]...)
 	r.inflight = append(r.inflight, batch...)
 	r.backlog = append([]BacklogEntry{}, r.backlog[n:]...)

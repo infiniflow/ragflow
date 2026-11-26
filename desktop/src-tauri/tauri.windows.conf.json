@@ -1,0 +1,18 @@
+{
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "resources": [
+      "binaries/ragflow-desktop.exe",
+      "binaries/office_oxide.dll",
+      "binaries/onnxruntime.dll",
+      "binaries/pdfium.dll",
+      "binaries/librag_tokenizer_c_api.dll",
+      "resource",
+      "conf",
+      "deepdoc",
+      "deps"
+    ]
+  }
+}

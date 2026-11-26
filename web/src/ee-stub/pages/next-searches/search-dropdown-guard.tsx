@@ -8,6 +8,14 @@ type SearchDropdownGuardProps = {
   deleteItems: ReactNode;
 };
 
+export function shouldShowSearchDropdown(_dataset: ISearchAppProps) {
+  return true;
+}
+
+export function canManageSearch(_operatorPermission = 0) {
+  return true;
+}
+
 /**
  * Enterprise seam for the search-app dropdown. Open source has no collaborator
  * permissions, so every action the shared file provides is rendered as-is.

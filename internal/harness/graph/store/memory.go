@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"maps"
 	"math"
 	"regexp"
 	"sort"
@@ -590,9 +591,7 @@ func (s *InMemoryStore) checkTTL(fullKey string) bool {
 
 func (s *InMemoryStore) copyValue(value map[string]interface{}) map[string]interface{} {
 	copied := make(map[string]interface{}, len(value))
-	for k, v := range value {
-		copied[k] = v
-	}
+	maps.Copy(copied, value)
 	return copied
 }
 

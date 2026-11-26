@@ -368,7 +368,7 @@ export default {
       reselectParserAfterUploadHint:
         'Poursuivez le téléversement ; le système basculera automatiquement ces fichiers vers une configuration d’analyse intégrée compatible.',
       dataset: 'Ensemble de données',
-      testing: 'Test de récupération',
+      testing: 'Récupération',
       files: 'Fichiers',
       configuration: 'Configuration',
       knowledgeGraph: 'Graphe de connaissances',
@@ -2402,7 +2402,7 @@ Exemple : Virtual Hosted Style`,
       }`,
       datatype: 'Type MIME de la requête HTTP',
       insertVariableTip: `Entrer / Insérer des variables`,
-      historyVersion: 'Historique des versions',
+      historyVersion: 'Versions',
       version: {
         created: 'Créé',
         details: 'Détails de la version',
@@ -2631,7 +2631,7 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       titleChunkerDescription:
         'Divise les documents en sections par hiérarchie de titres. Définissez les niveaux de titre avec des règles regex, puis choisissez le mode Hiérarchie ou Groupe pour contrôler la structure des blocs.',
       titleChunker: 'Découpeur par titres',
-      extractor: 'Transformateur',
+      extractor: 'Extracteur',
       extractorDescription:
         'Utilise un LLM pour extraire des informations structurées des blocs de document — telles que des résumés, classifications, etc.',
       outputFormat: 'Format de sortie',

@@ -33,6 +33,7 @@ import (
 	"testing"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 // joinModelNames extracts model names from a ListModelResponse slice and
@@ -770,7 +771,7 @@ func TestAllModelsCatalogHasNoDuplicateKeys(t *testing.T) {
 		t.Fatalf("detector control: got %d duplicates (%v), want 3 (a, c, e)", len(dups), dups)
 	}
 
-	target := filepath.Join(findRepoRoot(), "conf", "all_models.json")
+	target := filepath.Join(utility.ConfDir(), "all_models.json")
 	data, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatalf("read %s: %v", target, err)
@@ -874,7 +875,7 @@ func lineAtOffset(data []byte, offset int64) int {
 // definitions, and the duplicate key meant the column the doc-delete fix (#17685) added -
 // with its analyzer - never took effect.
 func TestConfFilesHaveNoDuplicateKeys(t *testing.T) {
-	confDir := filepath.Join(findRepoRoot(), "conf")
+	confDir := utility.ConfDir()
 	var files []string
 	err := filepath.WalkDir(confDir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -927,7 +928,7 @@ func TestAllModelsCatalogTokenizerTagsAreKnown(t *testing.T) {
 		t.Fatal("tokenizer.CounterStatuses reports no counters; the check would pass vacuously")
 	}
 
-	target := filepath.Join(findRepoRoot(), "conf", "all_models.json")
+	target := filepath.Join(utility.ConfDir(), "all_models.json")
 	data, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatalf("read %s: %v", target, err)

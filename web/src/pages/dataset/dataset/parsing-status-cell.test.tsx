@@ -5,6 +5,11 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+jest.mock('@/locales/config', () => ({
+  __esModule: true,
+  default: { t: (key: string) => key },
+}));
+
 jest.mock('./reparse-dialog', () => ({
   ReparseDialog: () => null,
 }));
@@ -42,6 +47,7 @@ import {
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const baseRecord = {
+  operator_permission: 1,
   id: 'doc-1',
   dataset_id: 'dataset-1',
   name: 'doc.pdf',
@@ -241,12 +247,47 @@ describe('ParsingStatusCell', () => {
     });
 
     expect(getSection(container)).toHaveAttribute('data-state', 'fail');
+    expect(screen.getByText('knowledgeDetails.viewError')).toBeVisible();
     expect(container.querySelector('svg.lucide-triangle-alert')).toBeVisible();
     fireEvent.click(screen.getByTestId('document-view-error'));
 
     expect(mockShowLog).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'doc-1' }),
     );
+  });
+
+  it.each([undefined, 'parser_error', 'license_required'])(
+    'keeps View error for an unclassified failure (%s)',
+    (errorCode) => {
+      renderCell({
+        ingestion_status: IngestionTaskStatus.FAILED,
+        latest_ingestion_event: {
+          error_code: errorCode,
+          message: 'feature is not enabled by the license',
+        },
+      });
+
+      expect(screen.getByText('knowledgeDetails.viewError')).toBeVisible();
+      expect(
+        screen.queryByText('knowledgeDetails.licenseRequired'),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    IngestionTaskStatus.CREATED,
+    IngestionTaskStatus.RUNNING,
+    IngestionTaskStatus.COMPLETED,
+  ])('ignores a stale license error while %s', (ingestionStatus) => {
+    renderCell({
+      ingestion_status: ingestionStatus,
+      latest_ingestion_event: { error_code: 'license_required' },
+    });
+
+    expect(screen.queryByTestId('document-view-error')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('knowledgeDetails.licenseRequired'),
+    ).not.toBeInTheDocument();
   });
 
   it('opens the document log from a non-failure status dot', () => {

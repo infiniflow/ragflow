@@ -17,10 +17,6 @@ import (
 // UpdateDocumentMetadataConfig updates the metadata config for a document in a dataset.
 func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
 
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
@@ -28,6 +24,10 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datas
 			return nil, common.CodeDataError, fmt.Errorf("document %s not found in dataset %s", documentID, datasetID)
 		}
 		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
+	}
+	if err := service.CheckDocumentManage(ctx, documentID, datasetID, permission.OperationUpdate, ""); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	metadata, ok := req["metadata"]
@@ -101,7 +101,7 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID string
 func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationShare); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}

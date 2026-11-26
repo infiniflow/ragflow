@@ -613,6 +613,9 @@ func (s *ClawHubSource) doRequestWithRetry(method, url string, body []byte) ([]b
 	return nil, fmt.Errorf("%s", userMsg)
 }
 
+// validSlugRe gates the exact-slug candidate before a lookup.
+var validSlugRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
 // exactSlugMeta tries to find skill by exact slug match
 func (s *ClawHubSource) exactSlugMeta(query string) (*SkillMetadata, error) {
 	slug := extractSlug(query)
@@ -621,7 +624,7 @@ func (s *ClawHubSource) exactSlugMeta(query string) (*SkillMetadata, error) {
 	candidates := []string{}
 
 	// If slug looks valid, add it
-	if slug != "" && regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`).MatchString(slug) {
+	if slug != "" && validSlugRe.MatchString(slug) {
 		candidates = append(candidates, slug)
 	}
 
@@ -881,10 +884,12 @@ func dedupeResults(results []*SkillMetadata) []*SkillMetadata {
 	return unique
 }
 
+// nonQueryTermCharRe splits query text into normalized terms.
+var nonQueryTermCharRe = regexp.MustCompile(`[^a-z0-9]+`)
+
 // extractQueryTerms splits query into normalized terms
 func extractQueryTerms(query string) []string {
-	re := regexp.MustCompile(`[^a-z0-9]+`)
-	parts := re.Split(strings.ToLower(query), -1)
+	parts := nonQueryTermCharRe.Split(strings.ToLower(query), -1)
 	result := []string{}
 	for _, p := range parts {
 		if p != "" {

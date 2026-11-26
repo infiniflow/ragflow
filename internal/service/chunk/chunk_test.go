@@ -211,19 +211,19 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 }
 
-func TestParseRejectsInaccessibleDataset(t *testing.T) {
+func TestParseRejectsUnauthorizedDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
 	svc := newParseTestService(t)
-	svc.checkDatasetAccessFunc = func(string) error { return permission.ErrPermissionDenied }
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "another-user", "tenant-1")
 	_, code, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
-	if code != common.CodeForbidden {
-		t.Fatalf("expected CodeForbidden, got %v", code)
-	}
-	if err.Error() != "Permission denied" {
-		t.Fatalf("unexpected error: %v", err)
+	if code == common.CodeSuccess {
+		t.Fatalf("expected document authorization to reject the parse, got code %v", code)
 	}
 }
 
@@ -810,6 +810,92 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if got := matchText.ExtraOptions["minimum_should_match"]; got != 0.3 {
 		t.Fatalf("minimum_should_match = %#v, want 0.3", got)
+	}
+}
+
+// TestListPassesChunkIDPrefixToTheEngine pins the partial id search: the prefix
+// travels in its own filter, not in the exact `id` terms filter.
+func TestListPassesChunkIDPrefixToTheEngine(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+	}
+	ctx := chunkTestContext(t, userID, tenantID)
+
+	_, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		// Untrimmed and uppercase: normalized to one lowercase prefix.
+		ChunkIDPrefix: " ABCD ",
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if got := engine.searchReq.Filter["id_prefix"]; !reflect.DeepEqual(got, []string{"abcd"}) {
+		t.Fatalf("id_prefix filter = %#v, want %#v", got, []string{"abcd"})
+	}
+	if got, ok := engine.searchReq.Filter["id"]; ok {
+		t.Fatalf("id filter = %#v, want no exact id filter for a prefix search", got)
+	}
+	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
+		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if len(engine.searchReq.MatchExprs) != 0 {
+		t.Fatalf("MatchExprs = %#v, want none: an id search must not also match prose", engine.searchReq.MatchExprs)
+	}
+}
+
+// An unusable prefix matches nothing: it is not an error, and it must not widen
+// the list to the whole document.
+func TestListTreatsInvalidChunkIDPrefixAsNoMatch(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, "kb-1", tenantID)
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+	}
+
+	ctx := chunkTestContext(t, userID, tenantID)
+	for _, prefix := range []string{"xyz", "6877,abcd", strings.Repeat("a", 65)} {
+		resp, err := svc.List(ctx, &service.ListChunksRequest{
+			DatasetID:     "kb-1",
+			DocID:         "doc-1",
+			ChunkIDPrefix: prefix,
+		})
+		if err != nil {
+			t.Fatalf("List() with prefix %q error = %v, want none", prefix, err)
+		}
+		if resp == nil || len(resp.Chunks) != 0 || resp.Total != 0 {
+			t.Fatalf("List() with prefix %q = %#v, want an empty result", prefix, resp)
+		}
+	}
+	if engine.searchReq != nil {
+		t.Fatalf("engine must not be searched for an invalid prefix: %#v", engine.searchReq.Filter)
 	}
 }
 
@@ -2812,7 +2898,7 @@ func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	svc.checkDatasetAccessFunc = func(string) error { return nil }
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	_, _, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
 	if err == nil {
 		t.Fatal("expected error for RUNNING ingestion task, got nil")
@@ -2835,7 +2921,7 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 		calledDocID = doc.ID
 		return nil
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	_, code, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

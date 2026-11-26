@@ -32,6 +32,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -351,12 +353,12 @@ func (c *R2Connector) sourceDocument(sourceID string, object r2Object) (SourceDo
 	}
 	fileName := path.Base(object.Key)
 	fetch := r2FetchReference{Key: object.Key}
-	fetchKey, _ := json.Marshal(fetch)
+	fetchKey := utility.MustJSON(fetch)
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: c.semanticIdentifier(object.Key, fileName),
 		Extension:          strings.ToLower(filepath.Ext(fileName)),
-		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: object.Size},
+		FetchRef:           &FetchReference{Key: fetchKey, SizeHint: object.Size},
 		UpdatedAt:          object.LastModified,
 		SizeBytes:          object.Size,
 		Metadata: map[string]any{

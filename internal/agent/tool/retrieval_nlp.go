@@ -194,9 +194,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if err != nil {
 		return nil, err
 	}
-	if len(datasets.tenantIDs) != 1 {
-		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
-	}
+	// The datasets may span tenants: a team-shared dataset stays in the sharing
+	// tenant's index while the conversation reading it lives in the caller's.
+	// Both legs below are already per-dataset (nlp searches one index per tenant,
+	// and the embedding-model validation requires a single base model), so the
+	// scope is the full tenant set, not one tenant.
 	// Dataset authorization must use the caller identity established by the
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
 	userID := permission.UserIDFromContext(ctx)
@@ -229,13 +231,13 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		_, permissionErr := permissionresponse.Normalize(err)
 		return nil, permissionErr
 	}
+	refs := make([]permission.ResourceRef, 0, len(datasets.kbIDs))
 	for _, datasetID := range datasets.kbIDs {
-		if err := checker.CheckResource(ctx, permission.ResourceRef{
-			Kind: permission.ResourceKindDataset, ID: datasetID,
-		}, permission.OperationUse); err != nil {
-			_, permissionErr := permissionresponse.Normalize(err)
-			return nil, permissionErr
-		}
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID})
+	}
+	if err := permission.CheckResources(ctx, checker, refs, permission.OperationUse); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
 	}
 	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
