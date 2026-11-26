@@ -165,7 +165,12 @@ function ConditionCards({
           />
         </CardContent>
       </Card>
-      <Button variant={'ghost'} type="button" onClick={() => remove(index)}>
+      <Button
+        variant={'ghost'}
+        type="button"
+        disabled={form.formState.disabled}
+        onClick={() => remove(index)}
+      >
         <X />
       </Button>
     </div>
@@ -219,7 +224,11 @@ export function MetadataFilterConditions({
         <FormLabel>{t('chat.conditions')}</FormLabel>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'ghost'} type="button">
+            <Button
+              variant={'ghost'}
+              type="button"
+              disabled={form.formState.disabled}
+            >
               <Plus />
             </Button>
           </DropdownMenuTrigger>
@@ -231,7 +240,11 @@ export function MetadataFilterConditions({
             ) : (
               metadataKeys.map((key, idx) => {
                 return (
-                  <DropdownMenuItem key={idx} onClick={add(key)}>
+                  <DropdownMenuItem
+                    key={idx}
+                    disabled={form.formState.disabled}
+                    onClick={add(key)}
+                  >
                     {key}
                   </DropdownMenuItem>
                 );

@@ -5,7 +5,7 @@ import { clearSensitiveFields } from './clear-sensitive-fields';
 /**
  * Shared agent-DSL download path: strips sensitive credentials
  * and writes the canonical wire shape to `<title>.json`. Used by the
- * canvas export button and the version-history dialog so both emit
+ * canvas export button and the version-history page so both emit
  * the same structure.
  */
 export const downloadDsl = (dsl: DSL | Record<string, any>, title: string) => {

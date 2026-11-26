@@ -18,6 +18,7 @@ package nlp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -37,6 +38,17 @@ import (
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
+)
+
+// Retrieval-side model failure markers: a gp- failover caller uses these to
+// attribute an invocation failure to the model member behind the group rather
+// than to the document engine or the request itself. Only model-side failures
+// may flip a group member inactive.
+var (
+	// ErrEmbeddingModelSide wraps query-embedding failures from GetVector.
+	ErrEmbeddingModelSide = errors.New("embedding model call failed")
+	// ErrRerankModelSide wraps rerank scoring failures from Retrieval.
+	ErrRerankModelSide = errors.New("rerank model call failed")
 )
 
 // RetrievalService provides retrieval search functionality
@@ -388,7 +400,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["kb_id"]; ok {
 			resultChunk["kb_id"] = v
 		}
-		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
+		if kind := common.FirstEngineString(chunk["compile_kwd"]); kind != "" {
 			resultChunk["compile_kwd"] = kind
 		}
 		if v, ok := chunk["important_kwd"]; ok {
@@ -558,7 +570,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 	useVastbase := engine.IsVastbase(s.docEngine.GetType())
 
 	if req.RerankModel != nil && searchResult.Total > 0 {
-		return RerankByModel(
+		sim, tsim, vsim, rerankErr := RerankByModel(
 			ctx,
 			req.RerankModel,
 			searchResult.Chunks,
@@ -572,6 +584,13 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			*req.RankFeature,
 			req.Language,
 		)
+		if rerankErr != nil {
+			// Attribute the failure to the rerank model, not to the document
+			// engine: a gp- failover caller uses the marker to decide whether
+			// a group member should be flipped.
+			return sim, tsim, vsim, fmt.Errorf("%w: rerank failed: %w", ErrRerankModelSide, rerankErr)
+		}
+		return sim, tsim, vsim, nil
 	}
 
 	if useInfinity {
@@ -1096,7 +1115,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	// the wrong space for those providers.
 	embeddings, err := embModel.Embed(ctx, models.EmbedRequest{Texts: []string{txt}, Query: true}, embeddingConfig, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: query embedding failed: %w", ErrEmbeddingModelSide, err)
 	}
 
 	vector := embeddings[0].Embedding
@@ -1317,7 +1336,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		if len(chunk) == 0 || isDatasetCompilationChunk(chunk) {
 			continue
 		}
-		if docID := strings.TrimSpace(firstStringValue(chunk["doc_id"])); docID != "" {
+		if docID := strings.TrimSpace(common.FirstEngineString(chunk["doc_id"])); docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
 	}
@@ -1356,7 +1375,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 			continue
 		}
 		if !isDatasetCompilationChunk(chunk) {
-			docID := strings.TrimSpace(firstStringValue(chunk["doc_id"]))
+			docID := strings.TrimSpace(common.FirstEngineString(chunk["doc_id"]))
 			if _, docExists := existingDocIDs[docID]; docID == "" || !docExists {
 				removed++
 				continue

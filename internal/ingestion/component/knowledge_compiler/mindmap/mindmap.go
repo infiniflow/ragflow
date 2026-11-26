@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
@@ -70,7 +71,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	batches := packMindmapBatches(inputs.Chunks, deps.Tokenizer)
 	results := make([]mindmapBatchResult, len(batches))
 	jobs := make([]func() error, 0, len(batches))
-	generated := deps.Progress.Sub(0, 3).Counter(ctx, len(batches))
+	generated := deps.Progress.Sub(0, 3).WithPhase("batch:generate").Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -399,19 +400,8 @@ func mergeMindmapBatchResults(results []mindmapBatchResult) *utility.Node {
 }
 
 func mergeMindmapIDs(left, right []string) []string {
-	seen := make(map[string]struct{}, len(left)+len(right))
-	merged := make([]string, 0, len(left)+len(right))
-	for _, ids := range [][]string{left, right} {
-		for _, id := range ids {
-			if id != "" {
-				if _, ok := seen[id]; !ok {
-					seen[id] = struct{}{}
-					merged = append(merged, id)
-				}
-			}
-		}
-	}
-	return merged
+	merged := appcommon.AppendUnique(make([]string, 0, len(left)+len(right)), left)
+	return appcommon.AppendUnique(merged, right)
 }
 
 // payloadJSON serializes the graph payload stored in content_with_weight.

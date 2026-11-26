@@ -1,5 +1,5 @@
-import LLMLabel from '@/components/llm-select/llm-label';
 import { ModelTypeMap } from '@/components/model-tree-select';
+import { ModelReferenceLabel } from '@/ee/components/model-reference-label';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -104,25 +104,30 @@ export function LLMLabelCard({
   // importer the owner — anything else is flagged. Gated on isFetched so a
   // slow list never flashes a false error state. The display name likewise
   // resolves through the owner's list.
-  const { validIds, isFetched } = useModelValidIds(
+  const { validIds, isFetched, getPendingMessage } = useModelValidIds(
     modelTypes,
     resourceTenantId,
   );
 
-  const isUnavailable = !!llmId && isFetched && !validIds.has(llmId);
+  const pendingMessage = llmId ? getPendingMessage?.(llmId) : undefined;
+  const isUnavailable =
+    !!llmId && !pendingMessage && isFetched && !validIds.has(llmId);
   // An empty model keeps the historical red state; a loading list shows nothing.
   const isInvalid = llmId ? isUnavailable : true;
 
   return (
     <LabelCard
       className={isInvalid ? 'bg-state-error-5 border-state-error border' : ''}
-      title={isUnavailable ? t('common.modelUnavailable') : undefined}
+      title={
+        pendingMessage ??
+        (isUnavailable ? t('common.modelUnavailable') : undefined)
+      }
     >
       <span className="flex items-center gap-1.5">
         {isUnavailable && (
           <TriangleAlert className="size-4 shrink-0 text-state-error" />
         )}
-        <LLMLabel value={llmId} resourceTenantId={resourceTenantId}></LLMLabel>
+        <ModelReferenceLabel value={llmId} ownerTenantId={resourceTenantId} />
       </span>
     </LabelCard>
   );

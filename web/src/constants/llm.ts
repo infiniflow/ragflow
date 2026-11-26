@@ -135,6 +135,8 @@ export enum LLMFactory {
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
   Morse = 'Morse',
+  TeamoRouter = 'TeamoRouter',
+  Straitly = 'Straitly',
 }
 
 // Please lowercase the file name
@@ -251,6 +253,8 @@ export const IconMap = {
   [LLMFactory.HopBase]: 'hopbase',
   [LLMFactory.GreenNode]: 'greennode',
   [LLMFactory.Morse]: 'morse',
+  [LLMFactory.TeamoRouter]: 'teamorouter',
+  [LLMFactory.Straitly]: 'straitly',
 };
 
 /**
@@ -316,6 +320,8 @@ export const APIMapUrl = {
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.Morse]: 'https://console.trymorse.ai',
+  [LLMFactory.TeamoRouter]: 'https://teamorouter.com/dashboard?tab=api-keys',
+  [LLMFactory.Straitly]: 'https://straitly.ai/app/keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

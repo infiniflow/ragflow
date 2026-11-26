@@ -15,6 +15,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -76,7 +77,7 @@ func newWebhookTraceTestHandler(t *testing.T) (*AgentHandler, *goredis.Client) {
 
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			value, getErr := rdb.Get(ctx, key).Result()
 			if errors.Is(getErr, goredis.Nil) {
 				return "", nil
@@ -475,7 +476,7 @@ func TestGetAgentWebhookLogsRedactsRedisFailures(t *testing.T) {
 		t.Fatalf("corrupt response = %+v", corrupt)
 	}
 
-	h.WithRedisGetter(func(string) (string, error) {
+	h.WithRedisGetter(func(context.Context, string) (string, error) {
 		return "", errors.New("redis: connection refused")
 	})
 	failed := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
@@ -488,7 +489,7 @@ func TestGetAgentWebhookLogsRedactsRedisFailures(t *testing.T) {
 func TestGetAgentWebhookLogsChecksOwnershipBeforeRedis(t *testing.T) {
 	h, _ := newWebhookTraceTestHandler(t)
 	redisCalls := 0
-	h.WithRedisGetter(func(string) (string, error) {
+	h.WithRedisGetter(func(context.Context, string) (string, error) {
 		redisCalls++
 		return "", nil
 	})

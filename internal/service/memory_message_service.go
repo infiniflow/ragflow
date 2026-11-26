@@ -57,6 +57,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"ragflow/internal/common"
@@ -109,7 +110,11 @@ type MemoryMessageService struct {
 	taskDAO       *dao.TaskDAO
 	memoryTaskDAO *dao.MemoryTaskDAO
 	taskPublisher TaskPublisher
-	resumeTask    func(context.Context, *entity.MemoryTask, string) error
+	// db is inherited from the owning MemoryService at construction so the
+	// embedding failover can flip a gp- group member without touching the
+	// package-level dao.DB singleton (the arch test forbids it here).
+	db         *gorm.DB
+	resumeTask func(context.Context, *entity.MemoryTask, string) error
 	// tierResolver maps a tenant to its ingestion queue tier so memory
 	// wake-ups land on the same priority lane as document ingestion for that
 	// tenant. Injected (defaults to defaultTierResolver) rather than read from
@@ -150,8 +155,13 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 		mq = memories.mqEngine
 		kv = memories.kvrocksClient
 	}
+	var db *gorm.DB
+	if memories != nil {
+		db = memories.db
+	}
 	return &MemoryMessageService{
 		memories:      memories,
+		db:            db,
 		taskDAO:       dao.NewTaskDAO(),
 		memoryTaskDAO: dao.NewMemoryTaskDAO(),
 		taskPublisher: NewMessageQueueTaskPublisherWithEngine(mq),
@@ -406,18 +416,28 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		contents[i], _ = message["content"].(string)
 	}
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, mem.TenantID), mem.EmbdID)
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
+	var embeddings []models.EmbeddingData
+	err := dao.InvokeWithGroupFailover(ctx, s.db, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, mem.TenantID), mem.EmbdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			// Embed inside the model's window: memory contents are caller-supplied and
+			// unbounded, and the provider answers 400/20015 instead of truncating them.
+			embeds, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
+			if invErr != nil {
+				return fmt.Errorf("embed model: %w", invErr)
+			}
+			if len(embeds) != len(messages) {
+				return fmt.Errorf("embedding response count %d does not match message count %d", len(embeds), len(messages))
+			}
+			embeddings = embeds
+			return nil
+		}, nil)
 	if err != nil {
 		return err
-	}
-	// Embed inside the model's window: memory contents are caller-supplied and
-	// unbounded, and the provider answers 400/20015 instead of truncating them.
-	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
-	if err != nil {
-		return fmt.Errorf("embed model: %w", err)
-	}
-	if len(embeddings) != len(messages) {
-		return fmt.Errorf("embedding response count %d does not match message count %d", len(embeddings), len(messages))
 	}
 
 	vectorDim := 0
@@ -510,8 +530,6 @@ func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resol
 
 func mapStringAny(in map[string]any) map[string]interface{} {
 	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }

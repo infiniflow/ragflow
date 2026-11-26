@@ -102,6 +102,72 @@ func TestQAChunker_DelimiterComma(t *testing.T) {
 	}
 }
 
+// TestQAChunker_QuotedCommaCSVKeepsPairs covers a comma-separated text Q&A file
+// whose fields are quoted and contain commas — the shape a CSV export produces
+// when the questions themselves contain punctuation. Python decides the
+// delimiter with csv_pair_delimiter: a file with no TAB is comma separated, read
+// with csv.reader so quoting is honoured. The Go port counted lines that split
+// into exactly two on a raw "," split, so every quoted row counted as neither
+// comma nor tab separated and the file fell through to the TAB reader, which
+// found one field per line and produced no chunks at all.
+func TestQAChunker_QuotedCommaCSVKeepsPairs(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "faq.txt",
+		"output_format": "text",
+		"text": "\"What is Go, really?\",\"Go is a compiled language.\"\n" +
+			"\"What is Rust, really?\",\"Rust is a systems language.\"\n",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d: %v", len(chunks), chunks)
+	}
+	first, _ := chunks[0]["text"].(string)
+	if first != "Question: What is Go, really?\tAnswer: Go is a compiled language." {
+		t.Fatalf("unexpected first chunk: %q", first)
+	}
+}
+
+func TestQAChunker_QuotedMultilineCSVKeepsPairs(t *testing.T) {
+	// A quoted field may span physical lines while another field carries a TAB.
+	// Delimiter detection reads the payload as one CSV stream, as the extractor
+	// does, so the file stays comma separated and every pair survives.
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "faq.txt",
+		"output_format": "text",
+		"text": "\"Q1\",\"first line\nsecond line\"\n" +
+			"\"Q2\",\"plain\"\n" +
+			"\"Q3\",\"has\ttab\"\n",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d: %v", len(chunks), chunks)
+	}
+	first, _ := chunks[0]["text"].(string)
+	if first != "Question: Q1\tAnswer: first line\nsecond line" {
+		t.Fatalf("unexpected first chunk: %q", first)
+	}
+	last, _ := chunks[2]["text"].(string)
+	if last != "Question: Q3\tAnswer: has\ttab" {
+		t.Fatalf("unexpected last chunk: %q", last)
+	}
+}
+
 func TestQAChunker_Markdown(t *testing.T) {
 	comp, err := NewQAChunker(nil)
 	if err != nil {

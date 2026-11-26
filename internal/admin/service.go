@@ -370,7 +370,30 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*servicepkg.
 		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
-	return (servicepkg.UserDeletionService{}).Delete(ctx, user)
+	deletion := servicepkg.UserDeletionService{}
+	snapshot, result, err := deletion.DeleteTx(ctx, dao.DB, user)
+	if err != nil {
+		return nil, err
+	}
+	// dao.DB is a standalone handle: DeleteTx committed on return, so it is safe
+	// to clean up the external resources captured in the snapshot now.
+	warnings := deletion.CleanupUserExternal(ctx, snapshot)
+	if len(warnings) > 0 {
+		details := result.DeletedDetails
+		doneIndex := len(details)
+		for i, detail := range details {
+			if detail == "Delete done!" {
+				doneIndex = i
+				break
+			}
+		}
+		merged := make([]string, 0, len(details)+len(warnings))
+		merged = append(merged, details[:doneIndex]...)
+		merged = append(merged, warnings...)
+		merged = append(merged, details[doneIndex:]...)
+		result.DeletedDetails = merged
+	}
+	return result, nil
 }
 
 // ChangePassword change user password

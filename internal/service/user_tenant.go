@@ -234,6 +234,25 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, req *SetModelS
 		if info == nil {
 			return common.CodeArgumentError, fmt.Errorf("model %q is unavailable", modelRef)
 		}
+		if groupID, isGroupRef := common.ParseGroupModelRef(modelRef); isGroupRef {
+			// A gp- reference must round-trip unchanged: the id column keeps the
+			// gp- ref so calls keep resolving through the group's failover
+			// picker, and the legacy composite-name column carries the group's
+			// display name instead of whichever model the group happened to
+			// pick during validation.
+			groupName, groupErr := modelGroupDisplayName(permission.WithTenantID(ctx, tenantID), tenantID, groupID)
+			if groupErr != nil {
+				switch {
+				case errors.Is(groupErr, permission.ErrPermissionDenied), errors.Is(groupErr, permission.ErrResourceNotFound), errors.Is(groupErr, permission.ErrMembershipNotFound):
+					return common.CodeForbidden, groupErr
+				default:
+					return common.CodeArgumentError, fmt.Errorf("model group %q is unavailable: %w", modelRef, groupErr)
+				}
+			}
+			modelUpdates[legacyField] = groupName
+			modelUpdates[idField] = modelRef
+			continue
+		}
 		if info.InstanceName != "" {
 			modelUpdates[legacyField] = fmt.Sprintf("%s@%s@%s", info.Name, info.InstanceName, info.ProviderName)
 		} else if info.ProviderName != "" {
@@ -379,6 +398,25 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem,
 		}
 		_, _, modelType, err := defaultModelFields(model.modelType)
 		if err != nil {
+			continue
+		}
+		if _, isGroupRef := common.ParseGroupModelRef(modelRef); isGroupRef {
+			// A stored gp- reference echoes back as itself: the id stays the
+			// gp- ref the caller saved, and the display name is the group's
+			// name rather than whichever member model the group would pick.
+			groupName, groupErr := modelGroupDisplayName(permission.WithTenantID(ctx, tenantID), tenantID, strings.TrimPrefix(modelRef, common.GroupModelRefPrefix))
+			if groupErr != nil || strings.TrimSpace(groupName) == "" {
+				continue
+			}
+			emptyProvider, emptyInstance := "", ""
+			result = append(result, ModelItem{
+				ModelProvider: &emptyProvider,
+				ModelInstance: &emptyInstance,
+				ModelName:     &groupName,
+				ModelID:       modelRef,
+				ModelType:     model.modelType,
+				Enable:        true,
+			})
 			continue
 		}
 		info, err := factory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, modelRef)

@@ -37,7 +37,6 @@ import userService, {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFetchDefaultModelDictionary } from './use-llm-request';
 
 export const enum UserSettingApiAction {
   UserInfo = 'userInfo',
@@ -133,8 +132,6 @@ export const useSelectParserList = (): Array<{
     },
     staleTime: Infinity,
   });
-  useFetchDefaultModelDictionary(true);
-
   const defaultParsers = useMemo(
     () => [
       { value: 'naive', label: t('knowledgeConfiguration.parserLabel.naive') },

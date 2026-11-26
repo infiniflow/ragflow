@@ -39,27 +39,15 @@ import (
 // previously hardcoded — the system prompt (content) and the ordered tool set.
 // Putting these in a JSON file lets operators experiment with different prompts
 // and tool subsets without recompiling (or even restarting) RAGFlow.
-//
-// AuditMaxPass is how many audit passes the delivery gate may spend on a
-// template's FINAL message: one pass = one answer_auditor audit plus, on FAIL,
-// one repair turn. It is both the switch and the budget — 0 (or absent) means
-// the template ships unaudited, so a template opts into the gate by naming how
-// much it is willing to spend rather than by a separate boolean.
-//
-// The auditor is kept out of the agent's toolset on purpose: the agent only
-// produces the deliverable, the gate runs the audit (see runDeliveryGate).
 type Template struct {
-	ID           string `json:"id" yaml:"id"`
-	Name         string `json:"name" yaml:"name"`
-	Description  string `json:"description" yaml:"description"`
-	AuditMaxPass int    `json:"audit_max_pass" yaml:"audit_max_pass"`
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description" yaml:"description"`
 	// Temperature pins the sampling temperature of the model this agent runs
-	// on. The auditor's declaration is noise control in a machine-parsed
-	// verdict (see AuditTemperature); a producer's declaration is the
-	// operator's reasoning-strategy choice for that template - smart-reasoning
-	// pins 0.5 after the un-pinned model-default runs proved noisier than the
-	// exploration its sampling buys. An undeclared template leaves the field
-	// unset: the model's own default applies.
+	// on: the operator's reasoning-strategy choice for that template -
+	// smart-reasoning pins 0.5 after the un-pinned model-default runs proved
+	// noisier than the exploration its sampling buys. An undeclared template
+	// leaves the field unset: the model's own default applies.
 	Temperature   *float64 `json:"temperature" yaml:"temperature"`
 	Tools         []string `json:"tools" yaml:"tools"`
 	Content       string   `json:"content" yaml:"content"`
@@ -82,23 +70,16 @@ type toolFactory func(tenantID string, datasetIDs []string) tool.BaseTool
 
 // toolRegistry maps every supported tool name to its constructor. Keeping this
 // here means adding a new tool is a one-line registration, and the config drives
-// which subset is actually loaded. The answer_auditor is NOT in this map and must
-// not appear in a template's tools list: it wraps a nested ADK sub-agent bound to
-// the run's chat model and is assembled by Run for templates that declare
-// audit_max_pass > 0 — the delivery gate invokes it, not the agent. web_search is
-// NOT in this map either: toolsFor adds it when the conversation has a search
-// provider.
+// which subset is actually loaded. web_search is NOT in this map: toolsFor adds
+// it when the conversation has a search provider.
 func toolRegistry() map[string]toolFactory {
 	return map[string]toolFactory{
-		"think":          func(_ string, _ []string) tool.BaseTool { return NewThinkTool() },
-		"todo_write":     func(_ string, _ []string) tool.BaseTool { return NewTodoWriteTool() },
-		"run_javascript": func(_ string, _ []string) tool.BaseTool { return NewRunJavascriptTool() },
-		// The draft decomposition's structural check: header-only, deterministic
-		// and callable before any search (see tool_check_decomposition.go).
-		"check_decomposition": func(_ string, _ []string) tool.BaseTool { return NewCheckDecompositionTool() },
-		"grep_chunks":         func(_ string, d []string) tool.BaseTool { return NewGrepChunksTool(d) },
-		"search_chunks":       func(t string, d []string) tool.BaseTool { return NewSearchChunksTool(t, d) },
-		"search_bm25_chunks":  func(_ string, d []string) tool.BaseTool { return NewSearchBm25ChunksTool(d) },
+		"think":              func(_ string, _ []string) tool.BaseTool { return NewThinkTool() },
+		"todo_write":         func(_ string, _ []string) tool.BaseTool { return NewTodoWriteTool() },
+		"run_javascript":     func(_ string, _ []string) tool.BaseTool { return NewRunJavascriptTool() },
+		"grep_chunks":        func(_ string, d []string) tool.BaseTool { return NewGrepChunksTool(d) },
+		"search_chunks":      func(t string, d []string) tool.BaseTool { return NewSearchChunksTool(t, d) },
+		"search_bm25_chunks": func(_ string, d []string) tool.BaseTool { return NewSearchBm25ChunksTool(d) },
 		// The pure-vector leg: same payload as search_chunks, no keyword leg at
 		// all (see tool_search_semantic_chunks.go).
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },

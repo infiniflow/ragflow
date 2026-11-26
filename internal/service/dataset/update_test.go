@@ -544,6 +544,9 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 }
 
 func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermission(t *testing.T) {
+	if !datasetTestResourcePermissionsAvailable() {
+		t.Skip("requires enterprise resource permissions")
+	}
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
@@ -553,7 +556,7 @@ func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermissio
 		t.Fatalf("update kb permission: %v", err)
 	}
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
-	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "write")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "manage")
 
 	name := "Renamed by team member"
 	permission := string(entity.TenantPermissionTeam)
@@ -584,6 +587,9 @@ func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermissio
 }
 
 func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.T) {
+	if !datasetTestResourcePermissionsAvailable() {
+		t.Skip("requires enterprise resource permissions")
+	}
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -598,6 +604,7 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 	ensureDatasetTestMembership(t, "caller-1", "tenant-1", "normal")
 	ensureDatasetTestMembership(t, "caller-1", "caller-tenant", "owner")
+	grantDatasetTestResource(t, "tenant-1", "kb", "kb-1", "caller-1", "manage")
 	enableDatasetTestModelAccess(t, "tenant-1", "caller-1", "instance-1")
 
 	permission := string(entity.TenantPermissionTeam)

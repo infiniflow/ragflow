@@ -939,7 +939,7 @@ export const useUpdateVersion = () => {
 };
 
 // Shared query options for a single canvas version's detail (IFlow, dsl
-// included). Both useFetchVersion (canvas version dialog) and
+// included). Both useFetchVersion (canvas version history page) and
 // useFetchPipelineDslByPipelineId (operator tabs) must cache the same shape
 // under AgentKeys.version so they can share the entry safely.
 const canvasVersionQuery = (agentId?: string, versionId?: string) => ({
@@ -1166,7 +1166,11 @@ export const BuiltinPipelineKeys = {
 };
 
 export const useFetchBuiltinPipelines = () => {
-  const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
+  const {
+    data,
+    isFetching: loading,
+    isError,
+  } = useQuery<IBuiltinPipelineListResponse>({
     queryKey: BuiltinPipelineKeys.list('builtin'),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
@@ -1185,7 +1189,7 @@ export const useFetchBuiltinPipelines = () => {
       value: item.id,
     })) ?? [];
 
-  return { data, loading, options };
+  return { data, loading, isError, options };
 };
 
 export const useCancelDataflow = () => {

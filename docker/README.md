@@ -199,6 +199,11 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
 [service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template by expanding `$NAME`, `${NAME}`, and `${NAME:-default}` placeholders. Other template text, including YAML quotes and comments, is copied verbatim.
 
+Service ports in the template are fixed connection ports. The port variables in
+`.env`, such as `OCEANBASE_PORT`, `SEEKDB_PORT`, and `VB_PORT`, control published
+host ports in Compose. For an external service on a different port, edit its
+port in `service_conf.yaml.template` directly.
+
 - `api`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
   - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.

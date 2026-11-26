@@ -63,6 +63,17 @@ func RetryDelayFromCtx(ctx context.Context) (time.Duration, bool) {
 // (used where the caller already budgets external calls itself, e.g. the
 // entity-merge disambiguator — retrying there would blow through the budget).
 func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ...int) (map[string]any, error) {
+	return genJSON(ctx, chat, req, tryUnmarshalJSONErr, retryMax...)
+}
+
+// GenJSONOrArray behaves like GenJSON, except top-level JSON arrays [...] are
+// accepted and wrapped into {"items": [...]} for callers whose contract is a
+// homogeneous item list.
+func GenJSONOrArray(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ...int) (map[string]any, error) {
+	return genJSON(ctx, chat, req, tryUnmarshalJSONOrArrayErr, retryMax...)
+}
+
+func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn func(string) (map[string]any, error), retryMax ...int) (map[string]any, error) {
 	maxRetries := jsonRetryMax
 	if len(retryMax) > 0 {
 		maxRetries = retryMax[0]
@@ -73,13 +84,12 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	// GenJSON attempt, avoiding multiplicative nested retries.
 	req.DisableRetry = true
 	var lastErr error
-	delay := jsonRetryDelay
+	// baseDelay is the (possibly test-overridden) initial delay; the capped
+	// exponential backoff recomputes every attempt from this same base.
+	baseDelay := jsonRetryDelay
 	if d, ok := RetryDelayFromCtx(ctx); ok {
-		delay = d
+		baseDelay = d
 	}
-	// baseDelay captures the (possibly test-overridden) initial delay so the
-	// capped exponential backoff recomputes from the same base every attempt.
-	baseDelay := delay
 	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
@@ -97,29 +107,34 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			lastErr = err
 		} else {
 			if repaired, repairErr := RepairJSONText(resp.Content); repairErr == nil {
-				if m, unmarshalErr := tryUnmarshalJSONErr(repaired); unmarshalErr == nil {
+				if m, unmarshalErr := unmarshalFn(repaired); unmarshalErr == nil {
 					if message, ok := failureReporter.RecoveryMessage(attempt + 1); ok {
 						runtime.ReportProgressMessage(ctx, "Compiler", message)
 					}
 					return m, nil
+				} else {
+					common.Info("knowledge_compiler: GenJSON unparseable repaired candidate",
+						zap.Int("attempt", attempt),
+						zap.Int("len", len(repaired)), zap.Error(unmarshalErr))
 				}
-			}
-			candidates := jsonCandidates(resp.Content)
-			for _, candidate := range candidates {
-				if m, ok := tryUnmarshalJSON(candidate); ok {
-					return m, nil
+			} else {
+				candidates := jsonCandidates(resp.Content)
+				for _, candidate := range candidates {
+					if m, err := unmarshalFn(candidate); err == nil {
+						return m, nil
+					}
 				}
-			}
-			// A non-JSON reply must NOT be persisted/reused; discard it and
-			// immediately re-issue the call so a formatting hiccup does not
-			// abort the whole compile. Log candidate length and the unmarshal
-			// error only — the raw body may carry customer-derived content
-			// (PII), so it is deliberately excluded from the log.
-			for i, candidate := range candidates {
-				_, perr := tryUnmarshalJSONErr(candidate)
-				common.Info("knowledge_compiler: GenJSON unparseable candidate",
-					zap.Int("attempt", attempt), zap.Int("candidate", i),
-					zap.Int("len", len(candidate)), zap.Error(perr))
+				// A non-JSON reply must NOT be persisted/reused; discard it and
+				// immediately re-issue the call so a formatting hiccup does not
+				// abort the whole compile. Log candidate length and the unmarshal
+				// error only — the raw body may carry customer-derived content
+				// (PII), so it is deliberately excluded from the log.
+				for i, candidate := range candidates {
+					_, perr := unmarshalFn(candidate)
+					common.Info("knowledge_compiler: GenJSON unparseable candidate",
+						zap.Int("attempt", attempt), zap.Int("candidate", i),
+						zap.Int("len", len(candidate)), zap.Error(perr))
+				}
 			}
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
@@ -129,13 +144,13 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			}
 			break
 		}
-		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
+		// Compute the capped delay for the current attempt (1-indexed:
+		// attempt 0 -> baseDelay) before reporting and sleeping, so the
+		// progress message names the wait the caller is about to take.
+		d := common.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
+		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, d, lastErr, false); ok {
 			runtime.ReportProgressMessage(ctx, "Compiler", message)
 		}
-		// Compute the capped, jittered delay for the current attempt
-		// (1-indexed: attempt 0 -> baseDelay) before sleeping, so the first
-		// retry is also clamped to the 1-minute ceiling.
-		d := common.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
 		common.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
@@ -246,4 +261,19 @@ func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+func tryUnmarshalJSONOrArrayErr(s string) (map[string]any, error) {
+	if m, err := tryUnmarshalJSONErr(s); err == nil {
+		return m, nil
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("empty candidate")
+	}
+	var arr []any
+	if err := json.Unmarshal([]byte(s), &arr); err == nil {
+		return map[string]any{"items": arr}, nil
+	}
+	return nil, fmt.Errorf("candidate is neither JSON object nor array")
 }

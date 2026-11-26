@@ -42,11 +42,13 @@ export type IAddProviderInstanceRequestBody = IAddLlmRequestBody & {
 
 export interface IDeleteProviderInstanceRequestBody {
   provider_name: string;
+  provider_id?: string;
   instances: string[];
 }
 
 export interface IShowProviderInstanceRequestParams {
   provider_name: string;
+  provider_id?: string;
   id: string;
 }
 
@@ -71,6 +73,8 @@ export interface IListAllModelsRequestParams {
 export interface IUpdateModelStatusRequestBody {
   provider_name: string;
   instance_name: string;
+  provider_id?: string;
+  instance_id?: string;
   model_name: string;
   status: 'active' | 'inactive';
 }
@@ -82,6 +86,8 @@ export interface IUpdateModelStatusRequestBody {
 export interface IPatchInstanceModelRequestBody {
   provider_name: string;
   instance_name: string;
+  provider_id?: string;
+  instance_id?: string;
   model_name: string;
   status?: 'active' | 'inactive';
   max_tokens?: number;
@@ -92,12 +98,16 @@ export interface IPatchInstanceModelRequestBody {
 export interface IDeleteInstanceModelsRequestBody {
   provider_name: string;
   instance_name: string;
+  provider_id?: string;
+  instance_id?: string;
   model_name: string[];
 }
 
 export interface IUpdateProviderInstanceRequestBody {
   provider_name: string;
   instance_name: string;
+  provider_id?: string;
+  instance_id?: string;
   id: string;
   /** Plain API key or a provider credential/configuration object. Blank
    * credential values keep the saved value; use clear_api_key to remove it. */
@@ -148,6 +158,7 @@ export interface IProviderModelItem {
  */
 export interface IListProviderModelsRequestBody {
   provider_name: string;
+  provider_id?: string;
   api_key?: string | object;
   base_url?: string;
   region?: string;
@@ -159,6 +170,7 @@ export interface IListProviderModelsRequestBody {
    * server applies the current form's non-secret configuration and endpoint.
    */
   instance_name?: string;
+  instance_id?: string;
   /**
    * Returns failures to the caller instead of raising the global notification,
    * so they can be explained next to the form.

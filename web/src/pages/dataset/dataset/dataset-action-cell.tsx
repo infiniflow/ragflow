@@ -25,6 +25,10 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import {
+  hasManagePermissionPermission,
+  hasReadPermission,
+} from '@/ee/utils/permission-util';
 import { cn } from '@/lib/utils';
 import { downloadDatasetDocument } from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
@@ -48,6 +52,8 @@ const FunctionMap = {
 type DatasetActionCellProps = {
   record: IDocumentInfo;
   datasetEditButtonDisabled?: boolean;
+  documentEditButtonDisabled?: boolean;
+  documentManageButtonDisabled?: boolean;
 } & UseRenameDocumentShowType &
   Pick<UseRowSelectionType, 'setRowSelection'>;
 
@@ -56,12 +62,15 @@ export function DatasetActionCell({
   showRenameModal,
   setRowSelection,
   datasetEditButtonDisabled,
+  documentEditButtonDisabled,
+  documentManageButtonDisabled,
 }: DatasetActionCellProps) {
   const { t } = useTranslation();
   const { id, type } = record;
   const [menuOpen, setMenuOpen] = useState(false);
   const isRunning = isDocumentProcessing(record);
   const isVirtualDocument = type === DocumentType.Virtual;
+  const canReadDocument = hasReadPermission(record.operator_permission ?? 0);
   const actionDisabled = isRunning || Boolean(datasetEditButtonDisabled);
   const enabled = record.status === '1';
   const statusLabel = enabled
@@ -130,7 +139,12 @@ export function DatasetActionCell({
         actionClassName,
       )}
     >
-      <DocumentPrivilegeAction record={record} disabled={actionDisabled} />
+      <DocumentPrivilegeAction
+        record={record}
+        disabled={
+          !hasManagePermissionPermission(record.operator_permission ?? 0)
+        }
+      />
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <MoreButton aria-label={t('knowledgeDetails.action')} />
@@ -149,13 +163,17 @@ export function DatasetActionCell({
             <Switch
               checked={enabled}
               onCheckedChange={handleStatusChange}
-              disabled={statusLoading}
+              disabled={
+                statusLoading ||
+                isRunning ||
+                Boolean(documentEditButtonDisabled)
+              }
               aria-label={statusLabel}
             />
           </DropdownMenuLabel>
           <DropdownMenuItem
             justifyBetween={false}
-            disabled={actionDisabled}
+            disabled={isRunning || Boolean(documentManageButtonDisabled)}
             onClick={handleRename}
           >
             <PenLine />
@@ -165,7 +183,7 @@ export function DatasetActionCell({
             <HoverCardTrigger asChild>
               <DropdownMenuItem
                 justifyBetween={false}
-                disabled={isRunning}
+                disabled={!canReadDocument}
                 onSelect={handleKeepMenuOpen}
               >
                 <Eye />
@@ -181,9 +199,12 @@ export function DatasetActionCell({
                 {Object.entries(record)
                   .filter(([key]) => Fields.some((x) => x === key))
                   .map(([key, value], idx) => {
+                    const label = t(`knowledgeDetails.infoFields.${key}`, {
+                      defaultValue: key,
+                    });
                     return (
                       <li key={idx} className="flex gap-2">
-                        {key}:
+                        {label}:
                         <div>
                           {key in FunctionMap
                             ? FunctionMap[key as keyof typeof FunctionMap](
@@ -201,7 +222,7 @@ export function DatasetActionCell({
             <DropdownMenuItem
               justifyBetween={false}
               onClick={onDownloadDocument}
-              disabled={isRunning}
+              disabled={isRunning || !canReadDocument}
             >
               <Download />
               {t('common.download')}

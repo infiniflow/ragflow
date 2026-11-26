@@ -230,6 +230,7 @@ export function KnowledgeBaseFormField({
           data-testid="chat-datasets-combobox"
           options={options}
           onValueChange={field.onChange}
+          disabled={field.disabled}
           placeholder={t('chat.knowledgeBasesPlaceholder')}
           variant="inverted"
           maxCount={100}

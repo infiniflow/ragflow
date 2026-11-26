@@ -632,6 +632,22 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 	common.RespondSuccess(c, result, "success")
 }
 
+// GetIngestionProgress handles GET
+// /api/v1/datasets/:dataset_id/ingestions/:log_id/progress.
+func (h *DatasetsHandler) GetIngestionProgress(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.RespondError(c, errorCode, errorMessage)
+		return
+	}
+	result, code, err := h.datasetsService.GetIngestionProgress(c.Request.Context(), c.Param("dataset_id"), c.Param("log_id"))
+	if err != nil {
+		common.RespondError(c, code, err.Error())
+		return
+	}
+	common.RespondSuccess(c, result, "success")
+}
+
 // ListIngestionMessages handles GET
 // /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
 func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {

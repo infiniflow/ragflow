@@ -1,17 +1,19 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { MoreButton } from '@/components/more-button';
+import { ConversationList } from '@/components/conversation-list';
 import { SecondarySidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
+import { useChatSessionAccess } from '@/ee/pages/next-chats/chat-session-access';
 import {
   useFetchChat,
   useGetChatSearchParams,
   useRemoveSessions,
 } from '@/hooks/use-chat-request';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { IConversation } from '@/interfaces/database/chat';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
-import { cn } from '@/lib/utils';
 import {
   LucideActivity,
   LucideCopyX,
@@ -22,7 +24,7 @@ import {
   LucideTrash2,
   LucideUndo2,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatStreamStore } from '../chat-stream/store';
 import { useChatUrlParams } from '../hooks/use-chat-url';
@@ -61,6 +63,13 @@ export function Sessions({
     handleScroll,
   } = useSelectDerivedConversationList();
   const { data } = useFetchChat();
+  const { data: userInfo } = useFetchUserInfo();
+  const {
+    canAccessChatSettings,
+    canCreateSession,
+    canManageAll: canManageAllSessions,
+    canDeleteOwnSession,
+  } = useChatSessionAccess(data, userInfo.id);
   const { collapsed, setCollapsed } = useChatSidebarCollapse();
   const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
   const { removeSessions } = useRemoveSessions();
@@ -104,22 +113,45 @@ export function Sessions({
   // alone would include items filtered out of view by the search.
   const visibleSelectedIds = useMemo(
     () =>
-      conversationList.filter((x) => selectedIds.has(x.id)).map((x) => x.id),
-    [conversationList, selectedIds],
+      conversationList
+        .filter(
+          (x) =>
+            selectedIds.has(x.id) &&
+            (canManageAllSessions ||
+              (canDeleteOwnSession && (x.user_id === userInfo.id || x.is_new))),
+        )
+        .map((x) => x.id),
+    [
+      conversationList,
+      selectedIds,
+      canManageAllSessions,
+      canDeleteOwnSession,
+      userInfo.id,
+    ],
   );
 
   // Toggle select all
   const toggleSelectAll = useCallback(() => {
+    const deletableConversations = conversationList.filter(
+      (item) =>
+        canManageAllSessions ||
+        (canDeleteOwnSession && (item.user_id === userInfo.id || item.is_new)),
+    );
     setSelectedIds((prev) => {
       const allVisibleSelected =
-        conversationList.length > 0 &&
-        conversationList.every((x) => prev.has(x.id));
+        deletableConversations.length > 0 &&
+        deletableConversations.every((x) => prev.has(x.id));
       if (allVisibleSelected) {
         return new Set();
       }
-      return new Set(conversationList.map((x) => x.id));
+      return new Set(deletableConversations.map((x) => x.id));
     });
-  }, [conversationList]);
+  }, [
+    conversationList,
+    canManageAllSessions,
+    canDeleteOwnSession,
+    userInfo.id,
+  ]);
 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
@@ -192,6 +224,34 @@ export function Sessions({
     [handleConversationCardClick, onShowSingleChat],
   );
 
+  const renderConversationActions = useCallback(
+    (conversation: IConversation, trigger: ReactNode) => {
+      const canDelete =
+        canManageAllSessions ||
+        (canDeleteOwnSession &&
+          (conversation.user_id === userInfo.id || conversation.is_new));
+
+      if (!canDelete) {
+        return null;
+      }
+
+      return (
+        <ConversationDropdown
+          conversation={conversation}
+          removeTemporaryConversation={removeTemporaryConversation}
+        >
+          {trigger}
+        </ConversationDropdown>
+      );
+    },
+    [
+      canDeleteOwnSession,
+      canManageAllSessions,
+      removeTemporaryConversation,
+      userInfo.id,
+    ],
+  );
+
   const collapseSidebars = useCallback(() => {
     setCollapsed(true);
     setPrimarySidebarCollapsed(true);
@@ -211,42 +271,48 @@ export function Sessions({
 
       <div className="flex min-h-0 flex-1 flex-col px-5 pb-5">
         <nav className="flex flex-col gap-2 pt-5" aria-label={data.name}>
-          <Button
-            variant="outline"
-            size="lg"
-            block
-            onClick={handleNewConversation}
-            data-testid="chat-detail-session-new"
-          >
-            <LucidePlus />
-            {t('chat.newConversation')}
-          </Button>
+          {canCreateSession && (
+            <Button
+              variant="outline"
+              size="lg"
+              block
+              onClick={handleNewConversation}
+              data-testid="chat-detail-session-new"
+            >
+              <LucidePlus />
+              {t('chat.newConversation')}
+            </Button>
+          )}
 
-          <Button
-            variant={settingsActive ? 'secondary' : 'ghost'}
-            size="lg"
-            block
-            className="justify-start"
-            onClick={onOpenSettings}
-            aria-pressed={settingsActive}
-            data-testid="chat-settings"
-          >
-            <LucideSettings />
-            {t('chat.settings')}
-          </Button>
+          {canAccessChatSettings && (
+            <Button
+              variant={settingsActive ? 'secondary' : 'ghost'}
+              size="lg"
+              block
+              className="justify-start"
+              onClick={onOpenSettings}
+              aria-pressed={settingsActive}
+              data-testid="chat-settings"
+            >
+              <LucideSettings />
+              {t('chat.settings')}
+            </Button>
+          )}
 
-          <Button
-            variant={multipleModelsActive ? 'secondary' : 'ghost'}
-            size="lg"
-            block
-            className="justify-start"
-            onClick={onOpenMultipleModels}
-            aria-pressed={multipleModelsActive}
-            data-testid="chat-detail-multimodel-toggle"
-          >
-            <LucideActivity />
-            {t('chat.multipleModels')}
-          </Button>
+          {canAccessChatSettings && (
+            <Button
+              variant={multipleModelsActive ? 'secondary' : 'ghost'}
+              size="lg"
+              block
+              className="justify-start"
+              onClick={onOpenMultipleModels}
+              aria-pressed={multipleModelsActive}
+              data-testid="chat-detail-multimodel-toggle"
+            >
+              <LucideActivity />
+              {t('chat.multipleModels')}
+            </Button>
+          )}
         </nav>
 
         <div className="flex justify-between items-center mb-4 pt-8">
@@ -331,6 +397,11 @@ export function Sessions({
                     <Checkbox
                       checked={selectedIds.has(x.id)}
                       onCheckedChange={() => toggleSelection(x.id)}
+                      disabled={
+                        !canManageAllSessions &&
+                        (!canDeleteOwnSession ||
+                          (x.user_id !== userInfo.id && !x.is_new))
+                      }
                       data-testid="chat-detail-session-checkbox"
                       data-session-id={x.id}
                     />
@@ -341,43 +412,14 @@ export function Sessions({
               ))}
             </ul>
           ) : (
-            <nav aria-label={t('chat.conversations')}>
-              <ul className="space-y-2">
-                {conversationList.map((x) => (
-                  <li
-                    key={x.id}
-                    className="
-                      group pr-3 flex items-center gap-1 rounded-lg
-                      aria-selected:bg-bg-card has-[>button:focus-visible]:bg-bg-card
-                    "
-                    aria-selected={conversationId === x.id}
-                  >
-                    <button
-                      type="button"
-                      className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
-                      onClick={() => handleConversationClick(x.id, x.is_new)}
-                      data-testid="chat-detail-session-item"
-                      data-session-id={x.id}
-                    >
-                      {x.name}
-                    </button>
-
-                    <ConversationDropdown
-                      conversation={x}
-                      removeTemporaryConversation={removeTemporaryConversation}
-                    >
-                      <MoreButton
-                        className={cn(
-                          conversationId === x.id ? 'block' : 'hidden',
-                        )}
-                        data-testid="chat-detail-session-actions"
-                        data-session-id={x.id}
-                      ></MoreButton>
-                    </ConversationDropdown>
-                  </li>
-                ))}
-              </ul>
-            </nav>
+            <ConversationList
+              items={conversationList}
+              label={t('chat.conversations')}
+              selectedId={conversationId}
+              onSelect={handleConversationClick}
+              renderActions={renderConversationActions}
+              testIdPrefix="chat-detail-session"
+            />
           )}
           {loadingMore && (
             <LucideLoader2

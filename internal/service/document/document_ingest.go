@@ -18,6 +18,31 @@ func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *str
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	if _, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, permission.ErrResourceNotFound
+		}
+		return nil, fmt.Errorf("failed to fetch dataset: %w", err)
+	}
+	for _, docID := range common.Deduplicate(docIDs) {
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to fetch document: %w", err)
+		}
+		if doc == nil {
+			continue
+		}
+		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
+	}
 	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, docIDs)
 	if err != nil {
 		return nil, err
@@ -27,8 +52,7 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string,
 }
 
 func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	userID := permission.UserIDFromContext(ctx)
-	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
+	return s.stopIngestionTasks(ctx, tasks)
 }
 
 func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
@@ -51,8 +75,38 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		}
 	}
 
-	// First pass: validate every document exists and is accessible before
-	// mutating any state, so a single invalid doc rejects the whole request.
+	// First pass: validate every document exists before mutating any state, so
+	// a single invalid doc rejects the whole request. Collect the distinct
+	// datasets once so their rows are fetched in one query; a batch often
+	// contains many documents from the same KB. Authorization stays on the
+	// per-document seam in the ordered loop below — dataset rows are batched,
+	// but the write check is not.
+	kbIDs := make([]string, 0, len(req.DocIDs))
+	seenKB := make(map[string]struct{}, len(req.DocIDs))
+	for _, docID := range req.DocIDs {
+		doc := docsByID[docID]
+		if doc == nil {
+			// Existence is reported by the ordered validation loop below so a
+			// missing dataset on an earlier document still wins.
+			continue
+		}
+		if _, seen := seenKB[doc.KbID]; seen {
+			continue
+		}
+		seenKB[doc.KbID] = struct{}{}
+		kbIDs = append(kbIDs, doc.KbID)
+	}
+	loadedKBs, loadErr := service.LoadKBsInOrder(ctx, dao.DB, s.kbDAO, kbIDs)
+	if loadErr != nil {
+		return common.CodeDataError, fmt.Errorf("dataset not found")
+	}
+	kbByID := make(map[string]*entity.Knowledgebase, len(loadedKBs))
+	for i, kb := range loadedKBs {
+		if kb != nil {
+			kbByID[kbIDs[i]] = kb
+		}
+	}
+
 	type validatedDoc struct {
 		doc *entity.Document
 		kb  *entity.Knowledgebase
@@ -64,11 +118,11 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 		if doc == nil {
 			return common.CodeDataError, fmt.Errorf("document not found")
 		}
-		kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
-		if err != nil {
+		kb := kbByID[doc.KbID]
+		if kb == nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationRun); err != nil {
+		if err := service.CheckDocumentWrite(ctx, docID, doc.KbID, permission.OperationRun, ""); err != nil {
 			code, permissionErr := permissionresponse.Normalize(err)
 			return code, permissionErr
 		}

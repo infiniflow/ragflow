@@ -9,7 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { DatasetDropdownGuard } from '@/ee/pages/datasets/dataset-dropdown-guard';
+import {
+  DatasetDropdownGuard,
+  shouldShowDatasetDropdown,
+} from '@/ee/pages/datasets/dataset-dropdown-guard';
 import useDuplicateDataset from '@/ee/pages/datasets/use-duplicate-dataset';
 import { useDeleteKnowledge } from '@/hooks/use-knowledge-request';
 import { IDataset } from '@/interfaces/database/dataset';
@@ -52,6 +55,10 @@ export function DatasetDropdown({
     deleteKnowledge(dataset.id);
   }, [dataset.id, deleteKnowledge]);
 
+  if (!shouldShowDatasetDropdown(dataset)) {
+    return null;
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
@@ -60,8 +67,11 @@ export function DatasetDropdown({
           dataset={dataset}
           showPrivilegeModal={showPrivilegeModal}
           manageItems={
-            <DropdownMenuItem onClick={handleShowDatasetRenameModal}>
-              {t('common.rename')} <PenLine />
+            <DropdownMenuItem
+              justifyBetween={false}
+              onClick={handleShowDatasetRenameModal}
+            >
+              <PenLine /> {t('common.rename')}
             </DropdownMenuItem>
           }
           deleteItems={
@@ -80,6 +90,7 @@ export function DatasetDropdown({
                 title={t('deleteModal.delDataset')}
               >
                 <DropdownMenuItem
+                  justifyBetween={false}
                   className="text-state-error"
                   onSelect={(e) => {
                     e.preventDefault();
@@ -88,7 +99,7 @@ export function DatasetDropdown({
                     e.stopPropagation();
                   }}
                 >
-                  {t('common.delete')} <Trash2 />
+                  <Trash2 /> {t('common.delete')}
                 </DropdownMenuItem>
               </ConfirmDeleteDialog>
             </>

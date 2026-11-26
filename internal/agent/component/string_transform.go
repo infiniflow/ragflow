@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 
 	"gorm.io/gorm"
 )
@@ -436,20 +437,13 @@ func extractPlaceholders(s string) []string {
 	if len(matches) == 0 {
 		return nil
 	}
-	seen := make(map[string]struct{}, len(matches))
-	out := make([]string, 0, len(matches))
+	names := make([]string, 0, len(matches))
 	for _, m := range matches {
-		if len(m) < 2 {
-			continue
+		if len(m) >= 2 {
+			names = append(names, m[1])
 		}
-		name := m[1]
-		if _, dup := seen[name]; dup {
-			continue
-		}
-		seen[name] = struct{}{}
-		out = append(out, name)
 	}
-	return out
+	return common.Deduplicate(names)
 }
 
 func init() {

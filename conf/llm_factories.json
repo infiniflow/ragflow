@@ -3568,6 +3568,22 @@
             "url": "https://inference.trymorse.ai/v1"
         },
         {
+            "name": "TeamoRouter",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.teamorouter.com/v1"
+        },
+        {
+            "name": "Straitly",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.straitly.ai/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

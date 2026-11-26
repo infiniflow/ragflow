@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -631,21 +632,15 @@ func IsOverLimitError(err error) bool {
 }
 
 func containsAnyMarker(msg string, markers []string) bool {
-	for _, marker := range markers {
-		if strings.Contains(msg, marker) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(markers, func(marker string) bool {
+		return strings.Contains(msg, marker)
+	})
 }
 
 func containsAnyCode(msg string, codes []string) bool {
-	for _, code := range codes {
-		if hasDelimitedNumber(msg, code) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(codes, func(code string) bool {
+		return hasDelimitedNumber(msg, code)
+	})
 }
 
 // hasDelimitedNumber reports whether s contains num as a whole number: neither

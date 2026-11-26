@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
@@ -407,12 +408,12 @@ func (c *AzureBlobStorageConnector) sourceDocument(name string, object azureBlob
 		return SourceDocument{}, false
 	}
 	fetch := azureBlobFetchReference{Name: name}
-	fetchKey, _ := json.Marshal(fetch)
+	fetchKey := utility.MustJSON(fetch)
 	return SourceDocument{
 		SourceID:           name,
 		SemanticIdentifier: name,
 		Extension:          azureBlobExtension(name),
-		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: object.Size},
+		FetchRef:           &FetchReference{Key: fetchKey, SizeHint: object.Size},
 		UpdatedAt:          object.LastModified,
 		SizeBytes:          object.Size,
 		Metadata: map[string]any{

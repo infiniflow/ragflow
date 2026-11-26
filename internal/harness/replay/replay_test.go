@@ -2,6 +2,7 @@ package replay
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"ragflow/internal/harness/events"
@@ -294,10 +295,10 @@ func TestEventsContains_FindByType(t *testing.T) {
 		evts = append(evts, ev)
 	}
 
-	if !EventsContains(evts, events.EventNodeStart) {
+	if !slices.ContainsFunc(evts, func(e *events.Event) bool { return e.Type == events.EventNodeStart }) {
 		t.Fatal("should contain EventNodeStart")
 	}
-	if EventsContains(evts, events.EventGraphStart) {
+	if slices.ContainsFunc(evts, func(e *events.Event) bool { return e.Type == events.EventGraphStart }) {
 		t.Fatal("should not contain EventGraphStart")
 	}
 

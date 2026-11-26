@@ -1,6 +1,7 @@
 import { Modal } from '@/components/ui/modal/modal';
 import { FileType } from '@/constants/file';
 import { useExtraBulkActions } from '@/ee/pages/dataset/dataset/use-extra-bulk-actions';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -44,6 +45,7 @@ export function useBulkOperateDataset({
     documents,
   );
   const { id } = useParams();
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
 
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
@@ -243,5 +245,9 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { list };
+  return {
+    list: list.filter(
+      (item) => item.id !== 'delete' || !datasetEditButtonDisabled,
+    ),
+  };
 }

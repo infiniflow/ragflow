@@ -52,29 +52,42 @@ export function FileIcon({
   name,
   className,
   type,
-}: IconFontType & { type?: string }) {
+  width = 16,
+}: IconFontType & { type?: string; width?: number }) {
   const isFolder = type === 'folder';
   const isSkills = type === 'skills';
   const extension = getExtension(name);
   const spriteIcon = FileIconMap[extension as keyof typeof FileIconMap];
   const assetIcon = `file-icon/${extension}`;
+  // Inner glyphs fill the wrapper so callers can scale the icon by overriding
+  // the `size-4` class on the wrapper (and, for SVG assets, by `width`).
   if (isSkills) {
     return (
-      <span className={cn('size-4', className)}>
-        <SvgIcon name="home-icon/skills" width={16} height={16} />
+      <span
+        className={cn(
+          'inline-flex items-center justify-center size-4',
+          className,
+        )}
+      >
+        <SvgIcon name="home-icon/skills" width={width} height={width} />
       </span>
     );
   }
   return (
-    <span className={cn('size-4', className)}>
+    <span
+      className={cn(
+        'inline-flex items-center justify-center size-4',
+        className,
+      )}
+    >
       {isFolder ? (
-        <IconFont name="file-sub"></IconFont>
+        <IconFont name="file-sub" className="size-full"></IconFont>
       ) : spriteIcon ? (
-        <IconFont name={spriteIcon}></IconFont>
+        <IconFont name={spriteIcon} className="size-full"></IconFont>
       ) : hasSvgIcon(assetIcon) ? (
-        <SvgIcon name={assetIcon} width={16}></SvgIcon>
+        <SvgIcon name={assetIcon} width={width} height={width}></SvgIcon>
       ) : (
-        <LucideFile className="size-4"></LucideFile>
+        <LucideFile className="size-full"></LucideFile>
       )}
     </span>
   );

@@ -151,7 +151,7 @@ func GetFileType(filename string) FileType {
 		return FileTypeVISUAL
 	case "tiff", "tif", "webp", "svg", "ico":
 		return FileTypeVISUAL
-	case "avif", "heic", "apng":
+	case "avif", "heic", "apng", "wmf", "emf", "wmz", "emz":
 		return FileTypeVISUAL
 	default:
 		return FileTypeOTHER
@@ -235,7 +235,7 @@ func FilenameType(filename string) FileType {
 
 	visualExtensions := []string{
 		"jpg", "jpeg", "png", "tif", "tiff", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
-		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
+		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "emf", "wmz", "emz", "webp", "avif", "apng", "icon", "ico",
 	}
 	for _, ext := range visualExtensions {
 		if strings.HasSuffix(normalized, "."+ext) {

@@ -78,7 +78,7 @@ beforeEach(() => {
   agentRequest.useFetchAgentTemplates.mockReturnValue(templates);
 });
 
-describe('AgentTemplates source scoping', () => {
+describe('AgentTemplates workflow catalog', () => {
   it('defaults to the Workflow catalog on the Recommended theme', () => {
     renderTemplates();
 
@@ -87,14 +87,13 @@ describe('AgentTemplates source scoping', () => {
     expect(screen.queryByText('pipeline-general')).toBeNull();
   });
 
-  it('shows only pipeline templates without a sidebar on the Pipeline source', () => {
+  it('does not offer pipeline templates through the template page', () => {
     renderTemplates('/agent-templates?canvas_category=dataflow_canvas');
 
-    expect(screen.getByText('pipeline-general')).toBeInTheDocument();
-    expect(screen.queryByText('agent-recommended')).toBeNull();
+    expect(screen.queryByText('pipeline-general')).toBeNull();
+    expect(screen.getByText('agent-recommended')).toBeInTheDocument();
     expect(screen.queryByText('agent-marketing')).toBeNull();
-    // The pipeline catalog has no theme breakdown, so the sidebar is hidden.
-    expect(screen.queryByText('Recommended')).toBeNull();
+    expect(screen.getByText('Recommended')).toBeInTheDocument();
   });
 
   it('treats a missing canvas_category as a workflow template', () => {

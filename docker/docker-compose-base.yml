@@ -223,7 +223,7 @@ services:
     # network. Remote access is an explicit opt-in through VB_BIND_ADDR
     # (e.g. 0.0.0.0 or a specific interface IP) in docker/.env.
     ports:
-      - ${VB_BIND_ADDR:-127.0.0.1}:${EXPOSE_VB_PORT:-5432}:5432
+      - ${VB_BIND_ADDR:-127.0.0.1}:${VB_PORT:-5432}:5432
     volumes:
       - vastbase_data:/home/vastbase/data
       - ./vastbase/init:/docker-entrypoint-initdb.d

@@ -63,6 +63,33 @@ beforeEach(() => {
 });
 
 describe('useShowLog early-log fallback', () => {
+  it('exposes dataset and run identifiers for the progress summary', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: { logs: [{ id: 'run-1', document_id: 'doc-1' }], total: 1 },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 1,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    const { result } = renderLogs([makeDoc()]);
+    act(() => result.current.showLog(makeDoc()));
+
+    await waitFor(() => expect(result.current.logId).toBe('run-1'));
+    expect(result.current.datasetId).toBe('kb-1');
+  });
+
   it('performs one finishing poll after terminal before stopping', async () => {
     jest.useFakeTimers();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

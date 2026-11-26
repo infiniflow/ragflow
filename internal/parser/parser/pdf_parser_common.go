@@ -416,7 +416,7 @@ func IsPDFParseMethod(raw string) bool {
 	if _, ok := analyzerFactories[normalizePDFParseMethod(raw)]; ok {
 		return true
 	}
-	return false
+	return HasParseMethod(utility.FileTypePDF, raw)
 }
 
 func normalizePDFParseMethod(raw string) string {

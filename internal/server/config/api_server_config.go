@@ -152,33 +152,11 @@ func (c *Config) GetAPIServerConfig() APIServerConfig {
 	return c.apiServer
 }
 
-// SetAPIServerHTTPPort stores a resolved API server port in the global
-// config. GetAPIServerConfig returns a copy, so this setter (not a write
-// into the returned struct) is how a CLI/env override reaches the config
-// the API server actually binds.
-func (c *Config) SetAPIServerHTTPPort(port int) {
-	c.apiServer.HTTPPort = port
-}
-
-// ResolvePort resolves the effective HTTP port from the precedence
-// CLI flag > the configured port (config file / viper, already merged with
-// env) > the built-in default, and validates the final value against
-// [MinPort, MaxPort]. The configured port is passed by the caller so the
-// SAME validation serves both the API server (apiServer.HTTPPort) and the
-// admin server (admin.HTTPPort) — reading a single receiver field here would
-// make the admin server resolve to the API port and collide with it at
-// startup. The CLI parser still rejects an out-of-range --port up front; this
-// guard owns the config/env layers, where a non-integer value used to reach
-// viper's GetInt as a silent 0 (the server would then listen on a random
-// port).
-func (c *Config) ResolvePort(configured int, cli *int) (int, error) {
-	port := configured
-	if cli != nil {
-		port = *cli
-	}
+func (c *Config) SetAPIServerHTTPPort(port int) error {
 	if port < MinPort || port > MaxPort {
-		return 0, fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
+		return fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
 			port, MinPort, MaxPort)
 	}
-	return port, nil
+	c.apiServer.HTTPPort = port
+	return nil
 }

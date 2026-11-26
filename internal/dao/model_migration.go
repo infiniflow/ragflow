@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1137,7 +1138,7 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 		if columnType.Name() != "model_type" {
 			continue
 		}
-		return strings.Contains(strings.ToLower(columnType.DatabaseTypeName()), "int"), nil
+		return common.ContainsFold(columnType.DatabaseTypeName(), "int"), nil
 	}
 	return false, nil
 }
@@ -1276,12 +1277,7 @@ func normalizeStoredModelIDs(ctx context.Context, db *gorm.DB) error {
 
 // sortedTableNames returns a stable ordering so the migration is deterministic.
 func sortedTableNames(columns map[string][]string) []string {
-	names := make([]string, 0, len(columns))
-	for name := range columns {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(columns))
 }
 
 func normalizeModelIDStringColumn(ctx context.Context, db *gorm.DB, table, column string) error {
@@ -1456,12 +1452,7 @@ func populateTenantModelIDColumns(ctx context.Context, db *gorm.DB) error {
 }
 
 func sortedTenantModelIDTables() []string {
-	names := make([]string, 0, len(tenantModelIDFields))
-	for name := range tenantModelIDFields {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(tenantModelIDFields))
 }
 
 func ensureTenantModelIDColumn(ctx context.Context, db *gorm.DB, table, column string) error {

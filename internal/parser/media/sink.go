@@ -26,12 +26,13 @@ import (
 // Source identity and payload extraction belong to the caller; storage scope,
 // atomic quotas and lifecycle belong to Cache.
 type Sink struct {
-	ctx        context.Context
-	cache      Cache
-	format     string
-	budget     *Budget
-	refs       map[string]*entity.MediaRef
-	limitSkips int
+	ctx               context.Context
+	cache             Cache
+	format            string
+	budget            *Budget
+	refs              map[string]*entity.MediaRef
+	limitSkips        int
+	transcodeFailures int
 }
 
 // NewSink binds a parser invocation to its injected cache and shared budget.
@@ -61,7 +62,23 @@ func (s *Sink) Resolve(source string, declared Size, load func() (mime string, d
 		return nil, nil
 	}
 	mime, data, ok := load()
-	if !ok || !reservation.Commit(Size(len(data))) {
+	if !ok {
+		return nil, nil
+	}
+	if int64(len(data)) <= s.budget.limits.ImageMaxBytes {
+		if outMIME, outData, transcoded, err := TranscodeImage(s.ctx, mime, data); transcoded {
+			if err != nil {
+				if ctxErr := s.ctx.Err(); ctxErr != nil {
+					delete(s.refs, source)
+					return nil, ctxErr
+				}
+				s.transcodeFailures++
+			} else if outMIME != "" && len(outData) > 0 {
+				mime, data = outMIME, outData
+			}
+		}
+	}
+	if !reservation.Commit(Size(len(data))) {
 		return nil, nil
 	}
 	ref, err := s.cache.Put(s.ctx, s.format, mime, data)
@@ -81,6 +98,9 @@ func (s *Sink) Warnings() []string {
 	warnings := s.budget.Warnings()
 	if s.limitSkips > 0 {
 		warnings = append(warnings, fmt.Sprintf("%s parser skipped %d image(s) after the run media cache limit", s.format, s.limitSkips))
+	}
+	if s.transcodeFailures > 0 {
+		warnings = append(warnings, fmt.Sprintf("%s parser kept %d image(s) in original format after transcode failure", s.format, s.transcodeFailures))
 	}
 	return warnings
 }

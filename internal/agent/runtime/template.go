@@ -27,6 +27,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"ragflow/internal/common"
 )
 
 // VarRefPattern matches the RAGFlow variable reference syntax.
@@ -55,17 +57,11 @@ func ExtractRefs(s string) []string {
 	if len(matches) == 0 {
 		return nil
 	}
-	seen := make(map[string]struct{}, len(matches))
-	out := make([]string, 0, len(matches))
+	refs := make([]string, 0, len(matches))
 	for _, m := range matches {
-		ref := m[1]
-		if _, dup := seen[ref]; dup {
-			continue
-		}
-		seen[ref] = struct{}{}
-		out = append(out, ref)
+		refs = append(refs, m[1])
 	}
-	return out
+	return common.Deduplicate(refs)
 }
 
 // ResolveTemplate substitutes every {{...}} in s with the current

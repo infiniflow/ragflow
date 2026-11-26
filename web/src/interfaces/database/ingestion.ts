@@ -5,6 +5,7 @@ export interface IngestionEventItem {
   component: string;
   phase: number;
   message: string;
+  error_code?: string;
 }
 
 export interface IngestionMessagesResponse {
@@ -21,4 +22,19 @@ export interface IngestionMessageParams {
   limit?: number;
   after_id?: number;
   before_id?: number;
+}
+
+export interface IngestionProgressResponse {
+  status: string;
+  phase?: string;
+  stage?: string;
+  unit?: string;
+  current: number;
+  total: number;
+  percent: number;
+  started_at?: string;
+  duration_s: number;
+  updated_at?: string;
+  chunk_num: number;
+  fallback: boolean;
 }

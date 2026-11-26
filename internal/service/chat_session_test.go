@@ -587,7 +587,7 @@ func TestListChatSessions_Success(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 	terms := []dao.OrderTerm{{Column: "create_time", Desc: true}}
 	resp, err := svc.ListChatSessions(ctx, "chat-1", "", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil {

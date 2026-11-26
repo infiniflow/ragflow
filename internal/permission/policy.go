@@ -434,6 +434,35 @@ func (e *evaluation) checkResource(ctx context.Context, ref ResourceRef, operati
 	return nil
 }
 
+// CheckDependencies verifies the entry and every dependency with one shared
+// resource load. Each dependency is still evaluated in request order and the
+// first failure is returned, so single-check semantics are preserved while the
+// entry and dataset rows are loaded only once for the whole batch.
+func (p *communityPolicy) CheckDependencies(ctx context.Context, entryRef ResourceRef, dependencies []ResourceRef, entryOperation, dependencyOperation Operation) error {
+	if len(dependencies) == 0 {
+		return nil
+	}
+	if strings.TrimSpace(UserIDFromContext(ctx)) == "" {
+		return ErrUnauthenticated
+	}
+	if !validOperation(entryOperation) || !validOperation(dependencyOperation) {
+		return ErrInvalidPermission
+	}
+	refs := make([]ResourceRef, 0, len(dependencies)+1)
+	refs = append(refs, entryRef)
+	refs = append(refs, dependencies...)
+	evaluation := newEvaluation(p.source)
+	if err := evaluation.loadResources(ctx, refs); err != nil {
+		return err
+	}
+	for _, dependencyRef := range dependencies {
+		if err := evaluation.checkDependencyLoaded(ctx, entryRef, dependencyRef, entryOperation, dependencyOperation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (e *evaluation) checkDependency(ctx context.Context, entryRef, dependencyRef ResourceRef, entryOperation, dependencyOperation Operation) error {
 	userID := strings.TrimSpace(UserIDFromContext(ctx))
 	if strings.TrimSpace(userID) == "" {
@@ -445,6 +474,13 @@ func (e *evaluation) checkDependency(ctx context.Context, entryRef, dependencyRe
 	if err := e.loadResources(ctx, []ResourceRef{entryRef, dependencyRef}); err != nil {
 		return err
 	}
+	return e.checkDependencyLoaded(ctx, entryRef, dependencyRef, entryOperation, dependencyOperation)
+}
+
+// checkDependencyLoaded evaluates one dependency using resources already
+// loaded into the evaluation, so a batch can check every dependency without
+// reloading the entry or the dataset rows each time.
+func (e *evaluation) checkDependencyLoaded(ctx context.Context, entryRef, dependencyRef ResourceRef, entryOperation, dependencyOperation Operation) error {
 	entry, err := e.getResource(entryRef)
 	if err != nil {
 		return err

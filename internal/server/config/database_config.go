@@ -47,6 +47,10 @@ type MySQLConfig struct {
 	StaleTimeout     int    `mapstructure:"stale_timeout"`
 	MaxAllowedPacket int    `mapstructure:"max_allowed_packet"`
 	Charset          string `mapstructure:"charset"`
+	// TLS mode for the metadata connection, passed to go-sql-driver/mysql as
+	// the `tls` DSN parameter: "", "true", "skip-verify" or "preferred".
+	// Empty keeps the driver default (no TLS).
+	TLS string `mapstructure:"tls"`
 }
 
 // VastbaseMetaConfig is the Vastbase G100 metadata database configuration. It
@@ -257,6 +261,10 @@ func (c *Config) parseMySQLConfig(v *viper.Viper) {
 	if sub.IsSet("charset") {
 		c.database.MySQL.Charset = sub.GetString("charset")
 	}
+
+	if sub.IsSet("tls") {
+		c.database.MySQL.TLS = sub.GetString("tls")
+	}
 }
 
 func (c *Config) GetMySQLConfig() MySQLConfig {
@@ -293,5 +301,6 @@ func (m *MySQLConfig) ExportConfigs() map[string]interface{} {
 	mysqlConfigs["max_connections"] = m.MaxConnections
 	mysqlConfigs["stale_timeout"] = m.StaleTimeout
 	mysqlConfigs["max_allowed_packet"] = m.MaxAllowedPacket
+	mysqlConfigs["tls"] = m.TLS
 	return mysqlConfigs
 }

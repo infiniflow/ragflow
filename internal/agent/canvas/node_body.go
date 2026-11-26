@@ -345,6 +345,14 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 				return out, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
 			}
 		}
+		if deferred, ok := out["content"].(*runtime.DeferredStream); ok && deferred != nil && deferred.Open != nil && agentEvents(ctx) != nil {
+			open := deferred.Open
+			copied := *deferred
+			copied.Open = func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+				return open(withAgentNodeParent(openCtx, cpnID), sink)
+			}
+			out["content"] = &copied
+		}
 		if out == nil {
 			out = make(map[string]any, 1)
 		}
@@ -401,13 +409,13 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			wrapped["state"] = snapshot
 			in = wrapped
 		}
-		out, err := body(ctx, in)
+		out, err := body(withAgentNodeParent(ctx, cpnID), in)
 		if err != nil {
 			if state != nil {
 				if invocations, ok := out["tool_invocations"]; ok {
 					state.SetVar(cpnID, "tool_invocations", invocations)
 				}
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err, out)
 			}
 			return nil, err
 		}
@@ -415,12 +423,12 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			return out, nil
 		}
 		if out == nil {
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil, out)
 			return out, nil
 		}
 		outputCpnID, _ := out["__cpn_id__"].(string)
 		if outputCpnID == "" {
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil, out)
 			return out, nil
 		}
 		for k, v := range out {
@@ -434,7 +442,7 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nodeErr)
 			})
 		} else {
-			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil, out)
 		}
 		return out, nil
 	}

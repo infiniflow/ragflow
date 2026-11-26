@@ -66,7 +66,7 @@ export function EditableField({
       required={required}
     >
       {(field) =>
-        isEditing ? (
+        isEditing && !field.disabled ? (
           <Input
             ref={inputRef as React.RefObject<HTMLInputElement>}
             name={field.name}
@@ -97,7 +97,7 @@ export function EditableField({
             >
               {field.value || finalPlaceholder}
             </span>
-            {showEditIcon && (
+            {showEditIcon && !field.disabled && (
               <button
                 type="button"
                 onClick={() => handleEnterEdit(field.value || '')}
