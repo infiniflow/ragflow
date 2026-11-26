@@ -40,7 +40,7 @@ var imageExtensions = map[string]bool{
 	"apng": true, "icon": true, "pcx": true, "tga": true,
 	"exif": true, "fpx": true, "psd": true, "cdr": true,
 	"pcd": true, "dxf": true, "ufo": true, "eps": true,
-	"ai": true, "raw": true, "wmf": true,
+	"ai": true, "raw": true, "wmf": true, "emf": true, "wmz": true, "emz": true,
 }
 
 // PictureParser emits image files for optional vision enhancement.
@@ -79,8 +79,19 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	imagePayload := "data:" + pictureMIME(ext) + ";base64," + base64.StdEncoding.EncodeToString(data)
-	release()
+	defer release()
+	imageData := data
+	mime := media.MetafileMIMEForExtension("." + ext)
+	if mime == "" {
+		mime = pictureMIME(ext)
+	} else {
+		if outMIME, raster, transcoded, err := media.TranscodeImage(ctx, mime, data); err != nil {
+			return ParseResult{Err: fmt.Errorf("picture: %w", err)}
+		} else if transcoded {
+			mime, imageData = outMIME, raster
+		}
+	}
+	imagePayload := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(imageData)
 	item := map[string]any{
 		"text":         "",
 		"image":        imagePayload,
