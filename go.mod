@@ -1,6 +1,6 @@
 module ragflow
 
-go 1.27
+go 1.27.3
 
 require (
 	cloud.google.com/go v0.123.0
@@ -72,6 +72,7 @@ require (
 	github.com/spf13/cast v1.6.0
 	github.com/spf13/viper v1.18.2
 	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260807065450-08464aef9ed5
+	github.com/xo/okage v0.20.0
 	github.com/xuri/excelize/v2 v2.11.1
 	github.com/yfedoseev/office_oxide/go v0.1.17
 	github.com/yfedoseev/pdf_oxide/go v0.3.78
@@ -82,7 +83,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.58.0
-	golang.org/x/image v0.45.0
+	golang.org/x/image v0.47.0
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.36.0

@@ -313,6 +313,8 @@ func TestOfficeImageMIME(t *testing.T) {
 	emf := make([]byte, 44)
 	binary.LittleEndian.PutUint32(emf, 1)
 	copy(emf[40:44], " EMF")
+	wmf := make([]byte, 18)
+	copy(wmf, []byte{1, 0, 9, 0, 0, 3})
 
 	tests := []struct {
 		name string
@@ -327,7 +329,7 @@ func TestOfficeImageMIME(t *testing.T) {
 		{name: "tiff big endian", data: []byte("MM\x00*\x00\x00\x00\x08"), want: "image/tiff"},
 		{name: "emf", data: emf, want: "image/x-emf"},
 		{name: "wmf placeable", data: []byte{0xD7, 0xCD, 0xC6, 0x9A, 0x00, 0x00}, want: "image/x-wmf"},
-		{name: "wmf standard", data: []byte{1, 0, 9, 0, 0, 3}, want: "image/x-wmf"},
+		{name: "wmf standard", data: wmf, want: "image/x-wmf"},
 		{name: "svg", data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), want: "image/svg+xml"},
 		{name: "xml svg", data: []byte("\xef\xbb\xbf<?xml version=\"1.0\"?><svg xmlns=\"http://www.w3.org/2000/svg\"/>"), want: "image/svg+xml"},
 		{name: "unknown", data: []byte("not an image"), want: ""},

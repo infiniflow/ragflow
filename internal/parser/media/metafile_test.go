@@ -1,0 +1,81 @@
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package media
+
+import (
+	"bytes"
+	"image/png"
+	"os"
+	"strings"
+	"testing"
+)
+
+func TestSinkNormalizesMetafilesAcrossDocuments(t *testing.T) {
+	for _, tc := range []struct{ document, ext, mime string }{
+		{"pptx", "wmf", "image/x-wmf"},
+		{"docx", "emf", "image/x-emf"},
+		{"xlsx", "wmf", "image/x-wmf"},
+		{"html", "emf", "application/octet-stream"},
+	} {
+		t.Run(tc.document, func(t *testing.T) {
+			data, err := os.ReadFile("testdata/metafile_test." + tc.ext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cache := new(sinkTestCache)
+			sink := NewSink(WithCache(t.Context(), cache), tc.document, NewBudget())
+			ref, err := sink.Resolve("image", Size(len(data)), func() (string, []byte, bool) {
+				return tc.mime, data, true
+			})
+			if err != nil || ref == nil {
+				t.Fatalf("reference = %v, error = %v, warnings = %v", ref, err, sink.Warnings())
+			}
+			if ref.MIME != "image/png" {
+				t.Fatalf("cached MIME = %q, want image/png", ref.MIME)
+			}
+			img, err := png.Decode(bytes.NewReader(cache.data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			center := img.Bounds().Min.Add(img.Bounds().Size().Div(2))
+			r, g, b, _ := img.At(center.X, center.Y).RGBA()
+			if r < 0x8000 || g > 0x2000 || b > 0x2000 {
+				t.Fatalf("expected a red rectangle at %v, got %04x %04x %04x", center, r, g, b)
+			}
+		})
+	}
+}
+
+func TestSinkKeepsInvalidMetafileAndContinues(t *testing.T) {
+	cache := new(sinkTestCache)
+	sink := NewSink(WithCache(t.Context(), cache), "docx", NewBudget())
+	for range 2 {
+		ref, err := sink.Resolve("bad", 4, func() (string, []byte, bool) {
+			return "image/x-wmf", []byte{0xd7, 0xcd, 0xc6, 0x9a}, true
+		})
+		if ref == nil || ref.MIME != "image/x-wmf" || err != nil {
+			t.Fatalf("invalid WMF: reference = %v, error = %v", ref, err)
+		}
+	}
+	ref, err := sink.Resolve("next", 5, func() (string, []byte, bool) {
+		return "image/png", []byte("image"), true
+	})
+	if ref == nil || err != nil || cache.writes != 2 {
+		t.Fatalf("next image: reference = %v, error = %v, writes = %d", ref, err, cache.writes)
+	}
+	if warnings := sink.Warnings(); len(warnings) != 1 || !strings.Contains(warnings[0], "kept 1 image(s) in original format") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+}
