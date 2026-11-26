@@ -81,7 +81,7 @@ export default {
       reselectParserAfterUploadHint:
         'Continúa con la carga y el sistema cambiará automáticamente estos archivos a una configuración de análisis integrada compatible.',
       dataset: 'Conjunto de datos',
-      testing: 'Pruebas de recuperación',
+      testing: 'Recuperación',
       files: 'Archivos',
       configuration: 'Configuración',
       name: 'Nombre',
@@ -544,6 +544,7 @@ export default {
       destinationFolder: 'Carpeta de destino',
     },
     flow: {
+      historyVersion: 'Versiones',
       cite: 'Mostrar citas',
       citeTip: 'Consejo de cita',
       name: 'Nombre',

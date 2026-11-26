@@ -623,7 +623,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
       Parse: 'Parse',
       dataset: 'Dataset',
-      testing: 'Retrieval testing',
+      testing: 'Retrieval',
       files: 'files',
       configuration: 'Configuration',
       knowledgeGraph: 'Knowledge graph',
@@ -3789,7 +3789,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       mergePath: 'Merge path',
       mergePathTip:
         'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
-      historyVersion: 'Version history',
+      historyVersion: 'Versions',
       version: {
         created: 'Created',
         details: 'Version details',
