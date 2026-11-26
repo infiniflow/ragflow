@@ -344,6 +344,118 @@ func TestSearchChunkHybridLeavesTopKRecallUnfiltered(t *testing.T) {
 	}
 }
 
+func TestSearchMemoryHybridAppliesVectorMinScore(t *testing.T) {
+	tests := []struct {
+		name            string
+		similarity      float64
+		wantHybrid      bool
+		wantClauseMin   *float64
+		wantClauseK     *float64
+		wantKeywordOnly bool
+	}{
+		{
+			name:          "positive threshold switches memory knn leg to min_score",
+			similarity:    0.2,
+			wantHybrid:    true,
+			wantClauseMin: ptrFloat64(0.6),
+		},
+		{
+			name:          "cosine 1.0 clamps to highest valid knn clause min_score",
+			similarity:    1.0,
+			wantHybrid:    true,
+			wantClauseMin: ptrFloat64(maxOpenSearchKNNClauseMinScore),
+		},
+		{
+			name:        "zero similarity keeps top-k knn leg",
+			similarity:  0.0,
+			wantHybrid:  true,
+			wantClauseK: ptrFloat64(5),
+		},
+		{
+			name:            "similarity above 1.0 drops impossible knn leg and runs keyword query",
+			similarity:      1.2,
+			wantKeywordOnly: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var searchQuery map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodHead {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/_mapping") {
+					_, _ = w.Write([]byte(`{"memory_tenant":{"mappings":{"properties":{"q_2_vec":{"type":"knn_vector","dimension":2,"space_type":"cosinesimil"}}}}}`))
+					return
+				}
+				if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+					t.Errorf("decode search query: %v", err)
+				}
+				_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+			}))
+			defer server.Close()
+
+			engine := newTestEngine(t, server.URL)
+			_, err := engine.Search(t.Context(), &types.SearchRequest{
+				IndexNames: []string{"memory_tenant"},
+				Limit:      5,
+				Filter:     map[string]interface{}{"memory_id": []string{"mem-1"}, "status": 1},
+				OrderBy:    (&types.OrderByExpr{}).Desc("valid_at"),
+				MatchExprs: []interface{}{
+					&types.MatchTextExpr{Fields: []string{"content"}, MatchingText: "hello", TopN: 100},
+					&types.MatchDenseExpr{
+						VectorColumnName: "q_2_vec",
+						EmbeddingData:    []float64{1.0, 0.0},
+						TopN:             5,
+						ExtraOptions:     map[string]interface{}{"similarity": tc.similarity},
+					},
+					&types.FusionExpr{Method: "weighted_sum", TopN: 5, FusionParams: map[string]interface{}{"weights": "0.7,0.3"}},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Search: %v", err)
+			}
+			if _, hasTopMin := searchQuery["min_score"]; hasTopMin {
+				t.Fatalf("memory hybrid search must not set top-level min_score: %#v", searchQuery)
+			}
+
+			query := searchQuery["query"].(map[string]interface{})
+			if tc.wantKeywordOnly {
+				if _, hasHybrid := query["hybrid"]; hasHybrid {
+					t.Fatalf("expected keyword-only query when similarity > 1.0, got %#v", query)
+				}
+				if _, hasBool := query["bool"]; !hasBool {
+					t.Fatalf("expected bool keyword query, got %#v", query)
+				}
+				return
+			}
+
+			queries := query["hybrid"].(map[string]interface{})["queries"].([]interface{})
+			knn := queries[1].(map[string]interface{})["knn"].(map[string]interface{})["q_2_vec"].(map[string]interface{})
+			if tc.wantClauseMin != nil {
+				if _, hasK := knn["k"]; hasK {
+					t.Fatalf("knn clause must omit k when min_score is set: %#v", knn)
+				}
+				gotMin, ok := knn["min_score"].(float64)
+				if !ok || gotMin < *tc.wantClauseMin-1e-9 || gotMin > *tc.wantClauseMin+1e-9 {
+					t.Fatalf("knn min_score = %#v, want %v", knn["min_score"], *tc.wantClauseMin)
+				}
+			}
+			if tc.wantClauseK != nil {
+				if _, hasMin := knn["min_score"]; hasMin {
+					t.Fatalf("unexpected knn min_score = %v", knn["min_score"])
+				}
+				if knn["k"] != *tc.wantClauseK {
+					t.Fatalf("knn k = %v, want %v", knn["k"], *tc.wantClauseK)
+				}
+			}
+		})
+	}
+}
+
 func ptrFloat64(v float64) *float64 {
 	return &v
 }

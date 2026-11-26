@@ -994,6 +994,14 @@ func cosineThresholdToOpenSearchScore(sim float64) float64 {
 	return (1.0 + sim) / 2.0
 }
 
+// maxOpenSearchKNNClauseMinScore is the highest float32 value strictly below
+// 1.0. OpenSearch's knn clause `min_score` rejects values > 1.0 with 400 and
+// evaluates radial score comparisons with float32 strictness that excludes
+// exact-identical vectors (score == 1.0) at min_score=1.0. Clamping a
+// cosine=1.0 threshold to this boundary keeps identical vectors eligible while
+// still excluding non-identical vectors.
+const maxOpenSearchKNNClauseMinScore = 0.99999994
+
 // Search executes a unified search across the requested indices. Ordinary
 // searches fail when any index request fails, without returning partial results.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -1173,6 +1181,30 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	denseSim, hasDenseSim := denseSimilarityThreshold(matchDense)
 	hasPositiveDenseThreshold := hasVectorMatch && hasDenseSim && denseSim > 0
 
+	// Memory searches consume docEngine.Search() directly with no second-pass
+	// rerank/postThreshold. In OpenSearch hybrid queries the text and knn legs
+	// are unioned, so an unfiltered knn leg leaks low-similarity messages even
+	// when the text leg matched nothing. Scoped memory indices always filter by
+	// memory_id/status, so switching the knn leg to `min_score` (supported
+	// natively on the >= 2.19 default Faiss engine) keeps the text leg
+	// untouched while enforcing the cosine floor on the vector leg.
+	memoryVectorImpossible := false
+	if isMemoryIndex && hybrid && hasPositiveDenseThreshold {
+		if denseSim > 1.0 {
+			// No cosine similarity can exceed 1.0; drop the vector leg rather
+			// than sending an out-of-range knn.min_score (> 1.0 returns 400).
+			memoryVectorImpossible = true
+			hybrid = false
+		} else if knnClause, ok := knnQuery[matchDense.VectorColumnName].(map[string]interface{}); ok {
+			clauseMinScore := cosineThresholdToOpenSearchScore(denseSim)
+			if clauseMinScore >= 1.0 {
+				clauseMinScore = maxOpenSearchKNNClauseMinScore
+			}
+			delete(knnClause, "k")
+			knnClause["min_score"] = clauseMinScore
+		}
+	}
+
 	switch {
 	case hybrid:
 		// Both legs present: send a real hybrid query with an inline temporary
@@ -1198,7 +1230,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				},
 			},
 		}
-	case hasVectorMatch:
+	case hasVectorMatch && !memoryVectorImpossible:
 		// Vector-only search: send a plain knn query.
 		queryBody["query"] = map[string]interface{}{"knn": knnQuery}
 		// Apply the cosine similarity floor as a top-level min_score on top of

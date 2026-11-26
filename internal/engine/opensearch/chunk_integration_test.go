@@ -391,3 +391,113 @@ func TestOpenSearchPureVectorSimilarityThreshold(t *testing.T) {
 		t.Fatalf("no threshold: got total=%d chunks=%v; want 3", res.Total, res.Chunks)
 	}
 }
+
+// TestOpenSearchMemoryHybridSimilarityThreshold verifies end-to-end against a
+// real OpenSearch cluster that memory hybrid searches enforce the vector
+// similarity threshold on the kNN leg without breaking BM25 matches.
+func TestOpenSearchMemoryHybridSimilarityThreshold(t *testing.T) {
+	requireOSTestCluster(t)
+	eng, err := NewEngine(t.Context(), getOSTestConfig())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	const memIndex = "memory_os_it_threshold"
+	const memID = "mem-os-it"
+	if err := eng.DropChunkStore(t.Context(), memIndex, memID); err != nil {
+		t.Fatalf("DropChunkStore (cleanup): %v", err)
+	}
+	t.Cleanup(func() {
+		_ = eng.DropChunkStore(context.Background(), memIndex, memID)
+	})
+
+	if err := eng.CreateChunkStore(t.Context(), memIndex, memID, osTestDim, "", "en"); err != nil {
+		t.Fatalf("CreateChunkStore: %v", err)
+	}
+
+	messages := []map[string]interface{}{
+		{
+			"id":           memID + "_1",
+			"doc_id":       memID + "_1",
+			"message_id":   int64(1),
+			"memory_id":    memID,
+			"message_type": "raw",
+			"status":       1,
+			"valid_at":     "2026-01-01 00:00:00",
+			"content":      "alpha deployment note",
+			"q_768_vec":    osBasisVector(1.0, 0.0), // cos = 1.0
+		},
+		{
+			"id":           memID + "_2",
+			"doc_id":       memID + "_2",
+			"message_id":   int64(2),
+			"memory_id":    memID,
+			"message_type": "raw",
+			"status":       1,
+			"valid_at":     "2026-01-02 00:00:00",
+			"content":      "unrelated lunch recipe",
+			"q_768_vec":    osBasisVector(0.0, 1.0), // cos = 0.0
+		},
+		{
+			"id":           memID + "_3",
+			"doc_id":       memID + "_3",
+			"message_id":   int64(3),
+			"memory_id":    memID,
+			"message_type": "raw",
+			"status":       1,
+			"valid_at":     "2026-01-03 00:00:00",
+			"content":      "keywordonly specialterm",
+			"q_768_vec":    osBasisVector(0.0, 1.0), // cos = 0.0, but matches text "specialterm"
+		},
+	}
+	if _, err := eng.InsertChunks(t.Context(), messages, memIndex, memID, "en"); err != nil {
+		t.Fatalf("InsertChunks: %v", err)
+	}
+
+	searchMem := func(query string, sim float64) *types.SearchResult {
+		t.Helper()
+		res, err := eng.Search(t.Context(), &types.SearchRequest{
+			IndexNames: []string{memIndex},
+			Limit:      10,
+			Filter: map[string]interface{}{
+				"memory_id": []string{memID},
+				"status":    1,
+				"must_not":  map[string]interface{}{"exists": "forget_at"},
+			},
+			OrderBy: (&types.OrderByExpr{}).Desc("valid_at"),
+			MatchExprs: []interface{}{
+				&types.MatchTextExpr{Fields: []string{"content"}, MatchingText: query, TopN: 100},
+				&types.MatchDenseExpr{
+					VectorColumnName: "q_768_vec",
+					EmbeddingData:    osBasisVector(1.0, 0.0),
+					TopN:             10,
+					ExtraOptions:     map[string]interface{}{"similarity": sim},
+				},
+				&types.FusionExpr{Method: "weighted_sum", TopN: 10, FusionParams: map[string]interface{}{"weights": "0.7,0.3"}},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Search memory(query=%q, sim=%v): %v", query, sim, err)
+		}
+		return res
+	}
+
+	// Query matches no text; threshold 0.5 keeps only message 1 (cos=1.0) and drops cos=0.0 messages.
+	res := searchMem("nonexistentterm", 0.5)
+	if len(res.Chunks) != 1 || res.Chunks[0]["id"] != memID+"_1" {
+		t.Fatalf("memory hybrid(nonexistentterm, 0.5): got %v, want only %s_1", res.Chunks, memID)
+	}
+
+	// Query matches message 3 text; threshold 0.5 keeps both message 3 (text leg) and message 1 (vector leg),
+	// while still excluding unrelated message 2.
+	res = searchMem("specialterm", 0.5)
+	if len(res.Chunks) != 2 {
+		t.Fatalf("memory hybrid(specialterm, 0.5): got %d chunks %v, want 2 (id 1 and id 3)", len(res.Chunks), res.Chunks)
+	}
+
+	// Threshold 1.0 keeps identical vector (message 1) and excludes non-identical ones when text misses.
+	res = searchMem("nonexistentterm", 1.0)
+	if len(res.Chunks) != 1 || res.Chunks[0]["id"] != memID+"_1" {
+		t.Fatalf("memory hybrid(nonexistentterm, 1.0): got %v, want only %s_1", res.Chunks, memID)
+	}
+}
