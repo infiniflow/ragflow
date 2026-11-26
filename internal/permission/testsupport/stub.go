@@ -18,6 +18,12 @@ package testsupport
 
 import "gorm.io/gorm"
 
+// DatasetPermissionQueryCount is the dataset query budget for community
+// authorization, which loads the resource facts in one batch.
+func DatasetPermissionQueryCount(_ int) int {
+	return 1
+}
+
 // PrepareEnterprisePermissionFixture is a no-op: the fixtures used by
 // permission-aware tests need no role or tenant-membership rows.
 func PrepareEnterprisePermissionFixture(_ *gorm.DB, _ string, _ ...string) error {

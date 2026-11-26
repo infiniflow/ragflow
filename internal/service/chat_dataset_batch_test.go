@@ -108,10 +108,10 @@ func TestValidateCreateDatasetIDsBatchesDatasetQueries(t *testing.T) {
 		}
 	}
 
-	// Authorization loads the datasets once and the service loads them once:
-	// two dataset queries regardless of how many datasets are requested.
-	if n := capture.knowledgebaseSelects(); n > 2 {
-		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)
+	// The service loads dataset metadata once, in addition to the active
+	// permission policy's resource queries.
+	if n, limit := capture.knowledgebaseSelects(), 1+testsupport.DatasetPermissionQueryCount(len(ids)); n > limit {
+		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= %d; got SQL: %v", n, len(ids), limit, capture.sqls)
 	}
 }
 
@@ -136,8 +136,8 @@ func TestValidateCreateDatasetIDsBatchesRESTDatasetQueries(t *testing.T) {
 			t.Fatalf("dataset[%d] = %q, want %q (order must be preserved)", i, got[i], ids[i])
 		}
 	}
-	if n := capture.knowledgebaseSelects(); n > 2 {
-		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)
+	if n, limit := capture.knowledgebaseSelects(), 1+testsupport.DatasetPermissionQueryCount(len(ids)); n > limit {
+		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= %d; got SQL: %v", n, len(ids), limit, capture.sqls)
 	}
 }
 
