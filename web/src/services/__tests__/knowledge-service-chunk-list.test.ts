@@ -79,4 +79,25 @@ describe('kbService.chunkList id filter', () => {
 
     expect(sentParams().chunk_ids).toBeUndefined();
   });
+
+  it('sends the one id prefix as a plain query value', async () => {
+    // One prefix per request goes out as typed, never comma-joined.
+    await kbService.chunkList({
+      kb_id: 'kb-1',
+      doc_id: 'doc-1',
+      chunk_id_prefix: '6877',
+    });
+
+    expect(sentParams().chunk_id_prefix).toBe('6877');
+  });
+
+  it('omits an empty prefix instead of sending an empty filter', async () => {
+    await kbService.chunkList({
+      kb_id: 'kb-1',
+      doc_id: 'doc-1',
+      chunk_id_prefix: '',
+    });
+
+    expect(sentParams().chunk_id_prefix).toBeUndefined();
+  });
 });

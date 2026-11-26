@@ -1969,6 +1969,18 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 			}
 			continue
 		}
+		if k == "id_prefix" {
+			// A prefix needs its own clause: a terms filter only names whole ids.
+			if idClauses := idPrefixClauses(v); len(idClauses) > 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"bool": map[string]interface{}{
+						"should":               idClauses,
+						"minimum_should_match": 1,
+					},
+				})
+			}
+			continue
+		}
 		if k == "id" {
 			// id is a scope restriction, never a scoring hint. It has to be a
 			// mandatory clause: encoding it in bool.should relied on
@@ -2083,6 +2095,38 @@ func idTermClauses(value interface{}) []interface{} {
 		map[string]interface{}{"terms": map[string]interface{}{"id": items}},
 		map[string]interface{}{"terms": map[string]interface{}{"_id": items}},
 	}
+}
+
+// idPrefixClauses renders prefixes as `prefix` queries on `id`. Unlike the exact
+// filter it emits no `_id` mirror: `_id` takes no prefix query.
+func idPrefixClauses(value interface{}) []interface{} {
+	items, ok := esoscommon.ConditionTermsList(value)
+	if !ok {
+		// Like idTermClauses, accept a scalar so an odd shape cannot drop the filter.
+		text, isString := value.(string)
+		if !isString {
+			return nil
+		}
+		items = []interface{}{text}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	clauses := make([]interface{}, 0, len(items))
+	for _, item := range items {
+		prefix, ok := item.(string)
+		if !ok {
+			continue
+		}
+		prefix = strings.ToLower(strings.TrimSpace(prefix))
+		if prefix == "" {
+			continue
+		}
+		clauses = append(clauses, map[string]interface{}{
+			"prefix": map[string]interface{}{"id": prefix},
+		})
+	}
+	return clauses
 }
 
 // buildQueryStringQuery builds a query_string query from MatchTextExpr

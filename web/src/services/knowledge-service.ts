@@ -236,6 +236,8 @@ const chunkService = {
         chunk_ids: Array.isArray(params.chunk_ids)
           ? params.chunk_ids.join(',') || undefined
           : params.chunk_ids,
+        // One prefix; an empty value sends no filter at all.
+        chunk_id_prefix: params.chunk_id_prefix || undefined,
       },
     });
 

@@ -188,3 +188,25 @@ func TestSearchByRegexpRejectsEmptyIndexNames(t *testing.T) {
 		t.Fatal("SearchByRegexp without index names must fail")
 	}
 }
+
+// A prefix must reach Infinity as an anchored regex; the doc scope must survive.
+func TestChunkIDPrefixFilterUsesRegex(t *testing.T) {
+	const docID = "d7c44b97f2544a3e99a8ca698e25ab0f"
+	condition := equivalentConditionToStr(map[string]interface{}{
+		"doc_id":    docID,
+		"id_prefix": []string{"6877", "ABCD"},
+		"must_not":  map[string]interface{}{"exists": "compile_kwd"},
+	}, nil)
+
+	for _, want := range []string{
+		fmt.Sprintf("doc_id='%s'", docID),
+		"regex(id, '^6877')",
+		"regex(id, '^abcd')",
+		" OR ",
+		"NOT (compile_kwd!='')",
+	} {
+		if !strings.Contains(condition, want) {
+			t.Errorf("condition %q is missing %q", condition, want)
+		}
+	}
+}
