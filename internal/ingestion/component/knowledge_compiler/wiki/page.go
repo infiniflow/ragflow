@@ -165,7 +165,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 		if strings.TrimSpace(content) == "" {
 			content = page.ContentRaw
 		}
-		summary := summarizeMarkdown(content, title)
+		summary := SummarizeMarkdown(content, title)
 		sourceChunkIDs := appcommon.DeduplicateTrimmed(page.SourceChunkIDs)
 		sourceDocIDs := appcommon.DeduplicateTrimmed(page.SourceDocIDs)
 		if len(sourceDocIDs) == 0 && docID != "" {

@@ -15,10 +15,10 @@ import (
 	"golang.org/x/net/html"
 )
 
-// summarizeMarkdown extracts the first non-heading body block as plain text,
+// SummarizeMarkdown extracts the first non-heading body block as plain text,
 // falling back to the page title when there is no visible body text.
 // Parse before truncating so long link destinations cannot leak into summaries.
-func summarizeMarkdown(content, title string) string {
+func SummarizeMarkdown(content, title string) string {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		// Raw HTML stays in an intermediate buffer only; tokenization removes tags.
