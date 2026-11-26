@@ -103,16 +103,25 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDa
 	}
 
 	// ── 3. Expand folders to leaf files, then deduplicate ─────────────────────
-	checker := permission.NewDatabaseChecker(dao.DB)
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
 	checkFileRead := func(file *entity.File) error {
-		kind := permission.ResourceKindFile
-		if file.Type == "folder" {
-			kind = permission.ResourceKindFolder
+		if userID == "" {
+			return permission.ErrUnauthenticated
 		}
-		return checker.CheckResource(ctx, permission.ResourceRef{
-			Kind: kind,
-			ID:   file.ID,
-		}, permission.OperationRead)
+		if file == nil || file.TenantID != tenantID {
+			return permission.ErrResourceNotFound
+		}
+		if file.ParentID == file.ID || (file.SourceType == string(entity.FileSourceKnowledgebase) && file.UserID == "") {
+			return nil
+		}
+		if file.UserID != userID {
+			return permission.ErrPermissionDenied
+		}
+		return nil
 	}
 	// Mixed folder + direct file inputs (or overlapping folders) can yield the
 	// same leaf file more than once; dedupe so each file is converted exactly

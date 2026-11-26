@@ -8,18 +8,43 @@ import (
 	"ragflow/internal/permission"
 )
 
+func currentFileTenantID(ctx context.Context) string {
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = permission.UserIDFromContext(ctx)
+	}
+	return tenantID
+}
+
 func checkFileAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
 	if file == nil {
 		return permission.ErrResourceNotFound
 	}
-	kind := permission.ResourceKindFile
-	if file.Type == FileTypeFolder {
-		kind = permission.ResourceKindFolder
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := currentFileTenantID(ctx)
+	if userID == "" {
+		return permission.ErrUnauthenticated
 	}
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: kind,
-		ID:   file.ID,
-	}, operation)
+	if file.TenantID != tenantID {
+		return permission.ErrResourceNotFound
+	}
+	action := permission.ActionRead
+	if operation != permission.OperationRead {
+		action = permission.ActionWrite
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", action); err != nil {
+		return err
+	}
+	if file.ParentID == file.ID || (file.SourceType == string(entity.FileSourceKnowledgebase) && file.UserID == "") {
+		if operation == permission.OperationRead || operation == permission.OperationCreate {
+			return nil
+		}
+		return permission.ErrPermissionDenied
+	}
+	if file.UserID == "" || file.UserID != userID {
+		return permission.ErrPermissionDenied
+	}
+	return nil
 }
 
 func (s *FileService) checkFileTreeAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
@@ -35,27 +60,9 @@ func (s *FileService) checkFileTreeAccess(ctx context.Context, file *entity.File
 		entries = append(entries, descendants...)
 	}
 
-	const permissionBatchSize = 500
-	checker := permission.NewDatabaseChecker(dao.DB)
-	for start := 0; start < len(entries); start += permissionBatchSize {
-		end := start + permissionBatchSize
-		if end > len(entries) {
-			end = len(entries)
-		}
-		refs := make([]permission.ResourceRef, 0, end-start)
-		for _, entry := range entries[start:end] {
-			kind := permission.ResourceKindFile
-			if entry.Type == FileTypeFolder {
-				kind = permission.ResourceKindFolder
-			}
-			refs = append(refs, permission.ResourceRef{Kind: kind, ID: entry.ID})
-		}
-		accessible, err := checker.FilterResources(ctx, refs, operation)
-		if err != nil {
+	for i := range entries {
+		if err := checkFileAccess(ctx, &entries[i], operation); err != nil {
 			return err
-		}
-		if len(accessible) != len(refs) {
-			return permission.ErrPermissionDenied
 		}
 	}
 	return nil

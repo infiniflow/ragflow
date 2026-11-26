@@ -1,9 +1,5 @@
 import { Operator } from '@/constants/agent';
-import {
-  ChunkerOperators,
-  SingleOperators,
-  TopLevelOperators,
-} from '../constant/pipeline';
+import { ChunkerOperators, SingleOperators } from '../constant/pipeline';
 
 export function isChunkerOperator(operator: Operator): boolean {
   return (ChunkerOperators as Operator[]).includes(operator);
@@ -19,56 +15,47 @@ export function isSingleInstanceOperator(operator: Operator): boolean {
 }
 
 export interface PipelineNextOperators {
-  // Operators offered in the flat top-level list, minus the single-instance
-  // ones already on canvas.
+  // Allowed next operators, minus operators already on canvas.
   operators: Operator[];
-  // The chunker variants, offered only while the single chunker slot is free.
-  chunkerOperators: Operator[];
-  showChunker: boolean;
 }
 
+const pipelineNextOperators: Partial<Record<Operator, Operator[]>> = {
+  [Operator.File]: [Operator.Parser],
+  [Operator.Parser]: ChunkerOperators,
+  [Operator.TokenChunker]: [
+    Operator.Extractor,
+    Operator.Compiler,
+    Operator.Tokenizer,
+  ],
+  [Operator.TitleChunker]: [
+    Operator.Extractor,
+    Operator.Compiler,
+    Operator.Tokenizer,
+  ],
+  [Operator.Extractor]: [Operator.Compiler, Operator.Tokenizer],
+  [Operator.Compiler]: [Operator.Tokenizer],
+};
+
 /**
- * Build the "next step" operator menu for a pipeline source node. Mirrors the
- * topology rules from `isValidPipelineConnection`: a Parser offers only the
- * chunker group, and Extractor/Compiler/chunker sources never offer the
- * chunker group. Single-instance operators are filtered out through
- * `hasOperator`. Pure function so both the menu component and the
- * connection-drag gate can reuse it.
+ * Build the "next step" operator menu from the pipeline's component order.
+ * Single-instance operators already on the canvas are filtered out.
  */
 export function buildPipelineNextOperators(
   source: Operator | undefined,
   hasOperator: (operator: Operator) => boolean,
 ): PipelineNextOperators {
-  const operators: Operator[] = [];
-
-  // Pipelines require a Parser to feed a chunker, so from a Parser node the
-  // menu offers only the chunker group. Extractor joins the filtered list
-  // because the Go pipeline allows at most one per canvas (ValidatePipeline).
-  if (source !== Operator.Parser) {
-    TopLevelOperators.forEach((operator) => {
-      if (!hasOperator(operator)) {
-        operators.push(operator);
-      }
-    });
-  }
-
-  // The chunker group occupies a single slot: any chunker already on the
-  // canvas (Title or Token) hides the whole group, keeping the two variants
-  // mutually exclusive.
+  const allowedOperators = source
+    ? (pipelineNextOperators[source] ?? [])
+    : [Operator.Parser];
   const chunkerSlotTaken = ChunkerOperators.some(hasOperator);
-  const chunkerOperators = chunkerSlotTaken ? [] : ChunkerOperators;
-
-  // Pipelines forbid chunker -> chunker, mirroring the rule that
-  // Extractor/Compiler never offer the chunker group.
-  const sourceExcluded =
-    source === Operator.Extractor ||
-    source === Operator.Compiler ||
-    (!!source && isChunkerOperator(source));
+  const operators = allowedOperators.filter(
+    (operator) =>
+      !hasOperator(operator) &&
+      !(isChunkerOperator(operator) && chunkerSlotTaken),
+  );
 
   return {
     operators,
-    chunkerOperators,
-    showChunker: !sourceExcluded && chunkerOperators.length > 0,
   };
 }
 
@@ -81,25 +68,15 @@ export function hasPipelineNextOperators(
   source: Operator | undefined,
   hasOperator: (operator: Operator) => boolean,
 ): boolean {
-  const { operators, chunkerOperators, showChunker } =
-    buildPipelineNextOperators(source, hasOperator);
-  return operators.length > 0 || (showChunker && chunkerOperators.length > 0);
+  return buildPipelineNextOperators(source, hasOperator).operators.length > 0;
 }
 
 /**
- * Pipeline topology rules, enforced when a connection is created:
- * a Parser may only feed a chunker, and a chunker may not feed another
- * chunker. All other source/target pairs are unrestricted.
+ * Pipeline topology rules, enforced when a connection is created.
  */
 export function isValidPipelineConnection(
   source: Operator,
   target: Operator,
 ): boolean {
-  if (source === Operator.Parser) {
-    return isChunkerOperator(target);
-  }
-  if (isChunkerOperator(source)) {
-    return !isChunkerOperator(target);
-  }
-  return true;
+  return (pipelineNextOperators[source] ?? []).includes(target);
 }

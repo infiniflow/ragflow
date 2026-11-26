@@ -193,7 +193,7 @@ export function PipelineAccordionOperators({
   );
   const sourceOperator = getOperatorTypeFromId(nodeId) as Operator | undefined;
 
-  const { operators, chunkerOperators, showChunker } = useMemo(
+  const { operators } = useMemo(
     () =>
       buildPipelineNextOperators(
         sourceOperator,
@@ -203,33 +203,10 @@ export function PipelineAccordionOperators({
   );
 
   return (
-    <>
-      <OperatorItemList
-        operators={operators}
-        isCustomDropdown={isCustomDropdown}
-        mousePosition={mousePosition}
-      ></OperatorItemList>
-      {showChunker && (
-        <Accordion
-          type="single"
-          collapsible
-          className="w-full px-4"
-          defaultValue="item-1"
-        >
-          <AccordionItem value="item-1">
-            <AccordionTrigger className="translate-y-2 hover:no-underline text-text-primary font-normal">
-              Chunker
-            </AccordionTrigger>
-            <AccordionContent className="flex flex-col gap-4">
-              <OperatorItemList
-                operators={chunkerOperators}
-                isCustomDropdown={isCustomDropdown}
-                mousePosition={mousePosition}
-              ></OperatorItemList>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      )}
-    </>
+    <OperatorItemList
+      operators={operators}
+      isCustomDropdown={isCustomDropdown}
+      mousePosition={mousePosition}
+    ></OperatorItemList>
   );
 }

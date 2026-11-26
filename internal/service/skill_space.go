@@ -183,10 +183,6 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
-		code, normalized := permissionresponse.NormalizeHidden(err)
-		return nil, code, normalized
-	}
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
 		info, modelErr := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeEmbedding)
@@ -300,11 +296,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 		if err := s.spaceDAO.Create(ctx, tx, space); err != nil {
 			return fmt.Errorf("failed to create space: %w", err)
 		}
-		checker := permission.NewDatabaseChecker(tx)
-		if err := checker.GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folderID}); err != nil {
-			return err
-		}
-		return checker.GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
 	}); err != nil {
 		common.Error("Failed to create skill space", err)
 		return nil, common.CodeOperatingError, err

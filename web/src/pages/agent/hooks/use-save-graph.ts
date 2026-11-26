@@ -2,11 +2,7 @@ import message from '@/components/ui/message';
 import { ModelTypeMap } from '@/components/model-tree-select';
 import { useModelValidIds } from '@/hooks/use-llm-request';
 import { Operator } from '../constant';
-import {
-  useFetchAgent,
-  useResetAgent,
-  useSaveAgent,
-} from '@/hooks/use-agent-request';
+import { useFetchAgent, useSaveAgent } from '@/hooks/use-agent-request';
 import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import {
   GlobalVariableType,
@@ -85,8 +81,8 @@ export const useSaveGraph = (
 
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
-  const { resetAgent } = useResetAgent();
   const { data: agent, loading: agentLoading } = useFetchAgent();
+  const { data: presence } = useFetchCanvasPresence();
   const { resolveValidIds } = useModelValidIds(
     ModelTypeMap.llm_id,
     agent?.tenant_id,
@@ -122,17 +118,15 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         );
         return;
       }
-      const saveRet = await saveGraph(nextNodes, undefined, undefined, true);
-      if (saveRet?.code === 0) {
-        // Call the reset api before opening the run drawer each time
-        const resetRet = await resetAgent();
-        // After resetting, all previous messages will be cleared.
-        if (resetRet?.code === 0) {
-          show();
-        }
+      if (canEditAgent(presence.operator_permission ?? 0)) {
+        const saveRet = await saveGraph(nextNodes, undefined, undefined, true);
+        if (saveRet?.code !== 0) return;
       }
+
+      // Read-only operators run the persisted canvas without updating it.
+      show();
     },
-    [saveGraph, resetAgent, show, resolveValidIds],
+    [saveGraph, show, resolveValidIds, presence.operator_permission],
   );
 
   return { handleRun, loading };

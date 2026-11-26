@@ -350,12 +350,23 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 // concurrent move would otherwise be able to relocate a file (or one of its
 // ancestors) after the parent chain was checked and before the write.
 func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.DB, folderID string, changes []entity.FileChange, treeState map[string]interface{}) error {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
 	var folder entity.File
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", folderID).First(&folder).Error; err != nil {
 		return fmt.Errorf("resolve commit folder %s: %w", folderID, err)
 	}
 	if folder.Type != FileTypeFolder {
 		return fmt.Errorf("%w: %s is not a folder", permission.ErrResourceNotFound, folderID)
+	}
+	if folder.TenantID != tenantID || folder.UserID != userID {
+		return permission.ErrPermissionDenied
 	}
 
 	operations := make(map[string][]string, len(changes))
@@ -391,6 +402,9 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 			file, ok := existing[id]
 			if !ok {
 				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
+			}
+			if file.TenantID != tenantID || file.UserID != userID {
+				return permission.ErrPermissionDenied
 			}
 			scoped[id] = file
 		} else {

@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -115,7 +116,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
-		if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+		if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID, kbFolder.UserID); err != nil {
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
 			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
@@ -186,7 +187,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 	if err = s.InsertDocument(ctx, doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID, kbFolder.UserID); err != nil {
 		return nil, common.CodeServerError, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	if _, verr := datasetversion.RecordContentVersionChangesOwnTx(ctx, kb.ID, entity.DatasetVersionKindUpload,
@@ -212,11 +213,15 @@ func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowled
 		if err != nil {
 			return err
 		}
-		kbRoot, err := s.newAFileFromKB(ctx, tx, tenantID, knowledgebaseFolderName, root.ID)
+		kbRoot, err := s.newAFileFromKB(ctx, tx, tenantID, "", knowledgebaseFolderName, root.ID)
 		if err != nil {
 			return err
 		}
-		kbFolder, err = s.newAFileFromKB(ctx, tx, current.TenantID, current.Name, kbRoot.ID)
+		ownerUserID := current.UserID
+		if ownerUserID == "" {
+			ownerUserID = current.CreatedBy
+		}
+		kbFolder, err = s.newAFileFromKB(ctx, tx, current.TenantID, ownerUserID, current.Name, kbRoot.ID)
 		return err
 	})
 	return kbFolder, err
@@ -224,30 +229,55 @@ func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowled
 
 // newAFileFromKB returns the existing folder named name under parentID, or
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
-func (s *DocumentService) newAFileFromKB(ctx context.Context, db *gorm.DB, tenantID, name, parentID string) (*entity.File, error) {
-	existingFolders, err := s.fileDAO.Query(ctx, db, name, parentID, tenantID)
+func (s *DocumentService) newAFileFromKB(ctx context.Context, db *gorm.DB, tenantID, ownerUserID, name, parentID string) (*entity.File, error) {
+	var existingFolders []*entity.File
+	query := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ? AND source_type = ?", name, parentID, tenantID, string(entity.FileSourceKnowledgebase))
+	if ownerUserID != "" {
+		query = query.Where("user_id = ?", ownerUserID)
+	}
+	err := query.Find(&existingFolders).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range existingFolders {
 		if f.TenantID == tenantID {
+			if ownerUserID == "" && f.UserID != "" {
+				if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", f.ID).Update("user_id", "").Error; err != nil {
+					return nil, err
+				}
+				f.UserID = ""
+			}
 			return f, nil
+		}
+	}
+	if ownerUserID != "" {
+		var legacyFolder entity.File
+		if err := db.WithContext(ctx).
+			Where("name = ? AND parent_id = ? AND tenant_id = ? AND source_type = ? AND user_id = ? AND created_by = ?", name, parentID, tenantID, string(entity.FileSourceKnowledgebase), tenantID, ownerUserID).
+			First(&legacyFolder).Error; err == nil {
+			if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", legacyFolder.ID).Update("user_id", ownerUserID).Error; err != nil {
+				return nil, err
+			}
+			legacyFolder.UserID = ownerUserID
+			return &legacyFolder, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
 		}
 	}
 	loc := ""
 	folder := &entity.File{
 		ID:         common.GenerateToken(),
 		ParentID:   parentID,
-		UserID:     tenantID,
+		UserID:     ownerUserID,
 		TenantID:   tenantID,
-		CreatedBy:  tenantID,
+		CreatedBy:  permission.UserIDFromContext(ctx),
 		Name:       name,
 		Type:       "folder",
 		Size:       0,
 		Location:   &loc,
 		SourceType: string(entity.FileSourceKnowledgebase),
 	}
-	if err := s.fileDAO.Create(ctx, db, folder); err != nil {
+	if err := db.WithContext(ctx).Create(folder).Error; err != nil {
 		return nil, err
 	}
 	return folder, nil
@@ -256,9 +286,21 @@ func (s *DocumentService) newAFileFromKB(ctx context.Context, db *gorm.DB, tenan
 // addFileFromKB links a document into the file manager: a File row under the
 // dataset folder plus a file2document mapping. Mirrors Python
 // FileService.add_file_from_kb (idempotent on the document mapping).
-func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Document, kbFolderID, tenantID string) error {
+func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Document, kbFolderID, tenantID, ownerUserID string) error {
 	if existing, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID); err == nil && len(existing) > 0 {
+		for _, mapping := range existing {
+			if mapping.FileID == nil {
+				continue
+			}
+			if err := dao.DB.WithContext(ctx).Model(&entity.File{}).
+				Where("id = ? AND tenant_id = ?", *mapping.FileID, tenantID).
+				Updates(map[string]interface{}{"user_id": ownerUserID, "parent_id": kbFolderID}).Error; err != nil {
+				return err
+			}
+		}
 		return nil
+	} else if err != nil {
+		return err
 	}
 	name := ""
 	if doc.Name != nil {
@@ -272,9 +314,9 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   kbFolderID,
-		UserID:     tenantID,
+		UserID:     ownerUserID,
 		TenantID:   tenantID,
-		CreatedBy:  tenantID,
+		CreatedBy:  doc.CreatedBy,
 		Name:       name,
 		Type:       doc.Type,
 		Size:       doc.Size,
@@ -359,7 +401,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		}
 		return nil, common.CodeServerError, err
 	}
-	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID, kbFolder.UserID); err != nil {
 		err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 		rmErr := storage.RemoveBlob(ctx, storageImpl, kb.ID, location)
 		if rmErr != nil {

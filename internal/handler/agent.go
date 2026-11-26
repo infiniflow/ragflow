@@ -960,7 +960,6 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	desc := !strings.EqualFold(descParam, "false")
 	sessionID := c.Query("id")
 	queryUserID := c.Query("user_id")
-	expUserID := c.Query("exp_user_id")
 	dslParam := c.Query("dsl")
 	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
@@ -979,7 +978,6 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		Desc:             desc,
 		SessionID:        sessionID,
 		UserID:           queryUserID,
-		ExpUserID:        expUserID,
 		IncludeDSL:       includeDSL,
 		IncludeReference: options.IncludeReference,
 		IncludePrompt:    options.IncludePrompt,

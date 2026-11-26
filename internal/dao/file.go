@@ -68,11 +68,22 @@ func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenan
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
 func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool, visibilityScopes ...func(*gorm.DB) *gorm.DB) ([]*entity.File, int64, error) {
+	return dao.getByPfID(ctx, db, tenantID, "", pfID, page, pageSize, terms, keywords, excludeSkills, visibilityScopes...)
+}
+
+func (dao *FileDAO) GetByPfIDForOwner(ctx context.Context, db *gorm.DB, tenantID, ownerUserID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
+	return dao.getByPfID(ctx, db, tenantID, ownerUserID, pfID, page, pageSize, terms, keywords, excludeSkills)
+}
+
+func (dao *FileDAO) getByPfID(ctx context.Context, db *gorm.DB, tenantID, ownerUserID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool, visibilityScopes ...func(*gorm.DB) *gorm.DB) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 	query, err := dao.fileListQuery(ctx, db, tenantID, pfID, keywords, excludeSkills)
 	if err != nil {
 		return nil, 0, err
+	}
+	if ownerUserID != "" {
+		query = query.Where("(user_id = ? OR (type = ? AND source_type = ? AND name = ?))", ownerUserID, "folder", "knowledgebase", DatasetFolderName)
 	}
 	if len(visibilityScopes) > 0 {
 		if visibilityScopes[0] == nil {
@@ -539,7 +550,7 @@ const SkillsFolderName = "skills"
 // concurrent race conditions (TOCTOU).
 func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
 	var existing []*entity.File
-	err := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ?", DatasetFolderName, rootID, tenantID).
+	err := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ? AND source_type = ?", DatasetFolderName, rootID, tenantID, "knowledgebase").
 		Order("create_time ASC").
 		Find(&existing).Error
 	if err != nil {
@@ -557,16 +568,24 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 				}
 			}
 		}
-		return nil
+		if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", existing[0].ID).Update("user_id", "").Error; err != nil {
+			return err
+		}
+		existing[0].UserID = ""
 	}
 
-	datasetFolder, err := dao.newAFileFromDataset(ctx, db, tenantID, DatasetFolderName, rootID)
-	if err != nil {
-		return err
+	var datasetFolder *entity.File
+	if len(existing) > 0 {
+		datasetFolder = existing[0]
+	} else {
+		datasetFolder, err = dao.newAFileFromDataset(ctx, db, tenantID, "", DatasetFolderName, rootID)
+		if err != nil {
+			return err
+		}
 	}
 
 	var datasets []entity.Knowledgebase
-	err = db.WithContext(ctx).Select("id", "name").
+	err = db.WithContext(ctx).Select("id", "name", "user_id", "created_by").
 		Where("tenant_id = ?", tenantID).
 		Find(&datasets).Error
 	if err != nil {
@@ -574,8 +593,12 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 	}
 
 	for _, ds := range datasets {
+		ownerUserID := ds.UserID
+		if ownerUserID == "" {
+			ownerUserID = ds.CreatedBy
+		}
 		var datasetFolderForDataset *entity.File
-		datasetFolderForDataset, err = dao.newAFileFromDataset(ctx, db, tenantID, ds.Name, datasetFolder.ID)
+		datasetFolderForDataset, err = dao.newAFileFromDataset(ctx, db, tenantID, ownerUserID, ds.Name, datasetFolder.ID)
 		if err != nil {
 			continue
 		}
@@ -587,7 +610,7 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 		}
 
 		for _, doc := range documents {
-			if err = dao.addFileFromKB(ctx, db, &doc, datasetFolderForDataset.ID, tenantID, file2DocumentDAO); err != nil {
+			if err = dao.addFileFromKB(ctx, db, &doc, datasetFolderForDataset.ID, tenantID, ownerUserID, file2DocumentDAO); err != nil {
 				return err
 			}
 		}
@@ -598,7 +621,7 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 
 // newAFileFromDataset creates a new file from knowledgebase, or returns the existing one.
 // Deduplicates duplicate entries that may have been created by race conditions.
-func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenantID, name, parentID string) (*entity.File, error) {
+func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenantID, ownerUserID, name, parentID string) (*entity.File, error) {
 	var existingFiles []*entity.File
 	err := db.WithContext(ctx).Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Order("create_time ASC").Find(&existingFiles).Error
 	if err != nil {
@@ -606,26 +629,26 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 	}
 
 	if len(existingFiles) > 0 {
-		if len(existingFiles) > 1 {
-			common.Warn("Found duplicate entries under parent, keeping only the first",
-				zap.Int("duplicates", len(existingFiles)), zap.String("name", name), zap.String("parent_id", parentID))
-			keepID := existingFiles[0].ID
-			for _, dup := range existingFiles[1:] {
-				if err = reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					common.Error("Failed to deduplicate file entry", err, zap.String("entry_id", dup.ID))
+		for _, existing := range existingFiles {
+			if existing.UserID == ownerUserID || (existing.UserID == tenantID && existing.CreatedBy == ownerUserID) {
+				if existing.UserID != ownerUserID {
+					if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", existing.ID).Update("user_id", ownerUserID).Error; err != nil {
+						return nil, err
+					}
+					existing.UserID = ownerUserID
 				}
+				return existing, nil
 			}
 		}
-		return existingFiles[0], nil
 	}
 
 	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   parentID,
-		UserID:     tenantID,
+		UserID:     ownerUserID,
 		TenantID:   tenantID,
-		CreatedBy:  tenantID,
+		CreatedBy:  ownerUserID,
 		Name:       name,
 		Type:       "folder",
 		Size:       0,
@@ -639,7 +662,7 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 }
 
 // addFileFromKB adds a file record from knowledgebase document
-func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.Document, datasetFolderID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.Document, datasetFolderID, tenantID, ownerUserID string, file2DocumentDAO *File2DocumentDAO) error {
 	var f2dCount int64
 	err := db.WithContext(ctx).Model(&entity.File2Document{}).
 		Where("document_id = ?", doc.ID).
@@ -649,6 +672,18 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 	}
 
 	if f2dCount > 0 {
+		mappings, err := file2DocumentDAO.GetByDocumentID(ctx, db, doc.ID)
+		if err != nil {
+			return err
+		}
+		for _, mapping := range mappings {
+			if mapping.FileID == nil {
+				continue
+			}
+			if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ? AND tenant_id = ?", *mapping.FileID, tenantID).Updates(map[string]interface{}{"user_id": ownerUserID, "parent_id": datasetFolderID}).Error; err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
@@ -666,9 +701,9 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
-		UserID:     tenantID,
+		UserID:     ownerUserID,
 		TenantID:   tenantID,
-		CreatedBy:  tenantID,
+		CreatedBy:  doc.CreatedBy,
 		Name:       docName,
 		Type:       doc.Type,
 		Size:       doc.Size,
