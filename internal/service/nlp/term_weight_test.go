@@ -23,6 +23,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 type oovFrequencyFixture struct {
@@ -90,6 +92,19 @@ func TestOOVWeightsFavorLongerContentTerms(t *testing.T) {
 	weights = d.Weights([]string{"supplier", "equipment"}, false, "")
 	if weights[1].Weight >= weights[0].Weight {
 		t.Fatalf("dictionary frequency should take precedence over the OOV prior: %v", weights)
+	}
+}
+
+// A compound OOV term scored through its fine-grained sub-tokens keeps the
+// frequency floor of 10 (Python term_weight.py freq: `return max(s, 10)`), so
+// "a1 b2" weighs the same as the unknown term "x12".
+func TestWeightsFineGrainedFrequencyFloor(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+	d := NewTermWeightDealer("")
+	weights := d.Weights([]string{"x12", "a1 b2"}, false, "")
+	if math.Abs(weights[0].Weight-weights[1].Weight) > 1e-12 {
+		t.Fatalf("x12 = %v, a1 b2 = %v; want equal", weights[0].Weight, weights[1].Weight)
 	}
 }
 
