@@ -164,7 +164,7 @@ func (c *Config) GetEnvironments() error {
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch", "oceanbase", "opensearch", "seekdb", "vastbase":
+		case "infinity", "elasticsearch", "oceanbase", "opensearch", "seekdb", "vastbase", "opengauss":
 			c.environments.DocumentEngineType = docEngine
 		default:
 			return fmt.Errorf("invalid doc engine: %s", docEngine)

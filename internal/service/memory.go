@@ -993,7 +993,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, memoryID string) error
 	}
 
 	// TODO: Delete associated message index - Implementation pending MessageService
-	if s.docEngine != nil && (engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType())) {
+	if s.docEngine != nil && (engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType()) || engine.Type(s.docEngine) == engine.EngineOpenGauss) {
 		if err := s.docEngine.DropChunkStore(ctx, MemoryIndexName(memory.TenantID), memoryID); err != nil {
 			return fmt.Errorf("delete memory messages: %w", err)
 		}
@@ -1030,7 +1030,7 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, memoryID string, mess
 	}
 	// OceanBase/SeekDB/Vastbase memory tables contain forget_at but no
 	// forget_at_flt. Keep the existing companion-field update for other engines.
-	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) && !engine.IsVastbase(s.docEngine.GetType()) {
+	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) && !engine.IsVastbase(s.docEngine.GetType()) && engine.Type(s.docEngine) != engine.EngineOpenGauss {
 		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{

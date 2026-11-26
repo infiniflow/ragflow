@@ -198,6 +198,44 @@ services:
     restart: unless-stopped
 
 
+  opengauss:
+    profiles: [opengauss]
+    image: ${OPENGAUSS_IMAGE:-opengauss/opengauss-server:7.0.0-RC3.B025}
+    shm_size: 1g
+    environment:
+      GS_DB: postgres
+      GS_PORT: ${OPENGAUSS_PORT:-5432}
+      PGPORT: ${OPENGAUSS_PORT:-5432}
+      OPENGAUSS_DATABASE: ${OPENGAUSS_DATABASE:-ragflow_doc}
+      OPENGAUSS_USER: ${OPENGAUSS_USER:-ragflow}
+      OPENGAUSS_PASSWORD: ${OPENGAUSS_PASSWORD:-}
+      OPENGAUSS_SCHEMA: ${OPENGAUSS_SCHEMA:-public}
+    # The image requires an initial administrator password. RAGFlow uses
+    # its own login; local administration is available via the omm socket.
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - |
+        export GS_PASSWORD="Og1!$$(openssl rand -hex 12)"
+        exec entrypoint.sh gaussdb
+    volumes:
+      - opengauss_data:/var/lib/opengauss/data
+      - ./opengauss/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test "$$(cat /proc/1/comm)" = gaussdb &&
+          gosu omm bash -lc 'gsql -h 127.0.0.1 -U "$$OPENGAUSS_USER"
+          -W "$$OPENGAUSS_PASSWORD" -d "$$OPENGAUSS_DATABASE" -Atc "SELECT 1"' | grep -qx 1
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 24
+    networks:
+      - ragflow
+    restart: unless-stopped
+
   vastbase:
     # `vastbase` serves the doc engine; `metadata-vastbase` additionally lets
     # the same instance carry the business metadata (DB_TYPE=vastbase).
@@ -583,6 +621,8 @@ volumes:
   seekdb_data:
     driver: local
   vastbase_data:
+    driver: local
+  opengauss_data:
     driver: local
   mysql_data:
     driver: local

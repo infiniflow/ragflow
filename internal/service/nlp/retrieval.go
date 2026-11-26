@@ -385,6 +385,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 		resultChunk := make(map[string]interface{})
 		resultChunk["chunk_id"] = chunkID
+		if original, ok := searchResult.originalIDs[chunkID]; ok {
+			resultChunk["chunk_id"] = original
+		}
 		if v, ok := chunk["content_ltks"]; ok {
 			resultChunk["content_ltks"] = v
 		}
@@ -609,7 +612,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		return sim, sim, sim, nil
 	}
 
-	if useOceanBase || useVastbase {
+	if useOceanBase || useVastbase || (s.docEngine.GetType() == string(engine.EngineOpenGauss) && !req.VectorOnly) {
 		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
@@ -783,6 +786,7 @@ func minMatch(vectorSimilarityWeight *float64, withMatch float64) float64 {
 }
 
 type RetrievalSearchResult struct {
+	originalIDs map[string]string                 // Maps dataset-scoped hit keys back to public chunk IDs.
 	Chunks      []map[string]interface{}          // Search results
 	Total       int64                             // Total number of matches
 	QueryVector []float64                         // Query vector (for hybrid search, used in reranking)
@@ -793,6 +797,31 @@ type RetrievalSearchResult struct {
 	Aggregation []map[string]interface{}          // Doc aggregation by field
 	Options     map[string]interface{}            // Engine-specific options (e.g., total from get_total)
 	IndexNames  []string                          // Index names for second-pass queries (e.g., KNN scores)
+}
+
+// scopeDatasetHits gives duplicate chunk IDs distinct keys for ranking, filtering
+// and highlighting. Keep the stored IDs for citations in the API response.
+func scopeDatasetHits(chunks []map[string]interface{}) ([]map[string]interface{}, map[string]string) {
+	counts := make(map[string]int, len(chunks))
+	for _, chunk := range chunks {
+		id, _ := chunk["id"].(string)
+		counts[id]++
+	}
+	if len(counts) == len(chunks) {
+		return chunks, nil
+	}
+	hits := slices.Clone(chunks)
+	originals := make(map[string]string)
+	for i, chunk := range chunks {
+		id, _ := chunk["id"].(string)
+		if counts[id] > 1 {
+			key := common.FirstEngineString(chunk["kb_id"]) + "\x00" + id
+			hits[i] = maps.Clone(chunk)
+			hits[i]["id"] = key
+			originals[key] = id
+		}
+	}
+	return hits, originals
 }
 
 // Search performs search based on question and EmbeddingModel:
@@ -926,7 +955,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
 			driverType := s.docEngine.GetType()
-			if driverType == string(engine.EngineElasticsearch) || driverType == string(engine.EngineOpenSearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
+			if driverType == string(engine.EngineElasticsearch) || driverType == string(engine.EngineOpenSearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) || driverType == string(engine.EngineOpenGauss) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 
@@ -1045,7 +1074,12 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			zap.Strings("docIDs", req.DocIDs),
 			zap.Int("knnTopN", knnTopN), zap.Any("knnExtra", knnExtra))
 	}
-	ids := s.docEngine.GetChunkIDs(searchResult.Chunks)
+	hits := searchResult.Chunks
+	var originalIDs map[string]string
+	if s.docEngine.GetType() == string(engine.EngineOpenGauss) {
+		hits, originalIDs = scopeDatasetHits(hits)
+	}
+	ids := s.docEngine.GetChunkIDs(hits)
 	common.Info("GetChunkIDs result", zap.Int("count", len(ids)), zap.Strings("ids", ids))
 
 	// Build Keywords list from kwds set
@@ -1054,7 +1088,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		keywordsList = append(keywordsList, k)
 	}
 
-	fieldMap := s.docEngine.GetFields(searchResult.Chunks, src)
+	fieldMap := s.docEngine.GetFields(hits, src)
 	common.Info("GetFields result", zap.Int("count", len(fieldMap)), zap.Strings("keys", func() []string {
 		keys := make([]string, 0, len(fieldMap))
 		for k := range fieldMap {
@@ -1069,11 +1103,12 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	// Build Highlight using GetHighlight
 	highlight := make(map[string]string)
 	if *req.Highlight {
-		highlight = s.docEngine.GetHighlight(searchResult.Chunks, keywordsList, "content_with_weight")
+		highlight = s.docEngine.GetHighlight(hits, keywordsList, "content_with_weight")
 	}
 
 	return &RetrievalSearchResult{
-		Chunks:      searchResult.Chunks,
+		Chunks:      hits,
+		originalIDs: originalIDs,
 		Total:       searchResult.Total,
 		QueryVector: queryVector,
 		Highlight:   highlight,
@@ -1418,6 +1453,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		Highlight:   filteredHighlight,
 		Field:       filteredField,
 		IDs:         filteredIDs,
+		originalIDs: result.originalIDs,
 		Keywords:    result.Keywords,
 		Aggregation: result.Aggregation,
 		Options:     result.Options,

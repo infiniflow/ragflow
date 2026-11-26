@@ -65,6 +65,15 @@ oceanbase:
     password: 'infini_rag_flow'
     host: 'localhost'
     port: 2881
+opengauss:
+  host: localhost
+  port: 5432
+  database: postgres
+  user: ragflow
+  password: ""
+  schema: public
+  ssl_mode: ""
+
 vastbase:
   host: 'localhost'
   port: 5432

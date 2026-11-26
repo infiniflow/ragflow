@@ -31,6 +31,45 @@ ports on the RAGFlow container.
 
 > **Note:** `docker-compose-macos.yml` are not the Go deployment entry points. Use `docker-compose.yml` on a Linux x86-64 host; macOS is temporarily not supported by the Go backend.
 
+### openGauss DataVec document engine
+
+Use a RAGFlow image that includes the openGauss adapter. For an unreleased
+checkout, build the Go image and set `RAGFLOW_IMAGE` to its tag in `docker/.env`.
+Set `DOC_ENGINE=opengauss` in the same file and run:
+
+```bash
+cd docker
+docker compose up -d
+```
+
+Compose pulls the official `opengauss/opengauss-server:7.0.0-RC3.B025` image
+for amd64 or arm64. On first start it creates an A-compatible UTF8 database and
+grants the RAGFlow login access to its schema. RAGFlow waits for the database
+to become healthy. The database listens inside the Compose network and stores
+its data in the `opengauss_data` volume. Before first startup, set
+`OPENGAUSS_PASSWORD` to a unique password that meets the openGauss password
+policy. For example, `openssl rand -hex 12` prefixed with `Og1!` produces
+a suitable password. If first-time initialization fails, correct the settings
+and recreate only the newly initialized, unused openGauss volume. For an
+existing deployment, rotate the database login password and update the
+application configuration together.
+[Official image and tags](https://hub.docker.com/r/opengauss/opengauss-server/tags)
+
+To use an **external openGauss instance**, keep `DOC_ENGINE=opengauss` and set
+`COMPOSE_PROFILES=${DEVICE},metadata-${METADATA_DB_PROFILE}` in `docker/.env`.
+Configure the external host, port, database, schema, login and password using
+the `OPENGAUSS_*` settings. Set `OPENGAUSS_SSL_MODE=verify-full` and configure
+trust for the server certificate. The external instance needs the `vector`
+type, the `bm25` and `hnsw` access methods, and a writable schema in an
+A-compatible UTF8 database. `DB_TYPE` independently selects the application
+metadata database in both deployments.
+
+The engine stores chunks and memory messages in the configured schema. It
+ranks tokenized text with DataVec BM25 and uses HNSW for cosine search.
+Chat SQL supports single-table reports scoped to authorized datasets. Queries
+with joins, subqueries or common table expressions fall back to retrieval.
+For data indexed by the older Python adapter, re-index into the new schema.
+
 ### Quick start
 
 Run the Go release deployment from the repository checkout:

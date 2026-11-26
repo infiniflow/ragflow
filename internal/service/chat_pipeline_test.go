@@ -1368,7 +1368,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		"docnm", []string{"kb_a", "kb_b"},
+		"docnm", []*entity.Knowledgebase{{ID: "kb_a"}, {ID: "kb_b"}},
 	)
 	if chunks != nil || docAggs != nil {
 		t.Errorf("expected nil chunks/docAggs on Infinity multi-KB, got %v / %v", chunks, docAggs)
@@ -1393,7 +1393,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{scopeAllowedKB},
+		"docnm_kwd", []*entity.Knowledgebase{{ID: scopeAllowedKB}},
 	)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks len = %d, want 3", len(chunks))
@@ -1425,7 +1425,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t",
-		"docnm_kwd", []string{"kb_a"},
+		"docnm_kwd", []*entity.Knowledgebase{{ID: "kb_a"}},
 	)
 	if chunks != nil || docAggs != nil {
 		t.Errorf("expected nil on no-WHERE, got %v / %v", chunks, docAggs)
@@ -1446,7 +1446,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{scopeAllowedKB},
+		"docnm_kwd", []*entity.Knowledgebase{{ID: scopeAllowedKB}},
 	)
 	if !called {
 		t.Fatal("expected the secondary query to execute")

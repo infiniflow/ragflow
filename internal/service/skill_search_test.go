@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -837,5 +838,22 @@ func TestKeywordSearchBuildsWeightedMatchExprAndOrderBy(t *testing.T) {
 	if req.OrderBy == nil || len(req.OrderBy.Fields) != 1 ||
 		req.OrderBy.Fields[0].Field != "name" || req.OrderBy.Fields[0].Type != types.SortAsc {
 		t.Fatalf("OrderBy = %+v, want name asc", req.OrderBy)
+	}
+}
+
+func TestSkillVectorMatchExprs(t *testing.T) {
+	dense := &types.MatchDenseExpr{TopN: 7}
+	for _, kind := range []engine.EngineType{engine.EngineElasticsearch, engine.EngineOpenSearch, engine.EngineOceanBase, engine.EngineSeekDB, engine.EngineInfinity, engine.EngineVastbase, engine.EngineSereneDB} {
+		exprs := skillVectorMatchExprs(string(kind), "orbital", dense)
+		if len(exprs) != 2 || exprs[1] != dense {
+			t.Fatalf("%s: expected text followed by dense search", kind)
+		}
+		text, ok := exprs[0].(*types.MatchTextExpr)
+		if !ok || text.MatchingText != "orbital" || text.TopN != 7 || !slices.Equal(text.Fields, []string{"name^10", "tags^5", "description^3", "content^1"}) {
+			t.Fatalf("%s: text expression = %#v", kind, exprs[0])
+		}
+	}
+	if exprs := skillVectorMatchExprs(string(engine.EngineOpenGauss), "orbital", dense); len(exprs) != 1 || exprs[0] != dense {
+		t.Fatalf("openGauss vector search expressions = %#v", exprs)
 	}
 }

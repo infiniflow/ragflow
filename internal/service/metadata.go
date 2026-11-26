@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 
 	"ragflow/internal/common"
@@ -224,8 +225,12 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 		return make(common.MetaData), nil
 	}
 
-	// Get metadata for all docs in KBs (use large limit like Python's 10000)
-	result, err := s.SearchMetadataByKBs(ctx, kbIDs, 10000)
+	limit := 10000
+	if engine.Type(s.docEngine) == engine.EngineOpenGauss {
+		// Read each tenant's complete result in one repeatable-read snapshot.
+		limit = math.MaxInt
+	}
+	result, err := s.SearchMetadataByKBs(ctx, kbIDs, limit)
 	if err != nil {
 		return nil, err
 	}

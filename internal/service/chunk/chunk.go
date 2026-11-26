@@ -460,9 +460,14 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Apply retrieval_by_children - aggregate child chunks into parent chunks
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, s.docEngine, ctx)
 
-	// Hydrate: ES returns zero vectors; replace with real vectors from FetchChunkVectors.
-	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
-	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
+	if engine.Type(s.docEngine) == engine.EngineOpenGauss {
+		kbinfos := map[string]any{"chunks": filteredChunks}
+		if _, err := service.HydrateChunkVectors(ctx, kbinfos, tenantIDs, req.Datasets, 0, s.docEngine); err != nil {
+			common.Warn("hydrate retrieval vectors failed", zap.Error(err))
+		}
+	} else {
+		hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
+	}
 
 	common.Info("RetrievalTest completed", zap.String("userID", permission.UserIDFromContext(ctx)), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 

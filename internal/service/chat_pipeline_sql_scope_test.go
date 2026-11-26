@@ -517,13 +517,13 @@ func TestAggregateReferencesStayInAuthorizedKB(t *testing.T) {
 		}
 	})
 	t.Run("secondary query reapplies scope", func(t *testing.T) {
-		chunks, _ := s.fetchAggregateChunks(t.Context(), docEngine, "t", "SELECT COUNT(*) FROM t WHERE 1=1", "docnm_kwd", []string{scopeAllowedKB})
+		chunks, _ := s.fetchAggregateChunks(t.Context(), docEngine, "t", "SELECT COUNT(*) FROM t WHERE 1=1", "docnm_kwd", []*entity.Knowledgebase{{ID: scopeAllowedKB}})
 		if len(chunks) != 1 || chunks[0]["doc_id"] != "allowed-doc" {
 			t.Fatalf("chunks = %#v, want only allowed-doc", chunks)
 		}
 	})
 	t.Run("multi KB secondary query", func(t *testing.T) {
-		chunks, _ := s.fetchAggregateChunks(t.Context(), docEngine, "t", "SELECT COUNT(*) FROM t WHERE doc_id = 'allowed-doc'", "docnm_kwd", []string{scopeAllowedKB, scopeVictimKB})
+		chunks, _ := s.fetchAggregateChunks(t.Context(), docEngine, "t", "SELECT COUNT(*) FROM t WHERE doc_id = 'allowed-doc'", "docnm_kwd", []*entity.Knowledgebase{{ID: scopeAllowedKB}, {ID: scopeVictimKB}})
 		if len(chunks) != 1 || chunks[0]["doc_id"] != "allowed-doc" || chunks[0]["kb_id"] != scopeAllowedKB {
 			t.Fatalf("chunks = %#v, want allowed-doc with its KB", chunks)
 		}
