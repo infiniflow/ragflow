@@ -17,6 +17,7 @@
 package dataset
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -59,9 +60,11 @@ func TestDeleteDatasetRemovesTemporaryFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := testDatasetUpdateService(t)
-	if err := service.DeleteDatasetTx(t.Context(), db, kb); err != nil {
+	plan, err := service.DeleteDatasetTx(t.Context(), db, kb)
+	if err != nil {
 		t.Fatalf("delete dataset with temporary file: %v", err)
 	}
+	service.CleanupDatasetExternal(t.Context(), plan)
 	if store.ObjExist(t.Context(), "kb-1", "temporary") {
 		t.Fatal("dataset deletion retained a temporary object")
 	}
@@ -75,7 +78,7 @@ func TestDeleteDatasetRemovesTemporaryFiles(t *testing.T) {
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("dataset retained after deletion: count=%d, err=%v", count, err)
 	}
-	if entries := logs.FilterMessage("Removed dataset document object").All(); len(entries) != 1 || entries[0].ContextMap()["document"] != "Document (doc-1)" || entries[0].ContextMap()["dataset"] != "Dataset (kb-1)" {
+	if entries := logs.FilterMessage("Removed dataset document object").All(); len(entries) != 1 || entries[0].ContextMap()["location"] != "tracked" || entries[0].ContextMap()["dataset"] != "Dataset (kb-1)" {
 		t.Errorf("document deletion logs = %v", entries)
 	}
 	if entries := logs.FilterMessage("Deleted dataset").All(); len(entries) != 1 || entries[0].ContextMap()["dataset"] != "Dataset (kb-1)" {
@@ -98,25 +101,47 @@ func TestDeleteDatasetContinuesWhenStorageIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDatasetUpdateService(t).DeleteDatasetTx(t.Context(), db, kb); err != nil {
+	svc := testDatasetUpdateService(t)
+	plan, err := svc.DeleteDatasetTx(t.Context(), db, kb)
+	if err != nil {
 		t.Fatalf("delete dataset with missing storage: %v", err)
 	}
+	svc.CleanupDatasetExternal(t.Context(), plan)
 	var count int64
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("dataset retained after missing storage: count=%d, err=%v", count, err)
 	}
 }
 
+// countingDeleteEngine records how many engine deletes a dataset deletion
+// performs, so the rollback test can assert that external cleanup never runs
+// before the caller's transaction commits.
+type countingDeleteEngine struct {
+	fakeChatDocEngine
+	chunkCalls   int
+	metadataCall int
+}
+
+func (e *countingDeleteEngine) DeleteChunks(_ context.Context, _ map[string]interface{}, _, _ string) (int64, error) {
+	e.chunkCalls++
+	return 0, nil
+}
+func (e *countingDeleteEngine) DeleteMetadata(_ context.Context, _ map[string]interface{}, _ string) (int64, error) {
+	e.metadataCall++
+	return 0, nil
+}
+
 // TestDeleteDatasetTxUsesCallerDB verifies that a dataset delete writes through
 // the db handle supplied by the caller, so that a caller-owned transaction owns
 // the deletion. If the implementation ignores the passed handle and reaches for
 // the global dao.DB, the outer rollback will not undo the delete and the rows
-// will be gone — this test fails in that case.
+// will be gone — this test fails in that case. It also pins the post-commit
+// cleanup contract: on rollback no storage object or engine data may be removed.
 func TestDeleteDatasetTxUsesCallerDB(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
-	if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "Document", "general", "{}", "pdf", "tenant-1", "pdf").Error; err != nil {
+	if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "Document", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
 		t.Fatal(err)
 	}
 	fileID := "file-1"
@@ -130,6 +155,9 @@ func TestDeleteDatasetTxUsesCallerDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := storage.NewMemoryStorage()
+	if err := store.Put(t.Context(), "kb-1", "tracked", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
 	factory := storage.GetStorageFactory()
 	previous := factory.GetStorage()
 	factory.SetStorage(store)
@@ -139,11 +167,15 @@ func TestDeleteDatasetTxUsesCallerDB(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	eng := &countingDeleteEngine{}
 	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if e := svc.DeleteDatasetTx(t.Context(), tx, kb); e != nil {
+		if _, e := svc.DeleteDatasetTx(t.Context(), tx, kb); e != nil {
 			return e
 		}
+		// Simulate a caller that rolls back: the plan is discarded and no
+		// external cleanup is invoked.
 		return errForceRollback
 	})
 	if !errors.Is(err, errForceRollback) {
@@ -172,6 +204,96 @@ func TestDeleteDatasetTxUsesCallerDB(t *testing.T) {
 	if e := db.Model(&entity.Task{}).Where("id = ?", "task-1").Count(&taskCount).Error; e != nil || taskCount != 1 {
 		t.Fatalf("rollback did not restore task: count=%d, err=%v", taskCount, e)
 	}
+
+	// Post-commit cleanup contract: a rolled-back caller must not lose any
+	// external resource. Current implementation deletes storage and engine data
+	// before the transaction, so these two assertions fail on the red run.
+	if !store.ObjExist(t.Context(), "kb-1", "tracked") {
+		t.Fatal("rollback removed a storage object that should survive")
+	}
+	if eng.chunkCalls != 0 || eng.metadataCall != 0 {
+		t.Fatalf("rollback ran engine cleanup: chunkCalls=%d metadataCall=%d", eng.chunkCalls, eng.metadataCall)
+	}
 }
 
 var errForceRollback = errors.New("force rollback")
+
+// TestDeleteDatasetCleanupAfterCommit verifies the standalone entry point:
+// DeleteDatasets deletes the DB rows through dao.DB (a real commit) and then
+// removes external resources. The KB must be gone and the storage object gone.
+func TestDeleteDatasetCleanupAfterCommit(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ensureDatasetTestMembership(t, "tenant-1", "tenant-1", "owner")
+	// DeleteDatasets normalizes ids via uuid.Parse then strips dashes, so seed
+	// the KB with that exact normalized form.
+	kbID := "11111111111111111111111111111111"
+	insertDatasetUpdateKB(t, kbID, "tenant-1", "Dataset")
+	if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", kbID, "Document", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
+		t.Fatal(err)
+	}
+	store := storage.NewMemoryStorage()
+	if err := store.Put(t.Context(), kbID, "tracked", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	eng := &countingDeleteEngine{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	result, code, err := svc.DeleteDatasets(ctx, []string{kbID}, false)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("delete datasets: code=%v err=%v", code, err)
+	}
+	if result["success_count"] != 1 {
+		t.Fatalf("success_count = %v, want 1", result["success_count"])
+	}
+	var count int64
+	if e := db.Model(&entity.Knowledgebase{}).Where("id = ?", kbID).Count(&count).Error; e != nil || count != 0 {
+		t.Fatalf("dataset retained after deletion: count=%d, err=%v", count, e)
+	}
+	if store.ObjExist(t.Context(), kbID, "tracked") {
+		t.Fatal("dataset deletion retained a document object")
+	}
+	if eng.chunkCalls == 0 || eng.metadataCall == 0 {
+		t.Fatalf("post-commit cleanup did not run engine deletes: chunkCalls=%d metadataCall=%d", eng.chunkCalls, eng.metadataCall)
+	}
+}
+
+// TestCleanupDatasetExternalIdempotent pins that replaying cleanup against the
+// same plan is safe: already-removed objects and buckets are skipped, no panic.
+func TestCleanupDatasetExternalIdempotent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	store := storage.NewMemoryStorage()
+	if err := store.Put(t.Context(), "kb-1", "tracked", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = &countingDeleteEngine{}
+	plan := DatasetCleanupPlan{
+		KBID:         "kb-1",
+		TenantID:     "tenant-1",
+		DatasetName:  "Dataset (kb-1)",
+		DocLocations: []string{"tracked"},
+		DocIDs:       []string{"doc-1"},
+	}
+	svc.CleanupDatasetExternal(t.Context(), plan)
+	if store.ObjExist(t.Context(), "kb-1", "tracked") {
+		t.Fatal("first cleanup retained the object")
+	}
+	// Replay must not fail or panic even though the object and bucket are gone.
+	svc.CleanupDatasetExternal(t.Context(), plan)
+	if store.BucketExists(t.Context(), "kb-1") {
+		t.Fatal("replayed cleanup retained the bucket")
+	}
+}

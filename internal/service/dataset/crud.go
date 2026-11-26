@@ -483,10 +483,14 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 
 	successCount := 0
 	for _, kb := range kbs {
-		if err := d.DeleteDatasetTx(ctx, dao.DB, kb); err != nil {
+		plan, err := d.DeleteDatasetTx(ctx, dao.DB, kb)
+		if err != nil {
 			common.Warn("DeleteDatasetTx failed", zap.String("dataset", datasetNameAndID(kb)), zap.String("kb_id", kb.ID), zap.Error(err))
 			return nil, common.CodeServerError, err
 		}
+		// dao.DB is a standalone handle: DeleteDatasetTx committed on return, so
+		// it is now safe to remove the non-transactional external resources.
+		d.CleanupDatasetExternal(ctx, plan)
 		successCount++
 	}
 
@@ -496,70 +500,47 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}, common.CodeSuccess, nil
 }
 
-// DeleteDatasetTx cleans up storage and index data before committing metadata
-// deletion. The caller supplies the db handle so that the DB mutations join the
-// caller's transaction: pass dao.DB for a standalone delete, or a transaction
-// handle to make the metadata deletion part of a larger unit of work.
-//
-// Only the DB mutations are transactional. Storage objects, the dataset bucket,
-// and engine data are removed before that transaction runs and cannot be rolled
-// back. When db already wraps a transaction, db.Transaction uses a savepoint and
-// does not commit the caller's work on return. A caller that rolls back after
-// this method returns therefore gets its metadata rows back without their
-// stored content or index data. Caller-owned transactions are rollback-safe only
-// for the database, not for storage or the engine. A standalone delete with
-// dao.DB commits on return and is unaffected.
-func (d *DatasetService) DeleteDatasetTx(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
-	storageImpl := storage.GetStorageFactory().GetStorage()
-	if storageImpl == nil {
-		return fmt.Errorf("storage not initialized")
-	}
+// DatasetCleanupPlan is the immutable snapshot of the external resources that
+// belong to a dataset. DeleteDatasetTx collects it inside the DB transaction;
+// the caller then passes it to CleanupDatasetExternal exactly once, after the
+// handle has really committed. Discard the plan if the transaction rolls back.
+type DatasetCleanupPlan struct {
+	KBID         string
+	TenantID     string
+	DatasetName  string
+	DocLocations []string
+	DocIDs       []string
+}
+
+// DeleteDatasetTx deletes a dataset's metadata rows through the caller-supplied
+// db handle and returns a snapshot of the external resources to clean up. The
+// caller must invoke CleanupDatasetExternal after db has really committed:
+// pass dao.DB for a standalone delete (committed on return), or, when db is a
+// transaction handle, wait for the outer transaction to commit. If the caller
+// rolls back, discard the returned plan — no external cleanup will have run,
+// leaving storage/index data behind but never a row pointing at deleted data.
+// Only DB mutations happen here; storage and engine cleanup are intentionally
+// deferred so they cannot be observed by a rolled-back transaction.
+func (d *DatasetService) DeleteDatasetTx(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) (DatasetCleanupPlan, error) {
+	var plan DatasetCleanupPlan
 	datasetNameID := datasetNameAndID(kb)
 
-	// Collect document IDs first so engine cleanup can run before the
-	// transaction (engine ops are not transactional). Only the columns the
-	// loop actually reads (id, name, location) are fetched; the full document
-	// row - including the potentially large parser_config - is never loaded.
+	// Only the columns the cleanup loop reads (id, name, location) are fetched;
+	// the full document row - including the potentially large parser_config - is
+	// never loaded. Collect the snapshot inside the caller's handle so it is
+	// consistent with the rows this transaction is about to delete.
 	var documents []entity.Document
 	if err := db.Select("id", "name", "location").Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
-		return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
+		return plan, fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
 	}
-	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
+	plan = DatasetCleanupPlan{KBID: kb.ID, TenantID: kb.TenantID, DatasetName: datasetNameID, DocIDs: extractDocIDs(documents)}
 	for _, document := range documents {
 		if document.Location == nil || *document.Location == "" {
 			continue
 		}
-		docNameID := documentNameAndID(document)
-		exists, err := storageImpl.ObjectExists(cleanupCtx, kb.ID, *document.Location)
-		if err != nil {
-			return fmt.Errorf("check document %s in dataset %s: %w", document.ID, kb.ID, err)
-		}
-		if !exists {
-			common.Warn("Dataset document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
-			continue
-		}
-		if err := storageImpl.Remove(cleanupCtx, kb.ID, *document.Location); err != nil {
-			return fmt.Errorf("remove document %s from dataset %s: %w", docNameID, kb.ID, err)
-		}
-		common.Info("Removed dataset document object", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
+		plan.DocLocations = append(plan.DocLocations, *document.Location)
 	}
-	exists, err := storageImpl.BucketExistsWithError(cleanupCtx, kb.ID)
-	if err != nil {
-		return fmt.Errorf("check dataset bucket %s: %w", kb.ID, err)
-	}
-	if !exists {
-		common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
-	} else {
-		if err := storageImpl.RemoveBucket(cleanupCtx, kb.ID); err != nil {
-			return fmt.Errorf("remove dataset bucket for dataset %s: %w", datasetNameID, err)
-		}
-		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
-	}
-	docIDs := extractDocIDs(documents)
-	if len(docIDs) > 0 {
-		d.deleteDatasetEngineData(ctx, kb, docIDs)
-	}
+	docIDs := plan.DocIDs
 
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		// Delete index tasks referencing this KB.
@@ -616,21 +597,57 @@ func (d *DatasetService) DeleteDatasetTx(ctx context.Context, db *gorm.DB, kb *e
 		}
 		return nil
 	}); err != nil {
-		return err
+		return plan, err
 	}
-	// The metadata values of the removed documents live in the document engine,
-	// which the transaction above cannot reach: drop them once the rows that
-	// named them are committed away.
-	deleteDatasetMetadataStatesEE(ctx, kb.ID)
-	common.Info("Deleted dataset", zap.String("dataset", datasetNameID), zap.String("kb_id", kb.ID))
-	return nil
+	return plan, nil
 }
 
-func documentNameAndID(document entity.Document) string {
-	if document.Name == nil || *document.Name == "" {
-		return document.ID
+// CleanupDatasetExternal removes the non-transactional resources of a deleted
+// dataset: storage objects and the dataset bucket, engine chunks/metadata, and
+// EE metadata states. Call this only after the handle behind plan has really
+// committed. The operation is idempotent — already-missing objects and buckets
+// are WARNed and skipped — so a caller may safely replay it. Failures are
+// logged, not returned: the DB delete is already committed and cannot be undone.
+func (d *DatasetService) CleanupDatasetExternal(ctx context.Context, plan DatasetCleanupPlan) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		common.Error("Dataset cleanup skipped: storage not initialized", nil, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
+		return
 	}
-	return fmt.Sprintf("%s (%s)", *document.Name, document.ID)
+	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	for _, location := range plan.DocLocations {
+		exists, err := storageImpl.ObjectExists(cleanupCtx, plan.KBID, location)
+		if err != nil {
+			common.Error("Dataset cleanup could not check object", err, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID), zap.String("location", location))
+			continue
+		}
+		if !exists {
+			common.Warn("Dataset document object already missing", zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID), zap.String("location", location))
+			continue
+		}
+		if err := storageImpl.Remove(cleanupCtx, plan.KBID, location); err != nil {
+			common.Error("Dataset cleanup could not remove object", err, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID), zap.String("location", location))
+			continue
+		}
+		common.Info("Removed dataset document object", zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID), zap.String("location", location))
+	}
+	exists, err := storageImpl.BucketExistsWithError(cleanupCtx, plan.KBID)
+	if err != nil {
+		common.Error("Dataset cleanup could not check bucket", err, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
+	} else if !exists {
+		common.Warn("Dataset bucket already missing", zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
+	} else if err := storageImpl.RemoveBucket(cleanupCtx, plan.KBID); err != nil {
+		common.Error("Dataset cleanup could not remove bucket", err, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
+	}
+	if len(plan.DocIDs) > 0 {
+		d.deleteDatasetEngineData(ctx, &entity.Knowledgebase{ID: plan.KBID, TenantID: plan.TenantID}, plan.DocIDs)
+	}
+	// The metadata values of the removed documents live in the document engine,
+	// which the DB transaction cannot reach: drop them once the rows that named
+	// them are committed away.
+	deleteDatasetMetadataStatesEE(ctx, plan.KBID)
+	common.Info("Deleted dataset", zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
 }
 
 func datasetNameAndID(kb *entity.Knowledgebase) string {
