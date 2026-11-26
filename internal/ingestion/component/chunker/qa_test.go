@@ -135,6 +135,39 @@ func TestQAChunker_QuotedCommaCSVKeepsPairs(t *testing.T) {
 	}
 }
 
+func TestQAChunker_QuotedMultilineCSVKeepsPairs(t *testing.T) {
+	// A quoted field may span physical lines while another field carries a TAB.
+	// Delimiter detection reads the payload as one CSV stream, as the extractor
+	// does, so the file stays comma separated and every pair survives.
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "faq.txt",
+		"output_format": "text",
+		"text": "\"Q1\",\"first line\nsecond line\"\n" +
+			"\"Q2\",\"plain\"\n" +
+			"\"Q3\",\"has\ttab\"\n",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d: %v", len(chunks), chunks)
+	}
+	first, _ := chunks[0]["text"].(string)
+	if first != "Question: Q1\tAnswer: first line\nsecond line" {
+		t.Fatalf("unexpected first chunk: %q", first)
+	}
+	last, _ := chunks[2]["text"].(string)
+	if last != "Question: Q3\tAnswer: has\ttab" {
+		t.Fatalf("unexpected last chunk: %q", last)
+	}
+}
+
 func TestQAChunker_Markdown(t *testing.T) {
 	comp, err := NewQAChunker(nil)
 	if err != nil {
