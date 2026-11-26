@@ -106,6 +106,7 @@ const ApiKeyRequiredOperators: string[] = [
   Operator.PerplexitySearch,
   Operator.SofyaSearch,
   Operator.Search1APISearch,
+  Operator.SpecStreamSearch,
   Operator.SpecStreamExtract,
 ];
 

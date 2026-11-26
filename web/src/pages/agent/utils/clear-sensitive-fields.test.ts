@@ -287,6 +287,37 @@ describe('clearSensitiveFields', () => {
   );
 
   it.each([
+    ['tool_name', { tool_name: 'SpecStreamSearch' }],
+    ['name', { name: 'specstream_extract' }],
+    [
+      'blank component_name then tool_name',
+      { component_name: '', tool_name: 'SpecStreamSearch' },
+    ],
+    [
+      'blank component_name and tool_name then name',
+      { component_name: '  ', tool_name: '', name: 'specstream' },
+    ],
+  ])(
+    'clears a SpecStream tool record named through %s, like the backend resolves it',
+    (_label, discriminator) => {
+      const dsl = {
+        tools: [
+          {
+            ...discriminator,
+            params: { api_key: 'specstream-tool-secret', top_n: 5 },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(dsl.tools[0].params.api_key).toBe('specstream-tool-secret');
+    },
+  );
+
+  it.each([
     'PerplexitySearch',
     'perplexitysearch',
     'perplexity',

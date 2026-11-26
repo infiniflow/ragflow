@@ -387,6 +387,7 @@ export const initialSearch1APICrawlValues = {
 export const initialSpecStreamSearchValues = {
   api_key: '',
   query: AgentGlobals.SysQuery,
+  passages: false,
   top_n: 10,
   outputs: {
     formalized_content: {

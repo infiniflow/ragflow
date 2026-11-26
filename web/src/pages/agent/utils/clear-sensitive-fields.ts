@@ -122,7 +122,7 @@ export function clearSensitiveFields<T>(obj: T): T {
         isSearch1APIOperator(value.component_name) ||
         isAnySearchOperator(embeddedToolName(value)) ||
         isPerplexityOperator(embeddedToolName(value)) ||
-        isSpecStreamOperator(value.component_name)) &&
+        isSpecStreamOperator(embeddedToolName(value))) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };

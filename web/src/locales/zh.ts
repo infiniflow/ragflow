@@ -2915,6 +2915,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       specStreamSearchDescription:
         '使用 SpecStream Search API 搜索实时网页，返回带有标题、链接和摘要的搜索结果。需要配置 API Key。',
       specStreamApiKeyTip: '必填。请在 specstream.ai 申请 API Key。',
+      specStreamPassages: '正文片段',
+      specStreamPassagesTip:
+        '同时返回排名靠前页面中提取的正文片段，无需再单独读取页面。',
       specStreamExtract: 'SpecStream 网页读取',
       specStreamExtractDescription:
         '使用 SpecStream Extract API 读取网页或文档（PDF、Word、Excel），返回标题和正文。需要配置 API Key。',

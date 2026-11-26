@@ -94,7 +94,7 @@ export function useAgentToolInitialValues() {
         case Operator.Search1APICrawl:
           return { api_key: '' };
         case Operator.SpecStreamSearch:
-          return pick(initialValues, 'api_key', 'top_n');
+          return pick(initialValues, 'api_key', 'passages', 'top_n');
         case Operator.SpecStreamExtract:
           return { api_key: '' };
         case Operator.AnySearchSearch:

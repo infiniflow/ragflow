@@ -3334,6 +3334,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       specStreamSearchDescription:
         'Search the live web with the SpecStream Search API and return ranked results with titles, URLs, and snippets. An API Key is required.',
       specStreamApiKeyTip: 'Required. Create an API Key at specstream.ai.',
+      specStreamPassages: 'Passages',
+      specStreamPassagesTip:
+        'Also return extracted text passages from the top matching pages, so no separate fetch is needed.',
       specStreamExtract: 'SpecStream extract',
       specStreamExtractDescription:
         'Read a web page or document (PDF, Word, Excel) with the SpecStream Extract API and return its title and main text. An API Key is required.',
