@@ -735,7 +735,10 @@ func isTextParserSentenceFallback(fileType string, delimiters []string, item sch
 }
 
 func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
-	text := itemTextOrFallback(item)
+	// This path bypasses chunkFromItem, so it must normalize here too:
+	// child delimiters are compiled from normalized entries, and a raw CRLF
+	// item would no longer match them.
+	text := normalizeLineEndings(itemTextOrFallback(item))
 	if !sentenceDelimiter.MatchString(text) {
 		return []schema.ChunkDoc{buildChunkDoc(item, "text", text, "", "")}
 	}

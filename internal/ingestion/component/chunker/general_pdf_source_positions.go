@@ -18,7 +18,7 @@ type pdfSourceSpan struct {
 func pdfUnitSources(units []schema.ChunkDoc) [][]pdfSourceSpan {
 	sources := make([][]pdfSourceSpan, len(units))
 	for index, unit := range units {
-		text := removeTag(normalizeGeneralNewlines(unit.Text))
+		text := removeTag(normalizeLineEndings(unit.Text))
 		start := len(text) - len(strings.TrimLeftFunc(text, unicode.IsSpace))
 		sources[index] = []pdfSourceSpan{{start: start, end: start + len(strings.TrimSpace(text)), pdfPositions: unit.PDFPositions, positions: unit.Positions}}
 	}
@@ -33,7 +33,7 @@ func splitPDFUnits(units []schema.ChunkDoc, sources [][]pdfSourceSpan, pattern *
 	var resultSources [][]pdfSourceSpan
 	for index, unit := range units {
 		pieces := splitGeneralUnits([]schema.ChunkDoc{unit}, pattern, keepDelimiter)
-		rawText := normalizeGeneralNewlines(unit.Text)
+		rawText := normalizeLineEndings(unit.Text)
 		text := removeTag(rawText)
 		var ranges [][2]int
 		if !keepDelimiter && pattern != nil && itemDocType(unit) == "text" && pattern.MatchString(rawText) {

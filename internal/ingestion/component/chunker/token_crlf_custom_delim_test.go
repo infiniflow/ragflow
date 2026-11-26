@@ -120,6 +120,38 @@ func TestBareDelimiterEntryCRLFNormalized(t *testing.T) {
 	}
 }
 
+// TestCustomDelimiterSentenceFallbackCRLFNormalized covers the reviewer-flagged
+// sibling path: the text-parser sentence fallback (file_type txt, bare "\n"
+// primary delimiter) returns item text before chunkFromItem runs, so it must
+// normalize line endings too. A custom CRLF child delimiter is compiled to LF,
+// and without normalization it stops matching the raw "\r" item.
+func TestCustomDelimiterSentenceFallbackCRLFNormalized(t *testing.T) {
+	params := map[string]any{
+		"chunk_token_size":    float64(128),
+		"delimiters":          []string{"\n"},
+		"children_delimiters": []string{"`\rX`"},
+	}
+	inputFor := func(text string) map[string]any {
+		in := crlfJSONTextInput(text)
+		in["file_type"] = "txt"
+		return in
+	}
+	crlf := chunkTexts(invokeTokenChunks(t, params, inputFor("A\rXB")))
+	lf := chunkTexts(invokeTokenChunks(t, params, inputFor("A\nXB")))
+
+	if len(crlf) == 0 || len(lf) == 0 {
+		t.Fatalf("sentence fallback returned no chunks: crlf=%q lf=%q", crlf, lf)
+	}
+	for i, s := range crlf {
+		if strings.Contains(s, "\r") {
+			t.Errorf("chunk[%d] carries carriage return: %q", i, s)
+		}
+	}
+	if !reflect.DeepEqual(crlf, lf) {
+		t.Errorf("sentence fallback CRLF/LF divergence:\n crlf=%q\n lf  =%q", crlf, lf)
+	}
+}
+
 // TestCustomDelimiterJSONNonTextBytesUntouched locks the scope of the fix: only
 // text items are normalized. A table/image item keeps its bytes verbatim.
 func TestCustomDelimiterJSONNonTextBytesUntouched(t *testing.T) {

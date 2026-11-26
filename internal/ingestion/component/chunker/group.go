@@ -721,7 +721,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		plainText := itemDocType(it) == "text" && !isStructuralLayout(it.Layout)
 		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
 		if plainText && unpositioned && strings.Contains(text, "\n") {
-			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {
+			for _, line := range strings.Split(normalizeLineEndings(text), "\n") {
 				if trim(line) != "" {
 					appendRecord(line, "")
 				}
