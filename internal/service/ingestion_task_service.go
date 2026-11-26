@@ -481,14 +481,16 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	if err != nil {
 		return nil, err
 	}
-	return s.stopActiveTask(ctx, task)
+	return s.stopActiveTask(ctx, task, nil)
 }
 
 // stopActiveTask performs the state transition for a task already loaded and known
 // to be in a stoppable state. It centralizes the CREATED/SCHEDULED -> STOPPED and
 // RUNNING -> STOPPING logic so RequestStop (unconditional) and RequestStopScoped
-// (scope-checked) share one implementation and cannot drift apart.
-func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
+// (scope-checked) share one implementation and cannot drift apart. A nil allowed
+// set means no scope restriction; otherwise a redirect to RUNNING is permitted
+// only when RUNNING is in the caller's scope.
+func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.IngestionTask, allowed []string) (*entity.IngestionTask, error) {
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
 		stopped, err := s.transitionFrom(ctx, task.ID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
@@ -496,12 +498,14 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 			// The CAS can lose a race with the worker promoting the task to
 			// RUNNING between the caller's read and this transition. The
 			// conflict error already re-read the live status; when it is
-			// RUNNING, follow the running-stop path so the user's stop still
-			// takes effect instead of failing spuriously. Every queued-stop
-			// side effect below runs only after a successful CAS, so
-			// redirecting here cannot duplicate any of them.
+			// RUNNING and within the caller's scope, follow the running-stop
+			// path so the user's stop still takes effect instead of failing
+			// spuriously. A narrow scope that excludes RUNNING must leave the
+			// drifted task untouched. Every queued-stop side effect below runs
+			// only after a successful CAS, so redirecting cannot duplicate any.
 			var conflict *TaskStatusConflictError
-			if errors.As(err, &conflict) && conflict.ActualCurrent == common.RUNNING {
+			if errors.As(err, &conflict) && conflict.ActualCurrent == common.RUNNING &&
+				(allowed == nil || statusInSet(common.RUNNING, allowed)) {
 				return s.stopRunningTask(ctx, task.ID)
 			}
 			return nil, err
@@ -527,6 +531,25 @@ func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.
 func (s *IngestionTaskService) stopRunningTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	task, err := s.transition(ctx, taskID, common.STOPPING)
 	if err != nil {
+		// A task that reached a terminal state between the decision and the
+		// STOPPING CAS has already satisfied the stop request. Report the live
+		// terminal task as a no-op success rather than a status conflict.
+		var conflict *TaskStatusConflictError
+		var invalid *InvalidTaskTransitionError
+		terminal := ""
+		switch {
+		case errors.As(err, &conflict) && common.IsTerminalTaskStatus(conflict.ActualCurrent):
+			terminal = conflict.ActualCurrent
+		case errors.As(err, &invalid) && common.IsTerminalTaskStatus(invalid.From):
+			terminal = invalid.From
+		}
+		if terminal != "" {
+			live, getErr := s.GetTask(ctx, taskID)
+			if getErr != nil {
+				return nil, getErr
+			}
+			return live, nil
+		}
 		return nil, err
 	}
 	// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
@@ -554,7 +577,7 @@ func (s *IngestionTaskService) RequestStopScoped(ctx context.Context, taskID str
 	if !statusInSet(task.Status, allowed) {
 		return task, ErrTaskNotInScope
 	}
-	return s.stopActiveTask(ctx, task)
+	return s.stopActiveTask(ctx, task, allowed)
 }
 
 // statusInSet reports whether status equals one of the members of set.

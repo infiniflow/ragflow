@@ -2809,7 +2809,7 @@ func TestStopActiveTaskRedirectsQueuedStopToRunning(t *testing.T) {
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
 	stale := &entity.IngestionTask{ID: "task-1", Status: common.SCHEDULED}
-	got, err := svc.stopActiveTask(ctx, stale)
+	got, err := svc.stopActiveTask(ctx, stale, nil)
 	if err != nil {
 		t.Fatalf("stopActiveTask should redirect on status drift, got: %v", err)
 	}
@@ -2840,7 +2840,7 @@ func TestStopActiveTaskDoesNotRedirectTerminalStatus(t *testing.T) {
 			svc := NewIngestionTaskService()
 			ctx := t.Context()
 			stale := &entity.IngestionTask{ID: "task-1", Status: common.SCHEDULED}
-			_, err := svc.stopActiveTask(ctx, stale)
+			_, err := svc.stopActiveTask(ctx, stale, nil)
 			var conflict *TaskStatusConflictError
 			if !errors.As(err, &conflict) {
 				t.Fatalf("err = %v, want TaskStatusConflictError", err)
@@ -2853,5 +2853,65 @@ func TestStopActiveTaskDoesNotRedirectTerminalStatus(t *testing.T) {
 				t.Fatalf("terminal task drifted to %q, want %q", task.Status, terminal)
 			}
 		})
+	}
+}
+
+// TestRequestStopScopedNarrowScopeDoesNotStopDriftedRunning covers the scope
+// contract: a caller that only asks for queued tasks must not have a task
+// stopped after it drifts to RUNNING past the scope check. The GORM callback
+// simulates the worker promotion between RequestStopScoped's read and the CAS.
+func TestRequestStopScopedNarrowScopeDoesNotStopDriftedRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	// The scope-check read still sees SCHEDULED (in scope). Right after that
+	// read, the worker promotes the row to RUNNING (out of scope).
+	var drifted bool
+	if err := db.Callback().Query().After("gorm:query").Register("test:scope_drift", func(tx *gorm.DB) {
+		if drifted || tx.Statement.Table != "ingestion_task" {
+			return
+		}
+		drifted = true
+		tx.Session(&gorm.Session{NewDB: true}).Exec(
+			"UPDATE ingestion_task SET status = ? WHERE id = ?", common.RUNNING, "task-1")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewIngestionTaskService()
+	// Narrow scope: only queued tasks may be cancelled.
+	_, err := svc.RequestStopScoped(t.Context(), "task-1", []string{common.SCHEDULED})
+	if err == nil {
+		t.Fatal("out-of-scope drifted task should not be reported as stopped")
+	}
+	task, err := svc.GetTask(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("out-of-scope RUNNING task was stopped: status = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
+// TestStopRunningTaskTreatsTerminalAsIdempotent covers the second race window:
+// a task that finishes between the decision and the STOPPING CAS. The stop goal
+// is already met, so it must be a no-op success rather than a status conflict.
+func TestStopRunningTaskTreatsTerminalAsIdempotent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := NewIngestionTaskService()
+	got, err := svc.stopRunningTask(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("terminal task should be an idempotent stop, got: %v", err)
+	}
+	if got == nil || got.Status != common.COMPLETED {
+		t.Fatalf("expected live COMPLETED task, got %+v", got)
 	}
 }
