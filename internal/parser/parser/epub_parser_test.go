@@ -1262,6 +1262,15 @@ func TestEPUBParser_RemoveTOCNCXOnlyIsANoOp(t *testing.T) {
 	if !strings.Contains(text, "Contents") {
 		t.Errorf("NCX-only package removed a page it cannot locate: %q", text)
 	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "declares only an NCX table of contents") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the NCX-only warning", withTOC.Warnings)
+	}
 }
 
 // A navigation document that carries no toc nav and no landmarks locates no
@@ -1300,12 +1309,51 @@ func TestEPUBParser_RemoveTOCKeepsChapterForFragmentTOC(t *testing.T) {
 		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
 	}, nil, epubTestPackageOptions{guideTOCHref: "front.xhtml#contents"})
 
-	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	withTOC := parseEPUBWithTOCFlag(t, data, true)
+	text := epubResultText(t, withTOC)
 	if !strings.Contains(text, "Front preface.") {
 		t.Errorf("chapter holding a fragment TOC was dropped: %q", text)
 	}
 	if !strings.Contains(text, "Body text.") {
 		t.Errorf("body chapter was dropped: %q", text)
+	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "front.xhtml#contents") && strings.Contains(w, "left in place") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the fragment-TOC warning", withTOC.Warnings)
+	}
+}
+
+// A landmark link with a fragment points at a section inside a chapter too.
+// The nav document's own toc nav is still stripped, the referenced section
+// stays, and the parser reports the reference it could not act on.
+func TestEPUBParser_RemoveTOCKeepsSectionForFragmentLandmark(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<nav epub:type="toc"><h1>Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><nav epub:type="landmarks"><ol><li><a epub:type="toc" href="front.xhtml#contents">Contents</a></li></ol></nav>`)},
+		{name: "front.xhtml", content: epubTestHTML(`<h1>Front preface.</h1><section id="contents"><h2>Contents</h2><p>Chapter One</p></section>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	withTOC := parseEPUBWithTOCFlag(t, data, true)
+	text := epubResultText(t, withTOC)
+	if !strings.Contains(text, "Front preface.") {
+		t.Errorf("chapter holding a fragment TOC was dropped: %q", text)
+	}
+	if !strings.Contains(text, "Body text.") {
+		t.Errorf("body chapter was dropped: %q", text)
+	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "front.xhtml#contents") && strings.Contains(w, "left in place") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the fragment-TOC warning", withTOC.Warnings)
 	}
 }
 
@@ -1324,5 +1372,23 @@ func TestEPUBParser_RemoveTOCMatchesDeclaredOpsPrefix(t *testing.T) {
 	}
 	if !strings.Contains(text, "Kept note.") {
 		t.Errorf("content outside the toc nav was dropped: %q", text)
+	}
+}
+
+// A prefix binding applies to its subtree only. A descendant that rebinds the
+// same prefix to another namespace marks an ordinary nav, which stays.
+func TestEPUBParser_RemoveTOCResolvesPrefixInScope(t *testing.T) {
+	nav := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:ops="http://www.idpf.org/2007/ops"><head><title>Nav</title></head><body><nav ops:type="toc"><h1>Outer Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><div xmlns:ops="urn:example:other"><nav ops:type="toc"><h2>Rebound Contents</h2></nav></div></body></html>`
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: nav},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Outer Contents") {
+		t.Errorf("toc nav bound to the OPS namespace was not stripped: %q", text)
+	}
+	if !strings.Contains(text, "Rebound Contents") {
+		t.Errorf("nav under a rebinding of the prefix was stripped: %q", text)
 	}
 }
