@@ -454,7 +454,7 @@ func dedupTenantModelInstances(rows []tenantLLMSourceRecord) []tenantLLMSourceRe
 }
 
 // tenantModelInstanceAPIKeyMaxLen is the character bound the
-// tenant_model_instance.api_key column declares (varchar(4096)). The
+// tenant_model_instance.api_key column declares (varchar(8192)). The
 // pre-backfill widening spec gives upgrades the same bound, but this backfill
 // copies whatever tenant_llm still holds — where api_key is TEXT and a legacy
 // provider key can exceed the bound — so over-length rows are filtered before
@@ -462,7 +462,7 @@ func dedupTenantModelInstances(rows []tenantLLMSourceRecord) []tenantLLMSourceRe
 // transaction and, with the source row kept, fails every later startup the
 // same way, and a non-strict session would store the credential silently
 // truncated. The source row stays in tenant_llm untouched either way.
-const tenantModelInstanceAPIKeyMaxLen = 4096
+const tenantModelInstanceAPIKeyMaxLen = 8192
 
 // dropOverlengthTenantModelInstanceKeys splits the backfill rows into the ones
 // that fit the tenant_model_instance.api_key bound and the ones that do not.

@@ -31,14 +31,8 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestTenantModelInstanceAPIKeyColumnIsBoundedVarchar pins the MySQL migration
-// type of tenant_model_instance.api_key. The column used to be declared
-// varchar(512), so saving a provider key longer than 512 characters failed at
-// the database layer with MySQL Error 1406 (#22422). Per the maintainer review
-// of #22424 the replacement is a bounded varchar(4096), not TEXT: long keys
-// must fit, but the column keeps a declared maximum. AutoMigrate derives the
-// column type from the entity tag, so asserting the dialector's full data type
-// guards both the bound change and the widening of existing installations.
+// TestTenantModelInstanceAPIKeyColumnIsBoundedVarchar verifies that
+// AutoMigrate creates the same bounded credential column used for upgrades.
 func TestTenantModelInstanceAPIKeyColumnIsBoundedVarchar(t *testing.T) {
 	db, _ := openMySQLSpecMock(t)
 
@@ -52,8 +46,8 @@ func TestTenantModelInstanceAPIKeyColumnIsBoundedVarchar(t *testing.T) {
 	}
 
 	fullType := db.Migrator().FullDataTypeOf(field).SQL
-	if fullType != "varchar(4096) NOT NULL" {
-		t.Fatalf("mysql full data type for api_key = %q, want the bounded varchar(4096) NOT NULL form", fullType)
+	if fullType != "varchar(8192) NOT NULL" {
+		t.Fatalf("mysql full data type for api_key = %q, want the bounded varchar(8192) NOT NULL form", fullType)
 	}
 	if strings.Contains(fullType, "512") || strings.Contains(fullType, "text") {
 		t.Fatalf("mysql full data type for api_key = %q, must be neither the legacy varchar(512) nor TEXT", fullType)
@@ -106,7 +100,7 @@ func expectSchemaLookups(mock sqlmock.Sqlmock, table, column, liveType, isNullab
 // still hold the legacy varchar(512): otherwise a long provider key fails the
 // backfill INSERT (strict mode Error 1406, aborting startup) before
 // AutoMigrate ever reaches the column. The spec must issue the ALTER exactly
-// once on the narrow shape, to the bounded varchar(4096) target, and no DDL
+// once on the narrow shape, to the bounded varchar(8192) target, and no DDL
 // once converged.
 func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	db, mock := openMySQLSpecMock(t)
@@ -126,7 +120,7 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
 	mock.ExpectExec(
-		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(4096\) NOT NULL`,
+		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(8192\) NOT NULL`,
 	).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
@@ -140,7 +134,7 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	}
 
 	// Converged shape: the ALTER must not repeat on later startups.
-	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(4096)", "NO")
+	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(8192)", "NO")
 	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
 		t.Fatalf("applyColumnSpec on the converged column: %v", err)
 	}
@@ -155,7 +149,7 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 // TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls pins the guards: on a
 // database whose tenant_model_instance table does not exist yet (a fresh or
 // pre-split install), the spec must leave the schema untouched — the table is
-// created later with the varchar(4096) column already in place.
+// created later with the varchar(8192) column already in place.
 func TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls(t *testing.T) {
 	db, mock := openMySQLSpecMock(t)
 
@@ -270,7 +264,7 @@ func TestTenantModelInstanceAPIKeyWideningFailureIsFatal(t *testing.T) {
 
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
 	mock.ExpectExec(
-		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(4096\) NOT NULL`,
+		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(8192\) NOT NULL`,
 	).WillReturnError(errors.New("ERROR 1071 (42000): Specified key was too long; max key length is 3072 bytes"))
 
 	err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec)
