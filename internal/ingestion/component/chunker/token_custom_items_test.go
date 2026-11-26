@@ -39,10 +39,11 @@ func TestTokenChunkerCustomDelimiterAcrossParserItems(t *testing.T) {
 			for _, text := range paragraphs {
 				items = append(items, map[string]any{"text": text, "doc_type_kwd": "text"})
 			}
+			input := map[string]any{"name": "document." + format, "output_format": "json", "json": items}
 			if format == "txt" {
-				items = []map[string]any{{"text": strings.Join(paragraphs, "\n"), "doc_type_kwd": "text"}}
+				input = map[string]any{"name": "document.txt", "output_format": "text", "text": strings.Join(paragraphs, "\n")}
 			}
-			out, err := c.Invoke(t.Context(), nil, map[string]any{"name": "document." + format, "output_format": "json", "json": items})
+			out, err := c.Invoke(t.Context(), nil, input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +66,7 @@ func TestTokenChunkerCustomDelimiterItemsPreserveMediaAndPositions(t *testing.T)
 	}
 	items := []schema.ChunkDoc{
 		{Text: "first", DocType: "text", Mom: "section", PDFPositions: json.RawMessage(`[[1,0,10,0,10]]`)},
-		{Text: "second#third", DocType: "text", PDFPositions: json.RawMessage(`[[2,0,10,0,20]]`)},
+		{Text: "second#third", DocType: "text", PageNumber: intPtr(2), Sheet: "Sheet 2", Extra: map[string]json.RawMessage{"source": json.RawMessage(`"second"`)}, PDFPositions: json.RawMessage(`[[2,0,10,0,20]]`)},
 		{Text: "image", DocType: "image", ImgID: "image-id"},
 		{Text: "fourth", DocType: "text"},
 		{Text: "table", DocType: "table"},
@@ -83,6 +84,9 @@ func TestTokenChunkerCustomDelimiterItemsPreserveMediaAndPositions(t *testing.T)
 	}
 	if chunks[0]["mom"] != "section" || chunks[2]["img_id"] != "image-id" {
 		t.Fatalf("metadata lost: %#v", chunks)
+	}
+	if fmt.Sprint(chunks[0]["page_number"]) != "2" || chunks[0]["sheet"] != "Sheet 2" || chunks[0]["source"] != "second" {
+		t.Fatalf("merged scalar metadata lost: %#v", chunks[0])
 	}
 	decoded, _, err := schema.ChunkDocsFromAny(chunks)
 	if err != nil {
@@ -111,5 +115,26 @@ func TestTokenChunkerEmptyCustomDelimiter(t *testing.T) {
 	})
 	if got, want := chunkTexts(chunks), []string{"first", "second"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("chunks = %q, want %q", got, want)
+	}
+}
+
+func TestTokenChunkerCustomDelimiterKeepsConflictingMetadata(t *testing.T) {
+	for _, field := range []string{"page_number", "sheet", "sheet_index", "layout", "source"} {
+		t.Run(field, func(t *testing.T) {
+			first, second := any("first"), any("second")
+			if field == "page_number" || field == "sheet_index" {
+				first, second = 1, 2
+			}
+			chunks := invokeTokenChunks(t, map[string]any{"delimiters": []string{"`#`"}}, map[string]any{
+				"name": "document.docx", "output_format": "json",
+				"json": []map[string]any{
+					{"text": "first", "doc_type_kwd": "text", field: first},
+					{"text": "second", "doc_type_kwd": "text", field: second},
+				},
+			})
+			if len(chunks) != 2 || fmt.Sprint(chunks[0][field]) != fmt.Sprint(first) || fmt.Sprint(chunks[1][field]) != fmt.Sprint(second) {
+				t.Fatalf("conflicting %s lost: %#v", field, chunks)
+			}
+		})
 	}
 }

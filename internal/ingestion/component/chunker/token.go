@@ -796,7 +796,7 @@ func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.Chunk
 					strings.TrimLeftFunc(piece.Text, unicode.IsSpace) == piece.Text {
 					separator = "\n"
 				}
-				if pattern.MatchString(separator) {
+				if pattern.MatchString(separator) || !mergeChunkMetadata(pending, piece) {
 					flush()
 				} else {
 					textBuilder.WriteString(separator)
@@ -815,6 +815,52 @@ func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.Chunk
 	}
 	flush()
 	return out
+}
+
+func mergeChunkMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) bool {
+	// Conflicting scalar metadata needs separate chunks to remain representable.
+	if (dst.PageNumber != nil && src.PageNumber != nil && *dst.PageNumber != *src.PageNumber) ||
+		(dst.SheetIndex != nil && src.SheetIndex != nil && *dst.SheetIndex != *src.SheetIndex) {
+		return false
+	}
+	for _, pair := range [][2]string{{dst.Layout, src.Layout}, {dst.LayoutType, src.LayoutType}, {dst.LayoutNo, src.LayoutNo}, {dst.Sheet, src.Sheet}} {
+		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
+			return false
+		}
+	}
+	for key, value := range src.Extra {
+		if existing, ok := dst.Extra[key]; ok && string(existing) != string(value) {
+			return false
+		}
+	}
+	if dst.Layout == "" {
+		dst.Layout = src.Layout
+	}
+	if dst.LayoutType == "" {
+		dst.LayoutType = src.LayoutType
+	}
+	if dst.LayoutNo == "" {
+		dst.LayoutNo = src.LayoutNo
+	}
+	if dst.PageNumber == nil {
+		dst.PageNumber = src.PageNumber
+	}
+	if dst.Sheet == "" {
+		dst.Sheet = src.Sheet
+	}
+	if dst.SheetIndex == nil {
+		dst.SheetIndex = src.SheetIndex
+	}
+	if dst.Extra == nil {
+		dst.Extra = cloneExtra(src.Extra)
+	} else {
+		for key, value := range src.Extra {
+			if _, exists := dst.Extra[key]; !exists {
+				dst.Extra[key] = value
+			}
+		}
+	}
+	return true
 }
 
 func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
