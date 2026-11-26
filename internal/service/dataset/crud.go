@@ -614,7 +614,12 @@ func (d *DatasetService) CleanupDatasetExternal(ctx context.Context, plan Datase
 		common.Error("Dataset cleanup skipped: storage not initialized", nil, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
 		return
 	}
-	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// Cleanup runs after the DB commit. Once the rows are gone there is no
+	// retry path, so the cleanup must not be truncated by the request lifecycle:
+	// a client disconnect cancels ctx, and the API write deadline (180 s) is
+	// shorter than this budget. Detach from the request and give cleanup its own
+	// full 5-minute window, matching the post-commit pattern in document/chunk.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
 	defer cancel()
 	for _, location := range plan.DocLocations {
 		exists, err := storageImpl.ObjectExists(cleanupCtx, plan.KBID, location)
@@ -641,12 +646,12 @@ func (d *DatasetService) CleanupDatasetExternal(ctx context.Context, plan Datase
 		common.Error("Dataset cleanup could not remove bucket", err, zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
 	}
 	if len(plan.DocIDs) > 0 {
-		d.deleteDatasetEngineData(ctx, &entity.Knowledgebase{ID: plan.KBID, TenantID: plan.TenantID}, plan.DocIDs)
+		d.deleteDatasetEngineData(cleanupCtx, &entity.Knowledgebase{ID: plan.KBID, TenantID: plan.TenantID}, plan.DocIDs)
 	}
 	// The metadata values of the removed documents live in the document engine,
 	// which the DB transaction cannot reach: drop them once the rows that named
 	// them are committed away.
-	deleteDatasetMetadataStatesEE(ctx, plan.KBID)
+	deleteDatasetMetadataStatesEE(cleanupCtx, plan.KBID)
 	common.Info("Deleted dataset", zap.String("dataset", plan.DatasetName), zap.String("kb_id", plan.KBID))
 }
 

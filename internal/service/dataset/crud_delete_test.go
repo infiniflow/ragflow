@@ -297,3 +297,69 @@ func TestCleanupDatasetExternalIdempotent(t *testing.T) {
 		t.Fatal("replayed cleanup retained the bucket")
 	}
 }
+
+// ctxAwareEngine records engine deletes only when the received context is
+// still live. It makes the test detect a cleanup that inherited a canceled
+// request context: a canceled ctx produces zero counted calls.
+type ctxAwareEngine struct {
+	countingDeleteEngine
+	liveChunkCalls int
+	liveMetaCalls  int
+}
+
+func (e *ctxAwareEngine) DeleteChunks(ctx context.Context, cond map[string]interface{}, index, kbID string) (int64, error) {
+	if ctx.Err() == nil {
+		e.liveChunkCalls++
+	}
+	return e.countingDeleteEngine.DeleteChunks(ctx, cond, index, kbID)
+}
+func (e *ctxAwareEngine) DeleteMetadata(ctx context.Context, cond map[string]interface{}, tenantID string) (int64, error) {
+	if ctx.Err() == nil {
+		e.liveMetaCalls++
+	}
+	return e.countingDeleteEngine.DeleteMetadata(ctx, cond, tenantID)
+}
+
+// TestCleanupDatasetExternalDetachesFromRequestContext pins the post-commit
+// cleanup contract from review #6069764981: once the DB rows are committed, a
+// client disconnect or the API write deadline cancels the request context. The
+// cleanup must run to completion on a context detached from that request, or
+// the objects, chunks, and metadata are orphaned with no retry path.
+func TestCleanupDatasetExternalDetachesFromRequestContext(t *testing.T) {
+	store := storage.NewMemoryStorage()
+	if err := store.Put(t.Context(), "kb-1", "tracked", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	eng := &ctxAwareEngine{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	plan := DatasetCleanupPlan{
+		KBID:         "kb-1",
+		TenantID:     "tenant-1",
+		DatasetName:  "Dataset (kb-1)",
+		DocLocations: []string{"tracked"},
+		DocIDs:       []string{"doc-1"},
+	}
+
+	// Simulate a request whose context was canceled after the commit (client
+	// disconnect or 180 s WriteTimeout). A cleanup that derives its context
+	// from this one will skip every step and orphan the external data.
+	reqCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	svc.CleanupDatasetExternal(reqCtx, plan)
+
+	if store.ObjExist(t.Context(), "kb-1", "tracked") {
+		t.Fatal("cleanup skipped object removal because it inherited a canceled request context")
+	}
+	if store.BucketExists(t.Context(), "kb-1") {
+		t.Fatal("cleanup skipped bucket removal because it inherited a canceled request context")
+	}
+	if eng.liveChunkCalls == 0 || eng.liveMetaCalls == 0 {
+		t.Fatalf("cleanup skipped engine deletes on a canceled context: liveChunkCalls=%d liveMetaCalls=%d", eng.liveChunkCalls, eng.liveMetaCalls)
+	}
+}
