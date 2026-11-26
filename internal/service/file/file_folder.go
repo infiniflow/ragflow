@@ -559,6 +559,10 @@ func (s *FileService) MoveFiles(ctx context.Context, srcFileIDs []string, destFi
 		if file.TenantID == "" {
 			return errors.New("tenant not found")
 		}
+		// GetRootFolder finds the root by its "/" name and self-parenting.
+		if file.ParentID == file.ID {
+			return errors.New("root folder cannot be moved or renamed")
+		}
 		if err := s.checkFileTreeAccess(ctx, file, permission.OperationUpdate); err != nil {
 			return err
 		}
