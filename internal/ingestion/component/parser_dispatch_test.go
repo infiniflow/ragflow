@@ -2221,20 +2221,17 @@ func TestDispatchUsesRegisteredPDFMethod(t *testing.T) {
 }
 
 func TestConfigureParserFromSetups_EPUB(t *testing.T) {
-	setups := defaultSetups()
+	p := parser.NewEPUBParser()
+	configureParserFromSetups(p, utility.FileTypeEPUB, defaultSetups())
+	if p.RemoveTOC {
+		t.Error("default FileTypeEPUB remove_toc = true, want false")
+	}
 
-	t.Run("epub resolves to the epub setup with remove_toc disabled", func(t *testing.T) {
-		got := &captureSetupConfigurer{}
-		configureParserFromSetups(got, utility.FileTypeEPUB, setups)
-		want := map[string]any(setups["epub"])
-		if got.setup == nil {
-			t.Fatal("ConfigureFromSetup not called for FileTypeEPUB")
-		}
-		if v, ok := got.setup["remove_toc"].(bool); !ok || v != want["remove_toc"] {
-			t.Errorf("FileTypeEPUB remove_toc = %v, want %v", v, want["remove_toc"])
-		}
-		if v, ok := got.setup["remove_toc"].(bool); !ok || v {
-			t.Errorf("FileTypeEPUB default remove_toc = %v, want false", got.setup["remove_toc"])
-		}
-	})
+	setups := defaultSetups()
+	setups["epub"]["remove_toc"] = true
+	enabled := parser.NewEPUBParser()
+	configureParserFromSetups(enabled, utility.FileTypeEPUB, setups)
+	if !enabled.RemoveTOC {
+		t.Error("FileTypeEPUB remove_toc = false after the setup enabled it")
+	}
 }
