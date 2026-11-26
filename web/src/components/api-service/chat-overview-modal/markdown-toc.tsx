@@ -74,15 +74,9 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ container }) => {
       return true;
     };
 
-    // Build immediately if the preview already rendered its headings.
-    if (buildToc()) return;
-
-    // Otherwise wait for the lazy preview to inject its DOM, then build once.
-    // This replaces the previous per-frame requestAnimationFrame loop, which
-    // polled forever when the lazy chunk failed to load and leaked on unmount.
-    const observer = new MutationObserver(() => {
-      if (buildToc()) observer.disconnect();
-    });
+    buildToc();
+    // Keep the directory current as subsequent Markdown sections arrive.
+    const observer = new MutationObserver(buildToc);
     observer.observe(root, { childList: true, subtree: true });
 
     return () => {
