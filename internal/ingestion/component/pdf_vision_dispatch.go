@@ -123,6 +123,11 @@ func maybeDispatchPDFVision(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
+	if method := getStringOr(setup, "parse_method", ""); parser.HasParseMethod(utility.FileTypePDF, method) {
+		// A template-pinned parser owns the whole PDF path; tenant OCR/VLM
+		// backends must not intercept it.
+		return parser.ParseResult{}, false, nil
+	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	// The tenant-selected parser and the built-in backends share one
 	// normalization boundary so a future normalization fix cannot miss one
