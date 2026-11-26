@@ -1,15 +1,7 @@
 import { AgentBackground } from '@/components/canvas/background';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { PageFrame } from '@/components/page-frame';
 import Spotlight from '@/components/spotlight';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { SearchInput } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,10 +12,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
+import { AgentCategory } from '@/constants/agent';
 import { useClientPagination } from '@/hooks/logic-hooks/use-pagination';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useApplyVersion,
   useDeleteVersion,
@@ -31,7 +28,6 @@ import {
   useFetchVersionList,
   useUpdateVersion,
 } from '@/hooks/use-agent-request';
-import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { ConnectionMode, ReactFlow, ReactFlowProvider } from '@xyflow/react';
@@ -45,7 +41,6 @@ import {
 import {
   ChangeEvent,
   MouseEvent,
-  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -53,10 +48,11 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { nodeTypes } from '../canvas';
-import { useIsPipeline } from '../hooks/use-is-pipeline';
 import { AliasFormDialog } from '../components/alias-form-dialog';
+import { nodeTypes } from '../canvas';
+import { DropdownProvider } from '../canvas/context';
 import { CanvasSnapshot, CanvasSnapshotContext } from '../context';
+import { useIsPipeline } from '../hooks/use-is-pipeline';
 import { downloadDsl } from '../utils/download-dsl';
 
 function Dot() {
@@ -72,10 +68,9 @@ type PendingAction =
 
 type EditingAlias = { versionId: string; alias: string } | null;
 
-export function VersionDialog({
-  hideModal,
-}: IModalProps<any> & { initialName?: string; title?: ReactNode }) {
+export default function AgentVersionHistory() {
   const { t } = useTranslation();
+  const { navigateToAgent } = useNavigatePage();
   const { id: canvasId } = useParams();
   const isPipeline = useIsPipeline();
   const { data, loading } = useFetchVersionList();
@@ -215,10 +210,23 @@ export function VersionDialog({
         canvasId,
         versionId: pending.versionId,
       });
-      if (ok) hideModal?.();
+      if (ok) {
+        navigateToAgent(
+          canvasId,
+          isPipeline ? AgentCategory.DataflowCanvas : AgentCategory.AgentCanvas,
+        )();
+      }
     }
     setPending(null);
-  }, [pending, canvasId, deleteVersion, selectedId, applyVersion, hideModal]);
+  }, [
+    pending,
+    canvasId,
+    deleteVersion,
+    selectedId,
+    applyVersion,
+    navigateToAgent,
+    isPipeline,
+  ]);
 
   // Keep the current selection across list refreshes; only fall back to the
   // newest version when the selected one was pruned server-side.
@@ -229,74 +237,76 @@ export function VersionDialog({
   }, [data, selectedId]);
 
   return (
-    <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="max-w-[900px]">
-        <DialogHeader>
-          <DialogTitle className="text-base">
+    <DropdownProvider>
+      <PageFrame className="p-5">
+        <header className="shrink-0 pb-5">
+          <h1 className="text-xl font-semibold text-text-primary">
             {t('flow.historyVersion')}
-          </DialogTitle>
-        </DialogHeader>
-        <section className="flex gap-8 relative min-w-0">
-          <div className="w-72 shrink-0 max-h-[60vh] overflow-auto min-h-[40vh]">
+          </h1>
+        </header>
+        <section className="relative flex min-h-0 min-w-0 flex-1 gap-8">
+          <div className="flex min-h-0 w-72 shrink-0 flex-col">
             <SearchInput
               rootClassName="m-0.5 mb-3"
               placeholder={t('flow.version.filterByAlias')}
               value={aliasFilter}
               onChange={handleAliasFilterChange}
             />
-            {loading ? (
-              <Spin className="top-1/2"></Spin>
-            ) : (
-              <ul className="space-y-4 text-sm">
-                {pagedList.map((x) => {
-                  return (
-                    <li
-                      key={x.id}
-                      className={cn('group cursor-pointer p-2', {
-                        'bg-bg-card rounded-md ': x.id === selectedId,
-                      })}
-                      onClick={handleClick(x.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="truncate min-w-0">{x.title}</span>
-                        {x.release && <Dot></Dot>}
-                        {x.alias && (
-                          <span className="shrink-0 max-w-[20%] truncate text-accent-primary text-xs">
-                            {x.alias}
-                          </span>
-                        )}
-                        {/* Alias edit entry (design G2, section 4.4): PATCHes
+            <div className="relative min-h-0 flex-1 overflow-y-auto">
+              {loading ? (
+                <Spin className="top-1/2"></Spin>
+              ) : (
+                <ul className="space-y-4 text-sm">
+                  {pagedList.map((x) => {
+                    return (
+                      <li
+                        key={x.id}
+                        className={cn('group cursor-pointer p-2', {
+                          'bg-bg-card rounded-md ': x.id === selectedId,
+                        })}
+                        onClick={handleClick(x.id)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="truncate min-w-0">{x.title}</span>
+                          {x.release && <Dot></Dot>}
+                          {x.alias && (
+                            <span className="shrink-0 max-w-[20%] truncate text-accent-primary text-xs">
+                              {x.alias}
+                            </span>
+                          )}
+                          {/* Alias edit entry (design G2, section 4.4): PATCHes
   the version metadata without creating a new version or touching the DSL.
   Pencil edits an existing alias, SavePlus adds one. */}
-                        <RAGFlowTooltip
-                          asChild
-                          tooltip={
-                            x.alias
-                              ? t('flow.version.editAlias')
-                              : t('flow.version.addAlias')
-                          }
-                        >
-                          <Button
-                            variant="static"
-                            size="auto"
-                            className="ml-auto opacity-0 group-hover:opacity-100"
-                            onClick={handleEditAlias(x.id, x.alias ?? '')}
+                          <RAGFlowTooltip
+                            asChild
+                            tooltip={
+                              x.alias
+                                ? t('flow.version.editAlias')
+                                : t('flow.version.addAlias')
+                            }
                           >
-                            {x.alias ? (
-                              <Pencil className="size-3.5" />
-                            ) : (
-                              <SavePlus className="size-4" />
-                            )}
-                          </Button>
-                        </RAGFlowTooltip>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+                            <Button
+                              variant="static"
+                              size="auto"
+                              className="ml-auto opacity-0 group-hover:opacity-100"
+                              onClick={handleEditAlias(x.id, x.alias ?? '')}
+                            >
+                              {x.alias ? (
+                                <Pencil className="size-3.5" />
+                              ) : (
+                                <SavePlus className="size-4" />
+                              )}
+                            </Button>
+                          </RAGFlowTooltip>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </div>
-          <div className="relative flex-1 min-w-0">
+          <div className="relative min-h-0 min-w-0 flex-1">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : versionLoadFailed ? (
@@ -305,7 +315,7 @@ export function VersionDialog({
               </div>
             ) : (
               <Card className="h-full">
-                <CardContent className="h-full p-5 flex flex-col">
+                <CardContent className="flex h-full min-h-0 flex-col p-5">
                   <section className="flex justify-between gap-2 pb-2">
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center">
@@ -331,6 +341,7 @@ export function VersionDialog({
                       >
                         <Button
                           variant={'ghost'}
+                          aria-label={t('flow.version.download')}
                           onClick={downloadFile}
                           disabled={!selectedId}
                         >
@@ -343,6 +354,7 @@ export function VersionDialog({
                       >
                         <Button
                           variant={'ghost'}
+                          aria-label={t('flow.version.restore')}
                           onClick={requestRestore}
                           disabled={!selectedId || applyRestoring}
                         >
@@ -355,6 +367,7 @@ export function VersionDialog({
                       >
                         <Button
                           variant={'ghost'}
+                          aria-label={t('flow.version.delete')}
                           onClick={requestDelete}
                           disabled={!selectedId || deleting}
                         >
@@ -363,7 +376,7 @@ export function VersionDialog({
                       </RAGFlowTooltip>
                     </div>
                   </section>
-                  <section className="relative flex-1">
+                  <section className="relative min-h-0 flex-1">
                     <ReactFlowProvider key={'flow-' + selectedId}>
                       <CanvasSnapshotContext.Provider value={previewSnapshot}>
                         <ReactFlow
@@ -408,7 +421,7 @@ export function VersionDialog({
           pageSize={pageSize}
           onChange={onPaginationChange}
         ></RAGFlowPagination>
-      </DialogContent>
+      </PageFrame>
 
       <ConfirmDeleteDialog
         open={pending?.kind === 'delete'}
@@ -462,6 +475,6 @@ export function VersionDialog({
           onSubmit={handleSubmitAlias}
         />
       )}
-    </Dialog>
+    </DropdownProvider>
   );
 }

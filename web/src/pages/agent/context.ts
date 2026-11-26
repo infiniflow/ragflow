@@ -29,7 +29,7 @@ export const useCanvasReadonly = () => useContext(CanvasReadonlyContext);
 
 // CanvasSnapshotContext carries one immutable canvas snapshot (graph plus
 // globals/conversation variables) for read-only previews such as the version
-// history dialog. Variable-resolution hooks prefer it over the live canvas
+// history page. Variable-resolution hooks prefer it over the live canvas
 // store so a previewed version resolves variables against its own graph
 // instead of the current draft.
 export type CanvasSnapshot = IGraph & Pick<DSL, 'globals' | 'variables'>;
