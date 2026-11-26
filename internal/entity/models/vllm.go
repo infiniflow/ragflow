@@ -52,6 +52,13 @@ func (v *VllmModel) Name() string {
 	return "VLLM"
 }
 
+// SupportsVideoURL marks the OpenAI-compatible video input accepted by vLLM
+// multimodal chat endpoints. OpenAI-API-Compatible providers embed VllmModel,
+// so they inherit the same capability.
+func (v *VllmModel) SupportsVideoURL() bool {
+	return true
+}
+
 // applyVllmCompatibleThinking maps Qwen3 controls to the chat-template payload
 // expected by vLLM while preserving the generic thinking payload for other models.
 func applyVllmCompatibleThinking(reqBody map[string]interface{}, modelName string, config *ChatConfig) {
