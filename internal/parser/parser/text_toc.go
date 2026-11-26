@@ -12,6 +12,8 @@ import (
 // multi-word heading is listed without them: "Table of Contents" reads "tableofcontents".
 var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents|致谢|acknowledge)$`)
 
+var asciiTextRe = regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()\\-]+$")
+
 // whitespacePattern matches ASCII spaces and fullwidth space (U+3000)
 // for normalization before heading match.
 var whitespacePattern = regexp.MustCompile("[ \t\u3000]+")
@@ -172,10 +174,9 @@ func isEnglishTexts(texts []string) bool {
 	if len(sampled) == 0 {
 		return false
 	}
-	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()\\-]+$")
 	eng := 0
 	for _, t := range sampled {
-		if pat.MatchString(t) {
+		if asciiTextRe.MatchString(t) {
 			eng++
 		}
 	}

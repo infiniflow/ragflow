@@ -567,10 +567,11 @@ func flattenMetadataSummaryValues(value interface{}) []interface{} {
 	}
 }
 
+var isoTimestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$`)
+
 // isTimeString checks if a string is an ISO 8601 datetime
 func isTimeString(s string) bool {
-	matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$`, s)
-	return matched
+	return isoTimestampRe.MatchString(s)
 }
 
 // documentMetadataScope resolves the document and the tenant whose metadata
