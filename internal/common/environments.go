@@ -242,6 +242,7 @@ const (
 	EnvQueritAPIKey                      = "QUERIT_API_KEY"
 	EnvDeepLAPIKey                       = "DEEPL_API_KEY"
 	EnvQWeatherAPIKey                    = "QWEATHER_API_KEY"
+	EnvJin10APIKey                       = "JIN10_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
 	EnvHTTPProxy                         = "http_proxy"

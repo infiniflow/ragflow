@@ -17,88 +17,173 @@
 package tool
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/common"
 )
 
-const jin10ToolName = "jin10"
+const (
+	jin10ToolName         = "jin10"
+	jin10ToolDescription  = "Fetch financial flash updates, economic calendars, symbols, quotes, and news from the Jin10 REST API."
+	jin10BaseURL          = "https://open-data-api.jin10.com/data-api"
+	jin10MaxResponseBytes = 2 << 20
+)
 
-const jin10ToolDescription = "Subscribe to Jin10 (jin10.com) real-time financial flash news. " +
-	"STUB: Jin10 has no public REST API; data is delivered over a private " +
-	"WebSocket subscription. Not yet implemented in the Go Canvas. " +
-	"Use the Python Canvas for Jin10 data."
-
-const jin10UnsupportedMessage = "Jin10 requires WebSocket subscription — not yet implemented in Go Canvas. " +
-	"Use Python Canvas."
-
-// jin10Params is the JSON shape the model sends into InvokableRun. The
-// Python implementation accepts a category (e.g. "all", "global", "cny")
-// and an optional speed filter. The Go stub preserves the shape for
-// future WebSocket client compatibility but rejects every invocation.
 type jin10Params struct {
-	Category string `json:"category,omitempty" doc:"News category filter (e.g. \"all\", \"global\", \"cny\"). Defaults to \"all\"."`
-	Speed    string `json:"speed,omitempty" doc:"Optional speed/dedup filter. Defaults to empty (no filter)."`
+	Type             string `json:"type,omitempty" enum:"flash,calendar,symbols,news" doc:"Data to fetch. Defaults to flash."`
+	Category         string `json:"category,omitempty" doc:"Flash category (1–5, default 1) or calendar category (cj, qh, hk, us, default cj)."`
+	CalendarDataType string `json:"calendar_datatype,omitempty" enum:"data,event,holiday" doc:"Calendar data type. Defaults to data."`
+	SymbolsDataType  string `json:"symbols_datatype,omitempty" enum:"symbols,quotes" doc:"Instrument list or quotes. Defaults to symbols."`
+	SymbolsType      string `json:"symbols_type,omitempty" enum:"GOODS,FOREX,FUTURE,CRYPTO" doc:"Instrument market. Defaults to GOODS."`
+	Codes            string `json:"codes,omitempty" doc:"Comma-separated instrument codes for quotes. Defaults to BTCUSD."`
+	Contain          string `json:"contain,omitempty" doc:"Text to include in flash or news results."`
+	Filter           string `json:"filter,omitempty" doc:"Text to exclude from flash or news results."`
 }
 
-// jin10Envelope is the model-facing JSON shape. The stub always
-// returns a populated Error.
 type jin10Envelope struct {
-	Items []any  `json:"items,omitempty"`
-	Error string `json:"_ERROR,omitempty"`
+	Items json.RawMessage `json:"items,omitempty"`
+	Error string          `json:"_ERROR,omitempty"`
 }
 
-// Jin10Tool is the Jin10
-// flash-news tool.
-//
-// Jin10 (https://www.jin10.com) has no public API; subscribers receive
-// data via a private WebSocket connection with token authentication.
-// A native Go WebSocket client is deferred. For P3-B4 the tool is
-// registered so DSLs that reference "jin10" keep parsing, but every
-// invocation fails fast with a clear "use Python Canvas" message.
-//
-// Jin10Tool does not own an HTTPHelper — it never makes network calls.
-type Jin10Tool struct{}
+// Jin10Tool retrieves financial data from the Jin10 Open Data API.
+type Jin10Tool struct {
+	helper *HTTPHelper
+}
 
-// NewJin10Tool returns a Jin10Tool. No HTTPHelper is allocated; the
-// stub never issues network requests.
-func NewJin10Tool() *Jin10Tool { return &Jin10Tool{} }
+// NewJin10Tool creates a Jin10 client that sends the secret-key header only
+// to the configured API host.
+func NewJin10Tool() *Jin10Tool {
+	helper := NewHTTPHelper()
+	helper.client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Jin10Tool{helper: helper}
+}
 
 // Info returns the tool's metadata for the chat model.
 func (j *Jin10Tool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return BuildToolInfo(jin10ToolName, jin10ToolDescription, jin10Params{})
 }
 
-// InvokableRun validates the input shape (category is optional with
-// default "all") and returns a clear "use Python Canvas" error. The
-// model receives a JSON envelope with the message in the `_ERROR` field.
-func (j *Jin10Tool) InvokableRun(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+// InvokableRun dispatches a read-only Jin10 API call.
+func (j *Jin10Tool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var p jin10Params
 	if argsJSON != "" {
 		if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
-			return jin10ErrJSON(fmt.Errorf("jin10: parse arguments: %w", err)),
-				errors.New(jin10UnsupportedMessage)
+			return jin10ErrJSON(fmt.Errorf("jin10: parse arguments: %w", err))
 		}
 	}
-	if p.Category == "" {
-		p.Category = "all"
+	apiKey := strings.TrimSpace(common.GetEnv(common.EnvJin10APIKey))
+	if apiKey == "" {
+		return jin10ErrJSON(fmt.Errorf("jin10: %s is not configured", common.EnvJin10APIKey))
 	}
-	return jin10ErrJSON(errors.New(jin10UnsupportedMessage)),
-		errors.New(jin10UnsupportedMessage)
-}
-
-func jin10JSON(env jin10Envelope) string {
-	b, err := json.Marshal(env)
+	endpoint, params, err := buildJin10Request(p)
 	if err != nil {
-		return fmt.Sprintf(`{"_ERROR":"jin10: marshal result: %s"}`, err)
+		return jin10ErrJSON(err)
 	}
-	return string(b)
+	body, err := json.Marshal(params)
+	if err != nil {
+		return jin10ErrJSON(fmt.Errorf("jin10: encode request: %w", err))
+	}
+
+	resp, err := j.helper.Do(ctx, http.MethodGet, endpoint, string(body), "application/json", map[string]string{
+		"Accept":     "application/json",
+		"secret-key": apiKey,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), apiKey) {
+			err = errors.New(strings.ReplaceAll(err.Error(), apiKey, "[redacted]"))
+		}
+		return jin10ErrJSON(fmt.Errorf("jin10: request failed: %w", err))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return jin10ErrJSON(fmt.Errorf("jin10: HTTP %d", resp.StatusCode))
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, jin10MaxResponseBytes+1))
+	if err != nil {
+		return jin10ErrJSON(fmt.Errorf("jin10: read response: %w", err))
+	}
+	if len(raw) > jin10MaxResponseBytes {
+		return jin10ErrJSON(errors.New("jin10: response too large"))
+	}
+	var result struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return jin10ErrJSON(fmt.Errorf("jin10: decode response: %w", err))
+	}
+	if len(result.Data) == 0 || string(result.Data) == "null" {
+		return jin10ErrJSON(errors.New("jin10: response has no data"))
+	}
+
+	output, err := json.Marshal(jin10Envelope{Items: result.Data})
+	if err != nil {
+		return jin10ErrJSON(fmt.Errorf("jin10: encode result: %w", err))
+	}
+	return string(output), nil
 }
 
-func jin10ErrJSON(err error) string {
-	return jin10JSON(jin10Envelope{Error: err.Error()})
+func buildJin10Request(p jin10Params) (string, map[string]string, error) {
+	query := url.Values{}
+	params := make(map[string]string)
+	var path string
+	switch p.Type {
+	case "", "flash":
+		path = "/flash"
+		if p.Category == "" || p.Category == "all" {
+			p.Category = "1"
+		}
+		params["category"] = p.Category
+		params["contain"], params["filter"] = p.Contain, p.Filter
+		query.Set("category", p.Category)
+	case "calendar":
+		switch dataType := cmp.Or(p.CalendarDataType, "data"); dataType {
+		case "data", "event", "holiday":
+			path = "/calendar/" + dataType
+		default:
+			return "", nil, errors.New("jin10: calendar_datatype must be data, event, or holiday")
+		}
+		params["category"] = cmp.Or(p.Category, "cj")
+		query.Set("category", params["category"])
+	case "symbols":
+		switch dataType := cmp.Or(p.SymbolsDataType, "symbols"); dataType {
+		case "symbols":
+			path = "/symbols"
+		case "quotes":
+			path = "/quotes"
+			params["codes"] = cmp.Or(p.Codes, "BTCUSD")
+		default:
+			return "", nil, errors.New("jin10: symbols_datatype must be symbols or quotes")
+		}
+		params["type"] = cmp.Or(p.SymbolsType, "GOODS")
+		query.Set("type", params["type"])
+	case "news":
+		path = "/news"
+		params["contain"], params["filter"] = p.Contain, p.Filter
+	default:
+		return "", nil, errors.New("jin10: type must be flash, calendar, symbols, or news")
+	}
+	endpoint := jin10BaseURL + path
+	if len(query) != 0 {
+		endpoint += "?" + query.Encode()
+	}
+	return endpoint, params, nil
+}
+
+func jin10ErrJSON(err error) (string, error) {
+	output, _ := json.Marshal(jin10Envelope{Error: err.Error()})
+	return string(output), err
 }
