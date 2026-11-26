@@ -19,7 +19,6 @@
  *
  * Upstream ships this as an empty set: only naive ('0') and react ('5') are
  * valid, and both are accepted by the shared storage sanitizer. The enterprise
- * repository adds the planer-explorer-auditor ('6'), IterSynth ('7') and
- * agentic pro ('8') levels.
+ * repository adds the agentic pro ('8') level.
  */
 export const extraThinkingLevels: ReadonlySet<string> = new Set<string>();

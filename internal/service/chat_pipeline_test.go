@@ -2280,15 +2280,14 @@ func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
 
 // TestEngineLevelsPinTheFrontendContract pins the engine level numbers: a
 // mismatch means the UI and this package disagree on which number means which
-// engine (mode 5 smart-reasoning, 6 planer-explorer-auditor, 7 IterSynth,
-// 8 Codex; the values message-input/next.tsx sends).
+// engine (mode 5 smart-reasoning, mode 8 Codex; the values message-input/next.tsx
+// sends).
 func TestEngineLevelsPinTheFrontendContract(t *testing.T) {
 	if reasoningLevelAgentic != 5 {
 		t.Fatalf("reasoningLevelAgentic = %d, want 5 (the level message-input/next.tsx sends)", reasoningLevelAgentic)
 	}
-	if reasoningLevelPlanExplorer != 6 || reasoningLevelIterative != 7 || reasoningLevelCodex != 8 {
-		t.Fatalf("engine levels = plan:%d iter:%d codex:%d, want 6/7/8 (message-input/next.tsx)",
-			reasoningLevelPlanExplorer, reasoningLevelIterative, reasoningLevelCodex)
+	if reasoningLevelCodex != 8 {
+		t.Fatalf("reasoningLevelCodex = %d, want 8 (message-input/next.tsx)", reasoningLevelCodex)
 	}
 }
 
@@ -2327,13 +2326,13 @@ func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
 }
 
 // TestSelectAgenticEngine pins the engine dispatch: which agentic engine a turn
-// runs on, from the reasoning level alone. Modes 5/6 are unreachable without a
+// runs on, from the reasoning level alone. Mode 5 is unreachable without a
 // knowledge base; mode 8 is reachable with or without one.
 //
-// Modes 5/6 resolve citations against an explicit kb_id scope, and
+// Mode 5 resolves citations against an explicit kb_id scope, and
 // buildBoolQueryFromCondition drops that term when the scope is empty — so a turn
 // on a KB-less dialog would resolve a cited chunk out of ANY KB in the tenant. The
-// dispatch therefore falls through for them instead of running an engine with an
+// dispatch therefore falls through for it instead of running an engine with an
 // unbounded scope, keeping the empty-scope query unconstructible rather than trusting
 // each retrieval path to defend itself. mode 8 instead lets Codex converse without a
 // KB and makes the MCP retrieval tools error on a no-scope call (see the mode 8 plan).
@@ -2350,8 +2349,6 @@ func TestSelectAgenticEngine(t *testing.T) {
 	}{
 		{"agentic level with KBs", reasoningLevelAgentic, true, engineAgenticRAG},
 		{"agentic level without KBs", reasoningLevelAgentic, false, ""},
-		{"iterative level with KBs", reasoningLevelIterative, true, engineIterative},
-		{"iterative level without KBs", reasoningLevelIterative, false, ""},
 		// mode 8 (Codex) is exempt from the KB gate: Codex can converse without a
 		// KB, and its MCP retrieval tools error on a no-scope call rather than
 		// querying an unbounded scope.
@@ -2394,14 +2391,9 @@ func TestAgentModeIsNotASelector(t *testing.T) {
 			"",
 		},
 		{
-			"an iterative agent_mode alone selects nothing",
-			map[string]interface{}{"agent_mode": "iterative-synthesis"},
-			"",
-		},
-		{
 			"the level wins and the stale kwarg is ignored",
-			map[string]interface{}{"agent_mode": "smart-reasoning", "reasoning": 7},
-			engineIterative,
+			map[string]interface{}{"agent_mode": "smart-reasoning", "reasoning": 5},
+			engineAgenticRAG,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
