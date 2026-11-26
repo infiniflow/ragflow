@@ -287,3 +287,168 @@ func TestScanSkillScalesWithManyCandidateCommands(t *testing.T) {
 		t.Fatalf("scanning %d candidate commands took %v", 120000, elapsed)
 	}
 }
+
+// A substitution in a redirection or as a process substitution does not end
+// the simple command, so the operand written after it still belongs to rm.
+func TestScanSkillDetectsRmOperandAfterASubstitution(t *testing.T) {
+	lines := []string{
+		`rm -r >$(true) "label; $T"`,
+		`rm -r 2>$(true) "label; $T"`,
+		`rm -r <(printf ok) "label; $T"`,
+		`rm -r >$(printf ok) "label; $T"`,
+		`$(printf ok); rm -r "label; $T"`,
+	}
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			if !hasPattern(scanLine(line), "rm_quoted_expansion") {
+				t.Fatalf("%q did not raise rm_quoted_expansion: %v", line, scanLine(line))
+			}
+		})
+	}
+}
+
+// A dollar sign that starts no expansion is literal text, and env rejects a
+// split string with one before running anything. An env split string also
+// treats a word-initial `#` as a comment, and a literal `>` from the split
+// value is an argument rather than a shell redirection.
+func TestScanSkillIgnoresLiteralDollarAndInvalidEnvSplit(t *testing.T) {
+	lines := []string{
+		`rm -r "label; $"`,
+		`rm -r "label; "$`,
+		`rm -r "label; \$T"`,
+		`env -S 'rm -rf $T' "a; $T"`,
+		`env -S 'rm # -r' "a; $T"`,
+		`env -S 'rm -f' "a; $T"`,
+	}
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			if findings := scanLine(line); hasPattern(findings, "rm_quoted_expansion") {
+				t.Fatalf("%q raised rm_quoted_expansion: %v", line, findings)
+			}
+		})
+	}
+
+	positives := []string{
+		`rm -r "label; $T"`,
+		`rm -r "label; $?"`,
+		`env -S 'rm -rf ${T}' "a; $T"`,
+		`env -S 'rm -rf >' "a; $T"`,
+	}
+	for _, line := range positives {
+		t.Run(line, func(t *testing.T) {
+			if !hasPattern(scanLine(line), "rm_quoted_expansion") {
+				t.Fatalf("%q did not raise rm_quoted_expansion: %v", line, scanLine(line))
+			}
+		})
+	}
+}
+
+// A command substitution that spans physical lines keeps the outer command
+// whole: rm after the closing `)` is still an argument of echo.
+func TestScanSkillKeepsSubstitutionAcrossPhysicalLines(t *testing.T) {
+	content := "#!/bin/sh\necho $(\n  printf ok\n) rm -r \"label; $T\"\n"
+	if findings := scanContent(content); hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("rm inside the outer command raised rm_quoted_expansion: %v", findings)
+	}
+	real := "#!/bin/sh\necho $(\n  printf ok\n); rm -r \"label; $T\"\n"
+	if findings := scanContent(real); !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("the command after the substitution was not reported: %v", findings)
+	}
+}
+
+// An unquoted here-document still runs command substitutions while it
+// expands, so an rm inside `$(...)` is executable even though the rest of the
+// body is data.
+func TestScanSkillInspectsSubstitutionsInUnquotedHeredoc(t *testing.T) {
+	content := "#!/bin/sh\ncat <<EOF\n$(rm -rf \"x; $T\")\nEOF\n"
+	findings := scanContent(content)
+	if !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("substitution in the here-document body was not inspected: %v", findings)
+	}
+	quoted := "#!/bin/sh\ncat <<'EOF'\n$(rm -rf \"x; $T\")\nEOF\n"
+	if findings := scanContent(quoted); hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("quoted here-document body raised rm_quoted_expansion: %v", findings)
+	}
+	// Plain body text is not a command even when the delimiter is unquoted.
+	prose := "#!/bin/sh\ncat <<EOF\nrm -rf \"x; $T\"\nEOF\n"
+	if findings := scanContent(prose); hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("plain here-document text raised rm_quoted_expansion: %v", findings)
+	}
+}
+
+// `<<<` is a here-string with no body, so the next line is code.
+func TestScanSkillKeepsCodeAfterHereString(t *testing.T) {
+	content := "#!/bin/sh\ncat <<< foo\nrm -rf \"a; $T\"\n"
+	findings := scanContent(content)
+	found := false
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			found = true
+			if finding.Line != 3 {
+				t.Fatalf("reported line %d, want 3", finding.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("command after a here-string was skipped: %v", findings)
+	}
+}
+
+// An unquoted delimiter has its `\`-newline pairs removed before the shell
+// compares it, so the terminator can be split over two physical lines.
+func TestScanSkillJoinsContinuedHeredocDelimiter(t *testing.T) {
+	content := "#!/bin/sh\ncat <<DOC\nbody\nDO\\\nC\nrm -rf \"a; $T\"\n"
+	findings := scanContent(content)
+	found := false
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			found = true
+			if finding.Line != 6 {
+				t.Fatalf("reported line %d, want 6", finding.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("command after the continued delimiter was skipped: %v", findings)
+	}
+}
+
+// A quoted empty delimiter is still a delimiter word: the body ends at the
+// first blank line, and the command after it runs.
+func TestScanSkillAcceptsQuotedEmptyHeredocDelimiter(t *testing.T) {
+	content := "#!/bin/sh\ncat <<''\nrm -rf \"a; $T\"\n\nrm -rf \"b; $T\"\n"
+	findings := scanContent(content)
+	var got []int
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			got = append(got, finding.Line)
+		}
+	}
+	if len(got) != 1 || got[0] != 5 {
+		t.Fatalf("rm_quoted_expansion lines = %v, want only the command on line 5", got)
+	}
+}
+
+// A comment line inside an open substitution ends at the physical newline: the
+// command on the next line is still scanned instead of being masked.
+func TestScanSkillScansLineAfterCommentInsideSubstitution(t *testing.T) {
+	content := "#!/bin/sh\necho $(\n  # note\n  rm -rf \"x; $T\"\n)\n"
+	findings := scanContent(content)
+	found := false
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" {
+			found = true
+			if finding.Line != 4 {
+				t.Fatalf("reported line %d, want 4", finding.Line)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("command after a comment inside the substitution was skipped: %v", findings)
+	}
+
+	real := "#!/bin/sh\necho $( # note\n); rm -rf \"label; $T\"\n"
+	if findings := scanContent(real); !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("command after the substitution was not reported: %v", findings)
+	}
+}

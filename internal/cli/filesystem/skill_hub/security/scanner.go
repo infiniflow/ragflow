@@ -17,6 +17,7 @@
 package security
 
 import (
+	"bytes"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -236,11 +237,14 @@ type logicalLine struct {
 	data   bool
 }
 
-// heredocTerm is one pending here-document: the delimiter that ends its body
-// and whether `<<-` strips leading tabs from the body and the delimiter.
+// heredocTerm is one pending here-document: the delimiter that ends its body,
+// whether `<<-` strips leading tabs, and whether any part of the delimiter word
+// was quoted. A quoted delimiter makes the body literal; an unquoted one still
+// runs command substitutions.
 type heredocTerm struct {
 	delimiter string
 	stripTabs bool
+	quoted    bool
 }
 
 // logicalLines folds `\`-continued physical lines into logical commands so a
@@ -254,6 +258,10 @@ type heredocTerm struct {
 func logicalLines(content string) []logicalLine {
 	var lines []logicalLine
 	number := 1
+	// parenDepth keeps a command that spans physical lines inside `$(...)`, a
+	// subshell or a `(pattern)` one logical line. It survives a comment line so
+	// the command after `# ...` still knows its parentheses are open.
+	parenDepth := 0
 	for pos := 0; pos < len(content); {
 		start := number
 		var buf []byte
@@ -288,9 +296,24 @@ func logicalLines(content string) []logicalLine {
 					pos++
 					continue
 				}
+				if comment {
+					// A comment ends at the physical newline. End the logical
+					// line here so the comment does not mask the next line;
+					// the open parentheses still carry over.
+					break
+				}
+				if parenDepth > 0 || continuesShellCommand(buf) {
+					// The shell reads the next physical line as part of this
+					// command; the newline is plain whitespace there.
+					buf = append(buf, ' ')
+					wordStart = true
+					number++
+					pos++
+					continue
+				}
 				break
 			}
-			if !inSingle && !inDouble && !comment && c == '<' && pos+1 < len(content) && content[pos+1] == '<' {
+			if !inSingle && !inDouble && !comment && !escaped && c == '<' && pos+1 < len(content) && content[pos+1] == '<' {
 				if term, ok := parseHeredocDelimiter(content, pos); ok {
 					heredocs = append(heredocs, term)
 				}
@@ -327,6 +350,14 @@ func logicalLines(content string) []logicalLine {
 				wordStart = false
 			case c == '#' && wordStart:
 				comment = true
+			case c == '(':
+				parenDepth++
+				wordStart = true
+			case c == ')':
+				if parenDepth > 0 {
+					parenDepth--
+				}
+				wordStart = true
 			case c == ' ', c == '\t', c == ';', c == '&', c == '|':
 				wordStart = true
 			default:
@@ -341,40 +372,140 @@ func logicalLines(content string) []logicalLine {
 		pos++ // the newline that ended the command
 		number++
 		for _, term := range heredocs {
-			for pos < len(content) {
-				eol := strings.IndexByte(content[pos:], '\n')
-				text, next := content[pos:], len(content)
-				if eol >= 0 {
-					text, next = text[:eol], pos+eol+1
-				}
-				match := text
-				if term.stripTabs {
-					match = strings.TrimLeft(match, "\t")
-				}
-				if match == term.delimiter {
-					// The delimiter line closes the body and is not a command.
-					pos = next
-					if eol >= 0 {
-						number++
-					}
-					break
-				}
-				lines = append(lines, logicalLine{number: number, text: text, data: true})
-				pos = next
-				if eol < 0 {
-					break
-				}
-				number++
-			}
+			pos, number = appendHeredocBody(content, pos, number, term, &lines)
 		}
 	}
 	return lines
 }
 
+// continuesShellCommand reports whether the line ends with an operator that
+// makes the shell read the next physical line as the same command.
+func continuesShellCommand(buf []byte) bool {
+	trimmed := bytes.TrimRight(buf, " \t\r")
+	if len(trimmed) == 0 {
+		return false
+	}
+	if trimmed[len(trimmed)-1] == '|' {
+		return true
+	}
+	return len(trimmed) >= 2 && trimmed[len(trimmed)-2] == '&' && trimmed[len(trimmed)-1] == '&'
+}
+
+// appendHeredocBody consumes the physical lines of one here-document body. A
+// quoted delimiter hands the body to the program literally, so the lines are
+// only marked as data. An unquoted delimiter still runs command substitutions
+// while the body expands, so the text inside `$(...)` and backticks is also
+// returned as code.
+func appendHeredocBody(content string, pos, number int, term heredocTerm, lines *[]logicalLine) (int, int) {
+	for pos < len(content) {
+		text, next, hasEOL := readPhysicalLine(content, pos)
+		match, nextPos, matchEOL, used := text, next, hasEOL, 1
+		// An unquoted delimiter has its `\`-newline pairs removed before the
+		// shell compares it, so the terminator may be split over two lines.
+		for !term.quoted && matchEOL && strings.HasSuffix(match, "\\") {
+			match = match[:len(match)-1]
+			continued, after, afterEOL := readPhysicalLine(content, nextPos)
+			match += continued
+			nextPos, matchEOL = after, afterEOL
+			used++
+		}
+		if term.stripTabs {
+			match = strings.TrimLeft(match, "\t")
+		}
+		if match == term.delimiter {
+			// The delimiter line closes the body and is not a command.
+			pos = nextPos
+			number += used
+			if !matchEOL {
+				number--
+			}
+			return pos, number
+		}
+		if !term.quoted {
+			for _, sub := range heredocSubstitutions(match) {
+				*lines = append(*lines, logicalLine{number: number, text: sub})
+			}
+		}
+		*lines = append(*lines, logicalLine{number: number, text: text, data: true})
+		pos = nextPos
+		number += used
+		if !matchEOL {
+			number--
+			return pos, number
+		}
+	}
+	return pos, number
+}
+
+// readPhysicalLine returns one physical line, the offset just past its newline,
+// and whether a newline ended it.
+func readPhysicalLine(content string, pos int) (string, int, bool) {
+	eol := strings.IndexByte(content[pos:], '\n')
+	if eol < 0 {
+		return content[pos:], len(content), false
+	}
+	return content[pos : pos+eol], pos + eol + 1, true
+}
+
+// heredocSubstitutions returns the text of every command substitution an
+// unquoted here-document body would run: `$(...)`, backticks and nested
+// substitutions. An escaped `$(` or backtick is literal text.
+func heredocSubstitutions(s string) []string {
+	var subs []string
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '`':
+			j := i + 1
+			for j < len(s) && s[j] != '`' {
+				if s[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			end := min(j, len(s))
+			subs = append(subs, s[i+1:end])
+			i = end
+		case '$':
+			if i+1 >= len(s) || s[i+1] != '(' {
+				continue
+			}
+			depth, j := 1, i+2
+			for j < len(s) && depth > 0 {
+				switch s[j] {
+				case '\\':
+					j++
+				case '(':
+					depth++
+				case ')':
+					depth--
+				}
+				j++
+			}
+			end := j
+			if depth == 0 {
+				end = j - 1
+			}
+			if end > len(s) {
+				end = len(s)
+			}
+			subs = append(subs, s[i+2:end])
+			i = j - 1
+		}
+	}
+	return subs
+}
+
 // parseHeredocDelimiter reads the `<<` or `<<-` introducer at pos and returns
 // its delimiter word with the shell quoting removed. A here-string (`<<<`) or
-// an introducer without a word is not a here-document.
+// an introducer without a word is not a here-document. Any quoting in the word
+// makes the body literal.
 func parseHeredocDelimiter(content string, pos int) (heredocTerm, bool) {
+	if pos > 0 && content[pos-1] == '<' {
+		// The second or third `<` of a here-string introducer.
+		return heredocTerm{}, false
+	}
 	j := pos + 2
 	if j < len(content) && content[j] == '<' {
 		return heredocTerm{}, false
@@ -389,6 +520,7 @@ func parseHeredocDelimiter(content string, pos int) (heredocTerm, bool) {
 	}
 	var word []byte
 	quote := byte(0)
+	consumed := false
 scan:
 	for j < len(content) {
 		c := content[j]
@@ -407,9 +539,15 @@ scan:
 		}
 		switch c {
 		case '\'', '"':
+			// A quoted word is still a delimiter; quote removal may leave it
+			// empty (`<<''` ends the body at the first blank line).
+			consumed = true
+			term.quoted = true
 			quote = c
 			j++
 		case '\\':
+			consumed = true
+			term.quoted = true
 			if j+1 < len(content) {
 				j++
 				word = append(word, content[j])
@@ -418,11 +556,12 @@ scan:
 		case ' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')':
 			break scan
 		default:
+			consumed = true
 			word = append(word, c)
 			j++
 		}
 	}
-	if len(word) == 0 {
+	if !consumed {
 		return heredocTerm{}, false
 	}
 	term.delimiter = string(word)
@@ -474,6 +613,19 @@ func scanQuotedRmExpansionDepth(line string, depth int) (string, bool) {
 			if line[i] == '\\' {
 				escaped = true
 				continue
+			}
+			// A substitution that is a redirection target or a process
+			// substitution does not end the simple command: scan its body as a
+			// command of its own, then keep the outer command whole so operands
+			// written after it still belong to the rm.
+			if line[i] == '(' && isSubstitutionOpener(line, i) && substitutionFollowsRedirection(line, start, i) {
+				if close, ok := matchingParen(line, i); ok {
+					if operand, found := scanQuotedRmExpansionDepth(line[i+1:close], depth); found {
+						return operand, true
+					}
+					i = close
+					continue
+				}
 			}
 			switch line[i] {
 			case ';', '|', '&', '(', ')':
@@ -589,15 +741,20 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 			// env -S splits its value into argv words: quotes group and a
 			// backslash escapes, but a separator or `$` stays literal. Inspect
 			// the argv env would execute, then the shell words after it.
-			words := make([]cmdWord, 0, 4)
-			for _, v := range envSplitWords(value) {
+			split, valid := envSplitWords(value)
+			chain.broken = true
+			chain.wrapper = ""
+			if !valid {
+				// env rejects the split string before running anything.
+				continue
+			}
+			words := make([]cmdWord, 0, len(split)+4)
+			for _, v := range split {
 				words = append(words, cmdWord{text: v, literal: true})
 			}
 			for _, span := range shellWordSpans(line, word.end, end) {
 				words = append(words, cmdWord{text: span.text})
 			}
-			chain.broken = true
-			chain.wrapper = ""
 			if depth < maxSplitDepth {
 				if operand, found := scanArgvForQuotedRm(words, depth+1); found {
 					return operand, true, lastWordEnd, chain, inCase
@@ -826,8 +983,12 @@ func scanArgvForQuotedRm(words []cmdWord, depth int) (string, bool) {
 			return "", false
 		}
 		if value, ok := chain.takeSplitString(word.text); ok {
-			next := make([]cmdWord, 0, len(words)-i)
-			for _, v := range envSplitWords(value) {
+			split, valid := envSplitWords(value)
+			if !valid {
+				return "", false
+			}
+			next := make([]cmdWord, 0, len(split)+len(words)-i)
+			for _, v := range split {
 				next = append(next, cmdWord{text: v, literal: true})
 			}
 			next = append(next, words[i+1:]...)
@@ -868,7 +1029,7 @@ func quotedRmArgvOperands(words []cmdWord) (string, bool) {
 			}
 			continue
 		}
-		if isRedirection(word.text) && i+1 < len(words) {
+		if !word.literal && isRedirection(word.text) && i+1 < len(words) {
 			i++ // the redirection target is not an operand
 			continue
 		}
@@ -886,9 +1047,13 @@ func quotedRmArgvOperands(words []cmdWord) (string, bool) {
 }
 
 // envSplitWords splits the value of env -S the way coreutils does: whitespace
-// separates arguments, single and double quotes group, and a backslash escapes
-// the next byte. No shell expansion or separator handling runs on the value.
-func envSplitWords(s string) []string {
+// separates arguments, single and double quotes group, backslash sequences are
+// processed, and a `#` as the first character of an argument ignores the rest.
+// It reports false when env itself rejects the string: a `$` must begin a
+// `${NAME}` expansion, and env exits before running any command otherwise.
+// Every returned word is literal: env performs no shell separator or
+// substitution handling on the value.
+func envSplitWords(s string) ([]string, bool) {
 	var words []string
 	var word strings.Builder
 	inWord := false
@@ -900,12 +1065,18 @@ func envSplitWords(s string) []string {
 		}
 	}
 	for i := 0; i < len(s); i++ {
+		if !inWord && s[i] == '#' {
+			break
+		}
 		switch c := s[i]; c {
-		case ' ', '\t', '\n':
+		case ' ', '\t', '\n', '\r', '\v', '\f':
 			flush()
 		case '\'':
 			inWord = true
 			for i++; i < len(s) && s[i] != '\''; i++ {
+				if s[i] == '\\' && i+1 < len(s) && (s[i+1] == '\'' || s[i+1] == '\\') {
+					i++
+				}
 				word.WriteByte(s[i])
 			}
 		case '"':
@@ -913,9 +1084,13 @@ func envSplitWords(s string) []string {
 			for i++; i < len(s); i++ {
 				if s[i] == '\\' && i+1 < len(s) {
 					switch s[i+1] {
-					case '"', '\\', '$', '`':
+					case '"', '\\', '$', '#', '`':
 						i++
 						word.WriteByte(s[i])
+						continue
+					case '_':
+						i++
+						word.WriteByte(' ')
 						continue
 					}
 				}
@@ -926,17 +1101,52 @@ func envSplitWords(s string) []string {
 			}
 		case '\\':
 			inWord = true
-			if i+1 < len(s) {
-				i++
+			if i+1 >= len(s) {
+				continue
+			}
+			i++
+			switch s[i] {
+			case 'c':
+				// \c ignores the rest of the string.
+				flush()
+				return words, true
+			case 'f':
+				word.WriteByte('\f')
+			case 'n':
+				word.WriteByte('\n')
+			case 'r':
+				word.WriteByte('\r')
+			case 't':
+				word.WriteByte('\t')
+			case 'v':
+				word.WriteByte('\v')
+			case '_':
+				// Outside quotes \_ separates arguments.
+				flush()
+			default:
 				word.WriteByte(s[i])
 			}
+		case '$':
+			if i+1 >= len(s) || s[i+1] != '{' {
+				return nil, false
+			}
+			end := strings.IndexByte(s[i+2:], '}')
+			if end < 0 {
+				return nil, false
+			}
+			end += i + 2
+			// env expands ${NAME}; the runtime value is unknown, so the pattern
+			// stays as literal text.
+			word.WriteString(s[i : end+1])
+			inWord = true
+			i = end
 		default:
 			inWord = true
 			word.WriteByte(c)
 		}
 	}
 	flush()
-	return words
+	return words, true
 }
 
 // unquoteShellWord removes the quoting the shell applies to one word, leaving
@@ -1141,6 +1351,62 @@ func isSubstitutionOpener(line string, pos int) bool {
 	return false
 }
 
+// substitutionFollowsRedirection reports whether the substitution opening at
+// pos is the target of a redirection (`>$(cmd)`, `2>$(cmd)`) or a process
+// substitution (`<(cmd)`). Neither ends the simple command, so an rm operand
+// written after it still belongs to the rm. A command-position substitution
+// (`$(cmd) rm ...`) or one inside an assignment does not qualify.
+func substitutionFollowsRedirection(line string, start, pos int) bool {
+	spans := shellWordSpans(line, start, pos)
+	if len(spans) == 0 {
+		return false
+	}
+	last := strings.TrimSuffix(spans[len(spans)-1].text, "$")
+	return isRedirection(last)
+}
+
+// matchingParen returns the offset of the `)` that closes the `(` at pos,
+// skipping quoted and escaped characters.
+func matchingParen(line string, pos int) (int, bool) {
+	depth, escaped := 0, false
+	inSingle, inDouble := false, false
+	for i := pos; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case escaped:
+			escaped = false
+		case inSingle:
+			if c == '\'' {
+				inSingle = false
+			}
+		case inDouble:
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inDouble = false
+			}
+		default:
+			switch c {
+			case '\\':
+				escaped = true
+			case '\'':
+				inSingle = true
+			case '"':
+				inDouble = true
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					return i, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
 func isShellWordByte(c byte) bool {
 	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
@@ -1332,7 +1598,7 @@ func operandHidesExpansion(operand string) bool {
 			case '"':
 				inDouble = false
 			case '$':
-				if separatorInDouble {
+				if separatorInDouble && expansionStartsAt(operand, i) {
 					return true
 				}
 			case ';', '&', '|', '#':
@@ -1347,13 +1613,27 @@ func operandHidesExpansion(operand string) bool {
 			case '"':
 				inDouble = true
 			case '$':
-				if separatorInDouble {
+				if separatorInDouble && expansionStartsAt(operand, i) {
 					return true
 				}
 			}
 		}
 	}
 	return false
+}
+
+// expansionStartsAt reports whether the `$` at i opens a shell expansion. A
+// bare dollar sign at the end of a word or before a quote is literal text.
+func expansionStartsAt(s string, i int) bool {
+	if i+1 >= len(s) {
+		return false
+	}
+	switch c := s[i+1]; c {
+	case '{', '(', '$', '#', '?', '!', '@', '*', '-':
+		return true
+	default:
+		return isShellWordByte(c)
+	}
 }
 
 // determineVerdict determines the overall verdict based on findings
