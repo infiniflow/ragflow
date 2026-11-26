@@ -2,7 +2,6 @@ package document
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -231,37 +230,38 @@ func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowled
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
 func (s *DocumentService) newAFileFromKB(ctx context.Context, db *gorm.DB, tenantID, ownerUserID, name, parentID string) (*entity.File, error) {
 	var existingFolders []*entity.File
-	query := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ? AND source_type = ?", name, parentID, tenantID, string(entity.FileSourceKnowledgebase))
-	if ownerUserID != "" {
-		query = query.Where("user_id = ?", ownerUserID)
-	}
-	err := query.Find(&existingFolders).Error
+	err := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ? AND type = ?", name, parentID, tenantID, "folder").
+		Order("create_time ASC").Find(&existingFolders).Error
 	if err != nil {
 		return nil, err
 	}
+	requesterID := permission.UserIDFromContext(ctx)
 	for _, f := range existingFolders {
-		if f.TenantID == tenantID {
-			if ownerUserID == "" && f.UserID != "" {
-				if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", f.ID).Update("user_id", "").Error; err != nil {
+		if ownerUserID == "" {
+			isSharedRoot := f.SourceType == string(entity.FileSourceKnowledgebase) && f.UserID == ""
+			isRequestersManualRoot := requesterID != "" && (f.UserID == requesterID || (f.UserID == "" && f.CreatedBy == requesterID))
+			if isSharedRoot || isRequestersManualRoot {
+				if !isSharedRoot {
+					if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", f.ID).Updates(map[string]interface{}{
+						"user_id": "", "source_type": string(entity.FileSourceKnowledgebase),
+					}).Error; err != nil {
+						return nil, err
+					}
+					f.UserID = ""
+					f.SourceType = string(entity.FileSourceKnowledgebase)
+				}
+				return f, nil
+			}
+			continue
+		}
+		if f.UserID == ownerUserID || (f.UserID == tenantID && f.CreatedBy == ownerUserID) || (f.UserID == "" && f.CreatedBy == ownerUserID) {
+			if f.UserID != ownerUserID {
+				if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", f.ID).Update("user_id", ownerUserID).Error; err != nil {
 					return nil, err
 				}
-				f.UserID = ""
+				f.UserID = ownerUserID
 			}
 			return f, nil
-		}
-	}
-	if ownerUserID != "" {
-		var legacyFolder entity.File
-		if err := db.WithContext(ctx).
-			Where("name = ? AND parent_id = ? AND tenant_id = ? AND source_type = ? AND user_id = ? AND created_by = ?", name, parentID, tenantID, string(entity.FileSourceKnowledgebase), tenantID, ownerUserID).
-			First(&legacyFolder).Error; err == nil {
-			if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", legacyFolder.ID).Update("user_id", ownerUserID).Error; err != nil {
-				return nil, err
-			}
-			legacyFolder.UserID = ownerUserID
-			return &legacyFolder, nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
 		}
 	}
 	loc := ""

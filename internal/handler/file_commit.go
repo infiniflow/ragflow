@@ -148,11 +148,11 @@ func (h *FileCommitHandler) fileAccessible(c *gin.Context, fileID string, folder
 	if tenantID == "" {
 		tenantID = userID
 	}
-	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
-	if err != nil || file == nil || file.TenantID != tenantID || file.UserID != userID {
+	fileRecord, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
+	if err != nil || fileRecord == nil || fileRecord.TenantID != tenantID || file.FileOwnerUserID(fileRecord, userID, tenantID) != userID {
 		return false
 	}
-	return !folder || file.Type == "folder"
+	return !folder || fileRecord.Type == "folder"
 }
 
 func commitFolderID(c *gin.Context) string {

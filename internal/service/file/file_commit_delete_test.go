@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -44,7 +45,7 @@ func TestCreateCommit_DeleteRecordsTombstoneWhenLiveFileIsGone(t *testing.T) {
 	}
 	seedFolder(t, db, "folder-1", "")
 
-	commit, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove a.txt", []entity.FileChange{
+	commit, err := NewFileCommitService().CreateCommit(commitDeleteTestContext(t), "folder-1", "u1", "remove a.txt", []entity.FileChange{
 		{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 	})
 	if err != nil {
@@ -83,16 +84,21 @@ func TestCreateCommit_DeleteRecordsTombstoneWhenLiveFileIsGone(t *testing.T) {
 
 func seedLiveFile(t *testing.T, db *gorm.DB, id, parentID string) {
 	t.Helper()
-	if err := db.Create(&entity.File{ID: id, ParentID: parentID, TenantID: "t1", CreatedBy: "u1", Name: id + ".txt", Type: "file"}).Error; err != nil {
+	if err := db.Create(&entity.File{ID: id, ParentID: parentID, TenantID: "t1", UserID: "u1", CreatedBy: "u1", Name: id + ".txt", Type: "file"}).Error; err != nil {
 		t.Fatalf("seed file %s: %v", id, err)
 	}
 }
 
 func seedFolder(t *testing.T, db *gorm.DB, id, parentID string) {
 	t.Helper()
-	if err := db.Create(&entity.File{ID: id, ParentID: parentID, TenantID: "t1", CreatedBy: "u1", Name: id, Type: "folder"}).Error; err != nil {
+	if err := db.Create(&entity.File{ID: id, ParentID: parentID, TenantID: "t1", UserID: "u1", CreatedBy: "u1", Name: id, Type: "folder"}).Error; err != nil {
 		t.Fatalf("seed folder %s: %v", id, err)
 	}
+}
+
+func commitDeleteTestContext(t *testing.T) context.Context {
+	t.Helper()
+	return permission.WithIdentity(t.Context(), "u1", "t1")
 }
 
 // A tombstone for a file that is still in the folder would hide that file from
@@ -114,7 +120,7 @@ func TestCreateCommit_RejectsDeleteOfLiveFile(t *testing.T) {
 	seedLiveFile(t, db, "f4", "sub-1")
 
 	for _, fileID := range []string{"f2", "f4"} {
-		_, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove "+fileID, []entity.FileChange{
+		_, err := NewFileCommitService().CreateCommit(commitDeleteTestContext(t), "folder-1", "u1", "remove "+fileID, []entity.FileChange{
 			{FileID: fileID, FileName: fileID + ".txt", Operation: "delete"},
 		})
 		if !errors.Is(err, ErrDeleteLiveFile) {
@@ -143,7 +149,7 @@ func TestCreateCommit_AllowsDeleteOfFileOutsideFolder(t *testing.T) {
 	seedFolder(t, db, "folder-1", "")
 	seedLiveFile(t, db, "f3", "other-folder")
 
-	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove f3", []entity.FileChange{
+	if _, err := NewFileCommitService().CreateCommit(commitDeleteTestContext(t), "folder-1", "u1", "remove f3", []entity.FileChange{
 		{FileID: "f3", FileName: "c.txt", Operation: "delete"},
 	}); err != nil {
 		t.Fatalf("delete of a file outside the folder: %v", err)
@@ -162,7 +168,7 @@ func TestCreateCommit_RejectsDeleteOfUnknownFile(t *testing.T) {
 	}
 	seedFolder(t, db, "folder-1", "")
 
-	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove ghost", []entity.FileChange{
+	if _, err := NewFileCommitService().CreateCommit(commitDeleteTestContext(t), "folder-1", "u1", "remove ghost", []entity.FileChange{
 		{FileID: "no-such-file", FileName: "ghost.txt", Operation: "delete"},
 	}); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("delete of unknown file: err = %v, want permission.ErrPermissionDenied", err)
@@ -191,7 +197,7 @@ func TestCreateCommit_RejectsDeleteOfOutOfFolderFileAbsentFromTree(t *testing.T)
 	seedFolder(t, db, "other-folder", "")
 	seedLiveFile(t, db, "alien-file", "other-folder")
 
-	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "delete alien", []entity.FileChange{
+	if _, err := NewFileCommitService().CreateCommit(commitDeleteTestContext(t), "folder-1", "u1", "delete alien", []entity.FileChange{
 		{FileID: "alien-file", FileName: "alien.txt", Operation: "delete"},
 	}); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("delete of out-of-folder file absent from tree: err = %v, want permission.ErrPermissionDenied", err)
@@ -219,7 +225,7 @@ func TestCreateCommitRejectsInvalidRenameBeforeWritingObjects(t *testing.T) {
 	factory.SetStorage(store)
 	t.Cleanup(func() { factory.SetStorage(original) })
 
-	_, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "rename", []entity.FileChange{
+	_, err := NewFileCommitService().CreateCommit(commitDeleteTestContext(t), "folder-1", "u1", "rename", []entity.FileChange{
 		{FileID: "f1", FileName: "a.txt", Operation: "add", Content: "data"},
 		{FileID: "f1", Operation: "rename", NewName: "  "},
 	})

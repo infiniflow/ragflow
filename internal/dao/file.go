@@ -160,7 +160,7 @@ func (dao *FileDAO) ListDescendants(ctx context.Context, db *gorm.DB, folderID s
 			}
 			var children []entity.File
 			if err := db.WithContext(ctx).Model(&entity.File{}).
-				Select("id", "parent_id", "type").
+				Select("id", "parent_id", "type", "tenant_id", "user_id", "created_by", "source_type").
 				Where("parent_id IN ?", frontier[start:end]).
 				Find(&children).Error; err != nil {
 				return nil, err
@@ -549,6 +549,16 @@ const SkillsFolderName = "skills"
 // Deduplicates duplicate entries that may have been created by
 // concurrent race conditions (TOCTOU).
 func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+	var datasets []entity.Knowledgebase
+	if err := db.WithContext(ctx).Select("id", "name", "user_id", "created_by").
+		Where("tenant_id = ?", tenantID).
+		Find(&datasets).Error; err != nil {
+		return err
+	}
+	if len(datasets) == 0 {
+		return nil
+	}
+
 	var existing []*entity.File
 	err := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ? AND source_type = ?", DatasetFolderName, rootID, tenantID, "knowledgebase").
 		Order("create_time ASC").
@@ -582,14 +592,6 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 		if err != nil {
 			return err
 		}
-	}
-
-	var datasets []entity.Knowledgebase
-	err = db.WithContext(ctx).Select("id", "name", "user_id", "created_by").
-		Where("tenant_id = ?", tenantID).
-		Find(&datasets).Error
-	if err != nil {
-		return err
 	}
 
 	for _, ds := range datasets {

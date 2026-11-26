@@ -16,6 +16,26 @@ func currentFileTenantID(ctx context.Context) string {
 	return tenantID
 }
 
+// FileOwnerUserID resolves ownership for current and legacy file rows.
+func FileOwnerUserID(file *entity.File, userID, tenantID string) string {
+	if file == nil {
+		return ""
+	}
+	if file.UserID != "" {
+		return file.UserID
+	}
+	if file.CreatedBy != "" {
+		return file.CreatedBy
+	}
+	// Older OSS file rows were created before user_id was populated. In OSS,
+	// the tenant ID is the user ID, so an otherwise unowned legacy row remains
+	// attributable to that same user only.
+	if file.TenantID == tenantID && userID == tenantID {
+		return userID
+	}
+	return ""
+}
+
 func checkFileAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
 	if file == nil {
 		return permission.ErrResourceNotFound
@@ -41,7 +61,7 @@ func checkFileAccess(ctx context.Context, file *entity.File, operation permissio
 		}
 		return permission.ErrPermissionDenied
 	}
-	if file.UserID == "" || file.UserID != userID {
+	if FileOwnerUserID(file, userID, tenantID) != userID {
 		return permission.ErrPermissionDenied
 	}
 	return nil

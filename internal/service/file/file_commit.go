@@ -365,7 +365,7 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 	if folder.Type != FileTypeFolder {
 		return fmt.Errorf("%w: %s is not a folder", permission.ErrResourceNotFound, folderID)
 	}
-	if folder.TenantID != tenantID || folder.UserID != userID {
+	if folder.TenantID != tenantID || FileOwnerUserID(&folder, userID, tenantID) != userID {
 		return permission.ErrPermissionDenied
 	}
 
@@ -403,7 +403,7 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 			if !ok {
 				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
 			}
-			if file.TenantID != tenantID || file.UserID != userID {
+			if file.TenantID != tenantID || FileOwnerUserID(file, userID, tenantID) != userID {
 				return permission.ErrPermissionDenied
 			}
 			scoped[id] = file
