@@ -38,7 +38,7 @@ jest.mock('./vision-form-fields', () => ({
 }));
 
 const node = {
-  id: 'Parser:PaperTrail',
+  id: 'Parser:parse',
   data: {
     form: {
       enable_vision_enhancement: true,

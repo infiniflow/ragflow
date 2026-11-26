@@ -374,7 +374,7 @@ describe('mergeOperatorFormWithPrefilledVisionModel', () => {
 
   it('keeps the resolved model when the saved model is empty', () => {
     const merged = mergeOperatorFormWithPrefilledVisionModel(
-      'Parser:PaperTrail',
+      'Parser:parse',
       nodeForm,
       { enable_vision_enhancement: true, vlm: { llm_id: '' } },
     );
@@ -384,7 +384,7 @@ describe('mergeOperatorFormWithPrefilledVisionModel', () => {
 
   it('lets a saved model win', () => {
     const merged = mergeOperatorFormWithPrefilledVisionModel(
-      'Parser:PaperTrail',
+      'Parser:parse',
       nodeForm,
       { enable_vision_enhancement: true, vlm: { llm_id: 'model-B' } },
     );
