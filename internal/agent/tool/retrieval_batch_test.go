@@ -116,9 +116,9 @@ func TestNLPRetrievalAdapterBatchesDatasetAuthorization(t *testing.T) {
 		t.Fatalf("Search error = %v, want the embedding-model mismatch (authorization must have completed)", err)
 	}
 
-	// One dataset load for resolveDatasets and one batch authorization.
-	if n := capture.knowledgebaseSelects(); n > 2 {
-		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)
+	// One metadata load for resolveDatasets, plus the policy's resource queries.
+	if n, limit := capture.knowledgebaseSelects(), 1+testsupport.DatasetPermissionQueryCount(len(ids)); n > limit {
+		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= %d; got SQL: %v", n, len(ids), limit, capture.sqls)
 	}
 }
 
