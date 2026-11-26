@@ -82,6 +82,12 @@ func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.M
 	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
 }
 
+// modelGroupDisplayName is unsupported in the community edition: model groups
+// are an enterprise feature, so a gp- reference has no group name to resolve.
+func modelGroupDisplayName(_ context.Context, _, _ string) (string, error) {
+	return "", fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
+}
+
 func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelProvider, *entity.TenantModelInstance, []*entity.TenantModel) error {
 	return errModelConfigUnavailable
 }
