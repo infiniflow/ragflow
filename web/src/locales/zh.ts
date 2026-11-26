@@ -565,7 +565,7 @@ export default {
         '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
       Parse: '解析',
       dataset: '知识库',
-      testing: '检索测试',
+      testing: '检索',
       configuration: '配置',
       knowledgeGraph: 'Graph',
       compilation: '编译',
@@ -2645,7 +2645,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dialog: '对话',
       flow: '工作流',
       noMoreData: '没有更多数据了',
-      historyVersion: '历史版本',
+      historyVersion: '版本',
       version: {
         details: '版本详情',
         download: '下载',

@@ -86,7 +86,7 @@ export default {
       reselectParserAfterUploadHint:
         'Lanjutkan pengunggahan, lalu sistem akan secara otomatis mengalihkan file-file ini ke konfigurasi parsing bawaan yang didukung.',
       dataset: 'Dataset',
-      testing: 'Pengujian pengambilan',
+      testing: 'Pengambilan',
       files: 'file',
       configuration: 'Konfigurasi',
       name: 'Nama',
@@ -761,6 +761,7 @@ export default {
       destinationFolder: 'Folder tujuan',
     },
     flow: {
+      historyVersion: 'Versi',
       cite: 'Tampilkan kutipan',
       citeTip: 'tipKutip',
       name: 'Nama',

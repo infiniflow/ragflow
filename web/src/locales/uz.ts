@@ -539,7 +539,7 @@ export default {
         'RAGFlow LLM uchun mo‘ljallangan kontentni qaytarib olishini tekshirish uchun qidiruv testini o‘tkazing.',
       Parse: 'Tahlil qilish',
       dataset: 'Ma’lumotlar to‘plami',
-      testing: 'Qidiruv testi',
+      testing: 'Qidiruv',
       files: 'fayl',
       configuration: 'Sozlamalar',
       nextConfiguration: 'Ma’lumotlar to‘plami sozlamalari',
@@ -3242,7 +3242,7 @@ export default {
       mergePath: 'Yo‘lni birlashtirish',
       mergePathTip:
         'Yoqilganda, o‘zgaruvchidan darhol keyingi nuqta qo‘shimchasi {node@result.name} kabi yo‘l so‘roviga birlashtiriladi.',
-      historyVersion: 'Versiyalar tarixi',
+      historyVersion: 'Versiyalar',
       version: {
         created: 'Yaratilgan',
         details: 'Versiya tafsilotlari',

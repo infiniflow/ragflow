@@ -368,7 +368,7 @@ export default {
       reselectParserAfterUploadHint:
         'Poursuivez le téléversement ; le système basculera automatiquement ces fichiers vers une configuration d’analyse intégrée compatible.',
       dataset: 'Ensemble de données',
-      testing: 'Test de récupération',
+      testing: 'Récupération',
       files: 'Fichiers',
       configuration: 'Configuration',
       knowledgeGraph: 'Graphe de connaissances',
@@ -2402,7 +2402,7 @@ Exemple : Virtual Hosted Style`,
       }`,
       datatype: 'Type MIME de la requête HTTP',
       insertVariableTip: `Entrer / Insérer des variables`,
-      historyVersion: 'Historique des versions',
+      historyVersion: 'Versions',
       version: {
         created: 'Créé',
         details: 'Détails de la version',

@@ -304,7 +304,7 @@ export default {
         'قم بإجراء اختبار استرجاع للتحقق مما إذا كان RAGFlow يمكنه استرداد المحتوى المقصود لـ LLM.',
       Parse: 'تحليل',
       dataset: 'مجموعة البيانات',
-      testing: 'اختبار الاسترجاع',
+      testing: 'الاسترجاع',
       files: 'ملفات',
       configuration: 'إعدادات',
       knowledgeGraph: 'الرسم البياني المعرفي',
@@ -1926,7 +1926,7 @@ export default {
         'قم بتعيين متغير مفتاح json الواضح بقيمة فارغة. على سبيل المثال\n      {\n        "رمز المستخدم":":"،\n        "رقم الهاتف:""\n      }',
       datatype: 'نوع الألغام لطلب HTTP',
       insertVariableTip: 'أدخل / أدخل المتغيرات',
-      historyVersion: 'تاريخ الإصدار',
+      historyVersion: 'الإصدارات',
       version: {
         created: 'مخلوق',
         details: 'تفاصيل الإصدار',

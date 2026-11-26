@@ -534,7 +534,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
         'RAGFlow-un LLM üçün nəzərdə tutulan məzmunu tapa bilib-bilmədiyini yoxlamaq üçün axtarış sınağı aparın.',
       Parse: 'Təhlil et',
       dataset: 'Verilənlər dəsti',
-      testing: 'Axtarış sınağı',
+      testing: 'Axtarış',
       files: 'Fayllar',
       configuration: 'Konfiqurasiya',
       nextConfiguration: 'Verilənlər dəstinin konfiqurasiyası',
@@ -3350,7 +3350,7 @@ Bu ayırıcı giriş mətnini bir neçə mətn hissəsinə bölmək üçün isti
       mergePath: 'Yolu birləşdir',
       mergePathTip:
         'Aktivləşdirildikdə, dəyişəndən dərhal sonra gələn nöqtə ilə başlayan şəkilçi yol sorğusuna birləşdirilir, məsələn, {node@result.name}.',
-      historyVersion: 'Versiya tarixçəsi',
+      historyVersion: 'Versiyalar',
       version: {
         created: 'Yaradılıb',
         details: 'Versiya təfərrüatları',
