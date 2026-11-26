@@ -306,3 +306,35 @@ gomod_cache
 parity/
 # downloaded Go native deps (fetched by ragflow_deps/download_go_deps.py)
 ragflow_deps/
+
+# Frontend bundle copied next to its go:embed directive by build.sh --desktop
+internal/webui/dist/
+
+# Analyzer resource tree (rag/, wordnet/, opencc/, plus the ik/jieba/mecab sets a
+# wider build may want). It is a downloaded data bundle, not source: it is a
+# separate checkout with its own .git, and find_resource_tree /
+# desktop/stage-resources.sh pick it up from here, ../resource,
+# ~/.ragflow/resource or RAGFLOW_RESOURCE_DIR.
+/resource/
+
+# The desktop shell is an application, not a library: its lock file pins the
+# exact window/runtime versions the bundle was tested with.
+!desktop/src-tauri/Cargo.lock
+
+# Desktop shell: tool dependencies and bundle products. The staged engine
+# (src-tauri/binaries) is a copy of bin/ragflow-desktop, made by
+# desktop/stage-sidecar.sh before every build.
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/binaries/
+# staged engine data: analyzer resources, conf/, DeepDoc weights, plus the stamp
+desktop/src-tauri/resource/
+desktop/src-tauri/conf/
+desktop/src-tauri/deepdoc/
+desktop/src-tauri/deps/
+desktop/src-tauri/.resource-stamp
+# Bundle icons are derived from desktop/app-icon.png: regen_icons in
+# desktop/build.sh regenerates the whole declared set whenever one of its files
+# is missing or older than the source image, so only the source is tracked.
+desktop/src-tauri/icons/

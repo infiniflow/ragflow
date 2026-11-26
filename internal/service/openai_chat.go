@@ -570,10 +570,12 @@ func (s *OpenAIChatService) filterMessages(messages []map[string]interface{}) []
 	return out
 }
 
+// citationMarkerRe matches the "##N$$" citation markers stripped from answers.
+var citationMarkerRe = regexp.MustCompile(`##\d+\$\$`)
+
 // cleanCitationMarkers strips "##N$$" markers from the answer.
 func cleanCitationMarkers(s string) string {
-	citationMarkerRegex := regexp.MustCompile(`##\d+\$\$`)
-	return citationMarkerRegex.ReplaceAllString(s, "")
+	return citationMarkerRe.ReplaceAllString(s, "")
 }
 
 // isContentDelta filters out "[DONE]" leaked by some drivers.

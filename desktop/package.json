@@ -1,0 +1,14 @@
+{
+  "name": "ragflow-desktop-shell",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri shell that hosts the RAGFlow desktop app",
+  "scripts": {
+    "icons": "bash build.sh --icons",
+    "build": "bash build.sh",
+    "dev": "bash build.sh --dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

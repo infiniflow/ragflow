@@ -125,21 +125,26 @@ type VersionEntry struct {
 }
 
 // WikiPageCommit is one artifact-page history entry served by
-// /datasets/{dataset_id}/commits?slug=<page_type>/<slug>. It mirrors the
-// Python list_page_commits row shape consumed by the wiki version-history UI.
+// /datasets/{dataset_id}/commits?slug=<page_type>/<slug>, and is the row shape
+// the wiki version-history UI reads.
 type WikiPageCommit struct {
-	ID           string     `json:"id"`
-	Title        string     `json:"title"`
-	Comments     string     `json:"comments"`
-	UserID       string     `json:"user_id"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Comments string `json:"comments"`
+	UserID   string `json:"user_id"`
+	// Version is the page's own version: the edit's position in the page's commit
+	// chain, so the history can number the edit "3". Read from the chain on each
+	// listing; absent when the chain could not be read, in which case the history
+	// still lists without a number.
+	Version      *int       `json:"version,omitempty"`
 	CreateTime   *int64     `json:"create_time,omitempty"`
 	CreateDate   *time.Time `json:"create_date,omitempty"`
 	UserNickname string     `json:"user_nickname"`
 }
 
 // WikiPageCommitDetail is the artifact-page commit detail returned by the
-// dataset commit endpoint. It mirrors Python's flat response shape consumed
-// by the wiki version-history UI.
+// dataset commit endpoint: the flat response shape the wiki version-history UI
+// reads.
 type WikiPageCommitDetail struct {
 	ID           string     `json:"id"`
 	TenantID     string     `json:"tenant_id"`

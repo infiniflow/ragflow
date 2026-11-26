@@ -58,11 +58,11 @@ func chatRequest(llmID, systemPrompt, userPrompt string) common.ChatRequest {
 // one batch are strictly sequential; batches parallelise at the caller.
 func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, nodePrompt, edgePromptTmpl, packedText string) (nodes, edges []map[string]any, err error) {
 	user := UserPrompt(packedText)
-	nodeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, nodePrompt, user))
+	nodeRaw, err := common.GenJSONOrArray(ctx, deps.Chat, chatRequest(cfg.LLMID, nodePrompt, user))
 	if err != nil {
 		return nil, nil, err
 	}
-	nodes = unwrapItems(nodeRaw)
+	nodes = unwrapItems(nodeRaw, entityItemFallbackKeys...)
 
 	// Known entities: unique values of the config's entity id field, in
 	// first-seen order (mirrors _struct_extract_hypergraph's known_keys).
@@ -70,6 +70,9 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	var known []string
 	for _, n := range nodes {
 		v := strings.TrimSpace(stringOf(n[idField]))
+		if v == "" {
+			v = strings.TrimSpace(entityName(n))
+		}
 		if v == "" || slices.Contains(known, v) {
 			continue
 		}
@@ -85,29 +88,56 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	if strings.TrimSpace(edgePromptTmpl) == "" {
 		return nodes, nil, nil
 	}
-	edgeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, fillKnownNodes(edgePromptTmpl, known), EdgeUserPrompt(packedText)))
+	edgeRaw, err := common.GenJSONOrArray(ctx, deps.Chat, chatRequest(cfg.LLMID, fillKnownNodes(edgePromptTmpl, known), EdgeUserPrompt(packedText)))
 	if err != nil {
 		return nil, nil, err
 	}
-	return nodes, unwrapItems(edgeRaw), nil
+	return nodes, unwrapItems(edgeRaw, relationItemFallbackKeys...), nil
 }
 
-// unwrapItems mirrors _struct_unwrap_items: the contract is
-// {"items": [{...}, ...]}; a top-level array is tolerated defensively.
-// GenJSON already guarantees a JSON object, so the list form only appears
-// under "items". Non-object entries are dropped.
-func unwrapItems(raw map[string]any) []map[string]any {
+// Shared endpoint and relation-type aliases used across extraction, row building, and merge passes.
+var (
+	sourceEndpointAliases    = []string{"source", "src", "from", "from_entity", "source_entity", "head", "start", "subject", "origin"}
+	targetEndpointAliases    = []string{"target", "tgt", "to", "to_entity", "target_entity", "tail", "end", "object", "destination"}
+	relationTypeAliases      = []string{"type", "relation", "relationship", "relation_type", "rel", "predicate", "label"}
+	entityItemFallbackKeys   = []string{"entities", "data", "results"}
+	relationItemFallbackKeys = []string{"relationships", "relations", "edges", "links", "triples", "data", "results"}
+)
+
+// unwrapItems mirrors _struct_unwrap_items: the canonical contract is
+// {"items": [{...}, ...]}; stage-specific fallbackKeys are checked when
+// "items" is absent or empty (entities vs. relations) so a combined
+// {"entities": [...], "relations": [...]} payload cannot cross-contaminate
+// stages. Non-object entries are converted to {"name": string} if scalar
+// strings, otherwise dropped. Diagnostic arrays (e.g. warnings, errors) are
+// never accepted.
+func unwrapItems(raw map[string]any, fallbackKeys ...string) []map[string]any {
 	if raw == nil {
 		return nil
 	}
-	arr, ok := raw["items"].([]any)
-	if !ok {
+	var arr []any
+	if a, ok := raw["items"].([]any); ok && len(a) > 0 {
+		arr = a
+	} else {
+		for _, k := range fallbackKeys {
+			if a, ok := raw[k].([]any); ok && len(a) > 0 {
+				arr = a
+				break
+			}
+		}
+	}
+	if len(arr) == 0 {
 		return nil
 	}
 	out := make([]map[string]any, 0, len(arr))
 	for _, e := range arr {
-		if m, ok := e.(map[string]any); ok {
+		switch m := e.(type) {
+		case map[string]any:
 			out = append(out, m)
+		case string:
+			if s := strings.TrimSpace(m); s != "" {
+				out = append(out, map[string]any{"name": s})
+			}
 		}
 	}
 	return out
@@ -320,15 +350,17 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 				meta["contract"] = action
 			}
 		} else {
-			from := relationEndpoint(s.payload, srcField, "source", "src", "from")
-			to := relationEndpoint(s.payload, tgtField, "target", "tgt", "to")
-			if from != "" {
+			if from := relationEndpoint(s.payload, srcField, sourceEndpointAliases...); from != "" {
 				meta["from"] = from
 			}
-			if to != "" {
+			if to := relationEndpoint(s.payload, tgtField, targetEndpointAliases...); to != "" {
 				meta["to"] = to
 			}
-			if typ := resolveDeclaredType(propAlias, stringOf(s.payload["type"])); typ != "" {
+			// relationType reads the label from the conventional alias keys;
+			// resolveDeclaredType then maps it onto the declared property name so
+			// a relation whose observed label is an alias still lands on the
+			// template's property.
+			if typ := resolveDeclaredType(propAlias, relationType(s.payload)); typ != "" {
 				meta["relation_type"] = typ
 			}
 		}
@@ -354,8 +386,8 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 }
 
 func isSelfLoopRelation(payload map[string]any, sourceField, targetField string) bool {
-	from := relationEndpoint(payload, sourceField, "source", "src", "from")
-	to := relationEndpoint(payload, targetField, "target", "tgt", "to")
+	from := relationEndpoint(payload, sourceField, sourceEndpointAliases...)
+	to := relationEndpoint(payload, targetField, targetEndpointAliases...)
 	return isSelfLoop(from, to)
 }
 
@@ -1133,12 +1165,14 @@ func filterSelfLoopRelations(rows []common.Product) []common.Product {
 		if kind, _ := row.Meta["kind"].(string); kind == "relation" {
 			from, _ := row.Meta["from"].(string)
 			to, _ := row.Meta["to"].(string)
-			if payload := parsePayload(row.Content); payload != nil {
-				if payloadFrom := relationEndpoint(payload, "", "source", "src", "from"); payloadFrom != "" {
-					from = payloadFrom
-				}
-				if payloadTo := relationEndpoint(payload, "", "target", "tgt", "to"); payloadTo != "" {
-					to = payloadTo
+			if from == "" || to == "" {
+				if payload := parsePayload(row.Content); payload != nil {
+					if from == "" {
+						from = relationEndpoint(payload, "", sourceEndpointAliases...)
+					}
+					if to == "" {
+						to = relationEndpoint(payload, "", targetEndpointAliases...)
+					}
 				}
 			}
 			if isSelfLoop(from, to) {
@@ -1151,9 +1185,19 @@ func filterSelfLoopRelations(rows []common.Product) []common.Product {
 }
 
 // entityName mirrors _struct_graph_entity's name resolution
-// (name → text → term → title, "-1" sentinel rejected).
+// (name → text → term → title → entity → entity_name → id, "-1" sentinel rejected).
 func entityName(payload map[string]any) string {
-	for _, k := range []string{"name", "text", "term", "title"} {
+	for _, k := range []string{"name", "text", "term", "title", "entity", "entity_name", "id"} {
+		if s := strings.TrimSpace(stringOf(payload[k])); s != "" && s != "-1" {
+			return s
+		}
+	}
+	return ""
+}
+
+// relationType extracts the relation label/predicate from common alias keys.
+func relationType(payload map[string]any) string {
+	for _, k := range relationTypeAliases {
 		if s := strings.TrimSpace(stringOf(payload[k])); s != "" && s != "-1" {
 			return s
 		}

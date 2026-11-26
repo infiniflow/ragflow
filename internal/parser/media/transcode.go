@@ -47,16 +47,14 @@ func RegisterImageTranscoder(mime string, fn ImageTranscoder) ImageTranscoder {
 	return prev
 }
 
-// TranscodeImage converts data using the transcoder registered for mime.
+// TranscodeImage converts data using the transcoder registered for mime, or
+// for a metafile signature when mime has no registered transcoder.
 // It reports ok=false with a nil error when no transcoder is registered.
 func TranscodeImage(ctx context.Context, mime string, data []byte) (outMIME string, outData []byte, ok bool, err error) {
-	key := normalizeTranscodeMIME(mime)
-	if key == "" {
-		return "", nil, false, nil
+	fn := lookupImageTranscoder(normalizeTranscodeMIME(mime))
+	if fn == nil {
+		fn = lookupImageTranscoder(MetafileMIME(data))
 	}
-	imageTranscodersMu.RLock()
-	fn := imageTranscoders[key]
-	imageTranscodersMu.RUnlock()
 	if fn == nil {
 		return "", nil, false, nil
 	}
@@ -65,6 +63,12 @@ func TranscodeImage(ctx context.Context, mime string, data []byte) (outMIME stri
 		return "", nil, true, err
 	}
 	return normalizeTranscodeMIME(outMIME), outData, true, nil
+}
+
+func lookupImageTranscoder(mime string) ImageTranscoder {
+	imageTranscodersMu.RLock()
+	defer imageTranscodersMu.RUnlock()
+	return imageTranscoders[mime]
 }
 
 func normalizeTranscodeMIME(mime string) string {

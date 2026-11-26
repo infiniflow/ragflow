@@ -24,6 +24,7 @@ import (
 
 	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -36,6 +37,44 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// Failover sentinels for the PDF vision OCR dispatches: failures that say
+// nothing about the selected model member's health must not flip a gp-
+// reference's current member inactive.
+var (
+	// errOCRTaskPollTimeout: the backend accepted the task but the result did
+	// not arrive within the polling window - the member may simply be slow,
+	// and resubmitting the task on another member would duplicate work.
+	errOCRTaskPollTimeout = errors.New("OCR task result polling timed out")
+	// errMonkeyOCRNoTextualLayouts: the returned ZIP legitimately carries no
+	// text layer (a pure-image input) - a property of the document, not of
+	// the member.
+	errMonkeyOCRNoTextualLayouts = errors.New("MonkeyOCRv2 ZIP contains no textual layouts")
+	// errOCRResultNoText: the OCR backend answered successfully but with no
+	// text payload (image-only or blank input) - a property of the document,
+	// not of the member.
+	errOCRResultNoText = errors.New("OCR result contains no text")
+	// errOCRResponseTerminal: post-probe validation of a resolved target or
+	// conversion of an already-received response (corrupt/empty archive,
+	// rejected extraction switches) - the member answered, so these say
+	// nothing that warrants flipping it.
+	errOCRResponseTerminal = errors.New("OCR response handling failed terminally")
+)
+
+// ocrFailoverCanRetry excludes accepted-task polling timeouts and
+// document-property failures from the flip-and-retry decision. Per-member
+// timeouts (inner contexts: mineruStreamParse, cloudCtx, ParseMinerUV1) are
+// NOT excluded - a hung member must still fail over; caller cancellation on
+// the outer context is handled by InvokeWithGroupFailover's ctx.Err() guard.
+func ocrFailoverCanRetry(err error) bool {
+	if err == nil {
+		return false
+	}
+	return !errors.Is(err, errOCRTaskPollTimeout) &&
+		!errors.Is(err, errMonkeyOCRNoTextualLayouts) &&
+		!errors.Is(err, errOCRResultNoText) &&
+		!errors.Is(err, errOCRResponseTerminal)
+}
 
 // minerUDefaultLanguage is MinerU's own OCR language default, applied when
 // neither mineru_lang nor the family setup names one. It deliberately does not
@@ -82,6 +121,11 @@ func maybeDispatchPDFVision(
 	}
 	setup, ok := setups["pdf"]
 	if !ok {
+		return parser.ParseResult{}, false, nil
+	}
+	if method := getStringOr(setup, "parse_method", ""); parser.HasParseMethod(utility.FileTypePDF, method) {
+		// A template-pinned parser owns the whole PDF path; tenant OCR/VLM
+		// backends must not intercept it.
 		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
@@ -372,46 +416,66 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 }
 
 func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup, modelRef string) (parser.ParseResult, error) {
-	baseURL := strings.TrimRight(getStringOr(setup, "monkeyocrv2_server_url", os.Getenv(common.EnvMonkeyOCRv2ServerURL)), "/")
-	timeout := monkeyOCRv2RequestTimeout(setup, nil)
-	if tenantID != "" {
-		var driver modelModule.ModelDriver
-		var apiConfig *modelModule.APIConfig
-		var err error
-		if modelRef != "" {
-			driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
-		} else {
-			driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCRv2")
-		}
-		if err == nil {
-			if !strings.EqualFold(driver.Name(), "monkeyocrv2") {
-				return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires a MonkeyOCRv2 OCR model; found %q", driver.Name())
-			}
-			if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
-				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
-			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_server_url"); configuredURL != "" {
-				baseURL = strings.TrimRight(configuredURL, "/")
-			}
-			timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
-		} else if baseURL == "" {
-			return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
-		}
+	// Group failover: resolution and endpoint setup run once per attempt and
+	// their errors are terminal; only the parse-request invocation failure
+	// flips a gp- reference's current member inactive and replays once.
+	type monkeyOCRv2Target struct {
+		baseURL string
+		timeout time.Duration
 	}
-	if baseURL == "" {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires monkeyocrv2_server_url or MONKEYOCRV2_SERVER_URL")
+	resolveTarget := func(ctx context.Context) (*monkeyOCRv2Target, error) {
+		baseURL := strings.TrimRight(getStringOr(setup, "monkeyocrv2_server_url", os.Getenv(common.EnvMonkeyOCRv2ServerURL)), "/")
+		timeout := monkeyOCRv2RequestTimeout(setup, nil)
+		if tenantID != "" {
+			var driver modelModule.ModelDriver
+			var apiConfig *modelModule.APIConfig
+			var err error
+			if modelRef != "" {
+				driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
+			} else {
+				driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCRv2")
+			}
+			if err == nil {
+				if !strings.EqualFold(driver.Name(), "monkeyocrv2") {
+					return nil, fmt.Errorf("parser: MonkeyOCRv2 requires a MonkeyOCRv2 OCR model; found %q", driver.Name())
+				}
+				if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+					baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
+				} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_server_url"); configuredURL != "" {
+					baseURL = strings.TrimRight(configuredURL, "/")
+				}
+				timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
+			} else if baseURL == "" {
+				return nil, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
+			}
+		}
+		if baseURL == "" {
+			return nil, fmt.Errorf("parser: MonkeyOCRv2 requires monkeyocrv2_server_url or MONKEYOCRV2_SERVER_URL")
+		}
+		return &monkeyOCRv2Target{baseURL: baseURL, timeout: timeout}, nil
 	}
-	zipBytes, err := monkeyOCRv2ParseRequest(ctx, baseURL+"/parse", filename, binary, timeout)
+
+	var result parser.ParseResult
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelRef,
+		resolveTarget, nil,
+		func(ctx context.Context, target *monkeyOCRv2Target) error {
+			zipBytes, invErr := monkeyOCRv2ParseRequest(ctx, target.baseURL+"/parse", filename, binary, target.timeout)
+			if invErr != nil {
+				return invErr
+			}
+			budget := media.NewBudget()
+			res, invErr := monkeyOCRv2ParseArchive(ctx, filename, zipBytes, budget)
+			if invErr != nil {
+				return invErr
+			}
+			res.Warnings = append(res.Warnings, budget.Warnings()...)
+			result = res
+			return nil
+		}, ocrFailoverCanRetry)
 	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
 		return parser.ParseResult{}, err
 	}
-	budget := media.NewBudget()
-	res, err := monkeyOCRv2ParseArchive(ctx, filename, zipBytes, budget)
-	if err != nil {
-		return parser.ParseResult{}, err
-	}
-	res.Warnings = append(res.Warnings, budget.Warnings()...)
-	return res, res.Err
+	return result, result.Err
 }
 
 // normalizePDFMarkdown converts a PDF backend Markdown response (MonkeyOCRv2,
@@ -469,133 +533,160 @@ func dispatchUnlimitedOCR2PDF(
 	if environmentURL == "" {
 		environmentURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
 	}
-	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
-
-	var resolvedDriver *modelModule.UnlimitedOCRModel
-	var resolvedAPIConfig *modelModule.APIConfig
-	if tenantID != "" {
-		var driver modelModule.ModelDriver
-		var apiConfig *modelModule.APIConfig
-		var err error
-		if modelRef != "" {
-			driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
-		} else {
-			driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
-		}
-		if err != nil {
-			if modelRef != "" || (environmentURL == "" && getStringOr(setup, "unlimited_ocr_server_url", "") == "") {
-				return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
+	// Group failover: resolution and driver/config setup run once per attempt
+	// and their errors are terminal; only the submit/poll invocation failure
+	// flips a gp- reference's current member inactive and replays once.
+	type unlimitedOCRTarget struct {
+		driver      *modelModule.UnlimitedOCRModel
+		apiConfig   *modelModule.APIConfig
+		parseConfig *modelModule.ParseFileConfig
+		timeout     time.Duration
+	}
+	resolveTarget := func(ctx context.Context) (*unlimitedOCRTarget, error) {
+		// Recomputed per attempt: a group-failover retry re-runs resolveTarget
+		// after member A's URL was already applied, and the fallback paths
+		// below must derive member B's endpoint from the original
+		// environment/setup value, not from the failed member's URL.
+		baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
+		var resolvedDriver *modelModule.UnlimitedOCRModel
+		var resolvedAPIConfig *modelModule.APIConfig
+		if tenantID != "" {
+			var driver modelModule.ModelDriver
+			var apiConfig *modelModule.APIConfig
+			var err error
+			if modelRef != "" {
+				driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
+			} else {
+				driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
 			}
-			common.Warn("pdf vision dispatch: Unlimited-OCR-2 model resolution failed, falling back to environment/setup URL",
-				zap.String("tenant_id", tenantID),
-				zap.Error(err),
-				zap.String("fallback_url", baseURL),
-			)
-		} else {
-			if !isUnlimitedOCRDriver(driver) {
-				return parser.ParseResult{}, fmt.Errorf(
-					"parser: Unlimited-OCR-2 requires an Unlimited-OCR-2 OCR model; found %q", driver.Name())
-			}
-			if uDriver, ok := driver.(*modelModule.UnlimitedOCRModel); ok {
-				resolvedDriver = uDriver
-			}
-			if apiConfig != nil {
-				resolvedAPIConfig = apiConfig
-				if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
-					baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
-				} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
-					baseURL = strings.TrimRight(configuredURL, "/")
-				} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
-					if environmentURL == "" {
-						return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 tenant credential requires a server URL on the model or %s", common.EnvUnlimitedOCRServerURL)
+			if err != nil {
+				if modelRef != "" || (environmentURL == "" && getStringOr(setup, "unlimited_ocr_server_url", "") == "") {
+					return nil, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
+				}
+				common.Warn("pdf vision dispatch: Unlimited-OCR-2 model resolution failed, falling back to environment/setup URL",
+					zap.String("tenant_id", tenantID),
+					zap.Error(err),
+					zap.String("fallback_url", baseURL),
+				)
+			} else {
+				if !isUnlimitedOCRDriver(driver) {
+					return nil, fmt.Errorf(
+						"parser: Unlimited-OCR-2 requires an Unlimited-OCR-2 OCR model; found %q", driver.Name())
+				}
+				if uDriver, ok := driver.(*modelModule.UnlimitedOCRModel); ok {
+					resolvedDriver = uDriver
+				}
+				if apiConfig != nil {
+					resolvedAPIConfig = apiConfig
+					if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+						baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
+					} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
+						baseURL = strings.TrimRight(configuredURL, "/")
+					} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
+						if environmentURL == "" {
+							return nil, fmt.Errorf("parser: Unlimited-OCR-2 tenant credential requires a server URL on the model or %s", common.EnvUnlimitedOCRServerURL)
+						}
+						baseURL = environmentURL
 					}
-					baseURL = environmentURL
 				}
 			}
 		}
-	}
-	if baseURL == "" {
-		baseURL = "http://host.docker.internal:18000"
-	}
-	timeout := unlimitedOCR2RequestTimeout(setup, resolvedAPIConfig)
+		if baseURL == "" {
+			baseURL = "http://host.docker.internal:18000"
+		}
+		var driver *modelModule.UnlimitedOCRModel
+		if resolvedDriver != nil {
+			driver = resolvedDriver.NewInstance(map[string]string{"default": baseURL}).(*modelModule.UnlimitedOCRModel)
+		} else {
+			driver = modelModule.NewUnlimitedOCRModel(
+				map[string]string{"default": baseURL},
+				modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+			)
+		}
+		effectiveAPIConfig := &modelModule.APIConfig{
+			BaseURL: &baseURL,
+		}
+		if resolvedAPIConfig != nil && resolvedAPIConfig.ApiKey != nil {
+			effectiveAPIConfig.ApiKey = resolvedAPIConfig.ApiKey
+		}
 
-	var driver *modelModule.UnlimitedOCRModel
-	if resolvedDriver != nil {
-		driver = resolvedDriver.NewInstance(map[string]string{"default": baseURL}).(*modelModule.UnlimitedOCRModel)
-	} else {
-		driver = modelModule.NewUnlimitedOCRModel(
-			map[string]string{"default": baseURL},
-			modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
-		)
-	}
-	effectiveAPIConfig := &modelModule.APIConfig{
-		BaseURL: &baseURL,
-	}
-	if resolvedAPIConfig != nil && resolvedAPIConfig.ApiKey != nil {
-		effectiveAPIConfig.ApiKey = resolvedAPIConfig.ApiKey
-	}
+		cropMode := getStringOr(setup, "unlimited_ocr_crop_mode", "auto")
+		noRepeatNgram := getIntOr(setup, "unlimited_ocr_no_repeat_ngram_size", 35)
+		pageGuard := getBoolOr(setup, "unlimited_ocr_page_guard", true)
 
-	cropMode := getStringOr(setup, "unlimited_ocr_crop_mode", "auto")
-	noRepeatNgram := getIntOr(setup, "unlimited_ocr_no_repeat_ngram_size", 35)
-	pageGuard := getBoolOr(setup, "unlimited_ocr_page_guard", true)
-
+		return &unlimitedOCRTarget{
+			driver:    driver,
+			apiConfig: effectiveAPIConfig,
+			parseConfig: &modelModule.ParseFileConfig{
+				CropMode:          cropMode,
+				NoRepeatNgramSize: noRepeatNgram,
+				PageGuard:         &pageGuard,
+			},
+			timeout: unlimitedOCR2RequestTimeout(setup, resolvedAPIConfig),
+		}, nil
+	}
 	backend := "pipeline"
-	parseConfig := &modelModule.ParseFileConfig{
-		CropMode:          cropMode,
-		NoRepeatNgramSize: noRepeatNgram,
-		PageGuard:         &pageGuard,
-	}
-	task, err := driver.ParseFile(ctx, &backend, binary, nil, effectiveAPIConfig, parseConfig, nil)
-	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
-		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", err)
-	}
-	taskResult, err := pollUnlimitedOCRTaskResult(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
-	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
-		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
-	}
-
-	if strings.TrimSpace(taskResult.Markdown) != "" {
-		res := normalizePDFMarkdown(ctx, filename, taskResult.Markdown)
-		if res.File == nil {
-			res.File = map[string]any{}
-		}
-		res.File["name"] = filename
-		res.File["parse_method"] = "unlimited_ocr"
-		if len(taskResult.ContentList) > 0 {
-			sizes, _ := mineruPageSizes(ctx, binary)
-			res = unlimitedOCRAttachPositions(res, taskResult.ContentList, sizes)
-			pageCount := unlimitedOCRContentListPageCount(taskResult.ContentList)
-			if pageCount > 0 {
-				res.File["page_count"] = pageCount
+	var result parser.ParseResult
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelRef,
+		resolveTarget, nil,
+		func(ctx context.Context, target *unlimitedOCRTarget) error {
+			task, invErr := target.driver.ParseFile(ctx, &backend, binary, nil, target.apiConfig, target.parseConfig, nil)
+			if invErr != nil {
+				return fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", invErr)
 			}
-		}
-		return res, nil
-	}
-
-	if len(taskResult.ContentList) > 0 {
-		sizes, _ := mineruPageSizes(ctx, binary)
-		items := make([]map[string]any, 0, len(taskResult.ContentList))
-		for _, rawItem := range taskResult.ContentList {
-			if converted := mineruContentItemToJSON(rawItem, nil, sizes); converted != nil {
-				items = append(items, converted)
+			taskResult, invErr := pollUnlimitedOCRTaskResult(ctx, target.driver, task.TaskID, target.apiConfig, target.timeout)
+			if invErr != nil {
+				return fmt.Errorf("parser: Unlimited-OCR-2 result: %w", invErr)
 			}
-		}
-		if len(items) > 0 {
-			return parser.ParseResult{
-				File: map[string]any{
-					"name":         filename,
-					"page_count":   mineruItemPageCount(items),
-					"outline":      []map[string]any{},
-					"parse_method": "unlimited_ocr",
-				},
-				JSON: parser.MapsToItems(items),
-			}, nil
-		}
-	}
 
-	return normalizePDFMarkdown(ctx, filename, taskResult.Markdown), nil
+			if strings.TrimSpace(taskResult.Markdown) != "" {
+				res := normalizePDFMarkdown(ctx, filename, taskResult.Markdown)
+				if res.File == nil {
+					res.File = map[string]any{}
+				}
+				res.File["name"] = filename
+				res.File["parse_method"] = "unlimited_ocr"
+				if len(taskResult.ContentList) > 0 {
+					sizes, _ := mineruPageSizes(ctx, binary)
+					res = unlimitedOCRAttachPositions(res, taskResult.ContentList, sizes)
+					pageCount := unlimitedOCRContentListPageCount(taskResult.ContentList)
+					if pageCount > 0 {
+						res.File["page_count"] = pageCount
+					}
+				}
+				result = res
+				return nil
+			}
+
+			if len(taskResult.ContentList) > 0 {
+				sizes, _ := mineruPageSizes(ctx, binary)
+				items := make([]map[string]any, 0, len(taskResult.ContentList))
+				for _, rawItem := range taskResult.ContentList {
+					if converted := mineruContentItemToJSON(rawItem, nil, sizes); converted != nil {
+						items = append(items, converted)
+					}
+				}
+				if len(items) > 0 {
+					result = parser.ParseResult{
+						File: map[string]any{
+							"name":         filename,
+							"page_count":   mineruItemPageCount(items),
+							"outline":      []map[string]any{},
+							"parse_method": "unlimited_ocr",
+						},
+						JSON: parser.MapsToItems(items),
+					}
+					return nil
+				}
+			}
+
+			result = normalizePDFMarkdown(ctx, filename, taskResult.Markdown)
+			return nil
+		}, ocrFailoverCanRetry)
+	if err != nil {
+		return parser.ParseResult{}, err
+	}
+	return result, nil
 }
 
 // pollUnlimitedOCRTaskResult queries task status periodically until Markdown and/or content_list is ready.
@@ -615,10 +706,13 @@ func pollUnlimitedOCRTaskResult(ctx context.Context, driver *modelModule.Unlimit
 			lastErr = err
 		}
 		if time.Now().After(deadline) {
+			// Mark as a polling timeout: the backend accepted the task and may
+			// simply be slow, so failover must not flip the member or
+			// resubmit the task on another member.
 			if lastErr != nil {
-				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
+				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w (%w)", taskID, lastErr, errOCRTaskPollTimeout)
 			}
-			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
+			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s (%w)", taskID, errOCRTaskPollTimeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -1051,7 +1145,7 @@ func monkeyOCRv2ParseArchive(ctx context.Context, filename string, zipBytes []by
 				return res, res.Err
 			}
 		}
-		return parser.ParseResult{}, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
+		return parser.ParseResult{}, errMonkeyOCRNoTextualLayouts
 	}
 	return monkeyOCRv2LayoutResult(ctx, filename, fileMeta, sections)
 }
@@ -1355,105 +1449,154 @@ func dispatchMinerUPDF(
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
-	driver, _, apiConfig, err := resolveMinerUModelForDispatch(ctx, db, tenantID, modelID)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU model: %w", err)
+	// Group failover: resolution and endpoint/config setup run once per
+	// attempt and their errors are terminal; only the remote parse
+	// invocation failure flips a gp- reference's current member inactive
+	// and replays once.
+	type minerUTarget struct {
+		baseURL     string
+		apiKeyRaw   string
+		parseMethod string
+		mineruLang  string
+		backend     string
+		serverURL   string
+		timeout     time.Duration
 	}
-	if !isMinerUDriver(driver) {
-		return parser.ParseResult{}, fmt.Errorf(
-			"parser: MinerU requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant", driver.Name())
-	}
-
-	apiKeyRaw := ""
-	if apiConfig.ApiKey != nil {
-		apiKeyRaw = *apiConfig.ApiKey
-	}
-
-	baseURL := modelModule.ResolveMinerUAPIServer(apiConfig)
-	if baseURL == "" {
-		baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
-	}
-	if strings.TrimSpace(baseURL) == "" {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
-	}
-
-	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
-	// MinerU's language is an OCR engine parameter, not the caption language:
-	// mineru_lang wins, then the family lang, then the engine's own default.
-	// That default used to arrive implicitly through defaultSetups() - which
-	// also fed captions, so a knowledge base that never chose a language got
-	// Chinese captions (issue #20727). Keeping it here confines it to the engine.
-	lang := common.FirstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
-	if lang == "" {
-		lang = minerUDefaultLanguage
-	}
-	mineruLang := mineruLangCode(lang)
-	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
-	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
-	timeout := mineruRequestTimeout(setup, apiConfig)
-
-	if modelModule.IsMinerUCloudBase(baseURL) {
-		if !extraction.formulaEnable || !extraction.tableEnable {
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud does not support disabling formula or table extraction")
-		}
-		if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
-			return parser.ParseResult{}, err
-		}
-		cloudCtx, cloudCancel := context.WithTimeout(ctx, timeout)
-		defer cloudCancel()
-		finish := agentruntime.TrackIO(cloudCtx, "Parser", "remote parser", "backend=MinerU")
-		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
-		finish()
+	resolveTarget := func(ctx context.Context) (*minerUTarget, error) {
+		driver, _, apiConfig, err := resolveMinerUModelForDispatch(ctx, db, tenantID, modelID)
 		if err != nil {
-			noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
+			return nil, fmt.Errorf("parser: MinerU model: %w", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result)
+		if !isMinerUDriver(driver) {
+			return nil, fmt.Errorf(
+				"parser: MinerU requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant", driver.Name())
+		}
+
+		apiKeyRaw := ""
+		if apiConfig.ApiKey != nil {
+			apiKeyRaw = *apiConfig.ApiKey
+		}
+
+		baseURL := modelModule.ResolveMinerUAPIServer(apiConfig)
+		if baseURL == "" {
+			baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
+		}
+		if strings.TrimSpace(baseURL) == "" {
+			return nil, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
+		}
+
+		parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
+		// MinerU's language is an OCR engine parameter, not the caption language:
+		// mineru_lang wins, then the family lang, then the engine's own default.
+		// That default used to arrive implicitly through defaultSetups() - which
+		// also fed captions, so a knowledge base that never chose a language got
+		// Chinese captions (issue #20727). Keeping it here confines it to the engine.
+		lang := common.FirstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
+		if lang == "" {
+			lang = minerUDefaultLanguage
+		}
+		mineruLang := mineruLangCode(lang)
+		backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
+		serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
+
+		// Cloud-mode constraints are deterministic config checks: they belong
+		// to the terminal resolve stage so a misconfiguration never flips a
+		// group member.
+		if modelModule.IsMinerUCloudBase(baseURL) {
+			if !extraction.formulaEnable || !extraction.tableEnable {
+				return nil, fmt.Errorf("parser: MinerU cloud does not support disabling formula or table extraction")
+			}
+			if verr := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, true); verr != nil {
+				return nil, verr
+			}
+		}
+
+		return &minerUTarget{
+			baseURL:     baseURL,
+			apiKeyRaw:   apiKeyRaw,
+			parseMethod: parseMethod,
+			mineruLang:  mineruLang,
+			backend:     backend,
+			serverURL:   serverURL,
+			timeout:     mineruRequestTimeout(setup, apiConfig),
+		}, nil
 	}
 
-	finishProbe := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU phase=probe")
-	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
-	finishProbe()
+	var result parser.ParseResult
+	err = dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelID,
+		resolveTarget, nil,
+		func(ctx context.Context, target *minerUTarget) error {
+			if modelModule.IsMinerUCloudBase(target.baseURL) {
+				cloudCtx, cloudCancel := context.WithTimeout(ctx, target.timeout)
+				defer cloudCancel()
+				finish := agentruntime.TrackIO(cloudCtx, "Parser", "remote parser", "backend=MinerU")
+				cloudResult, invErr := modelModule.ParseMinerUCloud(cloudCtx, target.baseURL, target.apiKeyRaw, filename, binary, target.backend, target.parseMethod, target.mineruLang)
+				finish()
+				if invErr != nil {
+					return fmt.Errorf("parser: MinerU cloud: %w", invErr)
+				}
+				res, resErr := finishMinerURemoteResult(ctx, filename, binary, cloudResult)
+				if resErr != nil {
+					return resErr
+				}
+				result = res
+				return nil
+			}
+
+			finishProbe := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU phase=probe")
+			v1, probeErr := modelModule.MinerUSupportsV1(ctx, target.baseURL, target.apiKeyRaw)
+			finishProbe()
+			if probeErr != nil {
+				return fmt.Errorf("parser: MinerU probe: %w", probeErr)
+			}
+			if verr := modelModule.ValidateMinerUConfigForAPI(target.backend, target.serverURL, v1); verr != nil {
+				return fmt.Errorf("parser: MinerU config: %w (%w)", verr, errOCRResponseTerminal)
+			}
+
+			if v1 {
+				// V1's strict CreateJobRequest has no extraction switches. Reject
+				// unsupported choices before creating an upload or parse job.
+				if !extraction.formulaEnable || !extraction.tableEnable {
+					return fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches (%w)", errOCRResponseTerminal)
+				}
+				finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
+				v1Result, invErr := modelModule.ParseMinerUV1(ctx, target.baseURL, target.apiKeyRaw, filename, binary, target.backend, target.parseMethod, target.timeout)
+				finish()
+				if invErr != nil {
+					return fmt.Errorf("parser: MinerU V1: %w", invErr)
+				}
+				res, resErr := finishMinerURemoteResult(ctx, filename, binary, v1Result)
+				if resErr != nil {
+					return resErr
+				}
+				result = res
+				return nil
+			}
+
+			apiURL := strings.TrimRight(target.baseURL, "/") + "/file_parse"
+			zipBytes, invErr := mineruStreamParse(ctx, apiURL, target.apiKeyRaw, binary, target.parseMethod, target.mineruLang, target.backend, target.serverURL, extraction, target.timeout)
+			if invErr != nil {
+				return fmt.Errorf("parser: MinerU stream: %w", invErr)
+			}
+
+			sizes, geometryErr := mineruPageSizes(ctx, binary)
+			items, mediaWarnings, extractErr := mineruExtractJSONItems(zipBytes, sizes)
+			if extractErr != nil {
+				// The member answered and the returned archive failed to
+				// convert: terminal, not a member-health signal.
+				return fmt.Errorf("parser: MinerU extract: %w (%w)", extractErr, errOCRResponseTerminal)
+			}
+
+			res := mineruJSONParseResult(filename, items)
+			appendMineruGeometryWarning(&res, geometryErr)
+			res.Warnings = append(res.Warnings, mediaWarnings...)
+			result = res
+			return nil
+		}, ocrFailoverCanRetry)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
-	}
-	if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return parser.ParseResult{}, err
 	}
-
-	if v1 {
-		// V1's strict CreateJobRequest has no extraction switches. Reject
-		// unsupported choices before creating an upload or parse job.
-		if !extraction.formulaEnable || !extraction.tableEnable {
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches")
-		}
-		finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
-		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, timeout)
-		finish()
-		if err != nil {
-			noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
-		}
-		return finishMinerURemoteResult(ctx, filename, binary, result)
-	}
-
-	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
-	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
-	}
-
-	sizes, geometryErr := mineruPageSizes(ctx, binary)
-	items, mediaWarnings, err := mineruExtractJSONItems(zipBytes, sizes)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
-	}
-
-	res := mineruJSONParseResult(filename, items)
-	appendMineruGeometryWarning(&res, geometryErr)
-	res.Warnings = append(res.Warnings, mediaWarnings...)
-	return res, nil
+	return result, nil
 }
 
 func finishMinerURemoteResult(ctx context.Context, filename string, binary []byte, result *modelModule.MinerUV1Result) (parser.ParseResult, error) {
@@ -1479,9 +1622,9 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 		return normalizePDFMarkdown(ctx, filename, result.Markdown), nil
 	}
 	if extractErr != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w (%w)", extractErr, errOCRResponseTerminal)
 	}
-	return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
+	return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections (%w)", errOCRResponseTerminal)
 }
 
 func mineruHTTPErrorText(raw []byte) string {
@@ -1563,77 +1706,110 @@ func dispatchMonkeyOCRPDF(
 	setup schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
-	driver, _, apiConfig, err := resolveMonkeyOCRModelForDispatch(ctx, db, tenantID, modelID)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR model: %w", err)
+	// Group failover: resolution and endpoint/config setup run once per
+	// attempt and their errors are terminal; only the stream-parse invocation
+	// failure flips a gp- reference's current member inactive and replays.
+	type monkeyOCRTarget struct {
+		apiURL      string
+		apiKeyRaw   string
+		parseMethod string
+		mineruLang  string
+		backend     string
+		serverURL   string
+		extraction  mineruExtractionOptions
+		timeout     time.Duration
 	}
-	if !strings.EqualFold(driver.Name(), "monkeyocr") {
-		return parser.ParseResult{}, fmt.Errorf(
-			"parser: MonkeyOCR requires a MonkeyOCR OCR model; found %q", driver.Name())
-	}
-
-	apiKeyRaw := ""
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		apiKeyRaw = *apiConfig.ApiKey
-	}
-	baseURL := strings.TrimSpace(common.GetEnv(common.EnvMonkeyOCRAPIServer))
-	if apiConfig != nil && apiConfig.BaseURL != nil {
-		if v := strings.TrimSpace(*apiConfig.BaseURL); v != "" {
-			baseURL = v
+	resolveTarget := func(ctx context.Context) (*monkeyOCRTarget, error) {
+		driver, _, apiConfig, err := resolveMonkeyOCRModelForDispatch(ctx, db, tenantID, modelID)
+		if err != nil {
+			return nil, fmt.Errorf("parser: MonkeyOCR model: %w", err)
 		}
-	}
-	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_apiserver", common.EnvMonkeyOCRAPIServer); configured != "" {
-		baseURL = configured
-	}
-	if baseURL == "" {
-		return parser.ParseResult{}, fmt.Errorf(
-			"parser: MonkeyOCR requires MONKEYOCR_APISERVER or a tenant MonkeyOCR OCR model URL")
-	}
-	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
+		if !strings.EqualFold(driver.Name(), "monkeyocr") {
+			return nil, fmt.Errorf(
+				"parser: MonkeyOCR requires a MonkeyOCR OCR model; found %q", driver.Name())
+		}
 
-	// parse_method in setup selects the dispatch path; the /file_parse API mode
-	// is monkeyocr_parse_method (auto, txt, ocr), mirroring mineru_parse_method.
-	parseMethod := mineruAPIParseMethod(getStringOr(setup, "monkeyocr_parse_method", ""))
-	lang := getStringOr(setup, "lang", "")
-	if lang == "" {
-		lang = getStringOr(setup, "monkeyocr_lang", "Chinese")
+		apiKeyRaw := ""
+		if apiConfig != nil && apiConfig.ApiKey != nil {
+			apiKeyRaw = *apiConfig.ApiKey
+		}
+		baseURL := strings.TrimSpace(common.GetEnv(common.EnvMonkeyOCRAPIServer))
+		if apiConfig != nil && apiConfig.BaseURL != nil {
+			if v := strings.TrimSpace(*apiConfig.BaseURL); v != "" {
+				baseURL = v
+			}
+		}
+		if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_apiserver", common.EnvMonkeyOCRAPIServer); configured != "" {
+			baseURL = configured
+		}
+		if baseURL == "" {
+			return nil, fmt.Errorf(
+				"parser: MonkeyOCR requires MONKEYOCR_APISERVER or a tenant MonkeyOCR OCR model URL")
+		}
+		apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
+
+		// parse_method in setup selects the dispatch path; the /file_parse API mode
+		// is monkeyocr_parse_method (auto, txt, ocr), mirroring mineru_parse_method.
+		parseMethod := mineruAPIParseMethod(getStringOr(setup, "monkeyocr_parse_method", ""))
+		lang := getStringOr(setup, "lang", "")
+		if lang == "" {
+			lang = getStringOr(setup, "monkeyocr_lang", "Chinese")
+		}
+		mineruLang := mineruLangCode(lang)
+		backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "monkeyocr_backend", "vlm-engine"), apiKeyRaw)
+		if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_backend", common.EnvMonkeyOCRBackend); configured != "" {
+			backend = modelModule.ResolveMinerUBackend(configured, apiKeyRaw)
+		}
+		serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "monkeyocr_server_url", ""), apiKeyRaw)
+		if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_server_url", common.EnvMonkeyOCRServerURL); configured != "" {
+			serverURL = modelModule.ResolveMinerUServerURL(configured, apiKeyRaw)
+		}
+		if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+			return nil, err
+		}
+
+		// The MonkeyOCR adapter fronts the same MinerU-compatible /file_parse API,
+		// so it shares the MinerU timeout resolution (default 30m) that
+		// mineruStreamParse was already written against.
+		return &monkeyOCRTarget{
+			apiURL:      apiURL,
+			apiKeyRaw:   apiKeyRaw,
+			parseMethod: parseMethod,
+			mineruLang:  mineruLang,
+			backend:     backend,
+			serverURL:   serverURL,
+			extraction:  mineruExtractionOptions{formulaEnable: true, tableEnable: true},
+			timeout:     mineruRequestTimeout(setup, apiConfig),
+		}, nil
 	}
-	mineruLang := mineruLangCode(lang)
-	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "monkeyocr_backend", "vlm-engine"), apiKeyRaw)
-	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_backend", common.EnvMonkeyOCRBackend); configured != "" {
-		backend = modelModule.ResolveMinerUBackend(configured, apiKeyRaw)
-	}
-	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "monkeyocr_server_url", ""), apiKeyRaw)
-	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_server_url", common.EnvMonkeyOCRServerURL); configured != "" {
-		serverURL = modelModule.ResolveMinerUServerURL(configured, apiKeyRaw)
-	}
-	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+
+	var result parser.ParseResult
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelID,
+		resolveTarget, nil,
+		func(ctx context.Context, target *monkeyOCRTarget) error {
+			zipBytes, invErr := mineruStreamParse(ctx, target.apiURL, target.apiKeyRaw, binary, target.parseMethod, target.mineruLang, target.backend, target.serverURL, target.extraction, target.timeout)
+			if invErr != nil {
+				return fmt.Errorf("parser: MonkeyOCR stream: %w", invErr)
+			}
+			sections, invErr := mineruExtractSections(zipBytes)
+			if invErr != nil {
+				return invErr
+			}
+
+			var parts []string
+			for _, s := range sections {
+				if s != "" {
+					parts = append(parts, s)
+				}
+			}
+			md := strings.Join(parts, "\n")
+			result = normalizePDFMarkdown(ctx, filename, md)
+			return nil
+		}, nil)
+	if err != nil {
 		return parser.ParseResult{}, err
 	}
-
-	// The MonkeyOCR adapter fronts the same MinerU-compatible /file_parse API,
-	// so it shares the MinerU timeout resolution (default 30m) that
-	// mineruStreamParse was already written against.
-	timeout := mineruRequestTimeout(setup, apiConfig)
-	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
-	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
-	}
-	sections, err := mineruExtractSections(zipBytes)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR extract: %w", err)
-	}
-
-	var parts []string
-	for _, s := range sections {
-		if s != "" {
-			parts = append(parts, s)
-		}
-	}
-	md := strings.Join(parts, "\n")
-	return normalizePDFMarkdown(ctx, filename, md), nil
+	return result, nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -1702,23 +1878,46 @@ func dispatchPaddleOCRPdf(
 	setup schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
-	driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR model: %w", err)
+	// Group failover: resolution and timeout setup run once per attempt and
+	// their errors are terminal; only the OCRFile invocation failure flips a
+	// gp- reference's current member inactive and replays once.
+	type paddleOCRTarget struct {
+		driver    modelModule.ModelDriver
+		modelName string
+		apiConfig *modelModule.APIConfig
+		ocrConfig *modelModule.OCRConfig
 	}
-	if !isPaddleOCRDriver(driver) {
-		return parser.ParseResult{}, fmt.Errorf(
-			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
+	resolveTarget := func(ctx context.Context) (*paddleOCRTarget, error) {
+		driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
+		if err != nil {
+			return nil, fmt.Errorf("parser: PaddleOCR model: %w", err)
+		}
+		if !isPaddleOCRDriver(driver) {
+			return nil, fmt.Errorf(
+				"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
+		}
+		return &paddleOCRTarget{
+			driver:    driver,
+			modelName: modelName,
+			apiConfig: apiConfig,
+			ocrConfig: &modelModule.OCRConfig{Timeout: paddleOCRRequestTimeout(setup, apiConfig)},
+		}, nil
 	}
 
-	ocrConfig := &modelModule.OCRConfig{Timeout: paddleOCRRequestTimeout(setup, apiConfig)}
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, ocrConfig, nil)
+	var result parser.ParseResult
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelID,
+		resolveTarget, nil,
+		func(ctx context.Context, target *paddleOCRTarget) error {
+			resp, invErr := target.driver.OCRFile(ctx, &target.modelName, binary, &filename, target.apiConfig, target.ocrConfig, nil)
+			if invErr != nil {
+				return fmt.Errorf("parser: PaddleOCR OCRFile: %w", invErr)
+			}
+			result = parser.OCRPDFResult(ctx, "PaddleOCR", filename, binary, resp)
+			return nil
+		}, nil)
 	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
+		return parser.ParseResult{}, err
 	}
-
-	result := parser.OCRPDFResult(ctx, "PaddleOCR", filename, binary, resp)
 	return result, result.Err
 }
 
@@ -1818,19 +2017,39 @@ func dispatchOCRModelPDF(ctx context.Context, db *gorm.DB, filename string, bina
 	if tenantID == "" {
 		return parser.ParseResult{}, fmt.Errorf("parser: %s requires tenant_id", provider)
 	}
-	driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+	// Group failover: resolution runs once per attempt and its errors are
+	// terminal; only the OCRFile invocation failure flips a gp- reference's
+	// current member inactive and replays once.
+	type ocrModelTarget struct {
+		driver    modelModule.ModelDriver
+		modelName string
+		apiConfig *modelModule.APIConfig
+	}
+	resolveTarget := func(ctx context.Context) (*ocrModelTarget, error) {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+		if err != nil {
+			return nil, fmt.Errorf("parser: %s model: %w", provider, err)
+		}
+		if driver.Name() != driverName {
+			return nil, fmt.Errorf("parser: %s requires a %s OCR model; found %q", provider, provider, driver.Name())
+		}
+		return &ocrModelTarget{driver: driver, modelName: modelName, apiConfig: apiConfig}, nil
+	}
+
+	var result parser.ParseResult
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, selector,
+		resolveTarget, nil,
+		func(ctx context.Context, target *ocrModelTarget) error {
+			resp, invErr := target.driver.OCRFile(ctx, &target.modelName, binary, nil, target.apiConfig, config, nil)
+			if invErr != nil {
+				return fmt.Errorf("parser: %s OCRFile: %w", provider, invErr)
+			}
+			result = parser.OCRPDFResult(ctx, provider, filename, binary, resp)
+			return nil
+		}, nil)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: %s model: %w", provider, err)
+		return parser.ParseResult{}, err
 	}
-	if driver.Name() != driverName {
-		return parser.ParseResult{}, fmt.Errorf("parser: %s requires a %s OCR model; found %q", provider, provider, driver.Name())
-	}
-	resp, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, config, nil)
-	if err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, selector)
-		return parser.ParseResult{}, fmt.Errorf("parser: %s OCRFile: %w", provider, err)
-	}
-	result := parser.OCRPDFResult(ctx, provider, filename, binary, resp)
 	return result, result.Err
 }
 
@@ -3080,6 +3299,11 @@ func defaultIsSoMarkLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, se
 	return strings.EqualFold(driver.Name(), "somark")
 }
 
+// errNoSoMarkInstance marks the fall-through case: no tenant SoMark instance
+// was resolvable for an empty selector, so the caller proceeds to the
+// setup/env-driven parser path.
+var errNoSoMarkInstance = errors.New("no tenant SoMark instance")
+
 // dispatchSoMarkPDF runs the SoMark parser path with the tenant model
 // provider instance's endpoint and key overriding the parser setup/env
 // configuration, so instance-driven parsing yields the same structured
@@ -3096,39 +3320,63 @@ func dispatchSoMarkPDF(
 	setup schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, bool, error) {
-	driver, _, apiConfig, err := resolveSoMarkModelForDispatch(ctx, db, tenantID, modelID)
-	if err != nil {
-		if strings.TrimSpace(modelID) != "" {
-			return parser.ParseResult{}, true, fmt.Errorf("parser: resolve selected SoMark model %q: %w", modelID, err)
-		}
-		// No tenant SoMark instance (or unresolvable selector): let the
-		// setup/env-driven parser path handle the request.
-		return parser.ParseResult{}, false, nil
+	// Group failover: resolution and parser configuration run once per
+	// attempt and their errors are terminal; only the parse invocation
+	// failure flips a gp- reference's current member inactive and replays.
+	// Resolution failure for an empty selector still falls through to the
+	// setup/env-driven parser path (handled=false).
+	type soMarkTarget struct {
+		parser *parser.PDFParser
 	}
-	if !strings.EqualFold(driver.Name(), "somark") {
-		return parser.ParseResult{}, true, fmt.Errorf(
-			"parser: SoMark requires a SoMark OCR model; found %q. Please add a SoMark OCR model to your tenant", driver.Name())
+	resolveTarget := func(ctx context.Context) (*soMarkTarget, error) {
+		driver, _, apiConfig, err := resolveSoMarkModelForDispatch(ctx, db, tenantID, modelID)
+		if err != nil {
+			if strings.TrimSpace(modelID) != "" {
+				return nil, fmt.Errorf("parser: resolve selected SoMark model %q: %w", modelID, err)
+			}
+			// No tenant SoMark instance (or unresolvable selector): let the
+			// setup/env-driven parser path handle the request.
+			return nil, errNoSoMarkInstance
+		}
+		if !strings.EqualFold(driver.Name(), "somark") {
+			return nil, fmt.Errorf(
+				"parser: SoMark requires a SoMark OCR model; found %q. Please add a SoMark OCR model to your tenant", driver.Name())
+		}
+
+		p := parser.NewPDFParser()
+		p.ConfigureFromSetup(setup)
+		p.ParseMethod = "somark"
+		if somarkDriver, ok := driver.(interface {
+			GetBaseURL(*modelModule.APIConfig) (string, error)
+		}); ok {
+			if baseURL, berr := somarkDriver.GetBaseURL(apiConfig); berr == nil && strings.TrimSpace(baseURL) != "" {
+				p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+			}
+		}
+		if apiConfig != nil {
+			if apiConfig.ApiKey != nil && strings.TrimSpace(*apiConfig.ApiKey) != "" {
+				p.SoMarkAPIKey = strings.TrimSpace(*apiConfig.ApiKey)
+			}
+		}
+		return &soMarkTarget{parser: p}, nil
 	}
 
-	p := parser.NewPDFParser()
-	p.ConfigureFromSetup(setup)
-	p.ParseMethod = "somark"
-	if somarkDriver, ok := driver.(interface {
-		GetBaseURL(*modelModule.APIConfig) (string, error)
-	}); ok {
-		if baseURL, err := somarkDriver.GetBaseURL(apiConfig); err == nil && strings.TrimSpace(baseURL) != "" {
-			p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-		}
+	var result parser.ParseResult
+	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelID,
+		resolveTarget, nil,
+		func(ctx context.Context, target *soMarkTarget) error {
+			res := target.parser.ParseWithResult(ctx, filename, binary)
+			if res.Err != nil {
+				return res.Err
+			}
+			result = res
+			return nil
+		}, nil)
+	if err == errNoSoMarkInstance {
+		return parser.ParseResult{}, false, nil
 	}
-	if apiConfig != nil {
-		if apiConfig.ApiKey != nil && strings.TrimSpace(*apiConfig.ApiKey) != "" {
-			p.SoMarkAPIKey = strings.TrimSpace(*apiConfig.ApiKey)
-		}
+	if err != nil {
+		return parser.ParseResult{}, true, err
 	}
-	res := p.ParseWithResult(ctx, filename, binary)
-	if res.Err != nil {
-		noteGroupMemberFailure(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return parser.ParseResult{}, true, res.Err
-	}
-	return res, true, nil
+	return result, true, nil
 }

@@ -35,6 +35,8 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -1056,7 +1058,7 @@ func (f googleDriveFile) toSourceDocument(userEmail string, allowImages bool) (S
 	}
 	updatedAt := f.updatedAt()
 	fetch := googleDriveFetchReference{FileID: f.ID, UserEmail: userEmail, MimeType: f.MimeType, Name: f.Name, Size: f.Size}
-	fetchKey, _ := json.Marshal(fetch)
+	fetchKey := utility.MustJSON(fetch)
 	metadata := map[string]any{
 		"file_id":       f.ID,
 		"mime_type":     f.MimeType,
@@ -1067,7 +1069,7 @@ func (f googleDriveFile) toSourceDocument(userEmail string, allowImages bool) (S
 		SourceID:           sourceID,
 		SemanticIdentifier: f.Name,
 		Extension:          f.extension(),
-		FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: f.sizeInt()},
+		FetchRef:           &FetchReference{Key: fetchKey, SizeHint: f.sizeInt()},
 		UpdatedAt:          updatedAt,
 		SizeBytes:          f.sizeInt(),
 		Metadata:           metadata,

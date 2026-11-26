@@ -94,6 +94,8 @@ func normalizeFilename(filename string) (string, bool) {
 	return strings.ToLower(base), true
 }
 
+var pdfSuffixRe = regexp.MustCompile(`.*\.pdf$`)
+
 // GetFileType classifies a filename by its case-insensitive extension.
 // It returns FileTypeOTHER when the extension is missing or unsupported.
 func GetFileType(filename string) FileType {
@@ -151,7 +153,7 @@ func GetFileType(filename string) FileType {
 		return FileTypeVISUAL
 	case "tiff", "tif", "webp", "svg", "ico":
 		return FileTypeVISUAL
-	case "avif", "heic", "apng":
+	case "avif", "heic", "apng", "wmf", "emf", "wmz", "emz":
 		return FileTypeVISUAL
 	default:
 		return FileTypeOTHER
@@ -208,7 +210,7 @@ func FilenameType(filename string) FileType {
 		return FileTypeVISUAL
 	}
 
-	if matched, _ := regexp.MatchString(`.*\.pdf$`, normalized); matched {
+	if pdfSuffixRe.MatchString(normalized) {
 		return FileTypePDF
 	}
 
@@ -235,7 +237,7 @@ func FilenameType(filename string) FileType {
 
 	visualExtensions := []string{
 		"jpg", "jpeg", "png", "tif", "tiff", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
-		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
+		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "emf", "wmz", "emz", "webp", "avif", "apng", "icon", "ico",
 	}
 	for _, ext := range visualExtensions {
 		if strings.HasSuffix(normalized, "."+ext) {
@@ -267,6 +269,8 @@ func SanitizeFileNameComponent(name string) string {
 	return b.String()
 }
 
+var unsafeFilenameCharsRe = regexp.MustCompile(`[^A-Za-z0-9_\-/]`)
+
 func SanitizeFilename(filename string) string {
 	if filename == "" {
 		return ""
@@ -287,9 +291,8 @@ func SanitizeFilename(filename string) string {
 		}
 	}
 
-	unsafeRegex := regexp.MustCompile(`[^A-Za-z0-9_\-/]`)
 	for i, part := range sanitizedParts {
-		sanitizedParts[i] = unsafeRegex.ReplaceAllString(part, "")
+		sanitizedParts[i] = unsafeFilenameCharsRe.ReplaceAllString(part, "")
 	}
 
 	result := strings.Join(sanitizedParts, "/")

@@ -1,9 +1,9 @@
 {
     "id": 25,
     "title": {
-        "en": "Title Chunker",
-        "de": "Titel basierte Segmentierung",
-        "zh": "标题切片"
+        "en": "Outline",
+        "de": "Gliederung",
+        "zh": "大纲"
     },
     "description": {
         "en": "This template slices the parsed file based on its title structure. It is ideal for documents with well-defined headings, such as product manuals, legal contracts, research reports, and academic papers.",
@@ -65,6 +65,10 @@
                     "obj": {
                         "component_name": "Parser",
                         "params": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -245,6 +249,10 @@
                     {
                         "data": {
                             "form": {
+                                "enable_vision_enhancement": false,
+                                "vlm": {
+                                    "llm_id": ""
+                                },
                                 "outputs": {
                                     "html": {
                                         "type": "string",
@@ -312,7 +320,7 @@
                                 ]
                             },
                             "label": "Parser",
-                            "name": "Parser_0"
+                            "name": "Parser"
                         },
                         "dragging": false,
                         "id": "Parser:HipSignsRhyme",
@@ -434,7 +442,7 @@
                                 ]
                             },
                             "label": "TitleChunker",
-                            "name": "Title Chunker_0"
+                            "name": "Title Chunker"
                         },
                         "id": "TitleChunker:WideResultsTeach",
                         "measured": {
@@ -475,7 +483,7 @@
                                 "top_p": 0.3
                             },
                             "label": "Extractor",
-                            "name": "Transformer_0"
+                            "name": "Extractor"
                         },
                         "id": "Extractor:DryRatsGive",
                         "measured": {
@@ -503,7 +511,7 @@
                                 ]
                             },
                             "label": "Tokenizer",
-                            "name": "Indexer_0"
+                            "name": "Indexer"
                         },
                         "id": "Tokenizer:WackyOnionsFly",
                         "measured": {

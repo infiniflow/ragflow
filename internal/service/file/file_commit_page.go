@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/storage"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 // PageContentAt is one wiki page as it stood at an anchor: which page, and the
@@ -46,6 +47,11 @@ type PageContentAt struct {
 	// ids). A commit written before snapshots existed carries only content, which
 	// is still a usable page - the rest is simply absent.
 	Page map[string]any
+	// CommitID is the commit that holds this state: the page's own version is its
+	// position in the page's chain, so a caller writing the restore into that
+	// chain names the number it restored from. Empty when the state was recovered
+	// from a later edit's before-side and no commit holds it directly.
+	CommitID string
 }
 
 // wikiPageCommitRow is one page's latest commit at or before the anchor, as the
@@ -53,6 +59,7 @@ type PageContentAt struct {
 // (which holds the page identity and the body pointer) returns it.
 type wikiPageCommitRow struct {
 	FileID               string
+	CommitID             sql.NullString
 	PageTypeKwd          sql.NullString
 	SlugKwd              sql.NullString
 	Title                sql.NullString
@@ -103,6 +110,12 @@ func (s *FileCommitService) PageContentsAt(ctx context.Context, datasetID string
 // is. A page whose earliest commit is an addition was created by it: inside the
 // window the creation belongs to this version's run and the added body is what the
 // version holds; outside it the page belongs to a later version and is left alone.
+
+// pageSnapshotReadConcurrency bounds how many page bodies are read from object
+// storage at once. A restore reads one object per page; eight keeps a large
+// dataset's reads overlapping without opening a connection per page.
+const pageSnapshotReadConcurrency = 8
+
 func (s *FileCommitService) PageContentsUntil(ctx context.Context, datasetID string, atMillis, untilMillis int64) ([]PageContentAt, error) {
 	if datasetID == "" {
 		return nil, nil
@@ -110,37 +123,48 @@ func (s *FileCommitService) PageContentsUntil(ctx context.Context, datasetID str
 	var rows []wikiPageCommitRow
 	if err := dao.DB.WithContext(ctx).
 		Table("file_commit_item AS item").
-		Select("item.file_id, item.page_type_kwd, item.slug_kwd, commit_row.title, item.operation, item.content_after_location").
+		Select("item.file_id, item.commit_id, item.page_type_kwd, item.slug_kwd, commit_row.title, item.operation, item.content_after_location").
 		Joins("JOIN file_commit AS commit_row ON commit_row.id = item.commit_id").
 		Where("commit_row.folder_id = ? AND commit_row.create_time IS NOT NULL AND commit_row.create_time <= ?", datasetID, atMillis).
-		Order("commit_row.create_time DESC").
+		Order("commit_row.create_time DESC, item.seq DESC").
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
+	type pendingPage struct {
+		pageType string
+		slug     string
+		title    string
+		commitID string
+		location string
+	}
 	seen := make(map[string]struct{}, len(rows))
-	pages := make([]PageContentAt, 0, len(rows))
+	pending := make([]pendingPage, 0, len(rows))
 	for _, row := range rows {
 		// The rows arrive newest first, so the first row of a page is the one the
 		// page stood at when the version was taken; the older ones describe states
 		// before it.
-		if _, ok := seen[row.FileID]; ok {
-			continue
-		}
-		seen[row.FileID] = struct{}{}
-		// A page whose latest commit at the anchor is a deletion did not exist at
-		// that moment: the version describes a dataset without it, and the caller
-		// removes it rather than writing a body back.
-		if row.Operation.Valid && row.Operation.String == "delete" {
-			continue
-		}
-
 		pageType, slug, ok := splitWikiPageFileID(datasetID, row)
 		if !ok {
 			common.Warn("Wiki history: cannot tell which page a commit belongs to",
 				zap.String("dataset_id", datasetID),
 				zap.String("file_id", row.FileID))
+			continue
+		}
+		// Keyed by the page, not by the file id: one page can arrive as two rows,
+		// one named by its page columns and one only by the file id, and this
+		// lookup promises one entry per page. Two entries would be replayed as two
+		// writes and two versions of one edit.
+		key := WikiPageKey(pageType, slug)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		// A page whose latest commit at the anchor is a deletion did not exist at
+		// that moment: the version describes a dataset without it, and the caller
+		// removes it rather than writing a body back.
+		if row.Operation.Valid && row.Operation.String == "delete" {
 			continue
 		}
 		if !row.ContentAfterLocation.Valid || row.ContentAfterLocation.String == "" {
@@ -149,29 +173,64 @@ func (s *FileCommitService) PageContentsUntil(ctx context.Context, datasetID str
 				zap.String("file_id", row.FileID))
 			continue
 		}
-		if storageImpl == nil {
-			common.Warn("Wiki history: object storage is not configured")
+		pending = append(pending, pendingPage{
+			pageType: pageType,
+			slug:     slug,
+			title:    row.Title.String,
+			commitID: row.CommitID.String,
+			location: row.ContentAfterLocation.String,
+		})
+	}
+
+	// Every page body is its own object in storage. Walking them one round trip at
+	// a time is what made restoring a few hundred pages take seconds, so they are
+	// read together - a bounded handful at a time, because a restore should not
+	// open one connection per page either. Reading is independent per object; the
+	// order the rows had is kept for the caller.
+	bodies := make([][]byte, len(pending))
+	loaded := make([]bool, len(pending))
+	if storageImpl == nil && len(pending) > 0 {
+		common.Warn("Wiki history: object storage is not configured")
+	}
+	if storageImpl != nil {
+		var readers errgroup.Group
+		readers.SetLimit(pageSnapshotReadConcurrency)
+		for i := range pending {
+			i := i
+			readers.Go(func() error {
+				content, err := storageImpl.Get(ctx, datasetID, pending[i].location)
+				if err != nil {
+					common.Warn("Wiki history: failed to read a stored body",
+						zap.String("dataset_id", datasetID),
+						zap.String("location", pending[i].location),
+						zap.Error(err))
+					return nil
+				}
+				bodies[i] = content
+				loaded[i] = true
+				return nil
+			})
+		}
+		_ = readers.Wait()
+	}
+
+	pages := make([]PageContentAt, 0, len(pending))
+	for i, p := range pending {
+		if !loaded[i] {
 			continue
 		}
-		content, err := storageImpl.Get(ctx, datasetID, row.ContentAfterLocation.String)
-		if err != nil {
-			common.Warn("Wiki history: failed to read a stored body",
-				zap.String("dataset_id", datasetID),
-				zap.String("location", row.ContentAfterLocation.String),
-				zap.Error(err))
-			continue
-		}
-		page := decodePageSnapshot(content)
-		title := row.Title.String
+		page := decodePageSnapshot(bodies[i])
+		title := p.title
 		if stored := metadataStringOf(page, "title_kwd"); stored != "" {
 			title = stored
 		}
 		pages = append(pages, PageContentAt{
-			PageType: pageType,
-			Slug:     slug,
+			PageType: p.pageType,
+			Slug:     p.slug,
 			Title:    title,
 			Content:  metadataStringOf(page, "content_with_weight"),
 			Page:     page,
+			CommitID: p.commitID,
 		})
 	}
 	// Pages with no commit at or before the anchor, whose history starts after
@@ -187,18 +246,24 @@ func (s *FileCommitService) PageContentsUntil(ctx context.Context, datasetID str
 // the state the version describes.
 //
 // An edit there was applied to the anchor state, so undoing its diff on the body
-// it produced yields the body the version held. An addition there created the
-// page, and whether that counts as the version's own page depends on where the
-// addition falls: inside the version's window it was written by the run this
-// version closes, outside it the page belongs to a later version.
+// it produced yields the body the version held, and the headers of that state are
+// the ones the edit's parent commit recorded - the edit's own snapshot describes
+// the page after it. An addition there created the page, and whether that counts
+// as the version's own page depends on where the addition falls: inside the
+// version's window it was written by the run this version closes, outside it the
+// page belongs to a later version.
 //
 // Nothing is invented. A page whose first commit is an addition outside the window
-// did not exist at the anchor and is left out, and an edit whose diff does not fit
-// the body it stored is skipped rather than applied blind: putting back a body
-// nobody recorded is worse than leaving the page as it is.
+// did not exist at the anchor and is left out, an edit whose diff does not fit the
+// body it stored is skipped rather than applied blind, and an edit whose parent
+// snapshot cannot be read comes back body-only rather than with headers from the
+// side the edit produced: putting back a body nobody recorded is worse than
+// leaving the page as it is.
 func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, datasetID string, atMillis, untilMillis int64, seen map[string]struct{}, storageImpl storage.Storage) []PageContentAt {
 	type firstEditRow struct {
 		FileID               string
+		CommitID             sql.NullString
+		ParentID             sql.NullString
 		PageTypeKwd          sql.NullString
 		SlugKwd              sql.NullString
 		Title                sql.NullString
@@ -210,10 +275,10 @@ func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, d
 	var rows []firstEditRow
 	if err := dao.DB.WithContext(ctx).
 		Table("file_commit_item AS item").
-		Select("item.file_id, item.page_type_kwd, item.slug_kwd, commit_row.title, item.operation, item.content_after_location, item.diff, commit_row.create_time").
+		Select("item.file_id, item.commit_id, commit_row.parent_id, item.page_type_kwd, item.slug_kwd, commit_row.title, item.operation, item.content_after_location, item.diff, commit_row.create_time").
 		Joins("JOIN file_commit AS commit_row ON commit_row.id = item.commit_id").
 		Where("commit_row.folder_id = ? AND commit_row.create_time IS NOT NULL AND commit_row.create_time > ?", datasetID, atMillis).
-		Order("commit_row.create_time ASC").
+		Order("commit_row.create_time ASC, item.seq ASC").
 		Scan(&rows).Error; err != nil {
 		common.Warn("Wiki history: failed to read the edits after the anchor",
 			zap.String("dataset_id", datasetID),
@@ -229,13 +294,24 @@ func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, d
 	for _, row := range rows {
 		// The rows arrive oldest first: the first row of a page is the earliest
 		// commit after the anchor, and the one that began from the version's state.
-		if _, ok := seen[row.FileID]; ok {
+		// Both sets are keyed by the page, the same way PageContentsUntil keys the
+		// pages it already resolved - a page is one page whatever file key names it.
+		pageType, slug, ok := splitWikiPageFileID(datasetID, wikiPageCommitRow{
+			FileID:      row.FileID,
+			PageTypeKwd: row.PageTypeKwd,
+			SlugKwd:     row.SlugKwd,
+		})
+		if !ok {
 			continue
 		}
-		if _, ok := handled[row.FileID]; ok {
+		key := WikiPageKey(pageType, slug)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		handled[row.FileID] = struct{}{}
+		if _, ok := handled[key]; ok {
+			continue
+		}
+		handled[key] = struct{}{}
 		added := row.Operation.Valid && row.Operation.String == "add"
 		if added {
 			// The page was created by this commit. It is the version's page only
@@ -245,14 +321,6 @@ func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, d
 			}
 		} else if !row.Diff.Valid || row.Diff.String == "" {
 			// An edit with no diff cannot be undone; an addition needs none.
-			continue
-		}
-		pageType, slug, ok := splitWikiPageFileID(datasetID, wikiPageCommitRow{
-			FileID:      row.FileID,
-			PageTypeKwd: row.PageTypeKwd,
-			SlugKwd:     row.SlugKwd,
-		})
-		if !ok {
 			continue
 		}
 		var page map[string]any
@@ -275,6 +343,7 @@ func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, d
 		}
 		// An addition's own body is the anchor state; an edit's before-side is.
 		content := after
+		commitID := row.CommitID.String
 		if !added {
 			content, ok = reverseApplyDiff(after, row.Diff.String)
 			if !ok {
@@ -283,6 +352,20 @@ func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, d
 					zap.String("file_id", row.FileID))
 				continue
 			}
+			// The snapshot this diff was applied to is the page the edit PRODUCED, so
+			// its title, summary and topic belong to the after-side. Taking them would
+			// hand the restore a page that never existed - a later header over an
+			// earlier body - and the restore writes every field the snapshot carries.
+			// The headers therefore come from the page the parent commit recorded;
+			// when that cannot be read the page is kept body-only instead, because a
+			// body alone still restores the text, while a header from the wrong side
+			// would be written back as if it were the truth.
+			page = nil
+			if parent, parentOK := s.pageSnapshotAt(ctx, datasetID, row.FileID, row.ParentID.String, storageImpl); parentOK {
+				page = parent
+			}
+			// The before-side is held by the parent commit, not by the edit's row.
+			commitID = row.ParentID.String
 		}
 		if content == "" {
 			continue
@@ -301,9 +384,52 @@ func (s *FileCommitService) pageContentsBeforeFirstCommit(ctx context.Context, d
 			Title:    title,
 			Content:  content,
 			Page:     page,
+			CommitID: commitID,
 		})
 	}
 	return pages
+}
+
+// pageSnapshotAt reads the page snapshot one commit recorded for one page: the
+// object its item points at, decoded into the fields a restore replays.
+//
+// ok is false when the commit did not touch this page, stored no snapshot for it
+// (a delete records none), or the object cannot be read - the caller decides what
+// to do without it, because the answer differs: an addition's own snapshot is the
+// page it created, while an edit's before-side lives on its parent's snapshot.
+func (s *FileCommitService) pageSnapshotAt(ctx context.Context, datasetID, fileID, commitID string, storageImpl storage.Storage) (map[string]any, bool) {
+	if commitID == "" || fileID == "" || storageImpl == nil || dao.DB == nil {
+		return nil, false
+	}
+	var locations []string
+	if err := dao.DB.WithContext(ctx).
+		Table("file_commit_item").
+		Where("commit_id = ? AND file_id = ? AND content_after_location IS NOT NULL AND content_after_location <> ''", commitID, fileID).
+		Order("seq DESC").
+		Limit(1).
+		Pluck("content_after_location", &locations).Error; err != nil {
+		common.Warn("Wiki history: failed to read the snapshot a commit stored for a page",
+			zap.String("commit_id", commitID),
+			zap.String("file_id", fileID),
+			zap.Error(err))
+		return nil, false
+	}
+	if len(locations) == 0 {
+		return nil, false
+	}
+	content, err := storageImpl.Get(ctx, datasetID, locations[0])
+	if err != nil {
+		common.Warn("Wiki history: failed to read the page an edit started from",
+			zap.String("dataset_id", datasetID),
+			zap.String("location", locations[0]),
+			zap.Error(err))
+		return nil, false
+	}
+	page := decodePageSnapshot(content)
+	if len(page) == 0 {
+		return nil, false
+	}
+	return page, true
 }
 
 // reverseApplyDiff undoes a unified diff on the text it was applied to, giving
@@ -507,7 +633,9 @@ func metadataStringOf(page map[string]any, key string) string {
 // unreadable instead of being guessed at - replaying a page under the wrong slug
 // would overwrite a page with another page's body.
 func splitWikiPageFileID(datasetID string, row wikiPageCommitRow) (string, string, bool) {
-	if row.PageTypeKwd.Valid && row.SlugKwd.Valid && row.SlugKwd.String != "" {
+	// The type is required as well: a row that names only a slug is a row whose page
+	// columns were never filled in, and the file id still says which page it is.
+	if row.PageTypeKwd.Valid && row.PageTypeKwd.String != "" && row.SlugKwd.Valid && row.SlugKwd.String != "" {
 		pageType := row.PageTypeKwd.String
 		slug := row.SlugKwd.String
 		// slug_kwd is stored as "page_type/slug"; a bare slug is what the page

@@ -657,8 +657,11 @@ func HasModelFiles(dir string) bool {
 //  1. the explicit DEEPDOC_MODEL_DIR env, when set;
 //  2. the first MODEL_ASSETS_DIR candidate that actually contains the
 //     required weights (see HasModelFiles / DeepDocModelFiles);
-//  3. the repo-default internal/rag/res/deepdoc layout;
-//  4. as a last resort the canonical default, so a missing-weights error
+//  3. the directory a packaged app ships next to its executable — the only
+//     layout that exists when the app is launched from Finder, which has no
+//     useful working directory;
+//  4. the repo-default internal/rag/res/deepdoc layout;
+//  5. as a last resort the canonical default, so a missing-weights error
 //     message points at the conventional location.
 func DeepDocModelDir() string {
 	if v := strings.TrimSpace(GetEnv(EnvDeepDocModelDir)); v != "" {
@@ -666,6 +669,7 @@ func DeepDocModelDir() string {
 	}
 	wd, _ := os.Getwd()
 	candidates := append([]string(nil), ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
+	candidates = append(candidates, packagedDeepDocModelDirs()...)
 	candidates = append(candidates,
 		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
 		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
@@ -676,6 +680,23 @@ func DeepDocModelDir() string {
 		}
 	}
 	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
+}
+
+// packagedDeepDocModelDirs lists the model directories a packaged app ships,
+// resolved from the executable: beside it on Windows and Linux, or two levels up
+// inside a macOS bundle, where Contents/Resources/binaries/<engine> has the
+// weights at Contents/Resources/deepdoc.
+func packagedDeepDocModelDirs() []string {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil
+	}
+	exeDir := filepath.Dir(exe)
+	return []string{
+		filepath.Join(exeDir, "deepdoc"),
+		filepath.Join(exeDir, "..", "deepdoc"),
+		filepath.Join(exeDir, "..", "..", "deepdoc"),
+	}
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)

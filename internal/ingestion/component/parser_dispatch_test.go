@@ -2184,3 +2184,38 @@ func TestConfigureParserFromSetups_Doc(t *testing.T) {
 		t.Errorf("DOCParser.RemoveHeaderFooter = false, want true")
 	}
 }
+
+type registeredMethodTestParser struct {
+	language string
+}
+
+func (p *registeredMethodTestParser) SetLanguage(lang string) {
+	p.language = lang
+}
+
+func (p *registeredMethodTestParser) ParseWithResult(context.Context, string, []byte) parser.ParseResult {
+	return parser.ParseResult{JSON: []parser.DocItem{parser.NewTextJSONItem("registered parser, language: " + p.language)}}
+}
+
+func TestDispatchUsesRegisteredPDFMethod(t *testing.T) {
+	const method = "test-registered-pdf"
+	parser.RegisterParseMethodFactory(utility.FileTypePDF, method, func(bool) (parser.ParseResultProducer, error) {
+		return &registeredMethodTestParser{}, nil
+	})
+
+	setup := map[string]any{"parse_method": " TEST-REGISTERED-PDF "}
+	if !parser.IsPDFParseMethod(setup["parse_method"].(string)) {
+		t.Fatal("registered PDF method was not recognized")
+	}
+	component, err := NewParserComponent(map[string]any{"pdf": setup})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name": "sample.pdf", "binary": []byte("%PDF-1.7\n"), "lang": "German",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireJSONText(t, out, "registered parser, language: German")
+}

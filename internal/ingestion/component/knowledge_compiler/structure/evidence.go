@@ -67,7 +67,15 @@ func sectionExpectsEvidence(parserConfig map[string]any, section string) bool {
 	if parserConfig == nil {
 		return false
 	}
-	fields, _ := common.Get(parserConfig, section).(map[string]any)
+	// The section arrives as "entity" / "relation"; configSection adds the
+	// specification spellings the UI and docs use, so a template written in
+	// either form is read the same way the prompt renders it.
+	var fields map[string]any
+	if section == "entity" {
+		fields = configSection(parserConfig, "entity", "EntitySpecification", "entity_specification", "entitySpecification")
+	} else {
+		fields = configSection(parserConfig, section, "RelationSpecification", "relation_specification", "relationSpecification")
+	}
 	if fields == nil {
 		return false
 	}

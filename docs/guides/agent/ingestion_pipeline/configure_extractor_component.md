@@ -1,21 +1,21 @@
 ---
 sidebar_position: 5
-title: Configure the Transformer Component
-sidebar_label: Configure the Transformer Component
-slug: /configure_transformer_component
+title: Configure the Extractor Component
+sidebar_label: Configure the Extractor Component
+slug: /configure_extractor_component
 sidebar_custom_props: {
   categoryIcon: LucideFileStack
 }
 ---
 
-# Configure the Transformer Component
+# Configure the Extractor Component
 
-**Transformer** uses an LLM to enrich document chunks with keywords, questions, tags, summaries, and metadata. Configure it on the **Agent > Ingestion pipeline** canvas. One Transformer can enable several extraction functions at the same time.
+**Extractor** uses an LLM to enrich document chunks with keywords, questions, tags, summaries, and metadata. Configure it on the **Agent > Ingestion pipeline** canvas. One Extractor can enable several extraction functions at the same time.
 
 ## Open the Configuration Panel
 
 1. Open **Agent**, select **Ingestion pipeline**, and open the pipeline you want to edit.
-2. Add **Transformer** after a chunking component, or click an existing Transformer node to open its configuration panel.
+2. Add **Extractor** after a chunking component, or click an existing Extractor node to open its configuration panel.
 3. In **Model**, select an available chat model. Configure the model provider first if the required model is not listed.
 4. Expand each function you need and turn on its switch. Expanding a section only shows its settings; use the switch beside the section name to enable processing.
 
@@ -33,7 +33,7 @@ The panel lists **Auto keywords**, **Auto-question**, **Tags**, **Summary**, and
 
 Enable only the functions you need. Review the prompts for your document language, required output, and business scope before processing a large collection of files.
 
-![Transformer model, enrichment functions, and Metadata Settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_transformer_model_and_metadata.jpg)
+![Extractor model, enrichment functions, and Metadata Settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_transformer_model_and_metadata.jpg)
 
 ## Configure Metadata
 
@@ -48,8 +48,8 @@ Use consistent field names and types across documents so the generated metadata 
 
 ## Connect and Validate
 
-Connect Transformer to an upstream component that produces `chunks`. Add **Indexer** after Transformer for indexing, or **Compiler** for knowledge compilation followed by Indexer. For example:
+Connect Extractor to an upstream component that produces `chunks`. Add **Indexer** after Extractor for indexing, or **Compiler** for knowledge compilation followed by Indexer. For example:
 
-**Begin → Parser → Token chunker → Transformer → Indexer**
+**Begin → Parser → Token chunker → Extractor → Indexer**
 
 The node outputs enriched `chunks` for downstream components. Click **Save draft** on the pipeline canvas, resolve any issues shown in **Checklist**, and publish a version when the configuration is ready. Expand the pipeline under **Configuration > Parsing mode** in a test Dataset, select that published version within the dropdown, and [validate the pipeline](./test_run.md) with a representative document. Check the generated keywords, questions, tags, summaries, and metadata for the functions you enabled.

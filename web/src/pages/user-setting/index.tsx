@@ -14,23 +14,19 @@
  *  limitations under the License.
  */
 
+import { SidebarPageFrame } from '@/components/sidebar-page-frame';
 import { Outlet } from 'react-router';
 import { UserSettingCloseButton } from './components/user-setting-close-button';
 import { SideBar } from './sidebar';
 
 function UserSetting() {
   return (
-    <section className="relative size-full min-w-0 pt-16">
-      <UserSettingCloseButton />
-
-      <div className="mx-auto grid size-full max-w-5xl min-w-0 grid-cols-[4rem_minmax(0,1fr)] gap-[clamp(1rem,5vw,5rem)] px-4 pb-6 md:grid-cols-[16rem_minmax(0,1fr)] md:px-8">
-        <SideBar />
-
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <Outlet />
-        </div>
-      </div>
-    </section>
+    <SidebarPageFrame
+      sidebar={<SideBar />}
+      closeButton={<UserSettingCloseButton />}
+    >
+      <Outlet />
+    </SidebarPageFrame>
   );
 }
 

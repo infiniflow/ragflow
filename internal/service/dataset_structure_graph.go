@@ -270,15 +270,7 @@ func graphSourceChunkIDs(payload, row map[string]interface{}) []string {
 		add(row["source_chunk_ids"])
 	}
 	// dedup order-preserving
-	seen := map[string]bool{}
-	dedup := out[:0]
-	for _, s := range out {
-		if !seen[s] {
-			seen[s] = true
-			dedup = append(dedup, s)
-		}
-	}
-	return dedup
+	return common.Deduplicate(out)
 }
 
 func graphMentionCount(row map[string]interface{}) (int, bool) {
@@ -344,15 +336,7 @@ func graphSourceDocIDs(payload, row map[string]interface{}) []string {
 	if len(out) == 0 && graphStr(row["scope_kwd"]) != "dataset" {
 		add(row["doc_id"])
 	}
-	seen := map[string]bool{}
-	dedup := out[:0]
-	for _, s := range out {
-		if !seen[s] {
-			seen[s] = true
-			dedup = append(dedup, s)
-		}
-	}
-	return dedup
+	return common.Deduplicate(out)
 }
 
 // graphTemplateVersion reads the published model version that extracted a row.
@@ -1074,9 +1058,7 @@ func structureRowSourceOrder(row map[string]interface{}, order map[string]int) (
 
 func copyFilter(in map[string]interface{}) map[string]interface{} {
 	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	maps.Copy(out, in)
 	return out
 }
 

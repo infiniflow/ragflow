@@ -57,71 +57,106 @@ const apiEndpoints = {
   listInstanceModels: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
   showProviderInstance: ({
     provider_name,
     id,
+    provider_id,
   }: {
     provider_name: string;
     id: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
+    provider_id?: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${id}`,
   addInstanceModel: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
   editInstanceModel: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
-  deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
-    `${restAPIv1}/providers/${provider_name}/instances`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
+  deleteProviderInstance: ({
+    provider_name,
+    provider_id,
+  }: {
+    provider_name: string;
+    provider_id?: string;
+  }) => `${restAPIv1}/providers/${provider_id || provider_name}/instances`,
   updateProviderInstance: ({
     provider_name,
     id,
+    provider_id,
   }: {
     provider_name: string;
     id: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
+    provider_id?: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${id}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
     model_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
     model_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models/${model_name}`,
   patchInstanceModel: ({
     provider_name,
     instance_name,
     model_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
     model_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models/${model_name}`,
   deleteInstanceModels: ({
     provider_name,
     instance_name,
+    provider_id,
+    instance_id,
   }: {
     provider_name: string;
     instance_name: string;
+    provider_id?: string;
+    instance_id?: string;
   }) =>
-    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+    `${restAPIv1}/providers/${provider_id || provider_name}/instances/${instance_id || instance_name}/models`,
 
   // data source
   dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,

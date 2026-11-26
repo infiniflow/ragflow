@@ -40,8 +40,18 @@ type docxIRDocument struct {
 }
 
 type docxIRSection struct {
-	Title    string          `json:"title"`
-	Elements []docxIRElement `json:"elements"`
+	Title           string             `json:"title"`
+	Elements        []docxIRElement    `json:"elements"`
+	Header          docxIRHeaderFooter `json:"header"`
+	Footer          docxIRHeaderFooter `json:"footer"`
+	FirstPageHeader docxIRHeaderFooter `json:"first_page_header"`
+	FirstPageFooter docxIRHeaderFooter `json:"first_page_footer"`
+	EvenPageHeader  docxIRHeaderFooter `json:"even_page_header"`
+	EvenPageFooter  docxIRHeaderFooter `json:"even_page_footer"`
+}
+
+type docxIRHeaderFooter struct {
+	Content []docxIRElement `json:"content"`
 }
 
 type docxIRElement struct {
@@ -351,34 +361,15 @@ func docxHeadingLocationCaption(headings []docxHeading) string {
 	return "Table Location: " + strings.Join(titles, " > ")
 }
 
-// buildDOCXJSONSections converts an office_oxide IR JSON string into a
-// slice of structured items compatible with the chunker's JSON input
-// contract. Each item carries at least text and doc_type_kwd.
-//
-// A table carries the heading hierarchy it sits under as its caption,
-// mirroring Python's Docx.__get_nearest_title. office_oxide resolves Word
-// heading styles into element type "heading" plus a level, so the outline
-// is tracked from those elements alone.
-//
-// buildDOCXJSONSections builds sections from an office_oxide IR. The heading
-// hierarchy supplies each table's caption; a "Caption"-styled paragraph that
-// immediately precedes a table overrides that with its own text. (Paragraph-
-// style recovery used to be a temporary stopgap that re-parsed
-// word/document.xml; office_oxide now emits the style directly — see
-// yfedoseev/office_oxide#455.)
-//
-// A nil sink means a text-only parse: embedded images are skipped and no
-// media cache is required. Normal DOCX/DOC parsing always passes a sink.
+// buildDOCXJSONSections renders the body of a Word document as structured items.
 func buildDOCXJSONSections(irJSON string, sink *officeMediaSink) []map[string]any {
-	return buildDOCXJSONSectionsCore(irJSON, sink)
+	return buildDOCXJSONSectionsCore(irJSON, sink, false)
 }
 
-// buildDOCXJSONSectionsCore builds sections from an office_oxide IR. The
-// heading hierarchy supplies each table's caption; a "Caption"-styled
-// paragraph that immediately precedes a table overrides that with its own
-// text. (Paragraph-style recovery used to be a temporary stopgap that
-// re-parsed word/document.xml; office_oxide now emits the style directly.)
-func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink) []map[string]any {
+// buildDOCXJSONSectionsCore converts Office IR elements to structured items.
+// The heading hierarchy supplies body table captions, with an explicit
+// Caption-styled paragraph taking precedence. A nil sink skips embedded images.
+func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, includeHeaderFooter bool) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
@@ -447,8 +438,22 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink) []map[strin
 			}
 		}
 	}
+	emitHeaderFooter := func(parts ...docxIRHeaderFooter) {
+		bodyHeadings := headings
+		headings = nil
+		for _, part := range parts {
+			emitElements(part.Content, false)
+		}
+		headings = bodyHeadings
+	}
 	for _, sec := range ir.Sections {
+		if includeHeaderFooter {
+			emitHeaderFooter(sec.FirstPageHeader, sec.Header, sec.EvenPageHeader)
+		}
 		emitElements(sec.Elements, true)
+		if includeHeaderFooter {
+			emitHeaderFooter(sec.FirstPageFooter, sec.Footer, sec.EvenPageFooter)
+		}
 	}
 
 	// An orphan Caption-styled paragraph (no following table) is emitted as a

@@ -239,6 +239,17 @@ func (s *SearchService) GetSearchDetail(ctx context.Context, searchID string) (*
 	return search, nil
 }
 
+func (s *SearchService) GetSearchOperatorPermission(ctx context.Context, searchID string) (int32, error) {
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindSearchApp,
+		ID:   searchID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return access.PermissionMask, nil
+}
+
 // GetSearchShareDetail returns the joined share-detail payload for public
 // searchbot pages after verifying the caller can access the search app.
 func (s *SearchService) GetSearchShareDetail(ctx context.Context, searchID string) (*SearchShareDetail, error) {
@@ -541,10 +552,7 @@ type UpdateSearchRequest struct {
 }
 
 func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: permission.ResourceKindSearchApp,
-		ID:   searchID,
-	}, permission.OperationUpdate); err != nil {
+	if err := checkSearchUpdatePermission(ctx, searchID); err != nil {
 		return nil, err
 	}
 

@@ -109,8 +109,8 @@ func TestDeleteFilesAuthorizesEveryDescendantBeforeDeleting(t *testing.T) {
 	}
 
 	err := testFileService().DeleteFiles(fileTestContext(t, "user-1", "user-1"), []string{"folder"})
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("DeleteFiles error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("DeleteFiles error = %v, want resource not found for a cross-tenant descendant", err)
 	}
 	for _, id := range []string{"folder", "child-folder", "foreign-child"} {
 		if _, err := dao.NewFileDAO().GetByID(t.Context(), db, id); err != nil {
@@ -137,7 +137,7 @@ func TestFileService_CheckFileTreeAccessBatchesWideSubtrees(t *testing.T) {
 		t.Fatalf("seed wide file tree: %v", err)
 	}
 
-	root := &entity.File{ID: "tree-root", ParentID: "tree-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "/", Type: FileTypeFolder}
+	root := &entity.File{ID: "tree-root", ParentID: "tenant-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "tree", Type: FileTypeFolder}
 	if err := testFileService().checkFileTreeAccess(fileTestContext(t, "owner", "tenant-1"), root, permission.OperationDelete); err != nil {
 		t.Fatalf("check permissions for wide subtree: %v", err)
 	}

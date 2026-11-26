@@ -14,8 +14,6 @@ import (
 	"ragflow/internal/utility"
 	"strings"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 const defaultDeploymentUploadMaxBytes int64 = common.DefaultMaxMultipartRequestBodyBytes
@@ -33,9 +31,6 @@ func (s *FileService) UploadFile(ctx context.Context, parentID string, files []*
 	tenantID := permission.TenantIDFromContext(ctx)
 	if tenantID == "" {
 		tenantID = userID
-	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
-		return nil, err
 	}
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
@@ -163,12 +158,7 @@ func (s *FileService) UploadFile(ctx context.Context, parentID string, files []*
 			SourceType: "",
 		}
 
-		if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := s.fileDAO.Insert(ctx, tx, fileRecord); err != nil {
-				return err
-			}
-			return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFile, ID: fileRecord.ID})
-		}); err != nil {
+		if err = s.fileDAO.Insert(ctx, dao.DB, fileRecord); err != nil {
 			_ = storageImpl.Remove(ctx, lastFolder.ID, location)
 			return nil, fmt.Errorf("failed to insert file record: %w", err)
 		}

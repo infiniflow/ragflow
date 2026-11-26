@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -34,6 +35,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -661,28 +663,13 @@ func loadFactoryLLMInfos() []factoryLLMInfo {
 	return payload.FactoryLLMInfos
 }
 
-// locateLLMFactoriesFile finds conf/llm_factories.json by walking up from the
-// working directory and falling back to the executable's directory.
+// locateLLMFactoriesFile finds conf/llm_factories.json, in the same directory
+// ConfDir resolves (the app bundle's copy, an install beside the binary, or the
+// source tree).
 func locateLLMFactoriesFile() string {
-	candidates := []string{filepath.Join("conf", "llm_factories.json")}
-	if wd, err := os.Getwd(); err == nil {
-		dir := wd
-		for depth := 0; depth < 5; depth++ {
-			candidates = append(candidates, filepath.Join(dir, "conf", "llm_factories.json"))
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "conf", "llm_factories.json"))
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
+	path := filepath.Join(utility.ConfDir(), "llm_factories.json")
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return path
 	}
 	return ""
 }
@@ -1151,7 +1138,7 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 		if columnType.Name() != "model_type" {
 			continue
 		}
-		return strings.Contains(strings.ToLower(columnType.DatabaseTypeName()), "int"), nil
+		return common.ContainsFold(columnType.DatabaseTypeName(), "int"), nil
 	}
 	return false, nil
 }
@@ -1290,12 +1277,7 @@ func normalizeStoredModelIDs(ctx context.Context, db *gorm.DB) error {
 
 // sortedTableNames returns a stable ordering so the migration is deterministic.
 func sortedTableNames(columns map[string][]string) []string {
-	names := make([]string, 0, len(columns))
-	for name := range columns {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(columns))
 }
 
 func normalizeModelIDStringColumn(ctx context.Context, db *gorm.DB, table, column string) error {
@@ -1470,12 +1452,7 @@ func populateTenantModelIDColumns(ctx context.Context, db *gorm.DB) error {
 }
 
 func sortedTenantModelIDTables() []string {
-	names := make([]string, 0, len(tenantModelIDFields))
-	for name := range tenantModelIDFields {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(tenantModelIDFields))
 }
 
 func ensureTenantModelIDColumn(ctx context.Context, db *gorm.DB, table, column string) error {

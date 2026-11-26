@@ -63,6 +63,17 @@ func RetryDelayFromCtx(ctx context.Context) (time.Duration, bool) {
 // (used where the caller already budgets external calls itself, e.g. the
 // entity-merge disambiguator — retrying there would blow through the budget).
 func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ...int) (map[string]any, error) {
+	return genJSON(ctx, chat, req, tryUnmarshalJSONErr, retryMax...)
+}
+
+// GenJSONOrArray behaves like GenJSON, except top-level JSON arrays [...] are
+// accepted and wrapped into {"items": [...]} for callers whose contract is a
+// homogeneous item list.
+func GenJSONOrArray(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ...int) (map[string]any, error) {
+	return genJSON(ctx, chat, req, tryUnmarshalJSONOrArrayErr, retryMax...)
+}
+
+func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn func(string) (map[string]any, error), retryMax ...int) (map[string]any, error) {
 	maxRetries := jsonRetryMax
 	if len(retryMax) > 0 {
 		maxRetries = retryMax[0]
@@ -96,29 +107,34 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			lastErr = err
 		} else {
 			if repaired, repairErr := RepairJSONText(resp.Content); repairErr == nil {
-				if m, unmarshalErr := tryUnmarshalJSONErr(repaired); unmarshalErr == nil {
+				if m, unmarshalErr := unmarshalFn(repaired); unmarshalErr == nil {
 					if message, ok := failureReporter.RecoveryMessage(attempt + 1); ok {
 						runtime.ReportProgressMessage(ctx, "Compiler", message)
 					}
 					return m, nil
+				} else {
+					appcommon.Info("knowledge_compiler: GenJSON unparseable repaired candidate",
+						zap.Int("attempt", attempt),
+						zap.Int("len", len(repaired)), zap.Error(unmarshalErr))
 				}
-			}
-			candidates := jsonCandidates(resp.Content)
-			for _, candidate := range candidates {
-				if m, ok := tryUnmarshalJSON(candidate); ok {
-					return m, nil
+			} else {
+				candidates := jsonCandidates(resp.Content)
+				for _, candidate := range candidates {
+					if m, err := unmarshalFn(candidate); err == nil {
+						return m, nil
+					}
 				}
-			}
-			// A non-JSON reply must NOT be persisted/reused; discard it and
-			// immediately re-issue the call so a formatting hiccup does not
-			// abort the whole compile. Log candidate length and the unmarshal
-			// error only — the raw body may carry customer-derived content
-			// (PII), so it is deliberately excluded from the log.
-			for i, candidate := range candidates {
-				_, perr := tryUnmarshalJSONErr(candidate)
-				appcommon.Info("knowledge_compiler: GenJSON unparseable candidate",
-					zap.Int("attempt", attempt), zap.Int("candidate", i),
-					zap.Int("len", len(candidate)), zap.Error(perr))
+				// A non-JSON reply must NOT be persisted/reused; discard it and
+				// immediately re-issue the call so a formatting hiccup does not
+				// abort the whole compile. Log candidate length and the unmarshal
+				// error only — the raw body may carry customer-derived content
+				// (PII), so it is deliberately excluded from the log.
+				for i, candidate := range candidates {
+					_, perr := unmarshalFn(candidate)
+					appcommon.Info("knowledge_compiler: GenJSON unparseable candidate",
+						zap.Int("attempt", attempt), zap.Int("candidate", i),
+						zap.Int("len", len(candidate)), zap.Error(perr))
+				}
 			}
 			// Structural summary only. The body is customer-derived (PII), but
 			// the failure class is what decides the fix: a prose preamble or a
@@ -267,17 +283,22 @@ func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		// A reply that is a bare JSON array is the extraction contract with the
-		// wrapper left off. Unmarshalling it into a map always fails, so without
-		// this branch a perfectly valid extraction of two or more items is
-		// discarded; wrap it under the "items" key every extraction prompt uses.
-		if strings.HasPrefix(s, "[") {
-			var arr []any
-			if arrErr := json.Unmarshal([]byte(s), &arr); arrErr == nil {
-				return map[string]any{"items": arr}, nil
-			}
-		}
 		return nil, err
 	}
 	return m, nil
+}
+
+func tryUnmarshalJSONOrArrayErr(s string) (map[string]any, error) {
+	if m, err := tryUnmarshalJSONErr(s); err == nil {
+		return m, nil
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("empty candidate")
+	}
+	var arr []any
+	if err := json.Unmarshal([]byte(s), &arr); err == nil {
+		return map[string]any{"items": arr}, nil
+	}
+	return nil, fmt.Errorf("candidate is neither JSON object nor array")
 }

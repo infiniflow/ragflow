@@ -117,6 +117,14 @@ func maybeDispatchImage(
 	if len(binary) == 0 || len(binary) > media.ImageMaxBytes() {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
+	sourceSize := len(binary)
+	if mime := media.MetafileMIMEForExtension(strings.ToLower(filepath.Ext(filename))); mime != "" {
+		if _, raster, transcoded, err := media.TranscodeImage(ctx, mime, binary); err != nil {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: %w", err)
+		} else if transcoded {
+			binary = raster
+		}
+	}
 	// SVG carries its text in the document, so XML text is extracted first.
 	// When an image transcoder is registered for SVG, rasterize it so vision
 	// enhancement, chunk image display, and OCR fallback (when XML text is
@@ -174,6 +182,9 @@ func maybeDispatchImage(
 	}
 	if len(parsed.JSON) == 0 {
 		return parsed, true, fmt.Errorf("parser: image parser returned no image item")
+	}
+	if parsed.File != nil && len(binary) != sourceSize {
+		parsed.File["size"] = sourceSize
 	}
 	imageItem := parsed.JSON[0].ToMap()
 	if len(rasterizedData) > 0 {

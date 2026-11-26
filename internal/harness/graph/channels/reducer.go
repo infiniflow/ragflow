@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"maps"
 	"reflect"
 
 	"ragflow/internal/harness/graph/types"
@@ -92,12 +93,8 @@ func CreateReducerChannel(fieldName string, fieldType reflect.Type, reducer type
 			if aMap, ok := a.(map[string]interface{}); ok {
 				if bMap, ok := b.(map[string]interface{}); ok {
 					result := make(map[string]interface{}, len(aMap)+len(bMap))
-					for k, v := range aMap {
-						result[k] = v
-					}
-					for k, v := range bMap {
-						result[k] = v
-					}
+					maps.Copy(result, aMap)
+					maps.Copy(result, bMap)
 					return result
 				}
 			}
@@ -170,12 +167,8 @@ var (
 		if currentMap, ok := current.(map[string]interface{}); ok {
 			if updateMap, ok := update.(map[string]interface{}); ok {
 				result := make(map[string]interface{}, len(currentMap)+len(updateMap))
-				for k, v := range currentMap {
-					result[k] = v
-				}
-				for k, v := range updateMap {
-					result[k] = v
-				}
+				maps.Copy(result, currentMap)
+				maps.Copy(result, updateMap)
 				return result
 			}
 		}

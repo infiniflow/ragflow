@@ -1,9 +1,9 @@
 {
     "id": 24,
     "title": {
-        "en": "Chunk Summary",
-        "de": "Segmentzusammenfassung",
-        "zh": "总结切片"
+        "en": "Summary",
+        "de": "Zusammenfassung",
+        "zh": "摘要"
     },
     "description": {
         "en": "This template uses an LLM to generate chunk summaries for building text and vector indexes. During retrieval, summaries enhance matching, and the original chunks are returned as results.",
@@ -65,6 +65,10 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -226,6 +230,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -293,7 +301,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -330,7 +338,7 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker_0"
+                        "name": "Token Chunker"
                     },
                     "id": "TokenChunker:ModernPetsKneel",
                     "measured": {
@@ -357,7 +365,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "dragging": false,
                     "id": "Tokenizer:ShaggyShrimpsLose",
@@ -400,7 +408,7 @@
                             "top_p": 0.3
                         },
                         "label": "Extractor",
-                        "name": "Summarization"
+                        "name": "Extractor"
                     },
                     "dragging": false,
                     "id": "Extractor:SharpTaxisSay",

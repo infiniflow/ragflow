@@ -244,6 +244,45 @@ func TestRecordPageEdit_SkipsNoop(t *testing.T) {
 	}
 }
 
+// TestRecordPageEdit_RecordsAHeaderOnlyChange is the case a body diff cannot see:
+// a page whose title, summary or topic moved while the text stayed. A caller that
+// compared the whole page says so, and the entry lands with an empty diff - the
+// text did not move, so there is nothing for a renderer to show.
+func TestRecordPageEdit_RecordsAHeaderOnlyChange(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+
+	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+		DatasetID:   "kb1",
+		Slug:        "page-a",
+		PageType:    "wiki",
+		OldContent:  "same",
+		NewContent:  "same",
+		Page:        map[string]any{"content_with_weight": "same", "title_kwd": "Old Title"},
+		PageChanged: true,
+	})
+	if err != nil {
+		t.Fatalf("RecordPageEdit: %v", err)
+	}
+	if commit == nil {
+		t.Fatal("a header-only change recorded no commit")
+	}
+
+	items, err := dao.NewFileCommitItemDAO().ListByFileID(t.Context(), dao.DB, wikiFileID("kb1", "wiki", "page-a"))
+	if err != nil {
+		t.Fatalf("ListByFileID: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("got %d items, want the one entry", len(items))
+	}
+	if items[0].Operation != "modify" {
+		t.Fatalf("operation = %q, want modify", items[0].Operation)
+	}
+	if items[0].Diff == nil || *items[0].Diff != "" {
+		t.Fatalf("diff = %v, want the empty diff of an unchanged body", items[0].Diff)
+	}
+}
+
 func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
@@ -702,7 +741,109 @@ func TestPageContentsAtRecoversTheBodyBeforeTheFirstRecordedEdit(t *testing.T) {
 	}
 }
 
-// TestPageContentsUntilIncludesAPageAddedInsideTheWindow is the shape a parse
+// TestPageContentsAtRecoversTheHeadersAnEditStartedFrom pins the half a body-only
+// reversal cannot supply: the state before an edit carries the headers the parent
+// commit recorded, not the ones the edit produced. The edit's own snapshot
+// describes the page it wrote - taking its title would hand a restore a page that
+// never existed, a later header over an earlier body.
+func TestPageContentsAtRecoversTheHeadersAnEditStartedFrom(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	pageType, slug := "wiki", "page-a"
+	fileID := wikiFileID("kb1", pageType, slug)
+	const v1, v2 = "page-a v1\n", "page-a v2\n"
+
+	// The parent's snapshot is the state the edit started from. Its create_time is
+	// left empty, so the anchor cannot read it - the shape this fallback exists
+	// for: a page whose history at the anchor is not readable.
+	parentTitle := "parent"
+	parent := &entity.FileCommit{ID: "c0", FolderID: "kb1", AuthorID: "u1", Title: &parentTitle}
+	if err := dao.DB.Create(parent).Error; err != nil {
+		t.Fatalf("create parent commit: %v", err)
+	}
+	if _, location := svc.storePageSnapshot(ctx, "kb1", map[string]any{
+		"content_with_weight": v1,
+		"title_kwd":           "Old Title",
+		"summary_with_weight": "old summary",
+	}); location == "" {
+		t.Fatal("store the parent snapshot")
+	} else {
+		item := &entity.FileCommitItem{
+			ID:                   "item-c0",
+			CommitID:             "c0",
+			FileID:               fileID,
+			Operation:            "add",
+			PageTypeKwd:          &pageType,
+			SlugKwd:              &slug,
+			ContentAfterLocation: &location,
+		}
+		if err := dao.DB.Create(item).Error; err != nil {
+			t.Fatalf("create parent item: %v", err)
+		}
+	}
+
+	// The edit after the anchor: its snapshot describes the page it produced, so
+	// its headers are the after-side's.
+	editAt := int64(200)
+	parentID := "c0"
+	edit := &entity.FileCommit{ID: "c1", FolderID: "kb1", AuthorID: "u1", ParentID: &parentID}
+	edit.CreateTime = &editAt
+	if err := dao.DB.Create(edit).Error; err != nil {
+		t.Fatalf("create the edit commit: %v", err)
+	}
+	_, location := svc.storePageSnapshot(ctx, "kb1", map[string]any{
+		"content_with_weight": v2,
+		"title_kwd":           "New Title",
+		"summary_with_weight": "new summary",
+	})
+	if location == "" {
+		t.Fatal("store the edit snapshot")
+	}
+	diff := unifiedDiff(v1, v2)
+	editItem := &entity.FileCommitItem{
+		ID:                   "item-c1",
+		CommitID:             "c1",
+		FileID:               fileID,
+		Operation:            "modify",
+		PageTypeKwd:          &pageType,
+		SlugKwd:              &slug,
+		ContentAfterLocation: &location,
+		Diff:                 &diff,
+	}
+	editItem.CreateTime = &editAt
+	if err := dao.DB.Create(editItem).Error; err != nil {
+		t.Fatalf("create the edit item: %v", err)
+	}
+
+	pages, err := svc.PageContentsAt(ctx, "kb1", 100)
+	if err != nil {
+		t.Fatalf("PageContentsAt: %v", err)
+	}
+	if len(pages) != 1 {
+		t.Fatalf("got %+v, want the page the edit started from", pages)
+	}
+	page := pages[0]
+	if page.Content != v1 {
+		t.Fatalf("content = %q, want the before-side body", page.Content)
+	}
+	if page.Title != "Old Title" {
+		t.Fatalf("title = %q, want the header the parent recorded", page.Title)
+	}
+	if got := metadataStringOf(page.Page, "title_kwd"); got != "Old Title" {
+		t.Fatalf("snapshot title = %q, want the parent's", got)
+	}
+	if got := metadataStringOf(page.Page, "summary_with_weight"); got != "old summary" {
+		t.Fatalf("snapshot summary = %q, want the parent's", got)
+	}
+	// The state is held by the parent commit: a restore names that version.
+	if page.CommitID != "c0" {
+		t.Fatalf("commit id = %q, want the parent commit", page.CommitID)
+	}
+}
+
+// TestPageContentsAtRecoversTheBodyBeforeTheFirstRecordedEdit is the shape a page
 // run leaves: the version row is written when the pipeline reports the parse, and
 // the pages that parse compiled are committed a moment later. Bounded by the next
 // version, that creation belongs to the version and comes back with it.
@@ -1154,5 +1295,387 @@ func TestListPageCommits_ResolvesNicknamesInSingleBatchedLookup(t *testing.T) {
 		if row.UserNickname != wantNicknames[row.UserID] {
 			t.Errorf("author %s: expected nickname %q, got %q", row.UserID, wantNicknames[row.UserID], row.UserNickname)
 		}
+	}
+}
+
+// TestPageSlugsChangedSinceNamesPagesWithNewerCommits pins the pruning a restore
+// does before reading anything: only a page whose commit chain moved after the
+// anchor can differ from the state the version describes.
+func TestPageSlugsChangedSinceNamesPagesWithNewerCommits(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	ctx := t.Context()
+	seed := func(id, slugKwd, pageType string, createdAt int64) {
+		t.Helper()
+		if err := db.Create(&entity.FileCommit{
+			ID: id, FolderID: "kb1", Message: id, FileCount: 1, CreateTime: &createdAt,
+		}).Error; err != nil {
+			t.Fatalf("seed commit %s: %v", id, err)
+		}
+		if err := db.Create(&entity.FileCommitItem{
+			ID: "item-" + id, CommitID: id, FileID: "kb1/" + pageType + "/" + slugKwd, Operation: "modify",
+			SlugKwd: &slugKwd, PageTypeKwd: &pageType, CreateTime: &createdAt,
+		}).Error; err != nil {
+			t.Fatalf("seed item %s: %v", id, err)
+		}
+	}
+	// The history stores the bare slug beside the page type, the way RecordPageEdit
+	// writes it, but slug_kwd also arrives with the prefix already in it. Both name
+	// one page.
+	seed("c-old", "alpha", "entity", 1000)
+	seed("c-new", "beta", "entity", 3000)
+	seed("c-new-prefixed", "entity/gamma", "entity", 3000)
+
+	changed, err := NewFileCommitService().PageSlugsChangedSince(ctx, "kb1", 2000)
+	if err != nil {
+		t.Fatalf("PageSlugsChangedSince: %v", err)
+	}
+	for _, key := range []string{"entity/beta", "entity/gamma"} {
+		if _, ok := changed[key]; !ok {
+			t.Errorf("expected %s in the changed set, got %v", key, changed)
+		}
+	}
+	if _, ok := changed["entity/alpha"]; ok {
+		t.Errorf("expected entity/alpha to be pruned away, got %v", changed)
+	}
+}
+
+// TestPageSlugsChangedSinceMatchesTheKeyARestoreLooksUp guards the regression the
+// pruning first shipped with: slug_kwd holds the bare slug while the restore builds
+// its lookup key from page type and slug. When the two disagreed every page was
+// pruned away, so a restore wrote nothing back and recorded no new page version.
+func TestPageSlugsChangedSinceMatchesTheKeyARestoreLooksUp(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+	if _, err := svc.RecordPageEdit(ctx, PageEditCommitInput{
+		DatasetID:  "kb1",
+		Slug:       "alpha",
+		PageType:   "entity",
+		Title:      "Alpha",
+		AuthorID:   "u1",
+		OldContent: "",
+		NewContent: "# Alpha",
+	}); err != nil {
+		t.Fatalf("RecordPageEdit: %v", err)
+	}
+
+	changed, err := svc.PageSlugsChangedSince(ctx, "kb1", 0)
+	if err != nil {
+		t.Fatalf("PageSlugsChangedSince: %v", err)
+	}
+	pages, err := svc.PageContentsUntil(ctx, "kb1", time.Now().Add(time.Hour).UnixMilli(), 0)
+	if err != nil {
+		t.Fatalf("PageContentsUntil: %v", err)
+	}
+	if len(pages) != 1 {
+		t.Fatalf("pages at the anchor = %d, want 1", len(pages))
+	}
+	key := WikiPageKey(pages[0].PageType, pages[0].Slug)
+	if _, ok := changed[key]; !ok {
+		t.Fatalf("the changed set %v does not hold %q, the key a restore looks up", changed, key)
+	}
+}
+
+// seedPageCommitNamedByFileID writes a page commit whose item carries only the file
+// key, with no page columns to name its page. The page is still named by that key -
+// the history lists it - so everything that numbers or prunes pages has to read it
+// back.
+func seedPageCommitNamedByFileID(t *testing.T, id string, at int64, fileID, operation string) {
+	t.Helper()
+	title := "edit " + id
+	commit := &entity.FileCommit{ID: id, FolderID: "kb1", Message: title, AuthorID: "u1", Title: &title}
+	commit.CreateTime = &at
+	if err := dao.DB.Create(commit).Error; err != nil {
+		t.Fatalf("create commit %s: %v", id, err)
+	}
+	item := &entity.FileCommitItem{
+		ID:        "item-" + id,
+		CommitID:  id,
+		FileID:    fileID,
+		Operation: operation,
+	}
+	item.CreateTime = &at
+	if err := dao.DB.Create(item).Error; err != nil {
+		t.Fatalf("create commit item %s: %v", id, err)
+	}
+}
+
+// TestListPageCommitsNumbersARowWrittenBeforeThePageColumns pins the chain the
+// history numbers: the entries are listed by their file key, so an entry that
+// carries only that key is still one of them and has to be counted. Numbering the
+// page columns instead skipped it, and every later edit then read one version too
+// low.
+func TestListPageCommitsNumbersARowWrittenBeforeThePageColumns(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	seedPageCommitNamedByFileID(t, "c1", 100, "kb1/wiki/page-a", "add")
+	seedPageCommit(t, "c2", 200, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/h2", "page-a v2")
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "wiki", "page-a", 1, 10)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("page history = %d rows (total %d), want 2", len(rows), total)
+	}
+	if rows[0].Version == nil || *rows[0].Version != 2 {
+		t.Errorf("newest edit version = %v, want 2", derefVersion(rows[0].Version))
+	}
+	if rows[1].Version == nil || *rows[1].Version != 1 {
+		t.Errorf("first edit version = %v, want 1", derefVersion(rows[1].Version))
+	}
+}
+
+// TestListPageCommitsDoesNotCountAnotherPageSharingTheSlug pins the boundary of
+// the chain: a page of another type whose bare slug happens to equal this page's
+// full slug is a different page, and its edits do not number this one.
+func TestListPageCommitsDoesNotCountAnotherPageSharingTheSlug(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	// Another page type, whose bare slug is this page's "page_type/slug" form.
+	seedPageCommit(t, "other", 100, "kb1/topic/entity/alpha", "topic", "entity/alpha", ".wiki_commits/h1", "another page")
+	seedPageCommit(t, "c1", 200, "kb1/entity/alpha", "entity", "alpha", ".wiki_commits/h2", "this page")
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "entity", "alpha", 1, 10)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 1 || len(rows) != 1 {
+		t.Fatalf("page history = %d rows (total %d), want 1", len(rows), total)
+	}
+	if rows[0].Version == nil || *rows[0].Version != 1 {
+		t.Errorf("version = %v, want 1: the other page's edit was counted", derefVersion(rows[0].Version))
+	}
+}
+
+// TestTheChainNumbersExactlyWhatTheHistoryLists pins the numbering contract: the
+// position shown beside an entry is its index among the rows the listing returns,
+// so an item that names the page through its columns but sits under another file
+// key must not take a position - the listing does not return it either, and
+// counting it would shift every number after it.
+func TestTheChainNumbersExactlyWhatTheHistoryLists(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	// Its page columns name this page, its file key does not: the history cannot
+	// reach it, so the chain must not count it.
+	seedPageCommit(t, "stray", 100, "kb1/wiki/page-a-old", "wiki", "page-a", ".wiki_commits/s1", "stray")
+	seedPageCommit(t, "c1", 200, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/h1", "page-a v1")
+	seedPageCommit(t, "c2", 300, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/h2", "page-a v2")
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "wiki", "page-a", 1, 10)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("page history = %d rows (total %d), want 2", len(rows), total)
+	}
+	if rows[0].Version == nil || *rows[0].Version != 2 {
+		t.Errorf("newest edit version = %v, want 2", derefVersion(rows[0].Version))
+	}
+	if rows[1].Version == nil || *rows[1].Version != 1 {
+		t.Errorf("first edit version = %v, want 1", derefVersion(rows[1].Version))
+	}
+}
+
+// TestPageSlugsChangedSinceNamesARowWrittenBeforeThePageColumns is the pruning
+// half of the same shape: the restore only reads a page whose history moved, so a
+// edit that is not named here is left in place - the restore reports success and the
+// page keeps the later body.
+func TestPageSlugsChangedSinceNamesARowWrittenBeforeThePageColumns(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	seedPageCommitNamedByFileID(t, "c1", 200, "kb1/wiki/page-a", "modify")
+
+	changed, err := svc.PageSlugsChangedSince(ctx, "kb1", 100)
+	if err != nil {
+		t.Fatalf("PageSlugsChangedSince: %v", err)
+	}
+	if _, ok := changed[WikiPageKey("wiki", "page-a")]; !ok {
+		t.Fatalf("the changed set %v does not name wiki/page-a", changed)
+	}
+}
+
+// TestPageCommitAtNamesTheNewestEditAtTheAnchor covers the lookup an entry without
+// a commit id resolves through: the page's newest commit at or before the version's
+// moment, and nothing when the page did not exist then. The chain is the one the
+// version panel and a restore number pages from.
+func TestPageCommitAtNamesTheNewestEditAtTheAnchor(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	seedPageCommit(t, "c1", 100, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/h1", "page-a v1")
+	seedPageCommit(t, "c2", 200, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/h2", "page-a v2")
+	seedPageDelete(t, "c3", 300, "kb1/wiki/page-a", "wiki", "page-a")
+
+	chains, err := svc.PageChains(ctx, "kb1", []PageRef{{PageType: "wiki", Slug: "page-a"}})
+	if err != nil {
+		t.Fatalf("PageChains: %v", err)
+	}
+	chain := chains[WikiPageKey("wiki", "page-a")]
+	if len(chain) != 3 {
+		t.Fatalf("chain = %d entries, want 3", len(chain))
+	}
+
+	for _, tt := range []struct {
+		name   string
+		anchor int64
+		want   string
+	}{
+		{"after the first edit", 150, "c1"},
+		{"after the second edit", 250, "c2"},
+		{"before the page existed", 50, ""},
+		// A deletion at the anchor means the page did not exist then: naming the
+		// edit it removed would claim a state the version never held.
+		{"past the deletion", 350, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := PageCommitAt(chain, tt.anchor)
+			if tt.want == "" {
+				if ok {
+					t.Fatalf("commit at %d = %q, want none", tt.anchor, got)
+				}
+				return
+			}
+			if !ok || got != tt.want {
+				t.Fatalf("commit at %d = %q ok=%v, want %q", tt.anchor, got, ok, tt.want)
+			}
+		})
+	}
+}
+
+// TestPageCommitPositionsNumbersEveryPageFromOneChainRead pins the batched answer
+// against what each page's history shows. A dataset version and a restore both name
+// many pages at once, so the chains are read together - and the numbers must not
+// depend on whether they were read together or one page at a time.
+func TestPageCommitPositionsNumbersEveryPageFromOneChainRead(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	seedPageCommit(t, "a1", 100, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/a1", "a v1")
+	seedPageCommit(t, "b1", 200, "kb1/wiki/page-b", "wiki", "page-b", ".wiki_commits/b1", "b v1")
+	seedPageCommit(t, "a2", 300, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/a2", "a v2")
+	seedPageCommit(t, "b2", 400, "kb1/wiki/page-b", "wiki", "page-b", ".wiki_commits/b2", "b v2")
+
+	pages := []PageRef{{PageType: "wiki", Slug: "page-a"}, {PageType: "wiki", Slug: "page-b"}}
+	positions, err := svc.PageCommitPositions(ctx, "kb1", pages)
+	if err != nil {
+		t.Fatalf("PageCommitPositions: %v", err)
+	}
+
+	for _, tt := range []struct {
+		slug string
+		want map[string]int
+	}{
+		{"page-a", map[string]int{"a1": 1, "a2": 2}},
+		{"page-b", map[string]int{"b1": 1, "b2": 2}},
+	} {
+		key := WikiPageKey("wiki", tt.slug)
+		got := positions[key]
+		if len(got) != len(tt.want) {
+			t.Fatalf("%s: positions = %v, want %v", key, got, tt.want)
+		}
+		for id, want := range tt.want {
+			if got[id] != want {
+				t.Errorf("%s: %s numbered %d, want %d", key, id, got[id], want)
+			}
+		}
+		// The listing beside it has to show the same numbers: the reader compares
+		// the two, and each page numbers its own edits from v1.
+		rows, _, err := svc.ListPageCommits(ctx, "kb1", "wiki", tt.slug, 1, 10)
+		if err != nil {
+			t.Fatalf("ListPageCommits(%s): %v", tt.slug, err)
+		}
+		if len(rows) == 0 {
+			t.Fatalf("%s: the history listed no rows", key)
+		}
+		for _, row := range rows {
+			if row.Version == nil {
+				t.Fatalf("%s: %s listed without a version", key, row.ID)
+			}
+			if *row.Version != got[row.ID] {
+				t.Errorf("%s: history shows %s as v%d, the chain numbers it %d",
+					key, row.ID, *row.Version, got[row.ID])
+			}
+		}
+	}
+
+	// A page named twice in one batch is read once, and its numbers must not shift.
+	twice, err := svc.PageCommitPositions(ctx, "kb1", []PageRef{pages[0], pages[0]})
+	if err != nil {
+		t.Fatalf("PageCommitPositions with a repeated page: %v", err)
+	}
+	if got := twice[WikiPageKey("wiki", "page-a")]; len(got) != 2 {
+		t.Errorf("a page named twice numbered %d commits, want 2", len(got))
+	}
+}
+
+func derefVersion(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+// TestPageContentsUntilYieldsOneEntryPerPage pins the contract the replay relies
+// on: one entry per page, whichever file key names it. Two keys for one page would
+// otherwise come back as two entries and be replayed as two writes and two versions
+// of one edit.
+func TestPageContentsUntilYieldsOneEntryPerPage(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := t.Context()
+
+	seedPageCommit(t, "c1", 100, "kb1/wiki/page-a", "wiki", "page-a", ".wiki_commits/h1", "page-a v1")
+
+	// The same page, named by a key composed from the file id: the page columns are
+	// what identify it, and its body is the newer one.
+	title := "edit c2"
+	commit := &entity.FileCommit{ID: "c2", FolderID: "kb1", Message: title, AuthorID: "u1", Title: &title}
+	at := int64(200)
+	commit.CreateTime = &at
+	if err := dao.DB.Create(commit).Error; err != nil {
+		t.Fatalf("create commit c2: %v", err)
+	}
+	if err := storage.GetStorageFactory().GetStorage().Put(ctx, "kb1", ".wiki_commits/h2", []byte("page-a v2")); err != nil {
+		t.Fatalf("store body for c2: %v", err)
+	}
+	pageType, slug, location := "wiki", "page-a", ".wiki_commits/h2"
+	item := &entity.FileCommitItem{
+		ID:                   "item-c2",
+		CommitID:             "c2",
+		FileID:               "kb1/wiki/other-key/page-a",
+		Operation:            "modify",
+		PageTypeKwd:          &pageType,
+		SlugKwd:              &slug,
+		ContentAfterLocation: &location,
+	}
+	item.CreateTime = &at
+	if err := dao.DB.Create(item).Error; err != nil {
+		t.Fatalf("create commit item c2: %v", err)
+	}
+
+	pages, err := svc.PageContentsUntil(ctx, "kb1", 1000, 0)
+	if err != nil {
+		t.Fatalf("PageContentsUntil: %v", err)
+	}
+	if len(pages) != 1 {
+		t.Fatalf("pages at the anchor = %d, want one entry per page", len(pages))
+	}
+	if pages[0].Slug != "page-a" {
+		t.Errorf("page slug = %q, want page-a", pages[0].Slug)
+	}
+	// The newest of the two rows is the state the version held.
+	if pages[0].Content != "page-a v2" {
+		t.Errorf("page body = %q, want the newest edit's", pages[0].Content)
 	}
 }

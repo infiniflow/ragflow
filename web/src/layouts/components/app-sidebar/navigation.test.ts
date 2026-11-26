@@ -46,6 +46,7 @@ describe('getActiveNavItemKey', () => {
     ['/compilation-templates/edit-next/1', NavItemKey.Studio],
     ['/files', NavItemKey.Library],
     ['/files/skills', NavItemKey.Library],
+    ['/team', NavItemKey.Team],
   ])('maps %s to %s', (pathname, expected) => {
     expect(getActiveNavItemKey(pathname)).toBe(expected);
   });
@@ -53,7 +54,6 @@ describe('getActiveNavItemKey', () => {
   it('leaves integrations children to the integrations group', () => {
     expect(getActiveNavItemKey('/integrations/model')).toBeUndefined();
     expect(getActiveNavItemKey('/integrations/mcp')).toBeUndefined();
-    expect(getActiveNavItemKey('/team')).toBeUndefined();
   });
 
   it('activates nothing for profile and api settings', () => {
@@ -72,12 +72,12 @@ describe('getActiveIntegrationKey', () => {
     ],
     [`${Routes.Integrations}${Routes.ChatChannel}`, 'chat-channel'],
     [`${Routes.Integrations}${Routes.Mcp}`, 'mcp'],
-    ['/team', 'team'],
   ])('maps %s to %s', (pathname, expected) => {
     expect(getActiveIntegrationKey(pathname)).toBe(expected);
   });
 
   it('does not match non-integration routes', () => {
+    expect(getActiveIntegrationKey('/team')).toBeUndefined();
     expect(getActiveIntegrationKey('/user-setting/profile')).toBeUndefined();
   });
 });

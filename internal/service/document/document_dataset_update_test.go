@@ -292,7 +292,7 @@ func TestUpdateDatasetDocumentSelectionWithoutConfig(t *testing.T) {
 }
 
 func TestUpdateDatasetDocumentChunkMethodAcceptsCurrentTemplates(t *testing.T) {
-	for _, file := range []struct{ method, name string }{{"general", "report.docx"}, {"audio", "recording.mp3"}} {
+	for _, file := range []struct{ method, name string }{{"general", "report.docx"}, {"audio", "recording.mp3"}, {"outline", "report.txt"}, {"summary", "report.txt"}, {"enriched", "report.txt"}} {
 		t.Run(file.method, func(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)

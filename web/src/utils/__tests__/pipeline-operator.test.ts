@@ -1,6 +1,7 @@
 import {
   buildOperatorNode,
   getOperatorType,
+  mergeOperatorFormWithPrefilledVisionModel,
   transformApiConfigToForm,
   transformFormConfigToApi,
 } from '@/utils/pipeline-operator';
@@ -361,5 +362,43 @@ describe('TitleChunker per-method config round trip', () => {
     });
     expect(form.hierarchyRules).toEqual([{ levels: [{ expression: '^##' }] }]);
     expect(form.groupRules).toEqual([{ levels: [{ expression: '^##' }] }]);
+  });
+});
+
+describe('mergeOperatorFormWithPrefilledVisionModel', () => {
+  const nodeForm = {
+    enable_vision_enhancement: true,
+    vlm: { llm_id: 'default-vlm' },
+    setups: [{ fileFormat: 'pdf' }],
+  };
+
+  it('keeps the resolved model when the saved model is empty', () => {
+    const merged = mergeOperatorFormWithPrefilledVisionModel(
+      'Parser:parse',
+      nodeForm,
+      { enable_vision_enhancement: true, vlm: { llm_id: '' } },
+    );
+
+    expect(merged.vlm?.llm_id).toBe('default-vlm');
+  });
+
+  it('lets a saved model win', () => {
+    const merged = mergeOperatorFormWithPrefilledVisionModel(
+      'Parser:parse',
+      nodeForm,
+      { enable_vision_enhancement: true, vlm: { llm_id: 'model-B' } },
+    );
+
+    expect(merged.vlm?.llm_id).toBe('model-B');
+  });
+
+  it('leaves non-parser operators unchanged', () => {
+    const merged = mergeOperatorFormWithPrefilledVisionModel(
+      'TitleChunker',
+      { vision: { llm_id: 'default-vlm' } },
+      { vision: { enabled: true, llm_id: '' } },
+    );
+
+    expect(merged.vision?.llm_id).toBe('');
   });
 });

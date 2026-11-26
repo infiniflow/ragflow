@@ -129,6 +129,7 @@ const ReadonlyEdgeTypes = {
 };
 
 interface IProps {
+  className?: string;
   drawerVisible?: boolean;
   hideDrawer?: () => void;
   readOnly?: boolean;
@@ -137,6 +138,7 @@ interface IProps {
 const NoopDrawer = () => {};
 
 function AgentCanvas({
+  className,
   drawerVisible = false,
   hideDrawer = NoopDrawer,
   readOnly = false,
@@ -322,7 +324,7 @@ function AgentCanvas({
       currentEventListWithoutMessageById,
     });
   return (
-    <div className={cn(styles.canvasWrapper, 'pr-5 pb-5')}>
+    <div className={cn(styles.canvasWrapper, 'h-[calc(100%-64px)]', className)}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         style={{ position: 'absolute', top: 10, left: 0 }}

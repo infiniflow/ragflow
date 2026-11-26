@@ -5565,7 +5565,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	// We need a local-source file so the deletion path is exercised.
 	loc := "doc.pdf"
 	testFile := &entity.File{
-		ID: "file-1", ParentID: "kb-1", TenantID: "tenant-1", CreatedBy: "user-1",
+		ID: "file-1", ParentID: "kb-1", UserID: "user-1", TenantID: "tenant-1", CreatedBy: "user-1",
 		Name: "test.pdf", Location: &loc, SourceType: "", Type: "pdf",
 	}
 	if err := dao.DB.Create(testFile).Error; err != nil {

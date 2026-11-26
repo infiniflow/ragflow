@@ -246,6 +246,11 @@ export interface IWikiCommit {
   title: string;
   comments: string;
   user_id: string;
+  // version is the page's own version: the edit's position in the page's commit
+  // chain, so the history can number the edit "3". Absent when the chain does not
+  // place the commit - it was pruned, or the page is not in it - and the item then
+  // simply shows no number.
+  version?: number;
   create_time: number;
   create_date: string;
   user_nickname: string;

@@ -17,11 +17,61 @@
 package service
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/progressstore"
 )
+
+type recordedBegin struct {
+	id, docID, datasetID, attemptID string
+	startedAt                       time.Time
+}
+
+type fakeProgressBeginner struct{ calls []recordedBegin }
+
+func (f *fakeProgressBeginner) BeginAttempt(_ context.Context, id, docID, datasetID, attemptID string, startedAt time.Time) bool {
+	f.calls = append(f.calls, recordedBegin{id, docID, datasetID, attemptID, startedAt})
+	return true
+}
+
+func TestBeginProgressAttemptUsesContextToken(t *testing.T) {
+	logID := "run1"
+	e := &Ingestor{deps: &ingestion.Deps{}}
+	task := &entity.IngestionTask{DocumentID: "doc1", DatasetID: "ds1", PipelineLogID: &logID}
+	beginner := &fakeProgressBeginner{}
+
+	e.beginProgressAttempt(progressstore.WithAttempt(context.Background(), "attempt-7"), task, beginner)
+
+	if len(beginner.calls) != 1 {
+		t.Fatalf("BeginAttempt calls = %d, want 1", len(beginner.calls))
+	}
+	got := beginner.calls[0]
+	if got.id != "run1" || got.docID != "doc1" || got.datasetID != "ds1" || got.attemptID != "attempt-7" {
+		t.Fatalf("begin call = %+v, want run1/doc1/ds1/attempt-7", got)
+	}
+	if got.startedAt.IsZero() {
+		t.Fatal("attempt start time must be stamped")
+	}
+}
+
+func TestBeginProgressAttemptSkipsWithoutTokenOrRun(t *testing.T) {
+	logID := "run1"
+	e := &Ingestor{deps: &ingestion.Deps{}}
+	beginner := &fakeProgressBeginner{}
+
+	// No attempt token means this caller predates attempt fencing.
+	e.beginProgressAttempt(context.Background(), &entity.IngestionTask{DocumentID: "doc1", DatasetID: "ds1", PipelineLogID: &logID}, beginner)
+	// No run identity means there is no KV key to open.
+	e.beginProgressAttempt(progressstore.WithAttempt(context.Background(), "attempt-7"), &entity.IngestionTask{DocumentID: "doc1", DatasetID: "ds1"}, beginner)
+
+	if len(beginner.calls) != 0 {
+		t.Fatalf("BeginAttempt calls = %+v, want none", beginner.calls)
+	}
+}
 
 func TestPhaseLabelMapping(t *testing.T) {
 	cases := []struct {

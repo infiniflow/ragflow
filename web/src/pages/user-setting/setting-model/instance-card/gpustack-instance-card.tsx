@@ -313,7 +313,7 @@ export const GPUStackInstanceCard = forwardRef<
     isFetchedAfterMount: instanceModelsFetched,
   } = useFetchInstanceModels(
     isDraft ? providerName : instance.provider_id || providerName,
-    isDraft ? '' : instance.instance_name,
+    isDraft ? '' : instance.id,
   );
   const { loading: discovering, listProviderModels } = useListProviderModels();
   const { addProviderInstance } = useAddProviderInstance();
@@ -323,7 +323,8 @@ export const GPUStackInstanceCard = forwardRef<
   const { patchInstanceModel } = usePatchInstanceModel();
   const handleDelete = useDeleteInstance(
     providerName,
-    instance.instance_name,
+    instance.provider_id,
+    instance.id,
     isDraft,
     onDelete,
   );
@@ -474,6 +475,8 @@ export const GPUStackInstanceCard = forwardRef<
           addInstanceModel({
             provider_name: providerName,
             instance_name: instance.instance_name,
+            provider_id: instance.provider_id,
+            instance_id: instance.id,
             model_name: model.name,
             model_type: modelTypesFromKind(model.kind),
             max_tokens: model.maxTokens,
@@ -490,7 +493,9 @@ export const GPUStackInstanceCard = forwardRef<
     try {
       const ret = await updateProviderInstance({
         provider_name: providerName,
+        provider_id: instance.provider_id,
         id: instance.id,
+        instance_id: instance.id,
         instance_name: instance.instance_name,
         base_url: baseUrl.trim(),
         ...(apiKey ? { api_key: apiKey } : {}),
@@ -529,6 +534,8 @@ export const GPUStackInstanceCard = forwardRef<
       deleteInstanceModels({
         provider_name: providerName,
         instance_name: instance.instance_name,
+        provider_id: instance.provider_id,
+        instance_id: instance.id,
         model_name: [name],
       }),
     [deleteInstanceModels, instance.instance_name, providerName],
@@ -539,6 +546,8 @@ export const GPUStackInstanceCard = forwardRef<
       return patchInstanceModel({
         provider_name: providerName,
         instance_name: instance.instance_name,
+        provider_id: instance.provider_id,
+        instance_id: instance.id,
         model_name: name,
         max_tokens: saved?.max_tokens ?? 0,
         model_type: modelTypesFromKind(kind),

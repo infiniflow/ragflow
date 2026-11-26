@@ -230,7 +230,11 @@ func (w engineWriter) recordWikiPageRemovals(ctx context.Context, tenant, kb str
 				"available_int": 1,
 				"type_kwd":      compileKwdWikiPage,
 			},
-			SelectFields: []string{"id", "slug_kwd", "page_type_kwd", "title_kwd", "content_with_weight"},
+			// The shape columns are what names the page: WikiPageCategory reads
+			// entity_type_kwd (new rows) or page_type_kwd (old ones), and
+			// CompilationRowType reads compile_kwd/type_kwd. Without them a row the
+			// compiler wrote looks like a non-page and is dropped below.
+			SelectFields: []string{"id", "slug_kwd", "page_type_kwd", "entity_type_kwd", "compile_kwd", "type_kwd", "title_kwd", "content_with_weight", "source_doc_ids"},
 			Limit:        len(batchIDs),
 		})
 		if err != nil {
@@ -238,8 +242,11 @@ func (w engineWriter) recordWikiPageRemovals(ctx context.Context, tenant, kb str
 				zap.String("kb_id", kb), zap.Error(err))
 			continue
 		}
+		// One attribution lookup per batch, not per page: a delete can name
+		// hundreds of pages at once.
+		docAuthors, owner := pageCommitActors(ctx, w.db, kb, pageCommitDocIDs(res.Chunks...))
 		for _, row := range res.Chunks {
-			w.recordWikiPageRemoval(ctx, kb, row, comment)
+			w.recordWikiPageRemoval(ctx, kb, row, comment, docAuthors, owner)
 		}
 	}
 }
@@ -266,9 +273,17 @@ func (w engineWriter) recordAllWikiPageRemovals(ctx context.Context, tenant, kb 
 				"available_int": 1,
 				"type_kwd":      rowTypes,
 			},
-			SelectFields: []string{"id", "slug_kwd", "page_type_kwd", "title_kwd", "content_with_weight"},
-			Limit:        batchSize,
-			Offset:       offset,
+			// The shape columns are what names the page: WikiPageCategory reads
+			// entity_type_kwd (new rows) or page_type_kwd (old ones), and
+			// CompilationRowType reads compile_kwd/type_kwd. Without them a row the
+			// compiler wrote looks like a non-page and is dropped below.
+			SelectFields: []string{"id", "slug_kwd", "page_type_kwd", "entity_type_kwd", "compile_kwd", "type_kwd", "title_kwd", "content_with_weight", "source_doc_ids"},
+			// Offset paging needs a total order or the engine may hand the same row
+			// back twice and skip another between requests, and a page skipped here
+			// never gets the removal commit that would keep it out of a later restore.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Limit:   batchSize,
+			Offset:  offset,
 		})
 		if err != nil {
 			common.Warn("knowledge_compile: failed to enumerate the pages a clear removes",
@@ -278,8 +293,9 @@ func (w engineWriter) recordAllWikiPageRemovals(ctx context.Context, tenant, kb 
 		if len(res.Chunks) == 0 {
 			return
 		}
+		docAuthors, owner := pageCommitActors(ctx, w.db, kb, pageCommitDocIDs(res.Chunks...))
 		for _, row := range res.Chunks {
-			w.recordWikiPageRemoval(ctx, kb, row, comment)
+			w.recordWikiPageRemoval(ctx, kb, row, comment, docAuthors, owner)
 		}
 		if len(res.Chunks) < batchSize {
 			return
@@ -291,28 +307,39 @@ func (w engineWriter) recordAllWikiPageRemovals(ctx context.Context, tenant, kb 
 // recordWikiPageRemoval records one page leaving the dataset. A section row is
 // not a page: it is part of one, and its removal is what removing the page
 // already says.
-func (w engineWriter) recordWikiPageRemoval(ctx context.Context, kb string, row map[string]any, comment string) {
+func (w engineWriter) recordWikiPageRemoval(ctx context.Context, kb string, row map[string]any, comment string, docAuthors map[string]string, owner string) {
 	if types.CompilationRowType(row) != compileKwdWikiPage {
 		return
 	}
-	slugKwd := kccommon.MetaString(row, "slug_kwd")
-	pageType := kccommon.MetaString(row, "page_type_kwd")
-	if slugKwd == "" || pageType == "" {
+	// The page is named the way every other page path names it: WikiPageCategory
+	// reads the category from whichever column carries it - entity_type_kwd beside
+	// compile_kwd="wiki", or page_type_kwd - and composes the bare slug from the
+	// stored full form. Reading page_type_kwd directly misses every row the
+	// compiler writes, so a page leaving the dataset leaves no commit behind and a
+	// restore cannot put it back.
+	target, ok := wikiPageCommitTargetForRow(
+		types.WikiPageCategory(row),
+		pageEngineString(row["slug_kwd"]),
+	)
+	if !ok {
 		return
 	}
-	slug := strings.TrimPrefix(slugKwd, pageType+"/")
 	if _, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
-		DatasetID:  kb,
-		Slug:       slug,
-		PageType:   pageType,
-		Title:      kccommon.MetaString(row, "title_kwd"),
-		Comments:   comment,
+		DatasetID: kb,
+		Slug:      target.bareSlug,
+		PageType:  target.pageType,
+		Title:     kccommon.MetaString(row, "title_kwd"),
+		Comments:  comment,
+		// Same rule as a generated revision: the uploader of the page's source
+		// documents, else the dataset's owner. A document-delete removal usually
+		// has no document row left to read, and the owner names the run then.
+		AuthorID:   pageCommitAuthor(pageCommitDocIDs(row), docAuthors, owner),
 		OldContent: kccommon.MetaString(row, "content_with_weight"),
 		NewContent: "",
 	}); err != nil {
 		common.Warn("knowledge_compile: failed to record a Wiki page removal",
 			zap.String("kb_id", kb),
-			zap.String("slug", slugKwd),
+			zap.String("slug", target.fullSlug),
 			zap.Error(err))
 	}
 }
@@ -549,6 +576,11 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 	if w.commitService == nil {
 		return
 	}
+	metas := make([]map[string]any, 0, len(products))
+	for _, product := range products {
+		metas = append(metas, product.Meta)
+	}
+	docAuthors, owner := pageCommitActors(ctx, w.db, kb, pageCommitDocIDs(metas...))
 	seen := make(map[string]struct{})
 	for _, product := range products {
 		target, ok := wikiPageCommitTargetForProduct(product)
@@ -561,11 +593,15 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 		seen[target.key] = struct{}{}
 
 		_, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
-			DatasetID:  kb,
-			Slug:       target.bareSlug,
-			PageType:   target.pageType,
-			Title:      "Regenerated by artifact compilation",
-			Comments:   "Auto-update via incremental wiki compilation",
+			DatasetID: kb,
+			Slug:      target.bareSlug,
+			PageType:  target.pageType,
+			Title:     "Regenerated by artifact compilation",
+			Comments:  "Auto-update via incremental wiki compilation",
+			// A compile runs on a worker whose context carries no request
+			// identity, so the revision names the user whose documents produced
+			// the page instead of leaving the history's author blank.
+			AuthorID:   pageCommitAuthor(pageCommitDocIDs(product.Meta), docAuthors, owner),
 			OldContent: existing[target.key],
 			NewContent: product.Content,
 			// The whole generated page, so a restore of this version brings back
@@ -579,6 +615,109 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 				zap.Error(err))
 		}
 	}
+}
+
+// pageCommitDocIDs unions the source document ids the given page metadata maps
+// name, in first-seen order. A page row and a page product carry the same list,
+// so both a generated revision and a removal read their sources the same way.
+func pageCommitDocIDs(metas ...map[string]any) []string {
+	docIDs := make([]string, 0, len(metas))
+	seen := make(map[string]struct{}, len(metas))
+	for _, meta := range metas {
+		for _, docID := range kccommon.MetaStringSlice(meta, "source_doc_ids") {
+			if docID == "" {
+				continue
+			}
+			if _, duplicate := seen[docID]; duplicate {
+				continue
+			}
+			seen[docID] = struct{}{}
+			docIDs = append(docIDs, docID)
+		}
+	}
+	return docIDs
+}
+
+// pageCommitActors reads the attribution a page revision needs: the uploader of
+// every source document in the batch, plus the dataset's owner as the fallback
+// for a run the documents cannot name. Both lookups are batched once per batch
+// rather than per page: a merge can generate hundreds of pages and a clear can
+// remove as many.
+//
+// The compile worker executes on behalf of whoever uploaded and parsed the
+// documents, but its context is the worker's, so the identity can only be
+// recovered from the rows the batch was built from.
+//
+// The connection is the writer's, injected at assembly time: the ingestion layers
+// do not resolve the process-wide dao.DB themselves (see the architecture test).
+func pageCommitActors(ctx context.Context, db *gorm.DB, kb string, docIDs []string) (map[string]string, string) {
+	if db == nil {
+		return nil, ""
+	}
+	authors := make(map[string]string, len(docIDs))
+	if len(docIDs) > 0 {
+		var rows []struct {
+			ID        string
+			CreatedBy string
+		}
+		if err := db.WithContext(ctx).
+			Model(&entity.Document{}).
+			Select("id", "created_by").
+			Where("id IN ?", docIDs).
+			Scan(&rows).Error; err != nil {
+			common.Warn("knowledge_compile: failed to read the uploaders of a Wiki page's source documents",
+				zap.String("kb_id", kb),
+				zap.Error(err))
+		}
+		for _, row := range rows {
+			if row.CreatedBy != "" {
+				authors[row.ID] = row.CreatedBy
+			}
+		}
+	}
+	return authors, datasetOwner(ctx, db, kb)
+}
+
+// datasetOwner names the user a generated revision falls back to: the dataset's
+// creator, who stands for a run whose pages no single uploader can claim.
+func datasetOwner(ctx context.Context, db *gorm.DB, kb string) string {
+	var owners []string
+	if err := db.WithContext(ctx).
+		Model(&entity.Knowledgebase{}).
+		Where("id = ?", kb).
+		Limit(1).
+		Pluck("created_by", &owners).Error; err != nil {
+		return ""
+	}
+	if len(owners) == 0 {
+		return ""
+	}
+	return owners[0]
+}
+
+// pageCommitAuthor picks the user a page revision belongs to: the single
+// uploader of its source documents. A page merged from documents several users
+// uploaded has no one author, and the dataset's owner names the run instead -
+// the same fallback a batch whose documents carry no uploader takes.
+func pageCommitAuthor(docIDs []string, docAuthors map[string]string, owner string) string {
+	author := ""
+	for _, docID := range docIDs {
+		uploader := docAuthors[docID]
+		if uploader == "" {
+			continue
+		}
+		if author == "" {
+			author = uploader
+			continue
+		}
+		if uploader != author {
+			return owner
+		}
+	}
+	if author != "" {
+		return author
+	}
+	return owner
 }
 
 // wikiPageSnapshotOfProduct is the page a generated commit stores: the fields the
@@ -1452,8 +1591,11 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 				"source_doc_ids": deletedDocIDs,
 			},
 			SelectFields: []string{"id", "source_doc_ids"},
-			Limit:        batchSize,
-			Offset:       offset,
+			// Same reason as the clear sweep: an unordered offset scan can miss a
+			// row, and the survivor keeps a deleted document in its sources.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Limit:   batchSize,
+			Offset:  offset,
 		})
 		if err != nil {
 			return err
@@ -2225,8 +2367,19 @@ func capSourceDocs(ids []string) []string {
 
 // unionCap returns the union of two doc-id lists, capped at wikiGraphSourceDocCap.
 func unionCap(a, b []string) []string {
-	if len(a) == 0 && len(b) == 0 {
-		return capSourceDocs([]string{})
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, id := range a {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
 	}
-	return capSourceDocs(common.Deduplicate(append(append([]string(nil), a...), b...)))
+	for _, id := range b {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return capSourceDocs(out)
 }

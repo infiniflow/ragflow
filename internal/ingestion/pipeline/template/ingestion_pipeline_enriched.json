@@ -1,9 +1,9 @@
 {
     "id": 23,
     "title": {
-        "en": "Advanced Ingestion Pipeline",
-        "de": "Erweiterte Ingestion Pipeline",
-        "zh": "编排复杂的 Ingestion Pipeline"
+        "en": "Enriched",
+        "de": "Angereichert",
+        "zh": "增强"
     },
     "description": {
         "en": "This template demonstrates how to use an LLM to generate summaries, keywords, Q&A, and metadata for each chunk to support diverse retrieval needs.",
@@ -108,6 +108,10 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -266,6 +270,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -333,7 +341,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -371,7 +379,7 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker_0"
+                        "name": "Token Chunker"
                     },
                     "id": "TokenChunker:BumpyStarsPress",
                     "measured": {
@@ -456,7 +464,7 @@
                             }
                         },
                         "label": "Extractor",
-                        "name": "Auto Extract"
+                        "name": "Extractor"
                     },
                     "id": "Extractor:LazyCarpetsKiss",
                     "measured": {
@@ -484,7 +492,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "dragging": false,
                     "id": "Tokenizer:WittySunsListen",

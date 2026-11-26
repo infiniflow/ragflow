@@ -135,15 +135,24 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 // same access check as the other file routes instead of trusting a
 // caller-supplied folder ID.
 func (h *FileCommitHandler) folderAccessible(c *gin.Context, folderID string) bool {
+	return h.fileAccessible(c, folderID, true)
+}
+
+func (h *FileCommitHandler) fileAccessible(c *gin.Context, fileID string, folder bool) bool {
 	ctx := c.Request.Context()
-	folder, err := h.fileDAO.GetByID(ctx, dao.DB, folderID)
-	if err != nil || folder == nil || folder.Type != "folder" {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := permission.TenantIDFromContext(ctx)
+	if userID == "" {
 		return false
 	}
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: permission.ResourceKindFolder,
-		ID:   folder.ID,
-	}, permission.OperationRead) == nil
+	if tenantID == "" {
+		tenantID = userID
+	}
+	fileRecord, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
+	if err != nil || fileRecord == nil || fileRecord.TenantID != tenantID || file.FileOwnerUserID(fileRecord, userID, tenantID) != userID {
+		return false
+	}
+	return !folder || fileRecord.Type == "folder"
 }
 
 func commitFolderID(c *gin.Context) string {
@@ -683,10 +692,7 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
-	if err != nil || file == nil || permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: permission.ResourceKindFile,
-		ID:   fileID,
-	}, permission.OperationRead) != nil {
+	if err != nil || file == nil || !h.fileAccessible(c, fileID, false) {
 		common.RespondError(c, common.CodeNotFound, "File not found")
 		return
 	}

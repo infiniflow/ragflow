@@ -241,10 +241,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 		}
 		name = strings.TrimSpace(nameStr)
 	}
-	nameRunes := []rune(name)
-	if len(nameRunes) > 255 {
-		name = string(nameRunes[:255])
-	}
+	name = utility.TruncateRunes(name, 255)
 
 	prologue := ""
 	if dialog.PromptConfig != nil {
@@ -486,11 +483,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, chatID, sessionI
 		if !ok || strings.TrimSpace(nameStr) == "" {
 			return nil, common.CodeDataError, errors.New("`name` can not be empty")
 		}
-		req["name"] = strings.TrimSpace(nameStr)
-		nameRunes := []rune(req["name"].(string))
-		if len(nameRunes) > 255 {
-			req["name"] = string(nameRunes[:255])
-		}
+		req["name"] = utility.TruncateRunes(strings.TrimSpace(nameStr), 255)
 	}
 
 	updateFields := make(map[string]interface{})

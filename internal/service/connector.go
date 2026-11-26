@@ -289,9 +289,6 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, req *CreateConne
 	if err != nil {
 		return nil, err
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
-		return nil, err
-	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "data_source", permission.ActionEnable); err != nil {
 		return nil, err
 	}

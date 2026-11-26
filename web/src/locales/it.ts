@@ -487,7 +487,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM.',
       Parse: 'Analizza',
       dataset: 'Dataset',
-      testing: 'Test di recupero',
+      testing: 'Recupero',
       files: 'file',
       configuration: 'Configurazione',
       knowledgeGraph: 'Grafo della conoscenza',
@@ -2452,7 +2452,7 @@ Questo delimitatore è usato per dividere il testo di input in diversi pezzi di 
       mergePath: 'Unisci percorso',
       mergePathTip:
         'Quando abilitato, un suffisso con punto immediatamente dopo una variabile viene unito in una query di percorso, come {node@result.name}.',
-      historyVersion: 'Cronologia versioni',
+      historyVersion: 'Versioni',
       version: {
         created: 'Creato',
         details: 'Dettagli versione',
@@ -2610,7 +2610,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       titleChunkerDescription:
         'Dividi i documenti in sezioni per gerarchia di titoli. Definisci i livelli di intestazione con regole regex, poi scegli la modalità Gerarchia o Gruppo per controllare come sono strutturati i chunk.',
       titleChunker: 'Title Chunker',
-      extractor: 'Trasformatore',
+      extractor: 'Estrattore',
       extractorDescription:
         'Usa un LLM per estrarre insight strutturati dai chunk di documenti—come riassunti, classificazioni, ecc.',
       outputFormat: 'Formato output',

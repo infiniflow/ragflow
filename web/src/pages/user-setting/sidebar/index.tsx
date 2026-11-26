@@ -37,7 +37,7 @@ export function SideBar() {
   const items = useSettingMenuItems(menuItems(t));
 
   return (
-    <aside className="flex min-w-0 flex-col overflow-hidden bg-bg-base">
+    <aside className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-base">
       <h2 className="hidden text-base font-medium text-text-primary md:block">
         {t('setting.settings')}
       </h2>

@@ -46,6 +46,12 @@ func billingEnforceApps(_ *gin.Context, _ string) bool { return true }
 // storage quota.
 func billingEnforceStorage(_ *gin.Context, _ string, _ int64) bool { return true }
 
+// loginChannels lists the external identity providers this build can
+// authenticate against. OAuth/OIDC login is an enterprise capability, so the
+// community edition offers none and the login page shows only the email/password
+// form; the ee build replaces this file with the configured providers.
+func loginChannels() []LoginChannel { return nil }
+
 // isOAuthLoginNoRoute reports the OAuth login URL with an empty channel: the
 // Python API resolves it to a Werkzeug MethodNotAllowed, and the community
 // edition has no OAuth routes, so HandleNoRoute has to reproduce that body.

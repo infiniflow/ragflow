@@ -32,6 +32,23 @@ import (
 	"gorm.io/gorm"
 )
 
+func checkAgentSessionDeleteAccess(ctx context.Context, agentID string) (string, bool, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   agentID,
+	}, permission.OperationUse); err != nil {
+		return "", false, err
+	}
+	return permission.UserIDFromContext(ctx), true, nil
+}
+
+func checkAgentDeleteAccess(ctx context.Context, canvasID string) error {
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   canvasID,
+	}, permission.OperationDelete)
+}
+
 // CheckDocumentWrite checks whether the caller can write the document.
 func CheckDocumentWrite(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
 	checker := permission.NewDatabaseChecker(dao.DB)
@@ -80,6 +97,12 @@ func (h *AdminClient) InitHTTPClientEE() error { return nil }
 // enterprise feature, so every gp- model reference fails resolution.
 func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.ModelType) (*entity.TenantModel, error) {
 	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
+}
+
+// modelGroupDisplayName is unsupported in the community edition: model groups
+// are an enterprise feature, so a gp- reference has no group name to resolve.
+func modelGroupDisplayName(_ context.Context, _, _ string) (string, error) {
+	return "", fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
 }
 
 func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelProvider, *entity.TenantModelInstance, []*entity.TenantModel) error {

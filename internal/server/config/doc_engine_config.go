@@ -451,6 +451,20 @@ func (c *Config) GetInfinityConfig() InfinityConfig {
 	return c.docEngine.Infinity
 }
 
+// SetInfinityConfig replaces the document engine connection settings. The
+// desktop build points this at the in-process engine's loopback address.
+func (c *Config) SetInfinityConfig(infinity InfinityConfig) {
+	c.docEngine.Infinity = infinity
+}
+
+// ForceDocEngineType pins the document engine for a build that supports exactly
+// one. It also clears the environment override, which DocEngineType consults
+// first.
+func (c *Config) ForceDocEngineType(docEngineType string) {
+	c.general.DocEngine = docEngineType
+	c.environments.DocumentEngineType = ""
+}
+
 func (i InfinityConfig) ExportConfigs() map[string]interface{} {
 	var infinityConfigs map[string]interface{}
 	infinityConfigs = make(map[string]interface{})

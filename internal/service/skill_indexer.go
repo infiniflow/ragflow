@@ -962,18 +962,26 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
 	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}}, nil, nil)
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}}, nil, nil)
+			if invErr != nil {
+				return fmt.Errorf("failed to encode text: %w", invErr)
+			}
+			if len(resp) == 0 {
+				return fmt.Errorf("embedding returned empty result")
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode text: %w", err)
-	}
-	if len(response) == 0 {
-		return nil, fmt.Errorf("embedding returned empty result")
+		return nil, err
 	}
 
 	return response[0].Embedding, nil
@@ -993,19 +1001,25 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
-	common.Info(fmt.Sprintf("Encoding %d texts", len(texts)))
-	// Use batch encode API (consistent with Python's encode(texts: list))
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
 	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: texts}, nil, nil)
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			// Use batch encode API (consistent with Python's encode(texts: list))
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: texts}, nil, nil)
+			if invErr != nil {
+				common.Error(fmt.Sprintf("Failed to encode texts: %v", invErr), invErr)
+				return fmt.Errorf("failed to encode texts: %w", invErr)
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
-		return nil, fmt.Errorf("failed to encode texts: %w", err)
+		return nil, err
 	}
 
 	common.Info(fmt.Sprintf("Encoded successfully, got %d vectors", len(response)))
@@ -1028,21 +1042,27 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
+	// Group failover: a gp- reference whose member fails the probe call
+	// flips inactive and retries once on the next member.
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
-	testText := "ok"
 	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{testText}}, nil, nil)
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{"ok"}}, nil, nil)
+			if invErr != nil {
+				return fmt.Errorf("failed to encode test text: %w", invErr)
+			}
+			if len(resp) == 0 || len(resp[0].Embedding) == 0 {
+				return fmt.Errorf("embedding returned empty vector")
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to encode test text: %w", err)
-	}
-
-	if len(response) == 0 || len(response[0].Embedding) == 0 {
-		return 0, fmt.Errorf("embedding returned empty vector")
+		return 0, err
 	}
 
 	dimension := len(response[0].Embedding)

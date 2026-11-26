@@ -50,6 +50,25 @@ import (
 	"go.uber.org/zap"
 )
 
+// rebindToolcallSession re-attaches the toolcall session from kwargs onto a
+// freshly resolved chat model. Phase 4 binds tools only to the originally
+// resolved instance, so without this a gp- group-failover retry would run a
+// new model without ToolConfig and silently lose the tool-call capability.
+func rebindToolcallSession(model *modelModule.ChatModel, kwargs map[string]interface{}) {
+	if model == nil {
+		return
+	}
+	session, hasSession := kwargs["toolcall_session"]
+	tools, hasTools := kwargs["tools"]
+	if !hasSession || session == nil || !hasTools || tools == nil {
+		return
+	}
+	if ts, ok := session.(modelModule.ToolCallSession); ok {
+		common.Info("Bind ToolCall after failover re-resolve")
+		model.BindTools(ts, tools)
+	}
+}
+
 // Fields defined by the chat-completions message schema. Stored messages also
 // carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
 // which strict providers reject.
@@ -1458,42 +1477,30 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 				return nil
 			}
-			if chatDriver.ToolConfig != nil {
-				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
-			} else {
-				driverErr = chatDriver.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-			}
-			// The gp- primary failed before any delta reached the client:
-			// flip its current group member inactive and retry once on the
-			// next member. Once deltas have streamed the answer cannot be
-			// replayed on another model, so the error surfaces as-is.
-			if driverErr != nil && ctx.Err() == nil && fullAnswer == "" {
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					modelCtx := permission.WithTenantID(ctx, chat.TenantID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						if retryDriver := s.buildChatDriver(ctx, chat, retryModel); retryDriver != nil {
-							fullAnswer = ""
-							thinkState = &ThinkStreamState{}
-							if retryDriver.ToolConfig != nil {
-								_, driverErr = retryDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
-							} else {
-								driverErr = retryDriver.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-							}
-							if driverErr != nil {
-								common.WarnCtx(ctx, "chat completions: group failover retry failed",
-									zap.String("llm_id", chat.LLMID), zap.Error(driverErr))
-							}
-						} else {
-							common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(fmt.Errorf("re-resolved driver is nil")))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+			// Failover: a gp- group reference whose invocation fails before
+			// any delta reached the client (canRetry sees fullAnswer) flips
+			// its current member inactive and retries once on the next
+			// member. Once deltas have streamed the answer cannot be replayed
+			// on another model, so the error surfaces as-is.
+			driverErr = dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					fresh, rerr := s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					if rerr == nil {
+						rebindToolcallSession(fresh, kwargs)
 					}
-				}
-			}
+					return fresh, rerr
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					fullAnswer = ""
+					thinkState = &ThinkStreamState{}
+					if model.ToolConfig != nil {
+						_, err := model.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
+						return err
+					}
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+				},
+				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -1564,55 +1571,36 @@ func (s *ChatPipelineService) AsyncChat(
 			final.AudioBinary = nil
 			send(final)
 		} else {
-			// Non-streaming: get the answer synchronously.
+			// Non-streaming: get the answer synchronously, with gp- group
+			// failover (flip + re-resolve + retry once on invocation error).
 			var answer string
-			var err error
-			// Tool routing: use tool-loop when tools are bound.
-			if chatDriver.ToolConfig != nil {
-				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
-			} else {
-				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-				if respErr != nil {
-					err = respErr
-				} else if resp != nil && resp.Answer != nil {
-					answer = *resp.Answer
-				}
-			}
+			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					fresh, rerr := s.ModelFactory.NewChatModel(permission.WithTenantID(ctx, chat.TenantID), chat.LLMID)
+					if rerr == nil {
+						rebindToolcallSession(fresh, kwargs)
+					}
+					return fresh, rerr
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					if model.ToolConfig != nil {
+						a, _, callErr := model.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
+						answer = a
+						return callErr
+					}
+					resp, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					if callErr != nil {
+						return callErr
+					}
+					if resp != nil && resp.Answer != nil {
+						answer = *resp.Answer
+					}
+					return nil
+				},
+				nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 
-			if err != nil {
-				// The gp- primary failed: flip its current group member
-				// inactive and retry once on the next member.
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					modelCtx := permission.WithTenantID(ctx, chat.TenantID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						if retryDriver := s.buildChatDriver(ctx, chat, retryModel); retryDriver != nil {
-							if retryDriver.ToolConfig != nil {
-								answer, _, err = retryDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
-							} else {
-								resp, respErr := retryDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-								if respErr != nil {
-									err = respErr
-								} else if resp != nil && resp.Answer != nil {
-									answer = *resp.Answer
-									err = nil
-								}
-							}
-							if err != nil {
-								common.WarnCtx(ctx, "chat completions: group failover retry failed",
-									zap.String("llm_id", chat.LLMID), zap.Error(err))
-							}
-						} else {
-							common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(fmt.Errorf("re-resolved driver is nil")))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
-					}
-				}
-			}
 			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1932,28 +1920,22 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				}
 				return nil
 			}
-			driverErr := chatModel.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-			// The gp- primary failed before any delta reached the client:
-			// flip its current group member inactive and retry once on the
-			// next member. Once deltas have streamed the answer cannot be
-			// replayed on another model, so the error surfaces as-is.
-			if driverErr != nil && ctx.Err() == nil && fullAnswer == "" {
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						thinkState = &ThinkStreamState{}
-						fullAnswer = ""
-						driverErr = retryModel.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
-						if driverErr != nil {
-							common.WarnCtx(ctx, "chat completions: group failover retry failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(driverErr))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
-					}
-				}
-			}
+			// Failover: a gp- group reference whose invocation fails before
+			// any delta reached the client flips its current member inactive
+			// and retries once on the next member. Once deltas have streamed
+			// the answer cannot be replayed on another model, so the error
+			// surfaces as-is.
+			driverErr := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatModel, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					thinkState = &ThinkStreamState{}
+					fullAnswer = ""
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+				},
+				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -2021,30 +2003,26 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				Final:       true,
 			})
 		} else {
-			// Non-streaming: one-shot call.
+			// Non-streaming: one-shot call, with gp- group failover (flip +
+			// re-resolve + retry once on invocation error).
 			chatCfg := BuildChatConfig(chat, config)
-			timer.Enter(common.PhaseGenerateAnswer)
-			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-			timer.Exit(common.PhaseGenerateAnswer)
-			if err != nil {
-				// The gp- primary failed: flip its current group member
-				// inactive and retry once on the next member.
-				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
-					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
-					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
-						timer.Enter(common.PhaseGenerateAnswer)
-						resp, err = retryModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
-						timer.Exit(common.PhaseGenerateAnswer)
-						if err != nil {
-							common.WarnCtx(ctx, "chat completions: group failover retry failed",
-								zap.String("llm_id", chat.LLMID), zap.Error(err))
-						}
-					} else {
-						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
-							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+			var resp *modelModule.ChatResponse
+			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
+				func(context.Context) (*modelModule.ChatModel, error) { return chatModel, nil },
+				func(ctx context.Context) (*modelModule.ChatModel, error) {
+					return s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
+				},
+				func(ctx context.Context, model *modelModule.ChatModel) error {
+					timer.Enter(common.PhaseGenerateAnswer)
+					r, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					timer.Exit(common.PhaseGenerateAnswer)
+					if callErr != nil {
+						return callErr
 					}
-				}
-			}
+					resp = r
+					return nil
+				},
+				nil)
 			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -2053,7 +2031,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			answer := ""
-			if resp.Answer != nil {
+			if resp != nil && resp.Answer != nil {
 				answer = *resp.Answer
 			}
 			// Debug log matching Python's dialog_service.py:335-336.
@@ -2317,12 +2295,13 @@ func (s *ChatPipelineService) tavilyRetrieve(ctx context.Context, apiKey, questi
 	}, nil
 }
 
+var tokenizeWhitespaceRe = regexp.MustCompile(`\s+`)
+
 // tokenizeText is a lightweight tokenizer for Tavily content.
 // It lowercases and splits on whitespace, similar to rag_tokenizer.tokenize.
 func tokenizeText(text string) string {
 	// Collapse multiple whitespaces and split.
-	ws := regexp.MustCompile(`\s+`)
-	text = ws.ReplaceAllString(text, " ")
+	text = tokenizeWhitespaceRe.ReplaceAllString(text, " ")
 	// Convert to lowercase for tokenization.
 	return strings.ToLower(text)
 }
@@ -2777,6 +2756,13 @@ func parseFileDicts(files interface{}) ([]map[string]interface{}, bool) {
 	return nil, false
 }
 
+var (
+	ttsControlRe    = regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
+	ttsEmojiRe      = regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
+	ttsWhitespaceRe = regexp.MustCompile(`\s+`)
+	ttsTagRe        = regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+)
+
 // cleanTTSText sanitizes text for TTS synthesis.
 func cleanTTSText(text string) string {
 	if text == "" {
@@ -2785,15 +2771,12 @@ func cleanTTSText(text string) string {
 	// Drop invalid UTF-8 before applying the character limit.
 	text = strings.ToValidUTF8(text, "")
 	// Strip control chars.
-	controlRe := regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
-	text = controlRe.ReplaceAllString(text, "")
+	text = ttsControlRe.ReplaceAllString(text, "")
 	// Strip emojis.
-	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
-	text = emojiRe.ReplaceAllString(text, "")
+	text = ttsEmojiRe.ReplaceAllString(text, "")
 	text = stripTTSTags(text)
 	// Collapse whitespace.
-	wsRe := regexp.MustCompile(`\s+`)
-	text = wsRe.ReplaceAllString(text, " ")
+	text = ttsWhitespaceRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
 	if r := []rune(text); len(r) > 500 {
 		text = string(r[:500])
@@ -2805,8 +2788,7 @@ func cleanTTSText(text string) string {
 // Unmatched tags stay literal so compact comparisons such as a<b>c survive.
 func stripTTSTags(text string) string {
 	// Quoted attributes may contain > without ending the tag.
-	tagRe := regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
-	matches := tagRe.FindAllStringSubmatchIndex(text, -1)
+	matches := ttsTagRe.FindAllStringSubmatchIndex(text, -1)
 	strip := make([]bool, len(matches))
 	open := make(map[string][]int)
 	for i, match := range matches {
@@ -4661,6 +4643,13 @@ func repairSQLForMissingColumns(
 	return chatForSQL(ctx, chatModel, sysPrompt, userPrompt, "sql missing-columns repair")
 }
 
+var (
+	sqlThinkRe        = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	sqlChineseThinkRe = regexp.MustCompile(`(?s)思考\n.*?\n`)
+	sqlFenceRe        = regexp.MustCompile("(?i)```(?:sql)?\\s*")
+	sqlFenceEndRe     = regexp.MustCompile("```\\s*$")
+)
+
 // normalizeSQL strips LLM artifacts from a SQL response. Mirrors the
 // helper at dialog_service.py:976-990.
 func normalizeSQL(s string) string {
@@ -4668,18 +4657,14 @@ func normalizeSQL(s string) string {
 		return ""
 	}
 	// Remove <think>...</think> blocks.
-	thinkRe := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	s = thinkRe.ReplaceAllString(s, "")
+	s = sqlThinkRe.ReplaceAllString(s, "")
 	// Also strip Chinese reasoning markers (思考...) — some models
 	// (notably Qwen) emit these instead of <think>. Mirrors
 	// dialog_service.py:985: `re.sub(r"思考\n.*?\n", "", ...)`.
-	chineseThinkRe := regexp.MustCompile(`(?s)思考\n.*?\n`)
-	s = chineseThinkRe.ReplaceAllString(s, "")
+	s = sqlChineseThinkRe.ReplaceAllString(s, "")
 	// Strip Markdown code fences.
-	fenceRe := regexp.MustCompile("(?i)```(?:sql)?\\s*")
-	s = fenceRe.ReplaceAllString(s, "")
-	fenceEnd := regexp.MustCompile("```\\s*$")
-	s = fenceEnd.ReplaceAllString(s, "")
+	s = sqlFenceRe.ReplaceAllString(s, "")
+	s = sqlFenceEndRe.ReplaceAllString(s, "")
 	// Trim trailing semicolons (ES SQL parser doesn't like them) and
 	// outer whitespace.
 	s = strings.TrimSpace(s)

@@ -1266,3 +1266,42 @@ func TestDeleteChunksRejectsEmptyIDs(t *testing.T) {
 		})
 	}
 }
+
+// A prefix must reach Elasticsearch as a `prefix` query: terms only name whole ids.
+func TestChunkIDPrefixBecomesPrefixQueryOnID(t *testing.T) {
+	got := buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"id_prefix": []string{"6877", "ABCD"},
+	}, nil, false, false)
+
+	want := map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{
+		map[string]interface{}{"bool": map[string]interface{}{
+			"should": []interface{}{
+				map[string]interface{}{"prefix": map[string]interface{}{"id": "6877"}},
+				map[string]interface{}{"prefix": map[string]interface{}{"id": "abcd"}},
+			},
+			"minimum_should_match": 1,
+		}},
+	}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("query = %#v, want %#v", got, want)
+	}
+}
+
+func TestChunkIDPrefixClausesLowercasesAndSkipsEmpty(t *testing.T) {
+	got := idPrefixClauses([]string{" 6877 ", "ABCD", "  "})
+	want := []interface{}{
+		map[string]interface{}{"prefix": map[string]interface{}{"id": "6877"}},
+		map[string]interface{}{"prefix": map[string]interface{}{"id": "abcd"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("clauses = %#v, want %#v", got, want)
+	}
+	if scalar := idPrefixClauses("6877"); !reflect.DeepEqual(scalar, []interface{}{
+		map[string]interface{}{"prefix": map[string]interface{}{"id": "6877"}},
+	}) {
+		t.Fatalf("idPrefixClauses(scalar) = %#v", scalar)
+	}
+	if none := idPrefixClauses([]string{}); none != nil {
+		t.Fatalf("idPrefixClauses(empty) = %#v, want nil", none)
+	}
+}

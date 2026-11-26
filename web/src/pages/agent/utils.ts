@@ -1,5 +1,6 @@
 import { FileType } from '@/constants/file';
 import { extraExtractorParams } from '@/ee/pages/agent/extractor-params-private';
+import { pickAdditionalParserSetupParams } from '@/ee/utils/parser-setup-params';
 import {
   DSL,
   DSLComponents,
@@ -366,6 +367,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
           };
           break;
         default:
+          filteredSetup = pickAdditionalParserSetupParams(cur);
           break;
       }
 

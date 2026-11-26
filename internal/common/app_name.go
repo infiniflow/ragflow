@@ -28,6 +28,8 @@ import (
 // giving up on a free name.
 const maxNameRetries = 1000
 
+var nameCounterRe = regexp.MustCompile(`^(.*)\((\d+)\)$`)
+
 // splitNameCounter splits a name stem (already stripped of its file extension)
 // into its base and a trailing "(N)" counter. The boolean reports whether a
 // trailing counter was present.
@@ -37,8 +39,7 @@ const maxNameRetries = 1000
 //	splitNameCounter("test(5)") returns ("test", 5, true)
 //	splitNameCounter("test")    returns ("test", 0, false)
 func splitNameCounter(stem string) (string, int, bool) {
-	re := regexp.MustCompile(`^(.*)\((\d+)\)$`)
-	matches := re.FindStringSubmatch(stem)
+	matches := nameCounterRe.FindStringSubmatch(stem)
 	if matches == nil {
 		return stem, 0, false
 	}
