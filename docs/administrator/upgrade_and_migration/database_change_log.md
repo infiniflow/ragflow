@@ -46,6 +46,8 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 
 After the migration or runtime schema path, `InitDB` ensures `user.last_login_tenant` exists. This unversioned column is shared by both editions and is added during normal server startup as well; it has no data backfill.
 
+Normal startup also runs `SeedCanvasTemplates` without a version gate. It seeds only workflow templates and removes stale `canvas_template` rows. Ingestion pipelines, including Outline, Summary, and Enriched, are served from the embedded built-in catalog rather than seeded into that table. Existing user-owned pipeline copies are unchanged.
+
 ## Version overview
 
 | Database version  | Scope                                                                                                        | Gate                               |

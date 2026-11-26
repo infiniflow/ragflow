@@ -1,9 +1,9 @@
 {
     "id": 23,
     "title": {
-        "en": "Advanced Ingestion Pipeline",
-        "de": "Erweiterte Ingestion Pipeline",
-        "zh": "编排复杂的 Ingestion Pipeline"
+        "en": "Enriched",
+        "de": "Angereichert",
+        "zh": "增强"
     },
     "description": {
         "en": "This template demonstrates how to use an LLM to generate summaries, keywords, Q&A, and metadata for each chunk to support diverse retrieval needs.",
@@ -108,6 +108,10 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -266,6 +270,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",

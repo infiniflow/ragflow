@@ -65,6 +65,39 @@ beforeEach(() => {
 });
 
 describe('useCopyBuiltinPipeline', () => {
+  it.each(['outline', 'summary', 'enriched'])(
+    'copies the complete %s built-in pipeline DSL',
+    async (id) => {
+      const { dsl, title } = require(
+        `../../../../internal/ingestion/pipeline/template/ingestion_pipeline_${id}.json`,
+      );
+      agentService.getBuiltinPipeline.mockResolvedValue({
+        data: { code: 0, data: { dsl } },
+      });
+      agentService.createAgent.mockResolvedValue({
+        data: { code: 0, data: { id: 'new-canvas' } },
+      });
+
+      const { result } = renderHook(() => useCopyBuiltinPipeline(), {
+        wrapper,
+      });
+      await act(async () => {
+        await result.current.copy({ id, title: title.en });
+      });
+
+      expect(agentService.getBuiltinPipeline).toHaveBeenCalledWith(id);
+      expect(agentService.createAgent).toHaveBeenCalledWith({
+        title: `${title.en} (Copy)`,
+        dsl,
+        canvas_category: AgentCategory.DataflowCanvas,
+      });
+      expect(mockNavigateToAgent).toHaveBeenCalledWith(
+        'new-canvas',
+        AgentCategory.DataflowCanvas,
+      );
+    },
+  );
+
   it('fetches the builtin DSL, creates a user-owned pipeline and opens it for editing', async () => {
     agentService.getBuiltinPipeline.mockResolvedValue({
       data: { code: 0, message: 'ok', data: { dsl: { components: {} } } },
