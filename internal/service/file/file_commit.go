@@ -122,8 +122,16 @@ func normalizeCommitRenames(changes []entity.FileChange) ([]entity.FileChange, e
 	return normalized, nil
 }
 
-// CreateCommit creates a new commit for a workspace folder
-func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+// CreateCommit creates a new commit for a workspace folder through the
+// caller-supplied db handle. Pass
+// dao.DB for a standalone write, or a transaction handle to join a larger unit
+// of work; a nil db falls back to dao.DB. Both the read of the latest commit and
+// all writes use the same handle, so a caller's uncommitted rows are visible.
+// Object storage writes stay inside the transaction (best-effort on failure).
+func (s *FileCommitService) CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	if db == nil {
+		db = dao.DB
+	}
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return nil, errors.New("commit message is required")
@@ -137,7 +145,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	}
 	changes = normalizedChanges
 	// 1. Get the latest commit for this folder
-	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
+	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, db, folderID)
 
 	// 2. Build tree state from latest commit
 	treeState := make(map[string]interface{})
@@ -167,7 +175,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 
 	// All DB operations run inside a single transaction.
 	var treeStr string
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Authorize the named files against the rows this transaction is about
 		// to write, holding them so a concurrent move cannot relocate a file
 		// between the ancestry check and the update below.
@@ -586,8 +594,15 @@ const (
 // knowledgebase boundaries.
 //
 // This path is independent of the workspace File tree (it does not require a
-// File record or a tree_state snapshot).
-func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommitInput) (*entity.FileCommit, error) {
+// File record or a tree_state snapshot). The db handle is caller-supplied: pass
+// dao.DB for a standalone write, a transaction handle to join a larger unit of
+// work, or nil to fall back to dao.DB. The parent lookup and the database clock
+// read use the same handle as the write. The page snapshot is stored best-effort
+// before the transaction, as before.
+func (s *FileCommitService) RecordPageEdit(ctx context.Context, db *gorm.DB, in PageEditCommitInput) (*entity.FileCommit, error) {
+	if db == nil {
+		db = dao.DB
+	}
 	// Parent chain: previous commit that touched the same page file key.
 	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
 
@@ -645,7 +660,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 
 	// Read the parent inside the lock, on the shared connection, so it always
 	// reflects the previously committed edit for this page.
-	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
+	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, db, fileID)
 	if perr != nil {
 		return nil, fmt.Errorf("failed to resolve page commit parent: %w", perr)
 	}
@@ -673,7 +688,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	// stamp instead, so the entry cannot land after that row.
 	stamp := in.CreateTime
 	if stamp == nil {
-		if dbStamp, err := entity.DBTimeMillis(dao.DB); err == nil {
+		if dbStamp, err := entity.DBTimeMillis(db); err == nil {
 			stamp = &dbStamp
 		}
 	}
@@ -682,7 +697,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		item.CreateTime = stamp
 	}
 
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cerr := tx.Create(commit).Error; cerr != nil {
 			return fmt.Errorf("failed to create page commit: %w", cerr)
 		}

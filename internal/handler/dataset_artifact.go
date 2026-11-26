@@ -202,7 +202,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 			"page_type_kwd":        pageType,
 			"kb_id":                datasetID,
 		}
-		commit, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
+		commit, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), dao.DB, file.PageEditCommitInput{
 			DatasetID:  datasetID,
 			Slug:       slug,
 			PageType:   pageType,

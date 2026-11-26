@@ -28,11 +28,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // fileCommitService is the consumer-side interface for FileCommitHandler's service dependency.
 type fileCommitService interface {
-	CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
+	CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error)
 	GetPageCommitDetail(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
@@ -214,7 +215,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		fileIDs = append(fileIDs, change.FileID)
 	}
 	common.SetOperationResource(c, "file_ids", fileIDs)
-	commit, err := h.commitService.CreateCommit(ctx, folderID, user.ID, req.Message, req.Files)
+	commit, err := h.commitService.CreateCommit(ctx, dao.DB, folderID, user.ID, req.Message, req.Files)
 	if err != nil {
 		// A delete change for a file that is still in the folder, or a rename
 		// with an empty or overlong target, is caller input, not a server

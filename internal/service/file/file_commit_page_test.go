@@ -58,7 +58,7 @@ func TestRecordPageEdit_CreatesCommitAndItem(t *testing.T) {
 		OldContent: "hello world",
 		NewContent: "hello world, edited",
 	}
-	commit, err := svc.RecordPageEdit(ctx, in)
+	commit, err := svc.RecordPageEdit(ctx, nil, in)
 	if err != nil {
 		t.Fatalf("RecordPageEdit: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestGetPageCommitDetailReadsContentSnapshot(t *testing.T) {
 	}
 
 	svc := NewFileCommitService()
-	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+	commit, err := svc.RecordPageEdit(t.Context(), nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "page-a",
 		PageType:   "wiki",
@@ -178,7 +178,7 @@ func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 		AuthorID:   "u1",
 		NewContent: "initial content",
 	}
-	if _, err := svc.RecordPageEdit(ctx, base); err != nil {
+	if _, err := svc.RecordPageEdit(ctx, nil, base); err != nil {
 		t.Fatalf("first RecordPageEdit: %v", err)
 	}
 
@@ -186,7 +186,7 @@ func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 	second.Title = "second"
 	second.OldContent = "initial content"
 	second.NewContent = "hello world"
-	commit2, err := svc.RecordPageEdit(ctx, second)
+	commit2, err := svc.RecordPageEdit(ctx, nil, second)
 	if err != nil {
 		t.Fatalf("second RecordPageEdit: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestRecordPageEdit_FirstGeneratedVersionUsesAdd(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
 
-	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+	commit, err := svc.RecordPageEdit(t.Context(), nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "page-a",
 		PageType:   "wiki",
@@ -229,7 +229,7 @@ func TestRecordPageEdit_SkipsNoop(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
 
-	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+	commit, err := svc.RecordPageEdit(t.Context(), nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "page-a",
 		PageType:   "wiki",
@@ -252,7 +252,7 @@ func TestRecordPageEdit_RecordsAHeaderOnlyChange(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
 
-	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+	commit, err := svc.RecordPageEdit(t.Context(), nil, PageEditCommitInput{
 		DatasetID:   "kb1",
 		Slug:        "page-a",
 		PageType:    "wiki",
@@ -299,10 +299,10 @@ func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 			NewContent: "new",
 		}
 	}
-	if _, err := svc.RecordPageEdit(ctx, mk("kb1")); err != nil {
+	if _, err := svc.RecordPageEdit(ctx, nil, mk("kb1")); err != nil {
 		t.Fatalf("kb1 RecordPageEdit: %v", err)
 	}
-	if _, err := svc.RecordPageEdit(ctx, mk("kb2")); err != nil {
+	if _, err := svc.RecordPageEdit(ctx, nil, mk("kb2")); err != nil {
 		t.Fatalf("kb2 RecordPageEdit: %v", err)
 	}
 
@@ -311,7 +311,7 @@ func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 	kb1Again.Title = "kb1-edit-2"
 	kb1Again.OldContent = "old"
 	kb1Again.NewContent = "newer"
-	kb1Commit2, err := svc.RecordPageEdit(ctx, kb1Again)
+	kb1Commit2, err := svc.RecordPageEdit(ctx, nil, kb1Again)
 	if err != nil {
 		t.Fatalf("kb1 second RecordPageEdit: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestRecordPageEdit_ConcurrentEditsFormLinearChain(t *testing.T) {
 				OldContent: "old",
 				NewContent: "new-" + strconv.Itoa(idx),
 			}
-			_, errs[idx] = svc.RecordPageEdit(ctx, in)
+			_, errs[idx] = svc.RecordPageEdit(ctx, nil, in)
 		}(i)
 	}
 	wg.Wait()
@@ -557,7 +557,7 @@ func TestPageSnapshotKeepsTheWholePage(t *testing.T) {
 	svc := NewFileCommitService()
 	ctx := t.Context()
 
-	if _, err := svc.RecordPageEdit(ctx, PageEditCommitInput{
+	if _, err := svc.RecordPageEdit(ctx, nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "page-a",
 		PageType:   "wiki",
@@ -700,7 +700,7 @@ func TestPageContentsAtRecoversTheBodyBeforeTheFirstRecordedEdit(t *testing.T) {
 	svc := NewFileCommitService()
 	ctx := t.Context()
 
-	if _, err := svc.RecordPageEdit(ctx, PageEditCommitInput{
+	if _, err := svc.RecordPageEdit(ctx, nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "page-a",
 		PageType:   "wiki",
@@ -919,7 +919,7 @@ func TestPageDiffOfCommitAndAtAnchor(t *testing.T) {
 	svc := NewFileCommitService()
 	ctx := t.Context()
 
-	commit, err := svc.RecordPageEdit(ctx, PageEditCommitInput{
+	commit, err := svc.RecordPageEdit(ctx, nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "page-a",
 		PageType:   "wiki",
@@ -1094,7 +1094,7 @@ func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
 	first := base
 	first.Title = "first edit"
 	first.Comments = "first note"
-	firstCommit, err := svc.RecordPageEdit(ctx, first)
+	firstCommit, err := svc.RecordPageEdit(ctx, nil, first)
 	if err != nil {
 		t.Fatalf("first RecordPageEdit: %v", err)
 	}
@@ -1103,7 +1103,7 @@ func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
 	second.Comments = "second note"
 	second.OldContent = "two"
 	second.NewContent = "three"
-	secondCommit, err := svc.RecordPageEdit(ctx, second)
+	secondCommit, err := svc.RecordPageEdit(ctx, nil, second)
 	if err != nil {
 		t.Fatalf("second RecordPageEdit: %v", err)
 	}
@@ -1181,7 +1181,7 @@ func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
 	}
 	first := nested
 	first.Title = "nested first"
-	firstCommit, err := svc.RecordPageEdit(ctx, first)
+	firstCommit, err := svc.RecordPageEdit(ctx, nil, first)
 	if err != nil {
 		t.Fatalf("first RecordPageEdit: %v", err)
 	}
@@ -1189,7 +1189,7 @@ func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
 	second.Title = "nested second"
 	second.OldContent = "two"
 	second.NewContent = "three"
-	secondCommit, err := svc.RecordPageEdit(ctx, second)
+	secondCommit, err := svc.RecordPageEdit(ctx, nil, second)
 	if err != nil {
 		t.Fatalf("second RecordPageEdit: %v", err)
 	}
@@ -1211,7 +1211,7 @@ func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
 	sibling := nested
 	sibling.Slug = "People/Editors"
 	sibling.Title = "sibling page"
-	siblingCommit, err := svc.RecordPageEdit(ctx, sibling)
+	siblingCommit, err := svc.RecordPageEdit(ctx, nil, sibling)
 	if err != nil {
 		t.Fatalf("sibling RecordPageEdit: %v", err)
 	}
@@ -1266,7 +1266,7 @@ func TestListPageCommits_ResolvesNicknamesInSingleBatchedLookup(t *testing.T) {
 		in := base
 		in.AuthorID = author
 		in.NewContent = strconv.Itoa(i + 2)
-		if _, err := svc.RecordPageEdit(ctx, in); err != nil {
+		if _, err := svc.RecordPageEdit(ctx, nil, in); err != nil {
 			t.Fatalf("RecordPageEdit by %s: %v", author, err)
 		}
 	}
@@ -1347,7 +1347,7 @@ func TestPageSlugsChangedSinceMatchesTheKeyARestoreLooksUp(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
 	ctx := t.Context()
-	if _, err := svc.RecordPageEdit(ctx, PageEditCommitInput{
+	if _, err := svc.RecordPageEdit(ctx, nil, PageEditCommitInput{
 		DatasetID:  "kb1",
 		Slug:       "alpha",
 		PageType:   "entity",
