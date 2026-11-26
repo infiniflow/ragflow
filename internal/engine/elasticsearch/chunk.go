@@ -28,6 +28,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/internal/esoscommon"
@@ -1251,8 +1252,20 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
+		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
+			// A single-index request can resolve the sortable form of `id`
+			// for its target: indices created before the `id` keyword
+			// dynamic template map `id` as `text` with an `id.keyword`
+			// sub-field, where a direct `id` sort fails with a fielddata
+			// error. Rewrite those entries to `id.keyword` (#19649).
+			// Multi-index requests cannot pick one form consistently and
+			// keep the direct field. The resolved body flows into the
+			// search_after path unchanged, so every pagination page reuses
+			// the same sortable field.
+			if len(req.IndexNames) == 1 {
+				sort = rewriteIDSortEntries(sort, e.idSortFieldFor(ctx, req.IndexNames[0]))
+			}
 			queryBody["sort"] = sort
 		}
 	}
@@ -1477,7 +1490,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	// When an explicit sort is requested (e.g. a document's reading order), push
 	// it down so the capped first page is deterministic.
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		if sortClause := esoscommon.ParseOrderByExpr(req.Sort); len(sortClause) > 0 {
+		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
 			queryBody["sort"] = sortClause
 		}
 	}
@@ -1658,10 +1671,14 @@ func searchAfterPaginate(
 		}
 		nextCursor := resp.Hits.Hits[len(resp.Hits.Hits)-1].Sort
 		if len(nextCursor) == 0 || esoscommon.SortValuesEqual(nextCursor, cursor) {
-			// ES returned hits but no usable cursor (e.g. sort field
-			// missing or unchanged). The index is exhausted from our
-			// point of view.
-			break
+			// ES returned hits but the cursor cannot advance (sort dropped
+			// from the request, missing from the documents, or non-unique
+			// across pages). With rows still to skip, the take phase would
+			// start from this unadvanced cursor and silently return page 0 —
+			// the data-loss shape behind #19649 — so fail loudly instead.
+			return nil, 0, fmt.Errorf(
+				"search_after pagination cannot advance past offset %d: Elasticsearch returned hits without a usable sort cursor (is the sort field mapped and unique across pages?)",
+				offset)
 		}
 		cursor = nextCursor
 		remainingSkip -= len(resp.Hits.Hits)
@@ -2772,6 +2789,195 @@ func mergeHitFields(chunk, fields map[string]interface{}) {
 }
 
 // parseOrderByExpr parses the OrderBy expression into ES sort format
+func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
+	if orderBy == nil || len(orderBy.Fields) == 0 {
+		return nil
+	}
+
+	var result []map[string]interface{}
+	for _, field := range orderBy.Fields {
+		direction := "asc"
+		if field.Type == types.SortDesc {
+			direction = "desc"
+		}
+
+		// The historical guard "skip id field" assumed `id` was a text-typed
+		// column, which made ES reject sorting on it. RAGFlow's index mappings
+		// (conf/mapping.json dynamic template `kwd`, and the explicit
+		// `conf/doc_meta_es_mapping.json` entry) declare `id` as `keyword` —
+		// so this guard silently dropped the only sort key callers like the
+		// knowledge_compile Reader use for search_after pagination, and
+		// paged scans past index.max_result_window returned empty pages
+		// (#19649). Emit a sort entry for `id` like any other keyword field.
+		//
+		// Indices created before the keyword dynamic template covered `id`
+		// (commit efe6d23d61) still map `id` as `text` with an `id.keyword`
+		// sub-field, where a direct `id` sort fails with a fielddata error.
+		// Those indices are handled upstream of this parser: Search resolves
+		// the sortable form per target index (idSortFieldFor) and rewrites
+		// the emitted entry to `id.keyword`.
+
+		// Special handling for page_num_int and top_int
+		if field.Field == "page_num_int" || field.Field == "top_int" {
+			result = append(result, map[string]interface{}{
+				field.Field: map[string]interface{}{
+					"order":         direction,
+					"unmapped_type": "float",
+					"mode":          "avg",
+					"numeric_type":  "double",
+				},
+			})
+		} else if strings.HasSuffix(field.Field, "_int") || strings.HasSuffix(field.Field, "_flt") {
+			// Fields ending with _int or _flt
+			result = append(result, map[string]interface{}{
+				field.Field: map[string]interface{}{
+					"order":         direction,
+					"unmapped_type": "float",
+				},
+			})
+		} else if field.Field == "_score" || field.Field == "score" {
+			result = append(result, map[string]interface{}{
+				"_score": direction,
+			})
+		} else {
+			// Default: unmapped_type = keyword
+			result = append(result, map[string]interface{}{
+				field.Field: map[string]interface{}{
+					"order":         direction,
+					"unmapped_type": "keyword",
+				},
+			})
+		}
+	}
+
+	return result
+}
+
+// idSortFieldCache memoizes the sortable form of the `id` field per index.
+// Mappings are static for the life of an index (the keyword dynamic template
+// lands at creation), so an entry stays valid until the index is dropped:
+// dropIndex deletes the entry, because an index reusing the name later can map
+// `id` differently. Other server processes keep their own entries until they
+// restart. Failed lookups are not cached so a transient cluster blip cannot pin
+// the wrong field.
+var idSortFieldCache sync.Map
+
+// Sort field values returned by the id-mapping resolvers below.
+const (
+	idSortDirect      = "id"
+	idSortSubField    = "id.keyword"
+	idKeywordSubField = "keyword"
+)
+
+// idSortFieldFromMapping picks the sortable form of the `id` field from an
+// index mapping's `properties` object. Current mappings declare `id` as
+// `keyword`; indices created before the keyword dynamic template covered `id`
+// map it as `text` with an `id.keyword` sub-field — sorting directly on a
+// `text` field fails with a fielddata error, so those indices must sort on
+// the sub-field. Anything unrecognized falls back to the direct field.
+func idSortFieldFromMapping(properties map[string]interface{}) string {
+	field, ok := properties["id"].(map[string]interface{})
+	if !ok {
+		return idSortDirect
+	}
+	switch t, _ := field["type"].(string); t {
+	case "keyword":
+		return idSortDirect
+	case "text":
+		if sub, ok := field["fields"].(map[string]interface{}); ok {
+			if kw, ok := sub[idKeywordSubField].(map[string]interface{}); ok {
+				if kt, _ := kw["type"].(string); kt == "keyword" {
+					return idSortSubField
+				}
+			}
+		}
+	}
+	return idSortDirect
+}
+
+// idSortFieldFor resolves the field an `id` sort must target on indexName,
+// consulting (and populating) idSortFieldCache. Any lookup failure — index
+// not created yet, cluster unreachable, malformed response — returns the
+// direct `id` field (the behavior for all current mappings) without caching,
+// so the next request retries the mapping read.
+func (e *Engine) idSortFieldFor(ctx context.Context, indexName string) string {
+	if cached, ok := idSortFieldCache.Load(indexName); ok {
+		if field, ok := cached.(string); ok {
+			return field
+		}
+	}
+
+	properties, ok := e.fetchIndexIDMapping(ctx, indexName)
+	if !ok {
+		return idSortDirect
+	}
+	field := idSortFieldFromMapping(properties)
+	idSortFieldCache.Store(indexName, field)
+	return field
+}
+
+// fetchIndexIDMapping reads the index mapping and returns its `properties`
+// object. ok is false when the mapping cannot be read for any reason.
+func (e *Engine) fetchIndexIDMapping(ctx context.Context, indexName string) (map[string]interface{}, bool) {
+	req := esapi.IndicesGetMappingRequest{
+		Index: []string{indexName},
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		common.Warn("Elasticsearch id-sort mapping lookup failed",
+			zap.String("index", indexName), zap.Error(err))
+		return nil, false
+	}
+	defer closeESBody(res)
+
+	if res.StatusCode == http.StatusNotFound {
+		// No physical index yet (a tenant without indexed documents) —
+		// nothing to resolve, and nothing worth caching.
+		return nil, false
+	}
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		common.Warn("Elasticsearch id-sort mapping lookup rejected",
+			zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, false
+	}
+
+	var mappings map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&mappings); err != nil {
+		common.Warn("Elasticsearch id-sort mapping decode failed",
+			zap.String("index", indexName), zap.Error(err))
+		return nil, false
+	}
+	indexMapping, ok := mappings[indexName].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	mapping, ok := indexMapping["mappings"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	properties, ok := mapping["properties"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	return properties, true
+}
+
+// rewriteIDSortEntries rewrites sort entries that target the `id` field so
+// they sort on sortField instead, preserving each entry's order spec. Entries
+// for other fields pass through untouched. sortField == "id" is a no-op.
+func rewriteIDSortEntries(sort []map[string]interface{}, sortField string) []map[string]interface{} {
+	if sortField == "" || sortField == idSortDirect {
+		return sort
+	}
+	for _, entry := range sort {
+		if spec, ok := entry[idSortDirect]; ok {
+			delete(entry, idSortDirect)
+			entry[sortField] = spec
+		}
+	}
+	return sort
+}
 
 // calculateScores calculates _score for chunks
 
