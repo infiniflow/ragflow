@@ -36,6 +36,9 @@ mysql:
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
+  # TLS for an external MySQL: true, skip-verify, preferred, or custom with tls_ca_file. Unset means no TLS.
+  # tls: 'true'
+  # tls_ca_file: '/path/to/ca.pem'
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'

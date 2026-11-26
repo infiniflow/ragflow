@@ -39,6 +39,12 @@ type MySQLConfig struct {
 	StaleTimeout     int    `mapstructure:"stale_timeout"`
 	MaxAllowedPacket int    `mapstructure:"max_allowed_packet"`
 	Charset          string `mapstructure:"charset"`
+	// TLS selects the TLS mode for the metadata MySQL connection:
+	// empty or "false" (no TLS), "true" (verify against the system root
+	// CAs), "skip-verify", "preferred", or "custom" with TLSCAFile.
+	TLS string `mapstructure:"tls"`
+	// TLSCAFile is the PEM CA bundle used when TLS is "custom".
+	TLSCAFile string `mapstructure:"tls_ca_file"`
 }
 
 // VastbaseMetaConfig is the Vastbase G100 metadata database configuration. It
@@ -217,6 +223,15 @@ func (c *Config) parseMySQLConfig(v *viper.Viper) {
 	if sub.IsSet("charset") {
 		c.database.MySQL.Charset = sub.GetString("charset")
 	}
+
+	if sub.IsSet("tls") {
+		c.database.MySQL.TLS = sub.GetString("tls")
+	}
+
+	if sub.IsSet("tls_ca_file") {
+		c.database.MySQL.TLSCAFile = sub.GetString("tls_ca_file")
+	}
+
 }
 
 func (c *Config) GetMySQLConfig() MySQLConfig {
@@ -253,5 +268,7 @@ func (m *MySQLConfig) ExportConfigs() map[string]interface{} {
 	mysqlConfigs["max_connections"] = m.MaxConnections
 	mysqlConfigs["stale_timeout"] = m.StaleTimeout
 	mysqlConfigs["max_allowed_packet"] = m.MaxAllowedPacket
+	mysqlConfigs["tls"] = m.TLS
+	mysqlConfigs["tls_ca_file"] = m.TLSCAFile
 	return mysqlConfigs
 }

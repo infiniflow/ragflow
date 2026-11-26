@@ -18,8 +18,11 @@ package dao
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -31,6 +34,7 @@ import (
 
 	"go.uber.org/zap"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	// The vastbase metadata connection speaks lib/pq (DriverName "postgres"),
 	// matching the document engine's client; the import registers the
 	// database/sql driver regardless of which engines the binary links in,
@@ -46,6 +50,68 @@ import (
 )
 
 var DB *gorm.DB
+
+// customMySQLTLSConfig is the name under which the CA-backed tls.Config is
+// registered with go-sql-driver/mysql.
+const customMySQLTLSConfig = "ragflow-mysql-custom"
+
+// buildMySQLDSN builds the go-sql-driver/mysql DSN for the metadata
+// database. Start from the driver's own defaults so the generated DSN keeps
+// the historical connection behavior (allowNativePasswords,
+// checkConnLiveness and maxAllowedPacket in particular); tls and tls_ca_file
+// are opt-in and add nothing to the DSN when not configured.
+//
+// go-sql-driver/mysql requests the server's RSA public key automatically
+// during caching_sha2_password / sha256_password authentication over a
+// plaintext connection, so no allowPublicKeyRetrieval option is needed.
+func buildMySQLDSN(databaseConfig config.MySQLConfig) (string, error) {
+	driverConfig := mysqldriver.NewConfig()
+	driverConfig.User = databaseConfig.User
+	driverConfig.Passwd = databaseConfig.Password
+	driverConfig.Net = "tcp"
+	driverConfig.Addr = fmt.Sprintf("%s:%d", databaseConfig.Host, databaseConfig.Port)
+	driverConfig.DBName = databaseConfig.DatabaseName
+	driverConfig.ParseTime = true
+	driverConfig.Loc = time.Local
+	driverConfig.Params = map[string]string{"charset": databaseConfig.Charset}
+
+	switch databaseConfig.TLS {
+	case "", "false":
+		// Plaintext connection, as before TLS was configurable.
+	case "true", "skip-verify", "preferred":
+		driverConfig.TLSConfig = databaseConfig.TLS
+	case "custom":
+		if databaseConfig.TLSCAFile == "" {
+			return "", errors.New(`mysql.tls "custom" requires mysql.tls_ca_file`)
+		}
+		if err := registerMySQLCATLSConfig(databaseConfig.TLSCAFile); err != nil {
+			return "", err
+		}
+		driverConfig.TLSConfig = customMySQLTLSConfig
+	default:
+		return "", fmt.Errorf(`unsupported mysql.tls value %q (want "true", "skip-verify", "preferred", "custom" or "false")`, databaseConfig.TLS)
+	}
+
+	return driverConfig.FormatDSN(), nil
+}
+
+// registerMySQLCATLSConfig registers a tls.Config that verifies the MySQL
+// server certificate against the system root CAs plus the PEM bundle in
+// caFile. Registering again on startup replaces the previous registration.
+func registerMySQLCATLSConfig(caFile string) error {
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("read mysql.tls_ca_file: %w", err)
+	}
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil || rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	if !rootCAs.AppendCertsFromPEM(pemBytes) {
+		return fmt.Errorf("mysql.tls_ca_file contains no valid PEM certificates: %s", caFile)
+	}
+	return mysqldriver.RegisterTLSConfig(customMySQLTLSConfig, &tls.Config{RootCAs: rootCAs})
+}
 
 // migrationAwareDialector hands out a namedIndexMigrator instead of the stock
 // one.
@@ -325,14 +391,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		staleTimeout = vastbaseConfig.StaleTimeout
 	default:
 		databaseConfig := globalConfig.GetMySQLConfig()
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-			databaseConfig.User,
-			databaseConfig.Password,
-			databaseConfig.Host,
-			databaseConfig.Port,
-			databaseConfig.DatabaseName,
-			databaseConfig.Charset,
-		)
+		dsn, err := buildMySQLDSN(databaseConfig)
+		if err != nil {
+			return fmt.Errorf("build mysql dsn: %w", err)
+		}
 		dialector = newMigrationAwareDialector(dsn)
 		maxConnections = databaseConfig.MaxConnections
 		staleTimeout = databaseConfig.StaleTimeout

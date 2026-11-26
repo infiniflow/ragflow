@@ -76,6 +76,10 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
 - `MYSQL_MAX_PACKET`
   The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
+- `MYSQL_TLS`
+  The TLS mode RAGFlow uses when connecting to MySQL. Accepts `false` (no TLS, the default), `true` (verify the server certificate with the system CAs), `skip-verify`, `preferred`, or `custom` together with `MYSQL_TLS_CA_FILE`. Set this when an external or managed MySQL requires TLS.
+- `MYSQL_TLS_CA_FILE`
+  The path to a PEM CA bundle used to verify the MySQL server certificate when `MYSQL_TLS=custom`.
 
 ### MinIO
 

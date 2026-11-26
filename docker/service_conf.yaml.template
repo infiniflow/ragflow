@@ -36,6 +36,9 @@ mysql:
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
+  # TLS for an external MySQL: true, skip-verify, preferred, or custom (with tls_ca_file). Defaults to no TLS.
+  tls: '${MYSQL_TLS:-false}'
+  tls_ca_file: '${MYSQL_TLS_CA_FILE:-}'
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
