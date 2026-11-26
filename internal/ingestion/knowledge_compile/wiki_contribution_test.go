@@ -51,7 +51,10 @@ func TestDiffWikiDocumentContributionIncludesChangedAndRemovedPages(t *testing.T
 			t.Fatalf("affected key %q missing from %v", key, keys)
 		}
 	}
-	for _, slug := range []string{"cao-cao", "liu-bei"} {
+	// The slug request must use the same "<page_type>/<slug>" form the writer
+	// stores in slug_kwd, or the reader misses the stored row of a page whose
+	// contribution carries a bare slug.
+	for _, slug := range []string{"entity/cao-cao", "entity/liu-bei"} {
 		if _, ok := slugs[slug]; !ok {
 			t.Fatalf("affected slug %q missing from %v", slug, slugs)
 		}
