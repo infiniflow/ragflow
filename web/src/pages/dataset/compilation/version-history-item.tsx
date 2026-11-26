@@ -26,6 +26,15 @@ export function VersionHistoryItem({
       )}
     >
       <div className="flex items-center gap-2 mb-1">
+        {typeof version.version === 'number' && (
+          // The page's own chain numbers the edit. The server omits it when it
+          // cannot place the commit, and the line then shows none. Same size as
+          // the title it sits beside: the version is part of the heading, only
+          // quieter, so it reads without a squint. The number itself is bare.
+          <span className="shrink-0 text-sm text-text-secondary tabular-nums">
+            {version.version}
+          </span>
+        )}
         <span className="text-text-primary truncate">{version.title}</span>
         <span
           className={cn(

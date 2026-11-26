@@ -448,67 +448,304 @@ var restorableWikiPageFields = []string{
 	"scope_kwd",
 }
 
-// RestoreWikiPage writes a page as a version recorded it: every field the
-// snapshot carries, not only the body. A page whose summary and links still
-// describe a later edit is not the page the version described, so the whole
-// document moves together.
+// WikiPageIdentity names one wiki page: the page type and slug the engine keys it
+// by. Together they form the page's slug_kwd.
+type WikiPageIdentity struct {
+	PageType string
+	Slug     string
+}
+
+// Key is the identity as the engine stores it and as the page history keys it:
+// the page type and the bare slug, with a "page_type/" prefix dropped when the
+// slug already carries one.
+func (i WikiPageIdentity) Key() string {
+	if i.PageType == "" {
+		return strings.TrimPrefix(i.Slug, "/")
+	}
+	return i.PageType + "/" + strings.TrimPrefix(i.Slug, i.PageType+"/")
+}
+
+// WikiPageState is one page as the engine holds it: the row to write over and the
+// fields a restore compares before deciding whether to write at all.
+type WikiPageState struct {
+	ID      string
+	Content string
+	Title   string
+	Summary string
+	Topic   string
+	// Outlinks is the page's link list rendered by canonicalWikiPageList, so it
+	// compares by membership: the engine is free to return the same links in
+	// another order.
+	Outlinks string
+}
+
+// wikiPageStateFields are what that comparison reads: the body, the headers a page
+// edit moves with it, and the links a page can be given without touching its body
+// (UpdateWikiPage edits them on their own).
 //
-// The page is found by its identity. When the engine no longer holds it the page
-// is rebuilt from the snapshot, because a restore has to put back the pages the
-// version had and not only fix the ones that survived - and the snapshot is the
-// only thing that remembers them.
-func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string, page map[string]any) (bool, error) {
+// slug_kwd is not a comparison field - it is the key the answer is stored under.
+// Leaving it out of the projection reads every page as absent, and a restore
+// answers an absent page by writing it back: the version's pages would be rebuilt
+// on every restore instead of the ones that moved.
+var wikiPageStateFields = []string{"id", "slug_kwd", "content_with_weight", "title_kwd", "summary_with_weight", "topic_kwd", "outlinks_kwd"}
+
+// wikiPageExistenceFields is the cheap answer to "is the page still there": the
+// row id and the key it is stored under, no bodies.
+var wikiPageExistenceFields = []string{"id", "slug_kwd"}
+
+// currentWikiPagesBatch bounds one search: a restore asks about every page the
+// version holds, and a body comes back with each answer.
+const currentWikiPagesBatch = 200
+
+// wikiPageRows reads the engine rows of the given pages, one search per batch,
+// selecting only the fields the caller asked for.
+func (s *DatasetArtifactService) wikiPageRows(ctx context.Context, tenantID, datasetID string, pages []WikiPageIdentity, fields []string) ([]map[string]interface{}, error) {
+	rows := make([]map[string]interface{}, 0, len(pages))
+	for start := 0; start < len(pages); start += currentWikiPagesBatch {
+		end := start + currentWikiPagesBatch
+		if end > len(pages) {
+			end = len(pages)
+		}
+		slugs := make([]string, 0, end-start)
+		for _, page := range pages[start:end] {
+			if page.PageType == "" || page.Slug == "" {
+				continue
+			}
+			slugs = append(slugs, page.Key())
+		}
+		if len(slugs) == 0 {
+			continue
+		}
+		// Read the batch until the engine reports it has been read out. A single
+		// request capped at the number of identities would silently drop a page when
+		// the batch matches more rows than that (a duplicate slug), and a dropped page
+		// reads as one the engine lost - which the restore answers by rebuilding it.
+		//
+		// The batch is read in id order because offset paging needs a total order:
+		// without one the engine may hand a row back twice and skip another between
+		// requests, which drops a page the same way.
+		for offset := 0; ; {
+			chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, map[string]interface{}{
+				"type_kwd":      []string{CompileKwdWikiPage},
+				"slug_kwd":      slugs,
+				"available_int": 1, // merged dataset-level page only
+			}, fields, offset, len(slugs), (&types.OrderByExpr{}).Asc("id"))
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, chunks...)
+			offset += len(chunks)
+			if len(chunks) == 0 || int64(offset) >= total {
+				break
+			}
+		}
+	}
+	return rows, nil
+}
+
+// CurrentWikiPages reads the pages the engine holds now, keyed by slug_kwd. A
+// restore uses it to see which pages it actually has to write: restoring a version
+// after editing a single page should move that page, not rewrite every other page
+// in the dataset.
+func (s *DatasetArtifactService) CurrentWikiPages(ctx context.Context, tenantID, datasetID string, pages []WikiPageIdentity) (map[string]WikiPageState, error) {
+	rows, err := s.wikiPageRows(ctx, tenantID, datasetID, pages, wikiPageStateFields)
+	if err != nil {
+		return nil, err
+	}
+	state := make(map[string]WikiPageState, len(rows))
+	for _, row := range rows {
+		key := common.FirstEngineString(row["slug_kwd"])
+		if key == "" {
+			continue
+		}
+		state[key] = WikiPageState{
+			ID:       common.FirstEngineString(row["id"]),
+			Content:  common.FirstEngineString(row["content_with_weight"]),
+			Title:    common.FirstEngineString(row["title_kwd"]),
+			Summary:  common.FirstEngineString(row["summary_with_weight"]),
+			Topic:    common.FirstEngineString(row["topic_kwd"]),
+			Outlinks: canonicalWikiPageList(row["outlinks_kwd"]),
+		}
+	}
+	return state, nil
+}
+
+// ExistingWikiPages returns the ids of the pages the engine still holds, keyed by
+// slug_kwd, reading nothing but the ids. A restore uses it to keep rebuilding the
+// pages an index loss dropped, even when their history has not moved since the
+// version it is putting back.
+func (s *DatasetArtifactService) ExistingWikiPages(ctx context.Context, tenantID, datasetID string, pages []WikiPageIdentity) (map[string]string, error) {
+	rows, err := s.wikiPageRows(ctx, tenantID, datasetID, pages, wikiPageExistenceFields)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]string, len(rows))
+	for _, row := range rows {
+		key := common.FirstEngineString(row["slug_kwd"])
+		if key != "" {
+			ids[key] = common.FirstEngineString(row["id"])
+		}
+	}
+	return ids, nil
+}
+
+// HoldsPage reports whether the engine already holds the page a version describes
+// as far as the comparison can tell: the body, the headers a page edit moves with
+// it - title, summary and topic - and the page's links all equal. A page that
+// differs in any of them is written back, because the restore has to put the
+// version's page back.
+//
+// The rest of what a snapshot carries - entity names, related pages and the source
+// ids - is written back with the page but not compared. Those fields are derived or
+// cumulative: the compiler regenerates the names from the body on every run and
+// unions the source ids across every contribution the page has, so a difference
+// there does not mean the page moved - it means a later compile looked at the same
+// page again. Comparing them would rewrite pages nothing moved, and each such
+// rewrite would write the version's older lists back. A snapshot written before the
+// history stored whole pages carries a body and nothing else; the headers it lacks
+// are not compared either, because the restore does not write what it does not
+// carry - counting them would rewrite that page on every restore without ever
+// converging.
+func (st WikiPageState) HoldsPage(snapshot map[string]interface{}) bool {
+	return len(st.DifferingFields(snapshot)) == 0
+}
+
+// DifferingFields names the fields in which the engine's page disagrees with the
+// snapshot, in the order the comparison reads them: the body, the three headers
+// HoldsPage documents, then the links. A field the snapshot does not carry is
+// skipped, so a body-only snapshot compares its body alone.
+//
+// A restore logs them: "the page was written back" is not actionable on its own,
+// while "only its topic differed" names either a page edit the history never
+// recorded or a snapshot the compiler stored in another shape than the engine's
+// row - the two cases a reader can act on, and the two a bare count hides.
+func (st WikiPageState) DifferingFields(snapshot map[string]interface{}) []string {
+	var differing []string
+	for _, field := range []struct {
+		key  string
+		held string
+	}{
+		{"content_with_weight", st.Content},
+		{"title_kwd", st.Title},
+		{"summary_with_weight", st.Summary},
+		{"topic_kwd", st.Topic},
+	} {
+		value, carried := snapshot[field.key]
+		if !carried {
+			continue
+		}
+		if field.held != common.FirstEngineString(value) {
+			differing = append(differing, field.key)
+		}
+	}
+	// The links are a list, so they compare by membership: their order belongs to
+	// the row that was written, and a page carrying the same links in another order
+	// has not moved. They are compared at all because they move without the body -
+	// UpdateWikiPage edits them on their own - and a restore that skipped such a
+	// page would report success while leaving the newer links in place.
+	if value, carried := snapshot["outlinks_kwd"]; carried {
+		if st.Outlinks != canonicalWikiPageList(value) {
+			differing = append(differing, "outlinks_kwd")
+		}
+	}
+	return differing
+}
+
+// canonicalWikiPageList renders a page's list field so two sources compare by
+// membership rather than by order: the engine returns a list in whatever order the
+// row was written, and a difference in position is not a difference in the page.
+func canonicalWikiPageList(value interface{}) string {
+	var items []string
+	switch typed := value.(type) {
+	case string:
+		if typed != "" {
+			items = []string{typed}
+		}
+	case []string:
+		items = typed
+	case []interface{}:
+		items = make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok && text != "" {
+				items = append(items, text)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), items...)
+	sort.Strings(sorted)
+	kept := sorted[:0]
+	for i, item := range sorted {
+		if i > 0 && item == sorted[i-1] {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return strings.Join(kept, "\x00")
+}
+
+// RestoreWikiPage writes a page as a version recorded it: every field the snapshot
+// carries, not only the body. A page whose summary and links still describe a later
+// edit is not the page the version described, so the whole document moves together.
+//
+// The caller has already located the engine row through CurrentWikiPages: id names
+// it, and an empty id rebuilds the page - a restore has to put back the pages the
+// version had and not only fix the ones that survived, and the snapshot is the only
+// thing that remembers them.
+func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID string, page WikiPageIdentity, id string, snapshot map[string]interface{}) error {
 	docEngine := engine.Get()
 	if docEngine == nil {
-		return false, fmt.Errorf("document engine is not initialized")
+		return fmt.Errorf("document engine is not initialized")
 	}
-	if len(page) == 0 {
-		return false, nil
+	if len(snapshot) == 0 {
+		return nil
 	}
-	slugKwd := pageType + "/" + slug
-	filter := map[string]interface{}{
-		"type_kwd":      []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{pageType},
-		"slug_kwd":      []string{slugKwd},
-		"available_int": 1, // merged dataset-level page only
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
-	if err != nil {
-		return false, err
-	}
-
-	fields := make(map[string]interface{}, len(restorableWikiPageFields)+2)
-	for _, key := range restorableWikiPageFields {
-		if value, ok := page[key]; ok {
-			fields[key] = value
-		}
-	}
-	// The identity travels with the content so a rebuilt page is addressable by
-	// the same slug the snapshot was written under.
-	fields["slug_kwd"] = slugKwd
-	fields["page_type_kwd"] = pageType
-	fields["available_int"] = 1
-
+	fields := wikiPageRestoreFields(page, snapshot)
 	indexName := wikiIndexName(tenantID)
-	if len(chunks) > 0 {
-		id, _ := chunks[0]["id"].(string)
-		if id == "" {
-			return false, fmt.Errorf("wiki page chunk has no id")
-		}
+	if id != "" {
 		cond := map[string]interface{}{"id": id, "kb_id": datasetID}
-		if err := docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID); err != nil {
-			return false, err
-		}
-		return true, nil
+		return docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID)
 	}
-
 	fields["id"] = common.GenerateUUID()
 	fields["kb_id"] = datasetID
 	fields["type_kwd"] = CompileKwdWikiPage
-	if _, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, ""); err != nil {
-		return false, err
+	// The rest of the row's identity, spelled the way the compiler writes a merged
+	// page (see mergedChunkMap): doc_id names the dataset on a dataset-level row,
+	// compile_kwd is the scope the compiled-artifact filters select on, and
+	// scope_kwd is the dataset/document discriminator the clean paths read.
+	//
+	// doc_id is not decoration: the engine's bulk writer drops a document that has
+	// no doc_id ("Skipping chunk without doc_id or id") and reports no error, so a
+	// rebuilt page would be recorded in the history while nothing was written - and
+	// the next restore would rebuild it again.
+	fields["doc_id"] = datasetID
+	fields["compile_kwd"] = compileKwdWiki
+	fields["scope_kwd"] = "dataset"
+	_, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, "")
+	return err
+}
+
+// compileKwdWiki is the compile_kwd of every dataset-level wiki row (the compiler
+// writes types.CanonicalCompilationKind("wiki")). A rebuilt page has to carry it:
+// the compiled-artifact filters select a wiki page as "compile_kwd = wiki AND
+// type_kwd = wiki_page", so a row without it is invisible to every later read.
+const compileKwdWiki = "wiki"
+
+// wikiPageRestoreFields is the engine document a restore writes: the snapshot's own
+// fields plus the identity that keeps the page addressable.
+func wikiPageRestoreFields(page WikiPageIdentity, snapshot map[string]interface{}) map[string]interface{} {
+	fields := make(map[string]interface{}, len(restorableWikiPageFields)+3)
+	for _, key := range restorableWikiPageFields {
+		if value, ok := snapshot[key]; ok {
+			fields[key] = value
+		}
 	}
-	return true, nil
+	fields["slug_kwd"] = page.Key()
+	fields["page_type_kwd"] = page.PageType
+	fields["available_int"] = 1
+	return fields
 }
 
 // WikiTopicItem is a single topic entry returned by ListWikiTopics.
