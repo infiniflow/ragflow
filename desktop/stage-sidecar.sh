@@ -13,8 +13,16 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-src="${RAGFLOW_DESKTOP_BINARY:-$here/../bin/ragflow-desktop}"
-dest="$here/src-tauri/binaries/ragflow-desktop"
+# Windows keeps the executable suffix: the shell looks the sidecar up by name
+# (src-tauri/src/main.rs tries binaries/ragflow-desktop.exe first there), and the
+# DLLs the engine links against have to sit beside it — LoadLibrary resolves them
+# against the executable's directory.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) exe=".exe" ;;
+  *) exe="" ;;
+esac
+src="${RAGFLOW_DESKTOP_BINARY:-$here/../bin/ragflow-desktop$exe}"
+dest="$here/src-tauri/binaries/ragflow-desktop$exe"
 
 if [ ! -f "$src" ]; then
   cat >&2 <<EOF
@@ -31,12 +39,24 @@ fi
 install -d "$(dirname "$dest")"
 
 # Re-copying half a gigabyte on every build is pointless: the engine is rebuilt
-# in place, so its mtime moves when it changes.
+# in place, so its mtime moves when it changes. The DLLs below are staged on
+# every run — they change independently of the engine, and skipping them on an
+# unchanged engine shipped a stale librag_tokenizer_c_api.dll.
 size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 if [ -f "$dest" ] && [ ! "$src" -nt "$dest" ] && [ "$(size "$src")" = "$(size "$dest")" ]; then
-  echo "stage-sidecar: up to date ($(du -h "$dest" | cut -f1))"
-  exit 0
+  echo "stage-sidecar: engine up to date ($(du -h "$dest" | cut -f1))"
+else
+  install -m 0755 "$src" "$dest"
+  echo "stage-sidecar: $(du -h "$dest" | cut -f1) -> ${dest#"$here"/}"
 fi
 
-install -m 0755 "$src" "$dest"
-echo "stage-sidecar: $(du -h "$dest" | cut -f1) -> ${dest#"$here"/}"
+# The engine's native dependencies are DLLs on Windows (office_oxide, pdfium,
+# onnxruntime); Copying them next to the sidecar is what makes the bundled app
+# start. build.sh's stage_native_dlls has already put them beside the Go binary.
+if [ -n "$exe" ]; then
+  for dll in "$(dirname "$src")"/*.dll; do
+    [ -f "$dll" ] || continue
+    install -m 0755 "$dll" "$(dirname "$dest")/$(basename "$dll")"
+    echo "stage-sidecar: staged $(basename "$dll")"
+  done
+fi

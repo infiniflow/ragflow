@@ -137,9 +137,17 @@ if [ "$mode" = icons ]; then
 fi
 
 if [ "$engine" = on ]; then
-  # librag_tokenizer_c_api.a is what the Go link consumes; without it
+  # The tokenizer library is what the Go link consumes: the static archive on
+  # Linux/macOS, the DLL import library on Windows. Without it
   # `build.sh --desktop` fails at link time rather than building it.
-  cpp_lib="$repo_root/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      cpp_lib="$repo_root/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.dll.a"
+      ;;
+    *)
+      cpp_lib="$repo_root/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a"
+      ;;
+  esac
   if [ ! -f "$cpp_lib" ]; then
     echo "=== C++ static library missing; building it first (one-off) ==="
     bash "$repo_root/build.sh" --cpp

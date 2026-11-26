@@ -37,14 +37,10 @@ NATIVE_LIBS_DIR="$(ragflow_native_libs_dir)"
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
-RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
-RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Desktop build: the same server and CLI entry points, compiled with the
 # `desktop` tag so the cache (pebbis), message queue (JetStream) and object
 # store (S3 gateway) run in-process instead of being dialed out to. It is a
 # different binary from the server build and never overwrites it.
-RAGFLOW_DESKTOP_BINARY="$PROJECT_ROOT/bin/ragflow-desktop"
-RAGFLOW_DESKTOP_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-desktop-cli"
 
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
@@ -103,6 +99,15 @@ if [ -z "$PDF_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
 fi
 PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+
+# pcre2 native library settings — static linking for the tokenizer. Only Windows
+# needs it from the cache: the Linux and macOS toolchains ship pcre2 themselves.
+PCRE2_STATIC_VERSION="$(pcre2_static_version "$PROJECT_ROOT")"
+if [ -z "$PCRE2_STATIC_VERSION" ]; then
+    echo -e "${RED}Error: could not read the pcre2 version from native_lib_version.sh${NC}" >&2
+    exit 1
+fi
+PCRE2_STATIC_PREFIX="${NATIVE_LIBS_DIR}/pcre2/v${PCRE2_STATIC_VERSION}"
 # Namespace libpdf_oxide.a's symbols are renamed into when they collide with
 # liboffice_oxide.a, the second Rust staticlib in the desktop link: its office_*
 # C API and its rust_eh_personality. ld64 has no --allow-multiple-definition.
@@ -128,6 +133,17 @@ PDF_OXIDE_SYMBOL_PREFIX="pdfoxide_"
 INFINITY_EMBEDDED_LIB="${RAGFLOW_INFINITY_EMBEDDED_LIB:-}"
 INFINITY_DIR="${RAGFLOW_INFINITY_DIR:-}"
 INFINITY_SKIP_BUILD="${RAGFLOW_INFINITY_SKIP_BUILD:-}"
+# Cargo target triple for the engine archive. Empty means the host toolchain,
+# which is what a same-platform build wants. Windows overrides it to the GNU
+# triple: cgo links with MinGW, and a windows-msvc archive (what a plain
+# `cargo build` produces on Windows) carries MSVC-flavoured objects that MinGW's
+# ld rejects, so the engine has to be built for the same ABI as the Go toolchain.
+INFINITY_CARGO_TARGET="${RAGFLOW_INFINITY_CARGO_TARGET:-}"
+if [ -z "$INFINITY_CARGO_TARGET" ]; then
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) INFINITY_CARGO_TARGET="x86_64-pc-windows-gnu" ;;
+    esac
+fi
 INFINITY_EMBEDDED_CRATE="crates/embedded-ffi"
 INFINITY_EMBEDDED_PACKAGE="embedded-ffi"
 INFINITY_EMBEDDED_STAGE="$PROJECT_ROOT/.cache/infinity-embedded"
@@ -157,15 +173,35 @@ ONNXRUNTIME_STATIC_PREFIX="${NATIVE_LIBS_DIR}/onnxruntime/static_lib"
 # ── target platform detection ──────────────────────────────────────────
 # Defaults to the build host (uname), overridable with RAGFLOW_TARGET_OS /
 # RAGFLOW_TARGET_ARCH for cross-baked dependency downloads. goos ∈ {linux,
-# darwin}; goarch ∈ {amd64, arm64}.
+# darwin, windows}; goarch ∈ {amd64, arm64}.
+#
+# Windows is detected from the MSYS/MinGW uname of Git Bash ("MINGW64_NT-10.0"),
+# which is the only shell that runs this script there; cgo on Windows requires
+# the GCC (MinGW-w64) toolchain, so that is the C toolchain every native piece
+# below is built with.
 TARGET_OS=""
 TARGET_ARCH=""
+
+# Path in the form the native toolchain accepts. cgo hands CGO_CFLAGS and
+# CGO_LDFLAGS to gcc, which on Windows is a native binary that cannot resolve
+# MSYS paths like /c/Users/... . `cygpath -m` yields the drive-letter form with
+# forward slashes, which both gcc and Go's flag parser accept. POSIX hosts get
+# the path back unchanged, so every call site can use this unconditionally.
+native_path() {
+    if [ "$TARGET_OS" = "windows" ] && command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 detect_target_platform() {
     TARGET_OS="${RAGFLOW_TARGET_OS:-$(uname -s)}"
     TARGET_ARCH="${RAGFLOW_TARGET_ARCH:-$(uname -m)}"
     case "$TARGET_OS" in
-        Linux)  TARGET_OS="linux" ;;
-        Darwin) TARGET_OS="darwin" ;;
+        Linux*)  TARGET_OS="linux" ;;
+        Darwin*) TARGET_OS="darwin" ;;
+        MINGW*|MSYS*|CYGWIN*) TARGET_OS="windows" ;;
     esac
     case "$TARGET_ARCH" in
         x86_64|amd64) TARGET_ARCH="amd64" ;;
@@ -173,6 +209,20 @@ detect_target_platform() {
     esac
     export TARGET_OS TARGET_ARCH
 }
+
+# Resolved before the output paths below: Go writes exactly the name it is given,
+# so a Windows build has to name the executables itself instead of relying on the
+# toolchain to append .exe (the Tauri sidecar and the packaging steps look the
+# suffixed name up).
+detect_target_platform
+case "$TARGET_OS" in
+    windows) EXE_SUFFIX=".exe" ;;
+    *)       EXE_SUFFIX="" ;;
+esac
+RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server${EXE_SUFFIX}"
+RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli${EXE_SUFFIX}"
+RAGFLOW_DESKTOP_BINARY="$PROJECT_ROOT/bin/ragflow-desktop${EXE_SUFFIX}"
+RAGFLOW_DESKTOP_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-desktop-cli${EXE_SUFFIX}"
 
 # Map the target platform to the release asset filename for each native lib.
 # These mirror tools/scripts/download_dev_deps.py's *_ASSETS maps and the
@@ -183,6 +233,7 @@ office_oxide_asset() {
         linux_arm64)  echo "native-linux-aarch64.tar.gz" ;;
         darwin_amd64) echo "native-macos-x86_64.tar.gz" ;;
         darwin_arm64) echo "native-macos-aarch64.tar.gz" ;;
+        windows_amd64) echo "native-windows-x86_64.zip" ;;
     esac
 }
 pdfium_asset() {
@@ -191,6 +242,7 @@ pdfium_asset() {
         linux_arm64)  echo "pdfium-linux-arm64-static.tgz" ;;
         darwin_amd64) echo "pdfium-mac-x64-static.tgz" ;;
         darwin_arm64) echo "pdfium-mac-arm64-static.tgz" ;;
+        windows_amd64) echo "pdfium-win-x64-static.tgz" ;;
     esac
 }
 pdf_oxide_asset() {
@@ -199,19 +251,23 @@ pdf_oxide_asset() {
         linux_arm64)  echo "pdf_oxide-go-ffi-linux-arm64.tar.gz" ;;
         darwin_amd64) echo "pdf_oxide-go-ffi-darwin-amd64.tar.gz" ;;
         darwin_arm64) echo "pdf_oxide-go-ffi-darwin-arm64.tar.gz" ;;
+        windows_amd64) echo "pdf_oxide-go-ffi-windows-amd64.tar.gz" ;;
     esac
 }
 # Release target token of the ONNX Runtime zip published under
 # infiniflow/ragflow-build tag onnxruntime-v{version}: linux-x86_64,
 # linux-aarch64, osx-arm64, osx-universal (no osx-x86_64 is published —
 # Intel Macs use the universal archive). Mirrors download_dev_deps.py's
-# ort_target().
+# ort_target(). Windows has no prebuilt target: the Go binding loads
+# onnxruntime.dll at run time there (see setup_env_windows.go in the module), so
+# Windows prints nothing and never links the static archive.
 ort_release_target() {
     case "${TARGET_OS}_${TARGET_ARCH}" in
         linux_amd64)  echo "linux-x86_64" ;;
         linux_arm64)  echo "linux-aarch64" ;;
         darwin_amd64) echo "osx-universal" ;;
         darwin_arm64) echo "osx-arm64" ;;
+        *)            echo "" ;;
     esac
 }
 # Top-level dir prefix of the extracted ONNX Runtime static lib under
@@ -229,6 +285,33 @@ ort_static_lib_prefix() {
         linux_arm64)  echo "onnxruntime-linux-aarch64-static_lib-" ;;
         darwin_amd64) echo "onnxruntime-osx-universal-static_lib-" ;;
         darwin_arm64) echo "onnxruntime-osx-arm64-static_lib-" ;;
+        *)            echo "" ;;
+    esac
+}
+
+# ── native library file names per platform ─────────────────────────────
+# Windows ships MSVC-flavoured archives (office_oxide's import library and the
+# static pdfium), so both the file names and the pdf_oxide subdirectory differ
+# from the POSIX ones. Everything that resolves a path in the cache goes through
+# these three helpers so a single Windows branch covers every call site.
+office_oxide_lib_name() {
+    case "$TARGET_OS" in
+        windows) printf 'office_oxide.lib\n' ;;
+        *)       printf 'liboffice_oxide.a\n' ;;
+    esac
+}
+pdfium_lib_name() {
+    case "$TARGET_OS" in
+        windows) printf 'pdfium.lib\n' ;;
+        *)       printf 'libpdfium.a\n' ;;
+    esac
+}
+# Archive subdirectory inside the pdf_oxide tarball. The Windows tarball spells
+# its platform "windows_amd64" while the POSIX ones use "<os>_<arch>".
+pdf_oxide_lib_subdir() {
+    case "$TARGET_OS" in
+        windows) printf 'windows_amd64\n' ;;
+        *)       printf '%s_%s\n' "$TARGET_OS" "$TARGET_ARCH" ;;
     esac
 }
 
@@ -243,7 +326,7 @@ ort_static_lib_prefix() {
 
 _pdfium_deps_present() {
     local stamp="${PDFIUM_STATIC_PREFIX}/.ragflow_platform" cached_platform
-    [ -s "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a" ] || return 1
+    [ -s "${PDFIUM_STATIC_PREFIX}/lib/$(pdfium_lib_name)" ] || return 1
     if [ "$TARGET_OS" = "linux" ]; then
         [ -s "${PDFIUM_STATIC_PREFIX}/lib/libc++.a" ] || return 1
         [ -s "${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a" ] || return 1
@@ -265,10 +348,15 @@ _native_libs_present() {
         detect_target_platform
         _TARGET_PLATFORM_DETECTED=1
     fi
-    [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a" ] || return 1
+    [ -f "${OFFICE_OXIDE_PREFIX}/lib/$(office_oxide_lib_name)" ] || return 1
     [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ] || return 1
     _pdfium_deps_present || return 1
-    [ -f "${PDF_OXIDE_PREFIX}/lib/${TARGET_OS}_${TARGET_ARCH}/libpdf_oxide.a" ] || return 1
+    [ -f "${PDF_OXIDE_PREFIX}/lib/$(pdf_oxide_lib_subdir)/libpdf_oxide.a" ] || return 1
+    # Windows loads onnxruntime.dll at run time, so there is no static archive to
+    # require here — the remaining checks below are POSIX-only.
+    if [ "$TARGET_OS" = "windows" ]; then
+        return 0
+    fi
     # ORT must match the SAME version+platform-keyed dir that check_onnxruntime_deps
     # links (*/${ort_dir_prefix}${ort_version}*/lib/*.a). A shared cache holding
     # only an OLD version or a DIFFERENT platform's ORT must be reported missing so
@@ -467,9 +555,23 @@ check_cpp_deps() {
     drop_stale_toolchain_env
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
-    command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
+    # Linux and macOS build the tokenizer with clang++. Windows cannot: cgo links
+    # with MinGW-w64, so the C++ archive has to come from the same GCC toolchain
+    # or the C++ runtime symbols do not match the ones cgo emits.
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ (MinGW-w64) is required but not installed.${NC}"; exit 1; }
+            ;;
+        *)
+            command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
+            ;;
+    esac
 
-    if check_pcre2; then
+    if [ "$TARGET_OS" = "windows" ]; then
+        # pcre2 comes from the pinned static archive (see build_cpp), not from a
+        # package manager: Windows has no system pcre2 to probe for.
+        echo "✓ pcre2: static archive resolved by the C++ build"
+    elif check_pcre2; then
         echo "✓ pcre2 library found"
     else
         install_cmd="$(detect_pcre2_install_cmd)"
@@ -673,7 +775,8 @@ check_office_oxide_deps() {
     # (${OFFICE_OXIDE_PREFIX}). An incomplete cache is filled by the controlled
     # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
 
-    local lib_file="liboffice_oxide.a"
+    local lib_file
+    lib_file="$(office_oxide_lib_name)"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
@@ -708,7 +811,7 @@ check_pdfium_deps() {
     # pdfium is resolved from the version-keyed user cache
     # (${PDFIUM_STATIC_PREFIX}). An incomplete cache is filled by the controlled
     # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
-    local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+    local lib_path="${PDFIUM_STATIC_PREFIX}/lib/$(pdfium_lib_name)"
 
     if _pdfium_deps_present; then
         echo "  pdfium (static) → ${PDFIUM_STATIC_PREFIX}"
@@ -771,10 +874,11 @@ check_pdf_oxide_deps() {
     # Map platform to tarball-internal subdirectory (lib/<os>_<arch>/). Reuses
     # TARGET_OS/TARGET_ARCH set by detect_target_platform instead of re-deriving
     # from uname, so it stays consistent with the other check_*_deps helpers.
-    local platform_subdir="${TARGET_OS}_${TARGET_ARCH}"
+    local platform_subdir
+    platform_subdir="$(pdf_oxide_lib_subdir)"
     case "$platform_subdir" in
-        linux_amd64|linux_arm64|darwin_amd64|darwin_arm64) ;;
-        *) echo "  pdf_oxide (static) → unsupported platform: $platform_subdir"; return 1 ;;
+        linux_amd64|linux_arm64|darwin_amd64|darwin_arm64|windows_amd64) ;;
+        *) echo "  pdf_oxide (static) → unsupported platform: ${TARGET_OS}_${TARGET_ARCH}"; return 1 ;;
     esac
 
     local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
@@ -930,16 +1034,62 @@ build_cpp() {
         cmake_args+=(${RAGFLOW_CMAKE_ARGS})
     fi
 
+    # Windows/MinGW: there is no system pcre2, so the configure step points at
+    # the pinned static archive in the native-lib cache (RAGFLOW_PCRE2_STATIC_LIB
+    # overrides it for a host that keeps one elsewhere). Ninja is the generator
+    # because the winlibs toolchain ships no make.
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            command -v cmake >/dev/null 2>&1 || {
+                echo -e "${RED}Error: cmake is required but not installed.${NC}" >&2
+                return 1
+            }
+            local pcre2_static="${RAGFLOW_PCRE2_STATIC_LIB:-${PCRE2_STATIC_PREFIX}/lib/libpcre2-8.a}"
+            if [ ! -f "$pcre2_static" ]; then
+                echo -e "${RED}Error: no static pcre2 archive for the MinGW build.${NC}" >&2
+                echo "  Expected: ${pcre2_static}" >&2
+                echo "  Build pcre2 ${PCRE2_STATIC_VERSION} with the same MinGW toolchain," >&2
+                echo "  or point RAGFLOW_PCRE2_STATIC_LIB at an existing libpcre2-8.a." >&2
+                return 1
+            fi
+            cmake_args+=("-DPCRE2_STATIC_LIB=${pcre2_static}")
+            if command -v ninja >/dev/null 2>&1; then
+                cmake_args=(-G Ninja "${cmake_args[@]}")
+            fi
+            ;;
+    esac
+
     echo "Running cmake..."
     cmake .. "${cmake_args[@]}"
 
     echo "Building librag_tokenizer_c_api.a..."
     local jobs
     jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
-    make rag_tokenizer_c_api -j"$jobs"
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            # `make` is not part of the MinGW toolchain; the CMake driver knows
+            # which generator wrote the tree.
+            cmake --build . --target rag_tokenizer_c_api -j "$jobs"
+            ;;
+        *)
+            make rag_tokenizer_c_api -j"$jobs"
+            ;;
+    esac
 
-    if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
-        echo -e "${RED}Error: Failed to build C++ static library${NC}"
+    # Windows builds a DLL: cgo links its import library and the DLL is copied
+    # beside the Go binary, because the loader resolves it from the executable's
+    # directory. Every other platform keeps the static archive.
+    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
+    local tok_dll=""
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            tok_a="$BUILD_DIR/librag_tokenizer_c_api.dll.a"
+            tok_dll="$BUILD_DIR/librag_tokenizer_c_api.dll"
+            ;;
+    esac
+
+    if [ ! -f "$tok_a" ]; then
+        echo -e "${RED}Error: Failed to build the C++ tokenizer library${NC}"
         exit 1
     fi
 
@@ -964,18 +1114,28 @@ build_cpp() {
     # (GNU ld only on request, ld64 never), so this rename is required on every
     # platform: rename_archive_symbols() picks objcopy on Linux and the in-tree
     # Go rewriter on macOS.
-    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
-    local rename_map="$BUILD_DIR/re2_rename.map"
-    # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
-    nm "$tok_a" \
-        | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
-        | sort -u > "$rename_map"
-    if [ -s "$rename_map" ]; then
-        rename_archive_symbols "$tok_a" "$rename_map" || exit 1
-        echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
+    # The re2 collision with onnxruntime only exists for the static archive: a
+    # Windows DLL keeps its copy private, so the import library exposes nothing
+    # but the extern "C" entry points.
+    if [ -z "$tok_dll" ]; then
+        local rename_map="$BUILD_DIR/re2_rename.map"
+        # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
+        nm "$tok_a" \
+            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
+            | sort -u > "$rename_map"
+        if [ -s "$rename_map" ]; then
+            rename_archive_symbols "$tok_a" "$rename_map" || exit 1
+            echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
+        fi
     fi
 
-    echo -e "${GREEN}✓ C++ static library built successfully${NC}"
+    if [ -n "$tok_dll" ]; then
+        mkdir -p "$PROJECT_ROOT/bin"
+        cp -f "$tok_dll" "$PROJECT_ROOT/bin/"
+        echo -e "${GREEN}✓ Staged $(basename "$tok_dll") next to the Go binary${NC}"
+    fi
+
+    echo -e "${GREEN}✓ C++ tokenizer library built successfully${NC}"
 }
 
 # Build C++ test executable
@@ -1061,6 +1221,43 @@ build_web_bundle() {
     fi
 }
 
+# ── runtime DLL staging (Windows) ──────────────────────────────────────
+# MinGW links C libraries either statically or through an import library, and the
+# import case needs the DLL next to the executable. office_oxide ships that way,
+# and onnxruntime is resolved by name at run time (setup_env_windows.go), so both
+# are copied into the output directory of every Windows build. The ORT DLL has to
+# carry the shared-initializer patch DeepDoc calls into; see the ORT section in
+# setup_cgo_env.
+stage_native_dlls() {
+    local out_dir="$1" dll ort_dll candidate
+    [ "$TARGET_OS" = "windows" ] || return 0
+    mkdir -p "$out_dir"
+    for dll in "${OFFICE_OXIDE_PREFIX}"/lib/*.dll "${PDFIUM_STATIC_PREFIX}"/pdfium.dll; do
+        [ -f "$dll" ] || continue
+        cp -f "$dll" "$out_dir/"
+        echo "  staged $(basename "$dll") → $out_dir"
+    done
+    ort_dll="${RAGFLOW_ORT_DLL:-}"
+    if [ -z "$ort_dll" ]; then
+        for candidate in "${ONNXRUNTIME_STATIC_PREFIX}/lib/onnxruntime.dll" \
+            "${NATIVE_LIBS_DIR}"/onnxruntime/*/onnxruntime.dll; do
+            if [ -f "$candidate" ]; then
+                ort_dll="$candidate"
+                break
+            fi
+        done
+    fi
+    if [ -n "$ort_dll" ] && [ -f "$ort_dll" ]; then
+        cp -f "$ort_dll" "$out_dir/"
+        echo "  staged $(basename "$ort_dll") → $out_dir"
+    else
+        echo -e "${YELLOW}Warning: no onnxruntime.dll found; DeepDoc needs it beside the binary at start-up${NC}"
+        echo "  Build the patched Windows runtime with: bash tools/scripts/build_windows_native_dlls.sh"
+        echo "  or point RAGFLOW_ORT_DLL at an existing onnxruntime.dll."
+    fi
+    return 0
+}
+
 build_go_binaries() {
     local label="$1" tags="$2" server_out="$3" cli_out="$4"
 
@@ -1068,13 +1265,28 @@ build_go_binaries() {
 
     cd "$PROJECT_ROOT"
 
-    # Check if C++ library exists
-    if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
-        echo -e "${RED}Error: C++ static library not found. Run with --cpp first.${NC}"
+    # Check if the tokenizer library exists. Windows builds it as a DLL, so the
+    # Go link consumes the import library and the artifact name differs.
+    local tokenizer_lib="$BUILD_DIR/librag_tokenizer_c_api.a"
+    if [ "$TARGET_OS" = "windows" ]; then
+        tokenizer_lib="$BUILD_DIR/librag_tokenizer_c_api.dll.a"
+    fi
+    if [ ! -f "$tokenizer_lib" ]; then
+        echo -e "${RED}Error: $(basename "$tokenizer_lib") not found. Run with --cpp first.${NC}"
         exit 1
     fi
 
-    if check_pcre2; then
+    if [ "$TARGET_OS" = "windows" ]; then
+        # Windows has no system pcre2 to probe for: the tokenizer already links
+        # the static archive staged into the C++ build dir, which is what the Go
+        # link appends (see setup_cgo_env).
+        if [ -f "${BUILD_DIR}/libpcre2-8.a" ]; then
+            echo "✓ pcre2 static archive staged in ${BUILD_DIR}"
+        else
+            echo -e "${RED}Error: ${BUILD_DIR}/libpcre2-8.a is missing.${NC}" >&2
+            return 1
+        fi
+    elif check_pcre2; then
         echo "✓ pcre2 library found"
     else
         install_cmd="$(detect_pcre2_install_cmd)"
@@ -1114,7 +1326,7 @@ build_go_binaries() {
     # setup_cgo_env silently skipped it. Fail the build HERE instead of
     # deferring the breakage to runtime: a server binary without ORT is unusable,
     # not a degraded one.
-    if ! printf '%s' "$CGO_LDFLAGS" | grep -q 'libonnxruntime'; then
+    if [ "$TARGET_OS" != "windows" ] && ! printf '%s' "$CGO_LDFLAGS" | grep -q 'libonnxruntime'; then
         echo -e "${RED}Error: ONNX Runtime static libraries are not linked.${NC}" >&2
         echo "  The in-process DeepDoc backend requires libonnxruntime.a to be" >&2
         echo "  statically linked into ragflow_server (--undefined=OrtGetApiBase +" >&2
@@ -1154,6 +1366,8 @@ build_go_binaries() {
 
     echo -e "${GREEN}✓ Go $label cli built successfully: $cli_out${NC}"
     echo -e "${GREEN}✓ Go $label server built successfully: $server_out${NC}"
+
+    stage_native_dlls "$(dirname "$server_out")"
 }
 
 # Build the server binaries: external services, configured by the operator.
@@ -1269,7 +1483,7 @@ infinity_engine_root() {
     for candidate in "${candidates[@]}"; do
         root="$(_infinity_as_rust_engine_root "$candidate")" || continue
         [ -n "$first" ] || first="$root"
-        if _infinity_embedded_lib_in "${root}/target/release" >/dev/null; then
+        if _infinity_embedded_lib_in "${root}/target/$(_infinity_release_subdir)" >/dev/null; then
             _INFINITY_ENGINE_ROOT="$root"
             printf '%s\n' "$root"
             return 0
@@ -1283,14 +1497,24 @@ infinity_engine_root() {
     return 1
 }
 
+# Cargo's output subdirectory under the target dir: '<triple>/release' when a
+# cross target is requested, plain 'release' for the host.
+_infinity_release_subdir() {
+    if [ -n "$INFINITY_CARGO_TARGET" ]; then
+        printf '%s/release\n' "$INFINITY_CARGO_TARGET"
+    else
+        printf 'release\n'
+    fi
+}
+
 # Directory holding the artifacts cargo produces for embedded-ffi.
 infinity_embedded_target_dir() {
     local root
     root="$(infinity_engine_root)" || return 1
     case "${CARGO_TARGET_DIR:-}" in
-        "")  printf '%s/target/release\n' "$root" ;;
-        /*)  printf '%s/release\n' "$CARGO_TARGET_DIR" ;;
-        *)   printf '%s/release\n' "$root/$CARGO_TARGET_DIR" ;;
+        "")  printf '%s/target/%s\n' "$root" "$(_infinity_release_subdir)" ;;
+        /*)  printf '%s/%s\n' "$CARGO_TARGET_DIR" "$(_infinity_release_subdir)" ;;
+        *)   printf '%s/%s/%s\n' "$root" "$CARGO_TARGET_DIR" "$(_infinity_release_subdir)" ;;
     esac
 }
 
@@ -1323,11 +1547,16 @@ build_infinity_embedded() {
     # library path.
     print_section "Building Infinity embedded engine (${INFINITY_EMBEDDED_PACKAGE})" >&2
     echo "  checkout: ${root}" >&2
+    local cargo_target_args=()
+    if [ -n "$INFINITY_CARGO_TARGET" ]; then
+        cargo_target_args=(--target "$INFINITY_CARGO_TARGET")
+        echo "  target: ${INFINITY_CARGO_TARGET} (matches the MinGW cgo toolchain)" >&2
+    fi
     echo "  cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE} --jobs ${jobs}" >&2
-    ( cd "$root" && cargo build --release -p "$INFINITY_EMBEDDED_PACKAGE" --jobs "$jobs" ) >&2 || {
+    ( cd "$root" && cargo build --release -p "$INFINITY_EMBEDDED_PACKAGE" --jobs "$jobs" "${cargo_target_args[@]}" ) >&2 || {
         echo -e "${RED}Error: cargo build -p ${INFINITY_EMBEDDED_PACKAGE} failed.${NC}" >&2
         echo "  Reproduce it directly:" >&2
-        echo "    cd ${root} && cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE}" >&2
+        echo "    cd ${root} && cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE} ${cargo_target_args[*]}" >&2
         echo "  A toolchain problem shows up there first; this script never installs" >&2
         echo "  a compiler itself. Check the pin with:" >&2
         echo "    cd ${root} && rustup show" >&2
@@ -1382,8 +1611,8 @@ infinity_embedded_lib() {
         return 1
     fi
     if [ -n "$INFINITY_SKIP_BUILD" ]; then
-        if ! lib="$(_infinity_embedded_lib_in "${root}/target/release")"; then
-            echo -e "${RED}Error: no pre-built Infinity embedded engine in ${root}/target/release.${NC}" >&2
+        if ! lib="$(_infinity_embedded_lib_in "${root}/target/$(_infinity_release_subdir)")"; then
+            echo -e "${RED}Error: no pre-built Infinity embedded engine in ${root}/target/$(_infinity_release_subdir).${NC}" >&2
             echo "  RAGFLOW_INFINITY_SKIP_BUILD is set, so the checkout would not be compiled." >&2
             echo "  Build it once with 'cd ${root} && cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE}'," >&2
             echo "  set RAGFLOW_INFINITY_EMBEDDED_LIB, or unset RAGFLOW_INFINITY_SKIP_BUILD." >&2
@@ -1585,9 +1814,11 @@ prepare_infinity_embedded() {
 # prepare_infinity_embedded).
 ensure_infinity_embedded_staged() {
     [ -n "$INFINITY_EMBEDDED_LINK_FLAG" ] || prepare_infinity_embedded || return 1
+    local link_flag
+    link_flag="$(native_path "$INFINITY_EMBEDDED_LINK_FLAG")"
     case " ${CGO_LDFLAGS} " in
-        *" ${INFINITY_EMBEDDED_LINK_FLAG} "*) ;;
-        *) export CGO_LDFLAGS="$CGO_LDFLAGS ${INFINITY_EMBEDDED_LINK_FLAG}" ;;
+        *" ${link_flag} "*) ;;
+        *) export CGO_LDFLAGS="$CGO_LDFLAGS ${link_flag}" ;;
     esac
     # ld64 encodes compact unwind for at most three personality routines, and the
     # static engine is a third Rust archive in the link: each brings its own
@@ -1641,12 +1872,15 @@ setup_cgo_env() {
     # macOS links pcre2 from the static archive the CMake build stages next to
     # the tokenizer archive (see the cgo directives in internal/binding): cgo
     # cannot search library paths, so the path has to be a build artifact
-    # instead of a machine-specific Homebrew prefix.
-    if [ "$TARGET_OS" = "darwin" ] && [ ! -f "${BUILD_DIR}/libpcre2-8.a" ]; then
-        echo -e "${RED}Error: ${BUILD_DIR}/libpcre2-8.a is missing.${NC}" >&2
-        echo "  The macOS Go link takes pcre2 from the C++ build dir." >&2
-        echo "  Run 'bash build.sh --cpp' so CMake stages it there." >&2
-        return 1
+    # instead of a machine-specific Homebrew prefix. Windows has no system pcre2
+    # at all, so it takes the same staged archive.
+    if [ "$TARGET_OS" = "darwin" ] || [ "$TARGET_OS" = "windows" ]; then
+        if [ ! -f "${BUILD_DIR}/libpcre2-8.a" ]; then
+            echo -e "${RED}Error: ${BUILD_DIR}/libpcre2-8.a is missing.${NC}" >&2
+            echo "  The ${TARGET_OS} Go link takes pcre2 from the C++ build dir." >&2
+            echo "  Run 'bash build.sh --cpp' so CMake stages it there." >&2
+            return 1
+        fi
     fi
 
     # --test/--go reuse the existing librag_tokenizer_c_api.a without rebuilding
@@ -1669,14 +1903,46 @@ setup_cgo_env() {
     # (${OFFICE_OXIDE_PREFIX} = .../office_oxide/v<version>), so the linked path
     # carries the version and Go's build cache (which keys CGO_LDFLAGS as a
     # string, not the .a contents) automatically relinks when the version bumps.
-    export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    export CGO_CFLAGS="-I$(native_path "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c")${CGO_CFLAGS:+ $CGO_CFLAGS}"
+    if [ "$TARGET_OS" = "windows" ]; then
+        # The Windows release ships office_oxide.dll plus an MSVC static archive;
+        # the archive is MSVC-ABI and ld cannot link it, so the Go link goes
+        # through the DLL's import library (tools/scripts/build_windows_native_dlls.sh
+        # emits it, and stage_native_dlls copies the DLL beside the binary).
+        if [ ! -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.dll.a" ]; then
+            echo -e "${RED}Error: no MinGW import library for office_oxide.${NC}" >&2
+            echo "  Generate it from office_oxide.dll with:" >&2
+            echo "    bash tools/scripts/build_windows_native_dlls.sh" >&2
+            return 1
+        fi
+        export CGO_LDFLAGS="-L$(native_path "${OFFICE_OXIDE_PREFIX}/lib") -l:liboffice_oxide.dll.a"
+    else
+        export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    fi
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
     local pdfium_link_dir
-    pdfium_link_dir="$(pdfium_static_link_dir "${PDFIUM_STATIC_PREFIX}/lib" "$TARGET_OS" "${PROJECT_ROOT}/.cache/pdfium")" || return 1
-    export CGO_LDFLAGS="$CGO_LDFLAGS \"${pdfium_link_dir}/libpdfium.a\""
+    if [ "$TARGET_OS" = "windows" ]; then
+        # The Windows release ships a single MSVC static archive, which MinGW's ld
+        # cannot link (MSVC C++ ABI + security cookie). The reproducible fix is to
+        # wrap it in pdfium.dll and link the import library that dlltool emits;
+        # build_windows_native_dlls.sh does that. The hashed link-directory staging
+        # the POSIX branches use exists to invalidate Go's build cache, which -l:
+        # does not need because the path itself carries the version-keyed dir.
+        if [ ! -f "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.dll.a" ]; then
+            echo -e "${RED}Error: no MinGW import library for pdfium.${NC}" >&2
+            echo "  The Windows release ships lib/pdfium.lib (MSVC), which ld cannot" >&2
+            echo "  link. Wrap it in a DLL and emit the import library with:" >&2
+            echo "    bash tools/scripts/build_windows_native_dlls.sh" >&2
+            return 1
+        fi
+        export CGO_LDFLAGS="$CGO_LDFLAGS -L$(native_path "${PDFIUM_STATIC_PREFIX}/lib") -l:libpdfium.dll.a"
+        pdfium_link_dir="${PDFIUM_STATIC_PREFIX}/lib"
+    else
+        pdfium_link_dir="$(pdfium_static_link_dir "${PDFIUM_STATIC_PREFIX}/lib" "$TARGET_OS" "${PROJECT_ROOT}/.cache/pdfium")" || return 1
+        export CGO_LDFLAGS="$CGO_LDFLAGS \"${pdfium_link_dir}/libpdfium.a\""
+    fi
     # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
     # cannot merge. Use lld (LLVM linker) which handles them correctly.
     # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
@@ -1699,17 +1965,24 @@ setup_cgo_env() {
         # namespace (ragtokre2_) so the two re2 copies never share a symbol.
         # See build_cpp() for details.
     fi
+    if [ "$TARGET_OS" = "windows" ]; then
+        # Same duplicate-symbol situation as Linux: office_oxide's own archive and
+        # the copy embedded in pdf_oxide both define the office_* C API and the
+        # Rust personality routine. MinGW links with GNU ld, which takes the same
+        # --allow-multiple-definition escape hatch.
+        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--allow-multiple-definition"
+    fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
     check_pdf_oxide_deps || return 1
-    # The go-ffi tarball places the .a under lib/<platform_subdir>/. Reuses
-    # TARGET_OS/TARGET_ARCH set by detect_target_platform (instead of
-    # re-deriving from uname) so RAGFLOW_TARGET_OS/ARCH overrides apply here
-    # exactly as they do in check_pdf_oxide_deps.
-    local pdf_oxide_subdir="${TARGET_OS}_${TARGET_ARCH}"
+    # The go-ffi tarball places the .a under lib/<platform_subdir>/. The subdir
+    # comes from pdf_oxide_lib_subdir so the Windows spelling (windows_amd64)
+    # stays in one place.
+    local pdf_oxide_subdir
+    pdf_oxide_subdir="$(pdf_oxide_lib_subdir)"
     case "$pdf_oxide_subdir" in
-        linux_amd64|linux_arm64|darwin_amd64|darwin_arm64) ;;
-        *) echo "pdf_oxide: unsupported platform: $pdf_oxide_subdir"; return 1 ;;
+        linux_amd64|linux_arm64|darwin_amd64|darwin_arm64|windows_amd64) ;;
+        *) echo "pdf_oxide: unsupported platform: ${TARGET_OS}_${TARGET_ARCH}"; return 1 ;;
     esac
     # The pdf_oxide prefix is already version-keyed
     # (${PDF_OXIDE_PREFIX} = .../pdf_oxide/v<version>), so the linked path
@@ -1719,7 +1992,7 @@ setup_cgo_env() {
     if [ "$TARGET_OS" = "darwin" ]; then
         pdf_oxide_a="$(darwin_pdf_oxide_archive "$pdf_oxide_lib_dir")" || return 1
     fi
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_a}"
+    export CGO_LDFLAGS="$CGO_LDFLAGS $(native_path "${pdf_oxide_a}")"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # Statically link libonnxruntime*.a into the binary. The org Go binding
@@ -1750,6 +2023,16 @@ setup_cgo_env() {
     # by download_dev_deps.py and mounted in on CI) — there is no /opt pre-bake.
     # An incomplete cache is filled by the controlled auto-download at the top
     # of setup_cgo_env.
+    if [ "$TARGET_OS" = "windows" ]; then
+        # Windows never links ORT: onnxruntime_go's Windows path LoadLibrary()s
+        # onnxruntime.dll and resolves OrtGetApiBase with GetProcAddress, so the
+        # only build-time requirement is that the DLL ships beside the binary
+        # (link_native_dlls copies it). The archive ragflow-build publishes has
+        # no Windows target, and the DLL carries the shared-initializer patch the
+        # DeepDoc sessions call into.
+        echo "  onnxruntime: runtime DLL, not a static archive"
+        echo "  Windows loads onnxruntime.dll from the install directory at start-up."
+    else
     check_onnxruntime_deps || return 1
 
     # Version-stamp the archive paths so an in-place .a upgrade invalidates
@@ -1809,6 +2092,7 @@ setup_cgo_env() {
         export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a_versioned -lstdc++"
     fi
     echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
+    fi
     # The re2 regex-library collision between onnxruntime.a and
     # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
     # the tokenizer's bundled re2 symbols are renamed into a private
@@ -1825,6 +2109,17 @@ setup_cgo_env() {
 
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            # The Win32 APIs the Rust staticlibs, office_oxide's import library,
+            # pcre2 and the RocksDB Windows port reference: sockets, user
+            # environment, crypto, NT internals, path helpers (shlwapi), GUIDs
+            # (rpcrt4) and COM.
+            export CGO_LDFLAGS="$CGO_LDFLAGS -lws2_32 -luserenv -lbcrypt -lntdll -lole32 -lshell32 -lshlwapi -lrpcrt4 -ladvapi32 -lversion"
+            # The desktop app ships as one directory with no MinGW runtime next to
+            # it, so the C++ runtime and the pthread shim go into the executable
+            # instead of staying as libstdc++-6/libwinpthread DLL dependencies.
+            export CGO_LDFLAGS="$CGO_LDFLAGS -static-libgcc -Wl,-Bstatic -lstdc++ -lwinpthread -Wl,-Bdynamic"
+            ;;
         Linux)
             export CGO_LDFLAGS="$CGO_LDFLAGS -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
             ;;

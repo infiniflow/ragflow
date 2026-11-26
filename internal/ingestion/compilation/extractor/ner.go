@@ -27,6 +27,7 @@ package extractor
 // #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/../../..
 // #cgo linux LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
 // #cgo darwin LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread ${SRCDIR}/../../../binding/cpp/cmake-build-release/libpcre2-8.a
+// #cgo windows LDFLAGS: ${SRCDIR}/../../../binding/cpp/cmake-build-release/librag_tokenizer_c_api.dll.a
 //
 // #include <stdlib.h>
 // #include "../../../binding/cpp/rag_analyzer_c_api.h"

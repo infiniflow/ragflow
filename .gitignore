@@ -310,6 +310,13 @@ ragflow_deps/
 # Frontend bundle copied next to its go:embed directive by build.sh --desktop
 internal/webui/dist/
 
+# Analyzer resource tree (rag/, wordnet/, opencc/, plus the ik/jieba/mecab sets a
+# wider build may want). It is a downloaded data bundle, not source: it is a
+# separate checkout with its own .git, and find_resource_tree /
+# desktop/stage-resources.sh pick it up from here, ../resource,
+# ~/.ragflow/resource or RAGFLOW_RESOURCE_DIR.
+/resource/
+
 # The desktop shell is an application, not a library: its lock file pins the
 # exact window/runtime versions the bundle was tested with.
 !desktop/src-tauri/Cargo.lock

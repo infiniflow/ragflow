@@ -7,7 +7,9 @@
 package pdfium
 
 /*
-#cgo LDFLAGS: -lm -lpthread -ldl
+#cgo linux LDFLAGS: -lm -lpthread -ldl
+#cgo darwin LDFLAGS: -lm -lpthread
+#cgo windows LDFLAGS: -lm
 
 #include <stdint.h>
 #include <stdlib.h>

@@ -23,6 +23,13 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 /// to migrate the store and start the in-process backends, so this is generous.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// CREATE_NO_WINDOW: start a console-subsystem child without giving it a console
+/// window. Windows has no userland equivalent of "run this quietly" for a
+/// console binary, so the flag is spelled out here rather than pulled in from a
+/// crate for one constant.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Owns the sidecar process so the exit handler can stop it.
 struct Sidecar(Arc<Mutex<Option<Child>>>);
 
@@ -139,6 +146,15 @@ fn spawn_sidecar(
     // and the engine's cwd-relative defaults (its `logs` directory among them)
     // have no home. Run it from the data directory instead.
     command.current_dir(data_dir);
+
+    // The engine is a console-subsystem binary. Launched from this GUI-subsystem
+    // shell it would otherwise get a console window of its own — and closing that
+    // console kills the engine, which the shell treats as "the app is gone".
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 
     // The analyzer dictionaries and the configuration directory ship as
     // resources. Say where they are rather than let the engine guess: on Windows
