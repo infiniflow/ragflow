@@ -32,6 +32,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"ragflow/internal/common"
+	"ragflow/internal/utility"
 )
 
 // Template is one agent configuration: its identity plus the tunables that were
@@ -111,7 +112,7 @@ func defaultConfigPath() string {
 	if p := os.Getenv("AGENTIC_RAG_CONFIG"); p != "" {
 		return p
 	}
-	return "conf/agentic_rag.yaml"
+	return filepath.Join(utility.ConfDir(), "agentic_rag.yaml")
 }
 
 // cachedConfig reloads the config file when its mtime changes, so editing the file

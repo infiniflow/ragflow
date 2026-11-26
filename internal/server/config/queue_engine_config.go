@@ -73,6 +73,12 @@ func (c *Config) GetNATSConfig() NATSConfig {
 	return c.queueEngine.NATS
 }
 
+// SetNATSConfig replaces the message-queue settings. The desktop build uses it
+// to point the process at the in-process JetStream server.
+func (c *Config) SetNATSConfig(nats NATSConfig) {
+	c.queueEngine.NATS = nats
+}
+
 func (n NATSConfig) ExportConfigs() map[string]interface{} {
 	var natsConfigs map[string]interface{}
 	natsConfigs = make(map[string]interface{})

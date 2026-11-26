@@ -35,6 +35,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -662,28 +663,13 @@ func loadFactoryLLMInfos() []factoryLLMInfo {
 	return payload.FactoryLLMInfos
 }
 
-// locateLLMFactoriesFile finds conf/llm_factories.json by walking up from the
-// working directory and falling back to the executable's directory.
+// locateLLMFactoriesFile finds conf/llm_factories.json, in the same directory
+// ConfDir resolves (the app bundle's copy, an install beside the binary, or the
+// source tree).
 func locateLLMFactoriesFile() string {
-	candidates := []string{filepath.Join("conf", "llm_factories.json")}
-	if wd, err := os.Getwd(); err == nil {
-		dir := wd
-		for depth := 0; depth < 5; depth++ {
-			candidates = append(candidates, filepath.Join(dir, "conf", "llm_factories.json"))
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "conf", "llm_factories.json"))
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
+	path := filepath.Join(utility.ConfDir(), "llm_factories.json")
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return path
 	}
 	return ""
 }

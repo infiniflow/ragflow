@@ -1126,6 +1126,16 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 // dereferences the unparsed Statement.Schema.
 func columnExists(ctx context.Context, db *gorm.DB, table, column string) (bool, error) {
 	var count int64
+	if db.Dialector.Name() == "sqlite" {
+		// SQLite exposes the same information through a table-valued pragma;
+		// INFORMATION_SCHEMA does not exist there.
+		if err := db.WithContext(ctx).Raw(
+			"SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?", table, column,
+		).Scan(&count).Error; err != nil {
+			return false, err
+		}
+		return count > 0, nil
+	}
 	if err := db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
 		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?

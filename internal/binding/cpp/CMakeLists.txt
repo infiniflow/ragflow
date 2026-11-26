@@ -70,10 +70,35 @@ if(APPLE)
         endif()
     endforeach()
     set(PCRE2_LIB "${PCRE2_STATIC_LIB}")
+elseif(MINGW)
+    # MinGW (the only C toolchain cgo supports on Windows) resolves pcre2 the
+    # same way macOS does: the cgo directive in internal/binding cannot search
+    # library paths, so the static archive is pinned by path and staged next to
+    # the tokenizer archive below. There is no system pcre2 on Windows, so the
+    # path is required.
+    if(NOT PCRE2_STATIC_LIB)
+        find_file(PCRE2_STATIC_LIB NAMES libpcre2-8.a PATH_SUFFIXES lib)
+    endif()
+    if(NOT PCRE2_STATIC_LIB)
+        message(FATAL_ERROR
+            "MinGW builds need a static PCRE2 archive. Pass\n"
+            "  -DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a\n"
+            "(build.sh: RAGFLOW_CMAKE_ARGS=-DPCRE2_STATIC_LIB=... bash build.sh --cpp)")
+    endif()
+    set(PCRE2_LIB "${PCRE2_STATIC_LIB}")
 else()
     set(PCRE2_LIB libpcre2-8.a)
 endif()
 message(STATUS "PCRE2 library: ${PCRE2_LIB}")
+
+# The C++ runtime tokens the link lines share. Linux and macOS name libm by its
+# archive ("libm.a"); MinGW has no such archive name and resolves the same
+# library as -lm, so every link below takes this list instead of a literal.
+if(MINGW)
+    set(RAGFLOW_LINK_LIBS stdc++ m)
+else()
+    set(RAGFLOW_LINK_LIBS stdc++ libm.a)
+endif()
 
 # Option to enable AddressSanitizer
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
@@ -160,15 +185,29 @@ add_executable(rag_tokenizer
         ${darts_src}
         ${re2_src})
 
-target_link_libraries(rag_tokenizer stdc++ m ${PCRE2_LIB})
+target_link_libraries(rag_tokenizer ${RAGFLOW_LINK_LIBS} ${PCRE2_LIB})
 target_include_directories(rag_tokenizer PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_tokenizer PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
 )
 
-# Build C API static library for CGO
-add_library(rag_tokenizer_c_api STATIC
+# Build the C API library for cgo.
+#
+# Windows builds it as a DLL: the Go linker assembles the PE image itself, so
+# MinGW's CRT startup never runs and the runtime state the C++ side depends on
+# (CRT heap, stdio, locale facets) is left half-initialized — loading the
+# tokenizer dictionary then faults inside a large allocation. A DLL runs its own
+# _DllMainCRTStartup before cgo can call into it, so the Go side only ever
+# crosses the extern "C" boundary. Linux and macOS keep the static archive: the
+# system linker there runs the CRT startup as usual.
+if(MINGW)
+    set(RAG_TOKENIZER_LIB_TYPE SHARED)
+else()
+    set(RAG_TOKENIZER_LIB_TYPE STATIC)
+endif()
+
+add_library(rag_tokenizer_c_api ${RAG_TOKENIZER_LIB_TYPE}
         rag_analyzer_c_api.cpp
         rag_analyzer_c_api.h
         spm_unigram.cpp
@@ -197,17 +236,29 @@ add_library(rag_tokenizer_c_api STATIC
         ${re2_src}
 )
 
-target_link_libraries(rag_tokenizer_c_api stdc++ libm.a ${PCRE2_LIB})
+target_link_libraries(rag_tokenizer_c_api ${RAGFLOW_LINK_LIBS} ${PCRE2_LIB})
 target_include_directories(rag_tokenizer_c_api PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_tokenizer_c_api PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
 )
 
-# macOS: stage the static pcre2 next to the archive the cgo directives already
-# link, so the Go link finds it without any hard-coded Homebrew prefix (see the
-# PCRE2_LIB resolution above).
-if(APPLE)
+if(MINGW)
+    # The cgo directives only reference the extern "C" entry points; export them
+    # (along with the rest of the global table, which MinGW cannot restrict per
+    # header without adding __declspec annotations to every declaration).
+    #
+    # -static folds libstdc++/libgcc/winpthread into the DLL: the loader runs
+    # before any PATH of ours applies, so a libstdc++-6.dll dependency next to
+    # the engine would turn into "DLL not found" at process start.
+    target_link_options(rag_tokenizer_c_api PRIVATE -static -Wl,--export-all-symbols)
+endif()
+
+# macOS and MinGW: stage the static pcre2 next to the archive the cgo directives
+# already link, so the Go link finds it without a hard-coded prefix (see the
+# PCRE2_LIB resolution above). Windows has no system pcre2, so this staging is
+# what makes the cgo directive's fixed path work there at all.
+if(APPLE OR MINGW)
     add_custom_command(TARGET rag_tokenizer_c_api POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${PCRE2_LIB}"
@@ -221,7 +272,7 @@ add_executable(rag_analyzer_c_test
         rag_analyzer_c_test.cpp
 )
 
-target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api ${RAGFLOW_LINK_LIBS} ${PCRE2_LIB})
 target_include_directories(rag_analyzer_c_test PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_analyzer_c_test PROPERTIES
         CXX_STANDARD 20
@@ -232,7 +283,7 @@ if(BUILD_TESTING)
     add_executable(thinc_json_test
             thinc_json_test.cpp
     )
-    target_link_libraries(thinc_json_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+    target_link_libraries(thinc_json_test rag_tokenizer_c_api ${RAGFLOW_LINK_LIBS} ${PCRE2_LIB})
     target_include_directories(thinc_json_test PUBLIC "${CMAKE_SOURCE_DIR}")
     set_target_properties(thinc_json_test PROPERTIES
             CXX_STANDARD 20
@@ -243,7 +294,7 @@ if(BUILD_TESTING)
     add_executable(rag_analyzer_opencc_copy_test
             rag_analyzer_opencc_copy_test.cpp
     )
-    target_link_libraries(rag_analyzer_opencc_copy_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+    target_link_libraries(rag_analyzer_opencc_copy_test rag_tokenizer_c_api ${RAGFLOW_LINK_LIBS} ${PCRE2_LIB})
     target_include_directories(rag_analyzer_opencc_copy_test PUBLIC "${CMAKE_SOURCE_DIR}")
     set_target_properties(rag_analyzer_opencc_copy_test PROPERTIES
             CXX_STANDARD 20

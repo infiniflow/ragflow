@@ -199,9 +199,10 @@ func DecryptPassword(encryptedPassword string) (string, error) {
 // LoadPrivateKey loads and decrypts the RSA private key from conf/private.pem
 func LoadPrivateKey() (*rsa.PrivateKey, error) {
 	// Read private key file
-	keyData, err := os.ReadFile("conf/private.pem")
+	keyPath := confFilePath("private.pem")
+	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
+		return nil, fmt.Errorf("failed to read private key file %s: %w", keyPath, err)
 	}
 
 	// Parse PEM block

@@ -3,8 +3,6 @@
 package pdfium
 
 /*
-#cgo LDFLAGS: -lm -lpthread -ldl
-
 #include <stdint.h>
 #include <stdlib.h>
 

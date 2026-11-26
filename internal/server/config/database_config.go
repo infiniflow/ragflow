@@ -27,6 +27,14 @@ import (
 type DatabaseConfig struct {
 	MySQL    MySQLConfig        `mapstructure:"mysql"`
 	Vastbase VastbaseMetaConfig `mapstructure:"vastbase"`
+	SQLite   SQLiteConfig       `mapstructure:"sqlite"`
+}
+
+// SQLiteConfig is the desktop build's metadata store: one file in the data
+// directory, no server process. The driver is pure Go, so the desktop binary
+// builds and runs on every platform Go supports.
+type SQLiteConfig struct {
+	Path string `mapstructure:"path"`
 }
 
 type MySQLConfig struct {
@@ -80,10 +88,42 @@ func (c *Config) ParseDatabaseConfig(v *viper.Viper) error {
 		c.parseOceanBaseDatabaseConfig(v)
 	case "vastbase":
 		c.parseVastbaseDatabaseConfig(v)
+	case "sqlite":
+		c.parseSQLiteConfig(v)
 	default:
 		return fmt.Errorf("database type %s is not supported", databaseType)
 	}
 	return nil
+}
+
+func (c *Config) parseSQLiteConfig(v *viper.Viper) {
+	c.database.SQLite.Path = "ragflow.db"
+	sub := v.Sub("sqlite")
+	if sub == nil {
+		return
+	}
+	if sub.IsSet("path") {
+		c.database.SQLite.Path = sub.GetString("path")
+	}
+}
+
+// GetSQLiteConfig returns the desktop build's metadata store settings.
+func (c *Config) GetSQLiteConfig() SQLiteConfig {
+	return c.database.SQLite
+}
+
+// SetSQLitePath overrides the metadata file location. The desktop build puts
+// it inside its data directory.
+func (c *Config) SetSQLitePath(path string) {
+	c.database.SQLite.Path = path
+}
+
+// ForceDatabaseType pins the metadata store for a build that supports exactly
+// one. It also clears the environment override, which DatabaseType consults
+// first: a desktop binary must not be steered back to MySQL by a stale DB_TYPE.
+func (c *Config) ForceDatabaseType(databaseType string) {
+	c.general.Database = databaseType
+	c.environments.DatabaseType = ""
 }
 
 func (c *Config) parseOceanBaseDatabaseConfig(v *viper.Viper) {
