@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
+	objectstorage "ragflow/internal/storage"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -34,7 +35,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// S3Storage implements Storage for AWS S3. The shared S3-compatible surface
+// S3Storage implements objectstorage.Storage for AWS S3. The shared S3-compatible surface
 // lives in s3Base; this file holds only what differs for AWS: connection
 // options (signature version, addressing style), the region-aware bucket
 // factory, the path-folding semantics, and the versioned bucket removal.

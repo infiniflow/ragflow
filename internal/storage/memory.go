@@ -266,7 +266,7 @@ func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket
 		return false
 	}
 
-	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+	return MoveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
 		func() bool { return m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
 		func(rctx context.Context) error { return m.Remove(rctx, srcBucket, srcPath) },
 		func(rctx context.Context) error { return m.Remove(rctx, destBucket, destPath) },

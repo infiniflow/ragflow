@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
+	objectstorage "ragflow/internal/storage"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -31,7 +32,7 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// GCSStorage implements Storage interface for GCS
+// GCSStorage implements objectstorage.Storage interface for GCS
 type GCSStorage struct {
 	client *storage.Client
 	config config.GCSConfig

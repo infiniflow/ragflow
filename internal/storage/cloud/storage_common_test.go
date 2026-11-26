@@ -14,13 +14,14 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	objectstorage "ragflow/internal/storage"
 	"testing"
 	"time"
 
@@ -173,11 +174,11 @@ func TestRetryObjectOp_ZeroAttemptsIsNoOp(t *testing.T) {
 	}
 }
 
-// --- moveWithRollback ---
+// --- objectstorage.MoveWithRollback ---
 
 func TestMoveWithRollback_CopyThenRemoveSucceeds(t *testing.T) {
 	var copyCalls, removeSrc, removeDest int
-	ok := moveWithRollback(context.Background(),
+	ok := objectstorage.MoveWithRollback(context.Background(),
 		"srcb", "srck", "dstb", "dstk",
 		func() bool { copyCalls++; return true },
 		func(context.Context) error { removeSrc++; return nil },
@@ -193,7 +194,7 @@ func TestMoveWithRollback_CopyThenRemoveSucceeds(t *testing.T) {
 
 func TestMoveWithRollback_CopyFailureLeavesNoSideEffects(t *testing.T) {
 	var removeSrc, removeDest int
-	ok := moveWithRollback(context.Background(),
+	ok := objectstorage.MoveWithRollback(context.Background(),
 		"srcb", "srck", "dstb", "dstk",
 		func() bool { return false },
 		func(context.Context) error { removeSrc++; return nil },
@@ -211,7 +212,7 @@ func TestMoveWithRollback_SourceRemoveFailureRollsBackDestination(t *testing.T) 
 	var removeDest int
 	var rollbackCtxErr error
 	var hasDeadline bool
-	ok := moveWithRollback(context.Background(),
+	ok := objectstorage.MoveWithRollback(context.Background(),
 		"srcb", "srck", "dstb", "dstk",
 		func() bool { return true },
 		func(context.Context) error { return fmt.Errorf("source delete failed") },
@@ -242,7 +243,7 @@ func TestMoveWithRollback_RollbackRunsEvenWhenParentCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var removeDest int
 	var rollbackCtxErr error
-	ok := moveWithRollback(ctx,
+	ok := objectstorage.MoveWithRollback(ctx,
 		"srcb", "srck", "dstb", "dstk",
 		func() bool { return true },
 		func(context.Context) error {
@@ -267,7 +268,7 @@ func TestMoveWithRollback_RollbackRunsEvenWhenParentCanceled(t *testing.T) {
 }
 
 func TestMoveWithRollback_RollbackFailureStillReportsFailure(t *testing.T) {
-	ok := moveWithRollback(context.Background(),
+	ok := objectstorage.MoveWithRollback(context.Background(),
 		"srcb", "srck", "dstb", "dstk",
 		func() bool { return true },
 		func(context.Context) error { return fmt.Errorf("src") },

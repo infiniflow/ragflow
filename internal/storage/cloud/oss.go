@@ -14,13 +14,14 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
+	objectstorage "ragflow/internal/storage"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
@@ -29,7 +30,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// OSSStorage implements Storage for Aliyun OSS. The shared S3-compatible
+// OSSStorage implements objectstorage.Storage for Aliyun OSS. The shared S3-compatible
 // surface lives in s3Base; this file holds only what differs for OSS: the
 // connection setup, the path-folding semantics (no logical-bucket segment —
 // see doc.go), and the refusal to remove logical buckets in shared-bucket

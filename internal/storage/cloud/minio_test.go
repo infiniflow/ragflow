@@ -16,7 +16,7 @@
 
 //go:build integration
 
-package storage
+package cloud
 
 import (
 	"bytes"

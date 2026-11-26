@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
+	cloudstorage "ragflow/internal/storage/cloud"
 	"ragflow/internal/tokenizer"
 
 	"github.com/cespare/xxhash/v2"
@@ -61,7 +62,7 @@ func runMediaRealServices(t *testing.T, format string, source, png []byte) {
 		t.Fatal(err)
 	}
 	kv := kvrocks.Get()
-	stg, err := storage.NewMinioStorage(cfg.GetMinioConfig())
+	stg, err := cloudstorage.NewMinioStorage(cfg.GetMinioConfig())
 	if err != nil {
 		t.Fatal(err)
 	}

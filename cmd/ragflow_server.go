@@ -51,6 +51,7 @@ import (
 	syncerpkg "ragflow/internal/server/syncer"
 	"ragflow/internal/service/billing"
 	"ragflow/internal/storage"
+	cloudstorage "ragflow/internal/storage/cloud"
 )
 
 // isStandaloneDeepDocServer reports whether st is a standalone DeepDoc
@@ -383,7 +384,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		return fmt.Errorf("initialize Kvrocks: %w", err)
 	}
 	defer kvrocks.Close()
-	if err = storage.Init(ctx); err != nil {
+	if err = cloudstorage.Init(ctx); err != nil {
 		return fmt.Errorf("initialize storage: %w", err)
 	}
 	defer storage.CloseStorage()

@@ -14,12 +14,13 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	objectstorage "ragflow/internal/storage"
 	"time"
 
 	"ragflow/internal/common"
@@ -311,7 +312,7 @@ func (b *s3Base) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destP
 // Move moves an object from source to destination, rolling back the
 // destination if the source removal fails.
 func (b *s3Base) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+	return objectstorage.MoveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
 		func() bool { return b.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
 		func(rctx context.Context) error { return b.Remove(rctx, srcBucket, srcPath) },
 		func(rctx context.Context) error { return b.Remove(rctx, destBucket, destPath) },
