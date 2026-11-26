@@ -25,10 +25,12 @@ import (
 // clause.
 const relationExclusionTestChunk = 512
 
-// TestBuildBoolQueryExcludesRelationWindowIDs drives the real condition parser
-// with the writer's read-id exclusion: every id read so far must appear once
-// under bool.must_not, chunked the same way, for exactly one result window and
-// past it.
+// TestBuildBoolQueryExcludesRelationWindowIDs drives the production condition
+// wrapper (so CompilationFilter runs as it does on the search path) with the
+// writer's relation filter plus the read-id exclusion. The query must reject
+// every id already read and still return an id that was not read, for exactly
+// one result window and past it; a query that ORs the exclusions would invert
+// that outcome.
 func TestBuildBoolQueryExcludesRelationWindowIDs(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -47,8 +49,10 @@ func TestBuildBoolQueryExcludesRelationWindowIDs(t *testing.T) {
 				end := min(start+relationExclusionTestChunk, len(ids))
 				and = append(and, map[string]interface{}{"must_not": map[string]interface{}{"id": ids[start:end]}})
 			}
-			query := buildBoolQueryFromConditionRaw(map[string]interface{}{
+			query := buildBoolQueryFromCondition(map[string]interface{}{
 				"knowledge_graph_kwd": "relation",
+				"from_entity_kwd":     []string{"A"},
+				"to_entity_kwd":       []string{"B"},
 				"and":                 and,
 			}, nil, false, false)
 			if query == nil {
@@ -107,6 +111,24 @@ func TestBuildBoolQueryExcludesRelationWindowIDs(t *testing.T) {
 			for _, id := range ids {
 				if seen[id] != 1 {
 					t.Fatalf("id %q excluded %d times, want 1", id, seen[id])
+				}
+			}
+
+			row := func(id string) map[string]interface{} {
+				return map[string]interface{}{
+					"id":                  id,
+					"knowledge_graph_kwd": "relation",
+					"type_kwd":            "relation",
+					"from_entity_kwd":     "A",
+					"to_entity_kwd":       "B",
+				}
+			}
+			if !matchesCompilationQuery(query, row("unread-id")) {
+				t.Error("an id that was not read is dropped from the next round")
+			}
+			for _, id := range []string{ids[0], ids[tc.total/2], ids[tc.total-1]} {
+				if matchesCompilationQuery(query, row(id)) {
+					t.Fatalf("read id %q is still returned by the next round", id)
 				}
 			}
 		})
