@@ -1034,7 +1034,7 @@ Local parsing tools can use `NewMemoryStorage` and existing injection seams
 without remote storage initialization.
 
 `internal/storage/cloud` owns MinIO, AWS S3, OSS, GCS, and their SDK-specific error
-classification. Server startup explicitly calls `cloud.Init(ctx)` and closes the
+classification. Server startup explicitly calls `cloud.Init(ctx, server.GetConfig())` and closes the
 shared factory through `storage.CloseStorage`. Cloud initialization installs its
 backend into the same factory read by ingestion and service code. It keeps the
 existing configured engine, credentials, path folding, cancellation, retry,

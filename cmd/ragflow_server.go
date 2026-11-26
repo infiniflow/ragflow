@@ -384,7 +384,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		return fmt.Errorf("initialize Kvrocks: %w", err)
 	}
 	defer kvrocks.Close()
-	if err = cloudstorage.Init(ctx); err != nil {
+	if err = cloudstorage.Init(ctx, server.GetConfig()); err != nil {
 		return fmt.Errorf("initialize storage: %w", err)
 	}
 	defer storage.CloseStorage()

@@ -18,16 +18,19 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
 )
 
 // Init explicitly installs the configured cloud backend into the shared factory.
 // Importing storage for local parsing does not import or initialize cloud SDKs.
-func Init(ctx context.Context) error {
-	config := server.GetConfig()
+func Init(ctx context.Context, config *config.Config) error {
+	if config == nil {
+		return errors.New("storage configuration required")
+	}
 	var backend storage.Storage
 	var err error
 	var name string

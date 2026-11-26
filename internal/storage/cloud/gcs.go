@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
-	objectstorage "ragflow/internal/storage"
 	"time"
 
 	"cloud.google.com/go/storage"

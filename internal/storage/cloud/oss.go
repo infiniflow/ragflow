@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
-	objectstorage "ragflow/internal/storage"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
