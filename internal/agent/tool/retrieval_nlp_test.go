@@ -411,6 +411,20 @@ func TestNLPRetrievalAdapter_RequestKeepsEveryDatasetTenant(t *testing.T) {
 	}
 }
 
+func TestNLPRetrievalAdapter_SearchRequiresTenantContext(t *testing.T) {
+	adapter := &NLPRetrievalAdapter{svc: &nlp.RetrievalService{}}
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SeedIdentity("user-1", "")
+	ctx := runtime.WithState(t.Context(), state)
+
+	_, err := adapter.Search(ctx, nil, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{"kb-1"}, TenantID: "request-tenant",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for missing tenant context", err)
+	}
+}
+
 func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

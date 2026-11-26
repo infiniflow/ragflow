@@ -88,18 +88,15 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 	return nil
 }
 
-// canvasTenantID derives the tenant id from canvas state, falling back to
-// user_id. Shared by agentic search and dataset-navigation tools.
+// canvasTenantID prefers the canvas tenant and falls back to the tenant in the
+// permission context.
 func canvasTenantID(ctx context.Context) string {
-	state, err := runtime.GetStateFromContext(ctx)
-	if err != nil || state == nil {
-		return ""
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
+			return tenantID
+		}
 	}
-	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
-		return tenantID
-	}
-	userID, _ := state.GetSysString("user_id")
-	return userID
+	return permission.TenantIDFromContext(ctx)
 }
 
 // canvasDatasetIDs returns the explicit dataset ids (all of them, preserving

@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -241,23 +242,23 @@ func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 	}
 }
 
-func TestRetrieval_PassesUserIDWhenTenantIDMissing(t *testing.T) {
+func TestRetrieval_PassesPermissionTenantWhenCanvasTenantMissing(t *testing.T) {
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}
 	SetRetrievalService(svc)
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
 	state := runtime.NewCanvasState("run-1", "task-1")
-	state.Sys["user_id"] = "user-1"
-	ctx := runtime.WithState(t.Context(), state)
+	state.SeedIdentity("user-1", "")
+	ctx := runtime.WithState(permission.WithIdentity(t.Context(), "user-1", "active-tenant"), state)
 
 	rt := NewRetrievalTool()
 	_, err := rt.InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
-	if svc.req.TenantID != "user-1" {
-		t.Fatalf("TenantID=%q want user-1", svc.req.TenantID)
+	if svc.req.TenantID != "active-tenant" {
+		t.Fatalf("TenantID=%q want active-tenant", svc.req.TenantID)
 	}
 }
 

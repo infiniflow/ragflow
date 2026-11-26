@@ -222,7 +222,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		MetaDataFilter:           maps.Clone(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
-		TenantID:                 retrievalTenantID(ctx),
+		TenantID:                 canvasTenantID(ctx),
 	}
 
 	var chunks []RetrievalChunk
@@ -506,18 +506,6 @@ func renderMemoryChunks(chunks []RetrievalChunk) string {
 		builder.WriteString(chunk.Content)
 	}
 	return builder.String()
-}
-
-func retrievalTenantID(ctx context.Context) string {
-	state, err := runtime.GetStateFromContext(ctx)
-	if err != nil || state == nil {
-		return ""
-	}
-	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
-		return tenantID
-	}
-	userID, _ := state.GetSysString("user_id")
-	return userID
 }
 
 func referenceChunksFromRetrieval(chunks []RetrievalChunk) []map[string]any {
