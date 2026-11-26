@@ -36,9 +36,11 @@ mysql:
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
-  # go-sql-driver/mysql `tls` value: '' (no TLS), 'true', 'skip-verify' or
-  # 'preferred'. Set it when the metadata MySQL requires TLS.
+  # go-sql-driver/mysql `tls` value: '' (no TLS), 'true', 'skip-verify',
+  # 'preferred' or 'custom'. Set it when the metadata MySQL requires TLS.
+  # 'custom' verifies against tls_ca_file plus the system root CAs.
   tls: ''
+  tls_ca_file: ''
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'

@@ -74,6 +74,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
   The MySQL port published on the Docker host. Defaults to `3306`. RAGFlow containers connect to MySQL on port `3306`.
 - `MYSQL_MAX_PACKET`
   The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
+- `MYSQL_TLS_CA_FILE`
+  The path to a PEM CA bundle used to verify the MySQL server certificate when `MYSQL_TLS=custom`.
 
 ### MinIO
 
@@ -185,7 +187,8 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `max_connections`: The maximum number of concurrent connections in the MySQL connection pool. Defaults to `900` in the Go deployment configuration.
 - `stale_timeout`: The connection stale timeout in seconds. Defaults to `300` in the Go deployment configuration.
 - `max_allowed_packet`: The maximum communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`).
-- `tls`: The TLS mode for the metadata MySQL connection, passed to [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#tls) as the `tls` DSN parameter: empty for no TLS, `true` to require and verify TLS, `skip-verify`, or `preferred`. Required by managed MySQL offerings that enforce TLS. (Custom CA registration and `allowPublicKeyRetrieval` are not needed here: the driver fetches the RSA public key itself during plaintext `caching_sha2_password` authentication.)
+- `tls`: The TLS mode for the metadata MySQL connection, passed to [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql#tls) as the `tls` DSN parameter: empty for no TLS, `true` to require and verify TLS, `skip-verify`, `preferred`, or `custom` to verify against a CA bundle. Required by managed MySQL offerings that enforce TLS. (The driver fetches the RSA public key itself during plaintext `caching_sha2_password` authentication, so no `allowPublicKeyRetrieval` option is needed.)
+- `tls_ca_file`: The path to a PEM CA bundle used when `tls` is `custom`. The server certificate is verified against these CAs in addition to the system roots.
 
 ### `minio`
 
