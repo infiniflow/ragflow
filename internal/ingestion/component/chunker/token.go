@@ -361,6 +361,15 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		return emptyOutputs()
 	}
 
+	// naive_merge normalizes line endings on every section before it branches on
+	// the delimiter, so a CRLF document splits on a "\n"-based custom delimiter
+	// exactly like an LF one. normalizeGeneralNewlines is the package's shared
+	// normalizer (the merge path below also applies it, which is idempotent);
+	// doing it here keeps the custom-delimiter branch from splitting raw
+	// "\r\n\r\n" text (which never matches "\n\n") and from keeping carriage
+	// returns in the chunk text.
+	text = normalizeGeneralNewlines(text)
+
 	// No active delimiter at all: single-section merge that only re-splits
 	// oversized sections on sentence boundaries.
 	if !hasActiveDelimiter(delimPattern) {
@@ -790,6 +799,13 @@ func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
 func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bool) []schema.ChunkDoc {
 	ckType := itemDocType(it)
 	txt := itemTextOrFallback(it)
+	if ckType == "text" {
+		// naive_merge_with_images normalizes line endings on the text before it
+		// branches on the delimiter; a structured item that carries CRLF must
+		// split like its plain-text twin instead of missing a "\n"-based
+		// delimiter and keeping carriage returns in the chunk text.
+		txt = normalizeGeneralNewlines(txt)
+	}
 	if ckType != "text" {
 		return []schema.ChunkDoc{buildChunkDoc(it, ckType, txt, "", "")}
 	}

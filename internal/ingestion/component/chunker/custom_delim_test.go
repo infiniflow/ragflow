@@ -4,6 +4,7 @@ import (
 	"context"
 	"ragflow/internal/ingestion/component/schema"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,56 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 	for i, chunk := range chunks {
 		if _, ok := chunk["doc_type_kwd"]; ok {
 			t.Errorf("chunk[%d] must not synthesize doc_type_kwd: %v", i, chunk)
+		}
+	}
+}
+
+// TestCustomDelimTextNormalizesCRLF covers a custom (backtick) delimiter applied
+// to a CRLF document. Python normalizes line endings before it branches
+// (naive_merge replaces "\r\n" and "\r" with "\n" on every section first), so a
+// "\n\n" delimiter still splits Windows text. The custom branch in Go split the
+// raw text: "\r\n\r\n" never matches "\n\n", the whole document stayed one
+// segment, and the chunk text kept its carriage returns.
+func TestCustomDelimTextNormalizesCRLF(t *testing.T) {
+	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{"`\n\n`"}}
+	input := map[string]any{
+		"name": "crlf.txt", "output_format": "text",
+		"text": "Alpha\r\nstill one paragraph\r\n\r\nBeta paragraph\r\n",
+	}
+	chunks := invokeTokenChunks(t, params, input)
+	got := chunkTexts(chunks)
+	want := []string{"Alpha\nstill one paragraph", "Beta paragraph"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("chunk texts: want %q got %q", want, got)
+	}
+}
+
+// TestCustomDelimJSONNormalizesCRLF is the JSON-path counterpart: a structured
+// text item carrying CRLF must be normalized before the delimiter split, as
+// naive_merge_with_images does.
+func TestCustomDelimJSONNormalizesCRLF(t *testing.T) {
+	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{"`\n\n`"}}
+	input := map[string]any{
+		"name": "crlf.txt", "file_type": "txt", "output_format": "json",
+		"json": []map[string]any{
+			{"text": "Alpha\r\nstill one paragraph\r\n\r\nBeta paragraph\r\n", "doc_type_kwd": "text"},
+		},
+	}
+	chunks := invokeTokenChunks(t, params, input)
+	var got []string
+	for _, c := range chunkTexts(chunks) {
+		got = append(got, strings.ReplaceAll(c, "\r", ""))
+	}
+	// The JSON path keeps the source's trailing newline (it does not TrimSpace
+	// segments); what matters here is that the CRLF document split on "\n\n" and
+	// no carriage return survived.
+	want := []string{"Alpha\nstill one paragraph", "Beta paragraph\n"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("chunk texts: want %q got %q (raw %q)", want, got, chunkTexts(chunks))
+	}
+	for i, c := range chunkTexts(chunks) {
+		if strings.Contains(c, "\r") {
+			t.Errorf("chunk[%d] still carries CR: %q", i, c)
 		}
 	}
 }
