@@ -1,6 +1,17 @@
 import { AgentCategory } from '@/constants/agent';
 import { AgentListItemType } from '@/interfaces/database/agent';
-import { LucideIcon, Network, Route, Shapes } from 'lucide-react';
+import {
+  Box,
+  ChartPie,
+  Component,
+  LucideIcon,
+  MessageCircleCode,
+  Network,
+  PencilRuler,
+  Route,
+  Shapes,
+  Sparkle,
+} from 'lucide-react';
 
 export enum FlowType {
   Agent = 'agent',
@@ -57,6 +68,48 @@ export const AgentTabs = [
   FlowType.Agent,
   FlowType.Flow,
   FlowType.Compiler,
+] as const;
+
+export enum TemplateMenuItemKey {
+  Recommended = 'Recommended',
+  Agent = 'Agent',
+  CustomerSupport = 'Customer Support',
+  Marketing = 'Marketing',
+  ConsumerApp = 'Consumer App',
+  Other = 'Other',
+}
+
+export const TemplateMenuItems = [
+  {
+    icon: Sparkle,
+    labelKey: 'recommended',
+    key: TemplateMenuItemKey.Recommended,
+  },
+  {
+    icon: Box,
+    labelKey: 'agent',
+    key: TemplateMenuItemKey.Agent,
+  },
+  {
+    icon: MessageCircleCode,
+    labelKey: 'customerSupport',
+    key: TemplateMenuItemKey.CustomerSupport,
+  },
+  {
+    icon: ChartPie,
+    labelKey: 'marketing',
+    key: TemplateMenuItemKey.Marketing,
+  },
+  {
+    icon: Component,
+    labelKey: 'consumerApp',
+    key: TemplateMenuItemKey.ConsumerApp,
+  },
+  {
+    icon: PencilRuler,
+    labelKey: 'other',
+    key: TemplateMenuItemKey.Other,
+  },
 ] as const;
 
 /**

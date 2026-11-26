@@ -1,6 +1,6 @@
 import { AgentBackground } from '@/components/canvas/background';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { PageFrame } from '@/components/page-frame';
+import { SidebarPageFrame } from '@/components/sidebar-page-frame';
 import Spotlight from '@/components/spotlight';
 import {
   AlertDialog,
@@ -13,7 +13,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
@@ -240,16 +239,18 @@ export default function AgentVersionHistory() {
 
   return (
     <DropdownProvider>
-      <PageFrame className="p-5">
-        <header className="shrink-0 pb-5">
-          <h1 className="text-xl font-semibold text-text-primary">
-            {t('flow.historyVersion')}
-          </h1>
-        </header>
-        <section className="relative flex min-h-0 min-w-0 flex-1 gap-8">
-          <div className="flex min-h-0 w-72 shrink-0 flex-col">
+      <SidebarPageFrame
+        containerClassName="mx-0 max-w-none gap-x-2.5"
+        panelClassName="pt-2.5"
+        contentPanelClassName="pr-2.5 md:pr-2.5"
+        sidebar={
+          <aside className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <h1 className="mb-4 shrink-0 text-base font-medium text-text-primary">
+              {t('flow.historyVersion')}
+            </h1>
             <SearchInput
-              rootClassName="m-0.5 mb-3"
+              className="h-9"
+              rootClassName="m-0 mb-3"
               placeholder={t('flow.version.filterByAlias')}
               value={aliasFilter}
               onChange={handleAliasFilterChange}
@@ -263,12 +264,12 @@ export default function AgentVersionHistory() {
                     return (
                       <li
                         key={x.id}
-                        className={cn('group cursor-pointer p-2', {
+                        className={cn('group h-9 cursor-pointer px-2', {
                           'bg-bg-card rounded-md ': x.id === selectedId,
                         })}
                         onClick={handleClick(x.id)}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex h-full items-center gap-2">
                           <span className="truncate min-w-0">{x.title}</span>
                           {x.release && <Dot></Dot>}
                           {x.alias && (
@@ -307,8 +308,11 @@ export default function AgentVersionHistory() {
                 </ul>
               )}
             </div>
-          </div>
-          <div className="relative min-h-0 min-w-0 flex-1">
+          </aside>
+        }
+      >
+        <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : versionLoadFailed ? (
@@ -316,118 +320,114 @@ export default function AgentVersionHistory() {
                 {t('flow.version.loadFailed')}
               </div>
             ) : (
-              <Card className="h-full">
-                <CardContent className="flex h-full min-h-0 flex-col p-5">
-                  <section className="flex justify-between gap-2 pb-2">
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center">
-                        <span className="pb-1 truncate">{agent?.title}</span>
-                        {selectedAlias && (
-                          <RAGFlowTooltip asChild tooltip={selectedAlias}>
-                            <span className="ml-2 max-w-[30%] truncate text-accent-primary text-sm">
-                              {selectedAlias}
-                            </span>
-                          </RAGFlowTooltip>
-                        )}
-                      </div>
-                      <p className="text-text-secondary text-xs">
-                        {t('flow.version.created')}:{' '}
-                        {formatDate(agent?.create_date)}
-                      </p>
+              <>
+                <section className="flex shrink-0 justify-between gap-2 pb-2">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center">
+                      <span className="pb-1 truncate">{agent?.title}</span>
+                      {selectedAlias && (
+                        <RAGFlowTooltip asChild tooltip={selectedAlias}>
+                          <span className="ml-2 max-w-[30%] truncate text-accent-primary text-sm">
+                            {selectedAlias}
+                          </span>
+                        </RAGFlowTooltip>
+                      )}
                     </div>
+                    <p className="text-text-secondary text-xs">
+                      {t('flow.version.created')}:{' '}
+                      {formatDate(agent?.create_date)}
+                    </p>
+                  </div>
 
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <RAGFlowTooltip
+                      asChild
+                      tooltip={t('flow.version.download')}
+                    >
+                      <Button
+                        variant={'ghost'}
+                        aria-label={t('flow.version.download')}
+                        onClick={downloadFile}
+                        disabled={!selectedId}
+                      >
+                        <ArrowDownToLine />
+                      </Button>
+                    </RAGFlowTooltip>
+                    {canRestore && (
                       <RAGFlowTooltip
                         asChild
-                        tooltip={t('flow.version.download')}
+                        tooltip={t('flow.version.restore')}
                       >
                         <Button
                           variant={'ghost'}
-                          aria-label={t('flow.version.download')}
-                          onClick={downloadFile}
-                          disabled={!selectedId}
+                          aria-label={t('flow.version.restore')}
+                          onClick={requestRestore}
+                          disabled={!selectedId || applyRestoring}
                         >
-                          <ArrowDownToLine />
+                          <RotateCcw />
                         </Button>
                       </RAGFlowTooltip>
-                      {canRestore && (
-                        <RAGFlowTooltip
-                          asChild
-                          tooltip={t('flow.version.restore')}
+                    )}
+                    {canDelete && (
+                      <RAGFlowTooltip
+                        asChild
+                        tooltip={t('flow.version.delete')}
+                      >
+                        <Button
+                          variant={'ghost'}
+                          aria-label={t('flow.version.delete')}
+                          onClick={requestDelete}
+                          disabled={!selectedId || deleting}
                         >
-                          <Button
-                            variant={'ghost'}
-                            aria-label={t('flow.version.restore')}
-                            onClick={requestRestore}
-                            disabled={!selectedId || applyRestoring}
-                          >
-                            <RotateCcw />
-                          </Button>
-                        </RAGFlowTooltip>
-                      )}
-                      {canDelete && (
-                        <RAGFlowTooltip
-                          asChild
-                          tooltip={t('flow.version.delete')}
-                        >
-                          <Button
-                            variant={'ghost'}
-                            aria-label={t('flow.version.delete')}
-                            onClick={requestDelete}
-                            disabled={!selectedId || deleting}
-                          >
-                            <Trash2 />
-                          </Button>
-                        </RAGFlowTooltip>
-                      )}
-                    </div>
-                  </section>
-                  <section className="relative min-h-0 flex-1">
-                    <ReactFlowProvider key={'flow-' + selectedId}>
-                      <CanvasSnapshotContext.Provider value={previewSnapshot}>
-                        <ReactFlow
-                          connectionMode={ConnectionMode.Loose}
-                          nodes={agent?.dsl?.graph?.nodes || []}
-                          edges={
-                            agent?.dsl?.graph?.edges?.flatMap((x) => ({
-                              ...x,
-                              type: 'default',
-                            })) || []
-                          }
-                          fitView
-                          nodeTypes={nodeTypes}
-                          edgeTypes={{}}
-                          zoomOnScroll={true}
-                          panOnDrag={true}
-                          zoomOnDoubleClick={false}
-                          preventScrolling={true}
-                          minZoom={0.1}
-                          nodesDraggable={false}
-                          nodesConnectable={false}
-                          elementsSelectable={false}
-                        >
-                          <AgentBackground></AgentBackground>
-                          <Spotlight
-                            className="z-0"
-                            opcity={0.7}
-                            coverage={70}
-                          />
-                        </ReactFlow>
-                      </CanvasSnapshotContext.Provider>
-                    </ReactFlowProvider>
-                  </section>
-                </CardContent>
-              </Card>
+                          <Trash2 />
+                        </Button>
+                      </RAGFlowTooltip>
+                    )}
+                  </div>
+                </section>
+                <section className="relative min-h-0 flex-1">
+                  <ReactFlowProvider key={'flow-' + selectedId}>
+                    <CanvasSnapshotContext.Provider value={previewSnapshot}>
+                      <ReactFlow
+                        connectionMode={ConnectionMode.Loose}
+                        nodes={agent?.dsl?.graph?.nodes || []}
+                        edges={
+                          agent?.dsl?.graph?.edges?.flatMap((x) => ({
+                            ...x,
+                            type: 'default',
+                          })) || []
+                        }
+                        fitView
+                        nodeTypes={nodeTypes}
+                        edgeTypes={{}}
+                        zoomOnScroll={true}
+                        panOnDrag={true}
+                        zoomOnDoubleClick={false}
+                        preventScrolling={true}
+                        minZoom={0.1}
+                        nodesDraggable={false}
+                        nodesConnectable={false}
+                        elementsSelectable={false}
+                      >
+                        <AgentBackground></AgentBackground>
+                        <Spotlight className="z-0" opcity={0.7} coverage={70} />
+                      </ReactFlow>
+                    </CanvasSnapshotContext.Provider>
+                  </ReactFlowProvider>
+                </section>
+              </>
             )}
           </div>
-        </section>
-        <RAGFlowPagination
-          total={filtered.length}
-          current={page}
-          pageSize={pageSize}
-          onChange={onPaginationChange}
-        ></RAGFlowPagination>
-      </PageFrame>
+          <div className="shrink-0 pt-2.5">
+            <RAGFlowPagination
+              total={filtered.length}
+              current={page}
+              pageSize={pageSize}
+              onChange={onPaginationChange}
+            ></RAGFlowPagination>
+          </div>
+        </main>
+      </SidebarPageFrame>
 
       <ConfirmDeleteDialog
         open={pending?.kind === 'delete'}

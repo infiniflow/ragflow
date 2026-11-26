@@ -3,6 +3,7 @@ import EmbedDialog, {
   type WidgetSettings,
 } from '@/components/embed-dialog';
 import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
+import { PageFrame } from '@/components/page-frame';
 import { PageHeader } from '@/components/page-header';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
@@ -272,94 +273,97 @@ export default function Agent() {
 
   return (
     <section className="h-full" data-testid="agent-detail">
-      <PageHeader className="pl-0">
-        <section>
-          <div className="text-xs text-text-secondary">
-            {t('flow.autosaved')} {time}
-          </div>
-        </section>
-        <div className="flex items-center gap-5">
-          <OnlineUsers></OnlineUsers>
-          <AgentEditGuard operatorPermission={operatorPermission}>
-            <ButtonLoading
-              variant={'secondary'}
-              onClick={handleSave}
-              loading={loading}
-            >
-              <LaptopMinimalCheck /> {t('flow.saveDraft')}
-            </ButtonLoading>
+      <PageFrame className="relative">
+        <PageHeader className="absolute inset-x-0 top-0 z-10 bg-transparent pl-0">
+          <section>
+            <div className="text-xs text-text-secondary pl-2.5">
+              {t('flow.autosaved')} {time}
+            </div>
+          </section>
+          <div className="flex items-center gap-5">
+            <OnlineUsers></OnlineUsers>
+            <AgentEditGuard operatorPermission={operatorPermission}>
+              <ButtonLoading
+                variant={'secondary'}
+                onClick={handleSave}
+                loading={loading}
+              >
+                <LaptopMinimalCheck /> {t('flow.saveDraft')}
+              </ButtonLoading>
 
-            {/* <PublishConfirmDialog
+              {/* <PublishConfirmDialog
               agentDetail={agentDetail}
               loading={loading}
               onPublish={() => saveGraph(undefined, undefined, true)}
               onBeforeOpen={hasBlockingIssues}
             /> */}
-            <PublishConfirmDialog
-              agentDetail={agentDetail}
-              loading={loading}
-              onPublish={handlePublish}
-            />
-          </AgentEditGuard>
-          {showRunButton &&
-            (runTooltipKey ? (
-              <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-            ) : (
-              runButton
-            ))}
-          <CanvasChecklist issues={issues} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="secondary"
-                size="icon"
-                aria-label={t('flow.management')}
-              >
-                <Ellipsis />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {hasReadPermission(operatorPermission) && (
-                <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
-                  <MessageSquareCode />
-                  {t('flow.conversationVariable')}
+              <PublishConfirmDialog
+                agentDetail={agentDetail}
+                loading={loading}
+                onPublish={handlePublish}
+              />
+            </AgentEditGuard>
+            {showRunButton &&
+              (runTooltipKey ? (
+                <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+              ) : (
+                runButton
+              ))}
+            <CanvasChecklist issues={issues} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label={t('flow.management')}
+                >
+                  <Ellipsis />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {hasReadPermission(operatorPermission) && (
+                  <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
+                    <MessageSquareCode />
+                    {t('flow.conversationVariable')}
+                  </AgentDropdownMenuItem>
+                )}
+                <AgentDropdownMenuItem onClick={handleExportJson}>
+                  <Upload />
+                  {t('flow.export')}
                 </AgentDropdownMenuItem>
-              )}
-              <AgentDropdownMenuItem onClick={handleExportJson}>
-                <Upload />
-                {t('flow.export')}
-              </AgentDropdownMenuItem>
-              {isPipeline ||
-                (location.hostname !== 'cloud.ragflow.io' && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <AgentDropdownMenuItem onClick={handleEmbedClick}>
-                      <ScreenShare />
-                      {t('common.embedIntoSite')}
-                    </AgentDropdownMenuItem>
-                  </>
-                ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </PageHeader>
-      <ModelResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
-        <ModelResourceAccessUserIdContext.Provider
-          value={agentLoading ? null : (agentDetail?.user_id ?? null)}
-        >
-          <ResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
-            <ReactFlowProvider>
-              <DropdownProvider>
-                <AgentCanvas
-                  drawerVisible={chatDrawerVisible}
-                  hideDrawer={hideChatDrawer}
-                  readOnly={!canEditAgent(operatorPermission)}
-                ></AgentCanvas>
-              </DropdownProvider>
-            </ReactFlowProvider>
-          </ResourceTenantIdContext.Provider>
-        </ModelResourceAccessUserIdContext.Provider>
-      </ModelResourceTenantIdContext.Provider>
+                {isPipeline ||
+                  (location.hostname !== 'cloud.ragflow.io' && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <AgentDropdownMenuItem onClick={handleEmbedClick}>
+                        <ScreenShare />
+                        {t('common.embedIntoSite')}
+                      </AgentDropdownMenuItem>
+                    </>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </PageHeader>
+        <ModelResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
+          <ModelResourceAccessUserIdContext.Provider
+            value={agentLoading ? null : (agentDetail?.user_id ?? null)}
+          >
+            <ResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
+              <ReactFlowProvider>
+                <DropdownProvider>
+                  <AgentCanvas
+                    className="h-full"
+                    drawerVisible={chatDrawerVisible}
+                    hideDrawer={hideChatDrawer}
+                    readOnly={!canEditAgent(operatorPermission)}
+                  ></AgentCanvas>
+                </DropdownProvider>
+              </ReactFlowProvider>
+            </ResourceTenantIdContext.Provider>
+          </ModelResourceAccessUserIdContext.Provider>
+        </ModelResourceTenantIdContext.Provider>
+      </PageFrame>
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}

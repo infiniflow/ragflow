@@ -230,6 +230,11 @@ const routeConfigOptions = [
     ],
   },
   {
+    path: Routes.AgentTemplates,
+    Component: () => import('@/pages/agents/agent-templates'),
+    layout: false,
+  },
+  {
     path: Routes.Root,
     Component: () => import('@/layouts/root-layout'),
     children: [
@@ -313,11 +318,6 @@ const routeConfigOptions = [
         path: `${Routes.CompilationTemplatesEditNext}/:id`,
         Component: () =>
           import('@/pages/user-setting/compilation-templates/edit-next'),
-      },
-      {
-        path: Routes.AgentTemplates,
-        layout: false,
-        Component: () => import('@/pages/agents/agent-templates'),
       },
       {
         path: `${Routes.Memory}`,
