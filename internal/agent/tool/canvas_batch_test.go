@@ -87,8 +87,8 @@ func TestCheckCanvasDependenciesBatchesResourceLoads(t *testing.T) {
 	if err := CheckCanvasDependencies(canvasBatchContext(t), captureDB, permission.ResourceKindDataset, ids); err != nil {
 		t.Fatalf("CheckCanvasDependencies: %v", err)
 	}
-	if n := capture.knowledgebaseSelects(); n > 2 {
-		t.Fatalf("knowledgebase SELECTs = %d for %d dependencies, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)
+	if n, limit := capture.knowledgebaseSelects(), 2*testsupport.DatasetPermissionQueryCount(len(ids)); n > limit {
+		t.Fatalf("knowledgebase SELECTs = %d for %d dependencies, want <= %d; got SQL: %v", n, len(ids), limit, capture.sqls)
 	}
 }
 

@@ -255,25 +255,3 @@ func (s *ChatPipelineService) codexAgent(
 ) (<-chan AsyncChatResult, error) {
 	return nil, fmt.Errorf("codex (mode 8) is not available in the community edition")
 }
-
-// iterativeSynthesis runs one mode 7 turn. The community edition has no
-// iterative-synthesis engine, so it reports the engine as unavailable instead of
-// re-dispatching to the regular pipeline. The dispatcher already performs that
-// fallback: engineInstalled reports false here, so selectedEngine is cleared
-// before this function is reached and this body is unreachable in practice.
-// Re-dispatching would duplicate that decision, and it would be wrong when it
-// did run: stripping kwargs["reasoning"] also drops a per-request level-7
-// override, so a chat pinned to another level would answer at that level
-// instead of on the plain path. Returning an error, like codexAgent, keeps one
-// fallback point — the dispatcher's.
-func (s *ChatPipelineService) iterativeSynthesis(
-	ctx context.Context,
-	chat *entity.Chat,
-	messages []map[string]interface{},
-	stream bool,
-	kwargs map[string]interface{},
-	useWebSearch bool,
-	quote bool,
-) (<-chan AsyncChatResult, error) {
-	return nil, fmt.Errorf("iterative synthesis (mode 7) is not available in the community edition")
-}

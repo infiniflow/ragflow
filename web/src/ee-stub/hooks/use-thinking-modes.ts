@@ -15,12 +15,11 @@
  */
 
 /**
- * Enterprise seam for the reasoning-engine options (modes 6-8).
+ * Enterprise seam for the reasoning-engine options.
  *
  * Upstream ships this as an empty list: the open-source build only offers the
  * naive ('0') and react ('5') levels, which the shared selector declares itself.
- * The enterprise repository fills the same path with the planer-explorer-
- * auditor, IterSynth and agentic pro options.
+ * The enterprise repository fills the same path with the agentic pro option.
  */
 import type { ThinkingOption } from '@/hooks/use-thinking-level';
 
