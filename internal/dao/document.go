@@ -288,14 +288,23 @@ func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts D
 	}
 	ingestionStatus := buildDocumentListIngestionStatusExpression(db)
 
-	query := db.WithContext(ctx).Table("document").
-		Select("document.suffix AS suffix, " + ingestionStatus + " AS ingestion_status, COUNT(*) AS doc_count").
+	// The status expression reads ingestion_task.status, so the counters must be
+	// aggregated in SQL - but the grouping cannot reference that expression
+	// directly: under ONLY_FULL_GROUP_BY MySQL rejects both a GROUP BY on the
+	// alias (the unqualified name resolves against the FROM tables, not the
+	// SELECT list) and a GROUP BY on the repeated CASE text. Compute the status
+	// per row in a derived table instead, then aggregate over its columns,
+	// which MySQL groups on safely.
+	rows := db.WithContext(ctx).Table("document").
+		Select("document.suffix AS suffix, " + ingestionStatus + " AS ingestion_status").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins(latestIngestionTaskJoin)
-	query = applyDocumentListFilters(query, opts, true, ingestionStatus)
-	// MySQL cannot match repeated expressions containing subqueries under ONLY_FULL_GROUP_BY.
-	query = query.Group("document.suffix, ingestion_status")
+	rows = applyDocumentListFilters(rows, opts, true, ingestionStatus)
+
+	query := db.WithContext(ctx).Table("(?) AS doc_rows", rows).
+		Select("doc_rows.suffix AS suffix, doc_rows.ingestion_status AS ingestion_status, COUNT(*) AS doc_count").
+		Group("doc_rows.suffix, doc_rows.ingestion_status")
 
 	if err := query.Scan(&groups).Error; err != nil {
 		return nil, 0, err
