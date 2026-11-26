@@ -640,7 +640,12 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// around it across item boundaries. Attaching per upstream item instead
 	// leaves every media chunk without neighbours, because one item rarely
 	// yields more than one chunk.
-	flat := flatten(perItem)
+	var flat []schema.ChunkDoc
+	if customDelim && hasActiveDelimiter(delimPattern) {
+		flat = mergeCustomDelimiterItems(items, perItem, delimPattern)
+	} else {
+		flat = flatten(perItem)
+	}
 	// perItem is no longer needed once flattened: drop the [][]ChunkDoc
 	// scaffolding (its sub-slice backing arrays) so it can be collected. The
 	// ChunkDoc values now live solely in flat.
@@ -755,6 +760,63 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 // JSON-payload internals
 // ---------------------------------------------------------------------------
 
+// Parser item boundaries separate paragraphs; custom delimiters separate chunks.
+func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+	var out []schema.ChunkDoc
+	var pending *schema.ChunkDoc
+	var textBuilder strings.Builder
+	flush := func() {
+		if pending != nil {
+			pending.Text = textBuilder.String()
+			pending.TKNums = intPtr(tokenizeStr(pending.Text))
+			out = append(out, *pending)
+			pending = nil
+			textBuilder.Reset()
+		}
+	}
+	for i, pieces := range perItem {
+		if itemDocType(items[i]) != "text" {
+			flush()
+			out = append(out, pieces...)
+			continue
+		}
+		text := itemTextOrFallback(items[i])
+		matches := pattern.FindAllStringIndex(text, -1)
+		if len(matches) > 0 && strings.TrimSpace(text[:matches[0][0]]) == "" {
+			flush()
+		}
+		for j, piece := range pieces {
+			if j > 0 {
+				flush()
+			}
+			if pending != nil {
+				separator := ""
+				text := textBuilder.String()
+				if strings.TrimRightFunc(text, unicode.IsSpace) == text &&
+					strings.TrimLeftFunc(piece.Text, unicode.IsSpace) == piece.Text {
+					separator = "\n"
+				}
+				if pattern.MatchString(separator) {
+					flush()
+				} else {
+					textBuilder.WriteString(separator)
+					textBuilder.WriteString(piece.Text)
+					pending.PDFPositions = extendRawJSONArray(pending.PDFPositions, piece.PDFPositions)
+					pending.Positions = extendRawJSONArray(pending.Positions, piece.Positions)
+					continue
+				}
+			}
+			pending = &piece
+			textBuilder.WriteString(piece.Text)
+		}
+		if len(matches) > 0 && strings.TrimSpace(text[matches[len(matches)-1][1]:]) == "" {
+			flush()
+		}
+	}
+	flush()
+	return out
+}
+
 func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
 	var previous *schema.ChunkDoc
 	for i := range perItem {
@@ -802,6 +864,9 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	}
 	kept := foldWhitespaceSegments(parts)
 	if len(kept) == 0 {
+		if !keepDelim {
+			return nil
+		}
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
 	// If the item carries PDF positions, slice them proportionally so each
