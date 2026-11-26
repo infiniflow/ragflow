@@ -400,7 +400,7 @@
                             "top_p": 0.3
                         },
                         "label": "Extractor",
-                        "name": "Summarization"
+                        "name": "Extractor"
                     },
                     "dragging": false,
                     "id": "Extractor:SharpTaxisSay",
