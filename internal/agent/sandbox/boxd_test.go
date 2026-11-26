@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -46,18 +47,28 @@ type fakeBoxd struct {
 	boxdpb.UnimplementedBoxdApiServer
 	t *testing.T
 
-	mu          sync.Mutex
-	creates     []*boxdpb.CreateVmRequest
-	destroyed   []string
-	egress      []*boxdpb.SetVmEgressAllowRequest
-	commands    []string
-	files       map[string][]byte
-	auth        []string
-	exchanges   int
-	nextID      int
-	createState string
-	getStates   []string
-	getErrs     []error
+	mu        sync.Mutex
+	creates   []*boxdpb.CreateVmRequest
+	destroyed []string
+	egress    []*boxdpb.SetVmEgressAllowRequest
+	commands  []string
+	files     map[string][]byte
+	// auth and rpcs record the authorization and the name of every call.
+	auth []string
+	rpcs []string
+	// vms maps the id of every machine that exists to its name.
+	vms map[string]string
+	// events orders the GetVm answers and Exec calls.
+	events []string
+	// destroyHangs makes the next DestroyVm calls wait for their deadline.
+	destroyHangs int
+	// tokenRedirect answers the token exchange with a redirect there.
+	tokenRedirect string
+	exchanges     int
+	nextID        int
+	createState   string
+	getStates     []string
+	getErrs       []error
 	// createErr is answered after the machine was created.
 	createErr   error
 	destroyErrs []error
@@ -74,22 +85,33 @@ type fakeBoxd struct {
 }
 
 func newFakeBoxd(t *testing.T) *fakeBoxd {
-	return &fakeBoxd{t: t, files: map[string][]byte{}, createState: "running", tokenLifetime: time.Hour}
+	return &fakeBoxd{t: t, files: map[string][]byte{}, vms: map[string]string{}, createState: "running", tokenLifetime: time.Hour}
 }
 
-func (f *fakeBoxd) recordAuth(ctx context.Context) {
+func (f *fakeBoxd) recordAuth(ctx context.Context, rpc string) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	f.mu.Lock()
 	f.auth = append(f.auth, strings.Join(md.Get("authorization"), ","))
+	f.rpcs = append(f.rpcs, rpc)
 	f.mu.Unlock()
 }
 
+// checkMachine refuses a call for a machine that does not exist. The
+// caller holds f.mu.
+func (f *fakeBoxd) checkMachine(id string) error {
+	if _, ok := f.vms[id]; !ok {
+		return status.Errorf(codes.InvalidArgument, "no machine %q", id)
+	}
+	return nil
+}
+
 func (f *fakeBoxd) CreateVm(ctx context.Context, req *boxdpb.CreateVmRequest) (*boxdpb.CreateVmResponse, error) {
-	f.recordAuth(ctx)
+	f.recordAuth(ctx, "CreateVm")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.creates = append(f.creates, req)
 	f.nextID++
+	f.vms[fmt.Sprintf("vm-%d", f.nextID)] = req.GetName()
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
@@ -97,7 +119,7 @@ func (f *fakeBoxd) CreateVm(ctx context.Context, req *boxdpb.CreateVmRequest) (*
 }
 
 func (f *fakeBoxd) GetVm(ctx context.Context, req *boxdpb.GetVmRequest) (*boxdpb.GetVmResponse, error) {
-	f.recordAuth(ctx)
+	f.recordAuth(ctx, "GetVm")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.getErrs) > 0 {
@@ -109,11 +131,22 @@ func (f *fakeBoxd) GetVm(ctx context.Context, req *boxdpb.GetVmRequest) (*boxdpb
 	if len(f.getStates) > 0 {
 		state, f.getStates = f.getStates[0], f.getStates[1:]
 	}
+	f.events = append(f.events, "get "+state)
 	return &boxdpb.GetVmResponse{VmId: req.GetVmId(), Status: state}, nil
 }
 
 func (f *fakeBoxd) DestroyVm(ctx context.Context, req *boxdpb.DestroyVmRequest) (*boxdpb.DestroyVmResponse, error) {
-	f.recordAuth(ctx)
+	f.recordAuth(ctx, "DestroyVm")
+	f.mu.Lock()
+	hang := f.destroyHangs > 0
+	if hang {
+		f.destroyHangs--
+	}
+	f.mu.Unlock()
+	if hang {
+		<-ctx.Done()
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.destroyErrs) > 0 {
@@ -124,13 +157,21 @@ func (f *fakeBoxd) DestroyVm(ctx context.Context, req *boxdpb.DestroyVmRequest) 
 		}
 	}
 	f.destroyed = append(f.destroyed, req.GetVmId())
+	for id, name := range f.vms {
+		if id == req.GetVmId() || name == req.GetVmId() {
+			delete(f.vms, id)
+		}
+	}
 	return &boxdpb.DestroyVmResponse{}, nil
 }
 
 func (f *fakeBoxd) SetVmEgressAllow(ctx context.Context, req *boxdpb.SetVmEgressAllowRequest) (*boxdpb.SetVmEgressAllowResponse, error) {
-	f.recordAuth(ctx)
+	f.recordAuth(ctx, "SetVmEgressAllow")
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.checkMachine(req.GetVm()); err != nil {
+		return nil, err
+	}
 	f.egress = append(f.egress, req)
 	entries := req.GetEntries()
 	if f.egressReply != nil {
@@ -140,12 +181,12 @@ func (f *fakeBoxd) SetVmEgressAllow(ctx context.Context, req *boxdpb.SetVmEgress
 }
 
 func (f *fakeBoxd) Whoami(ctx context.Context, _ *boxdpb.WhoamiRequest) (*boxdpb.WhoamiResponse, error) {
-	f.recordAuth(ctx)
+	f.recordAuth(ctx, "Whoami")
 	return &boxdpb.WhoamiResponse{UserId: "usr_1"}, nil
 }
 
 func (f *fakeBoxd) Exec(stream boxdpb.BoxdApi_ExecServer) error {
-	f.recordAuth(stream.Context())
+	f.recordAuth(stream.Context(), "Exec")
 	first, err := stream.Recv()
 	if err != nil {
 		return err
@@ -155,10 +196,19 @@ func (f *fakeBoxd) Exec(stream boxdpb.BoxdApi_ExecServer) error {
 		return status.Errorf(codes.InvalidArgument, "expected end of stdin, got %v", err)
 	}
 	f.mu.Lock()
+	if err := f.checkMachine(first.GetVmId()); err != nil {
+		f.mu.Unlock()
+		return err
+	}
 	f.commands = append(f.commands, first.GetCommand())
 	var failure error
 	if len(f.execErrs) > 0 {
 		failure, f.execErrs = f.execErrs[0], f.execErrs[1:]
+	}
+	if failure != nil {
+		f.events = append(f.events, "exec failed")
+	} else {
+		f.events = append(f.events, "exec")
 	}
 	handler := f.exec
 	f.mu.Unlock()
@@ -178,7 +228,8 @@ func (f *fakeBoxd) Exec(stream boxdpb.BoxdApi_ExecServer) error {
 }
 
 func (f *fakeBoxd) UploadFileStream(stream boxdpb.BoxdApi_UploadFileStreamServer) error {
-	var filePath string
+	f.recordAuth(stream.Context(), "UploadFileStream")
+	var filePath, machine string
 	var data []byte
 	for {
 		chunk, err := stream.Recv()
@@ -189,18 +240,27 @@ func (f *fakeBoxd) UploadFileStream(stream boxdpb.BoxdApi_UploadFileStreamServer
 			return err
 		}
 		if chunk.GetPath() != "" {
-			filePath = chunk.GetPath()
+			filePath, machine = chunk.GetPath(), chunk.GetVmId()
 		}
 		data = append(data, chunk.GetData()...)
 	}
 	f.mu.Lock()
+	if err := f.checkMachine(machine); err != nil {
+		f.mu.Unlock()
+		return err
+	}
 	f.files[filePath] = data
 	f.mu.Unlock()
 	return stream.SendAndClose(&boxdpb.UploadFileResponse{BytesWritten: uint64(len(data))})
 }
 
 func (f *fakeBoxd) DownloadFileStream(req *boxdpb.DownloadFileRequest, stream boxdpb.BoxdApi_DownloadFileStreamServer) error {
+	f.recordAuth(stream.Context(), "DownloadFileStream")
 	f.mu.Lock()
+	if err := f.checkMachine(req.GetVmId()); err != nil {
+		f.mu.Unlock()
+		return err
+	}
 	data, ok := f.files[req.GetPath()]
 	total := uint64(len(data))
 	if f.totalSizeLie != 0 {
@@ -220,8 +280,12 @@ func (f *fakeBoxd) DownloadFileStream(req *boxdpb.DownloadFileRequest, stream bo
 func (f *fakeBoxd) serveToken(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.exchanges++
-	n, code, lifetime := f.exchanges, f.tokenStatus, f.tokenLifetime
+	n, code, lifetime, redirect := f.exchanges, f.tokenStatus, f.tokenLifetime, f.tokenRedirect
 	f.mu.Unlock()
+	if redirect != "" {
+		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
+		return
+	}
 	var body struct {
 		APIKey string `json:"api_key"`
 	}
@@ -326,6 +390,8 @@ func TestBoxdLifecycle(t *testing.T) {
 	if !strings.HasPrefix(workDir, "/home/boxd/ragflow-codeexec-") || f.commands[0] != "mkdir -p '"+workDir+"/artifacts'" {
 		t.Fatalf("workspace %q, commands %q", workDir, f.commands)
 	}
+	f.files[workDir+"/artifacts/out.csv"] = []byte("a\n")
+	f.listing = "f\t2\tout.csv\x00"
 
 	res, err := p.ExecuteCode(ctx, inst, "def main(name):\n    return 'hi'\n", "python", 0, map[string]any{"name": "x"})
 	if err != nil {
@@ -344,13 +410,8 @@ func TestBoxdLifecycle(t *testing.T) {
 	if want := "cd '" + workDir + "' && exec timeout -k 5 30 python3 main.py"; f.commands[1] != want {
 		t.Fatalf("command = %q, want %q", f.commands[1], want)
 	}
-	for _, auth := range f.auth {
-		if auth != "Bearer tok-1" {
-			t.Fatalf("authorization = %q", auth)
-		}
-	}
-	if f.exchanges != 1 {
-		t.Fatalf("token exchanges = %d, want 1", f.exchanges)
+	if artifacts := res.Metadata["artifacts"].([]map[string]any); len(artifacts) != 1 || artifacts[0]["name"] != "out.csv" {
+		t.Fatalf("artifacts = %v", artifacts)
 	}
 
 	if err := p.DestroyInstance(ctx, inst); err != nil {
@@ -361,6 +422,20 @@ func TestBoxdLifecycle(t *testing.T) {
 	}
 	if strings.Join(f.destroyed, ",") != "vm-1" {
 		t.Fatalf("destroyed = %v", f.destroyed)
+	}
+	// Every call, file transfers and the delete included, carries the token.
+	for i, auth := range f.auth {
+		if auth != "Bearer tok-1" {
+			t.Fatalf("%s authorization = %q", f.rpcs[i], auth)
+		}
+	}
+	for _, rpc := range []string{"CreateVm", "SetVmEgressAllow", "Exec", "UploadFileStream", "DownloadFileStream", "DestroyVm"} {
+		if !slices.Contains(f.rpcs, rpc) {
+			t.Fatalf("no %s call recorded: %v", rpc, f.rpcs)
+		}
+	}
+	if f.exchanges != 1 {
+		t.Fatalf("token exchanges = %d, want 1", f.exchanges)
 	}
 	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Fatal("ExecuteCode on a destroyed instance succeeded")
@@ -400,6 +475,46 @@ func TestBoxdWaitsUntilRunningAndRetriesFirstCommand(t *testing.T) {
 	}
 	if len(f.getStates) != 0 || len(f.commands) != 3 {
 		t.Fatalf("states left %v, commands %q", f.getStates, f.commands)
+	}
+	// No command runs before the machine is running.
+	running := slices.Index(f.events, "get running")
+	firstExec := slices.IndexFunc(f.events, func(e string) bool { return strings.HasPrefix(e, "exec") })
+	if running < 0 || firstExec < running || f.events[len(f.events)-1] != "exec" {
+		t.Fatalf("events = %q", f.events)
+	}
+}
+
+func TestBoxdFakeChecksMachine(t *testing.T) {
+	f := newFakeBoxd(t)
+	p := newTestBoxd(t, f, nil)
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.exec(ctx, "vm-1", "true", 1024); err != nil {
+		t.Fatalf("exec on vm-1: %v", err)
+	}
+	if err := p.upload(ctx, "vm-1", "/tmp/a", []byte("1")); err != nil {
+		t.Fatalf("upload to vm-1: %v", err)
+	}
+	if _, err := p.download(ctx, "vm-1", "/tmp/a", 10); err != nil {
+		t.Fatalf("download from vm-1: %v", err)
+	}
+	if err := p.DestroyInstance(ctx, inst); err != nil {
+		t.Fatal(err)
+	}
+	f.files["/tmp/b"] = []byte("1")
+	for _, id := range []string{"", "vm-2", "vm-1"} {
+		if _, err := p.exec(ctx, id, "true", 1024); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("exec on %q: %v", id, err)
+		}
+		if err := p.upload(ctx, id, "/tmp/a", []byte("1")); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("upload to %q: %v", id, err)
+		}
+		if _, err := p.download(ctx, id, "/tmp/b", 10); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("download from %q: %v", id, err)
+		}
 	}
 }
 
@@ -444,6 +559,46 @@ func TestBoxdFailedStartDeletesMachine(t *testing.T) {
 				t.Fatalf("destroyed = %v, want vm-1", f.destroyed)
 			}
 		})
+	}
+}
+
+func TestBoxdFailedStartRetriesStalledDelete(t *testing.T) {
+	f := newFakeBoxd(t)
+	f.egressReply = []string{}
+	f.destroyHangs = 1
+	p := newTestBoxd(t, f, nil)
+	p.deleteTimeout = 50 * time.Millisecond
+	start := time.Now()
+	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+		t.Fatal("CreateInstance succeeded")
+	}
+	if strings.Join(f.destroyed, ",") != "vm-1" || time.Since(start) > 5*time.Second {
+		t.Fatalf("destroyed = %v after %s, want vm-1 on the second attempt", f.destroyed, time.Since(start))
+	}
+}
+
+func TestBoxdTokenExchangeDoesNotFollowRedirects(t *testing.T) {
+	var mu sync.Mutex
+	var leaked []string
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		leaked = append(leaked, string(body))
+		mu.Unlock()
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(elsewhere.Close)
+	f := newFakeBoxd(t)
+	f.tokenRedirect = elsewhere.URL + boxdTokenPath
+	p := newTestBoxd(t, f, nil)
+	err := p.HealthCheck(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "HTTP 307") {
+		t.Fatalf("err = %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(leaked) != 0 {
+		t.Fatalf("the API key was sent on to the redirect target: %q", leaked)
 	}
 }
 
@@ -776,12 +931,23 @@ func TestBoxdInitializeValidation(t *testing.T) {
 		{map[string]any{"api_key": "k", "labels": "boxd/x=y"}, "invalid label"},
 		{map[string]any{"api_key": "k", "region": "New York"}, "invalid region"},
 		{map[string]any{"api_key": "k", "region": "nyc", "base_url": "https://10.0.0.1:9443"}, "needs an API URL with a host name"},
-		{map[string]any{"api_key": "k", "max_lifetime": 30}, "max_lifetime at least 60"},
+		{map[string]any{"api_key": "k", "max_lifetime": 30}, "max_lifetime at least 360"},
+		{map[string]any{"api_key": "k", "timeout": 600, "max_lifetime": 600}, "max_lifetime (600) must be at least the timeout (600) plus 300"},
+		{map[string]any{"api_key": "k", "timeout": 200, "max_lifetime": 499}, "max_lifetime (499) must be at least"},
 	}
 	for _, tc := range cases {
 		err := newBoxdProviderFromConfig(tc.cfg).Initialize(context.Background())
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: err = %v, want %q", tc.cfg, err, tc.want)
+		}
+	}
+	// The smallest lifetimes that fit: the minimum with the default timeout, and exactly the timeout plus the headroom.
+	for _, cfg := range []map[string]any{
+		{"api_key": "k", "max_lifetime": boxdMinLifetime},
+		{"api_key": "k", "timeout": 200, "max_lifetime": 200 + boxdLifetimeHeadroom},
+	} {
+		if err := newBoxdProviderFromConfig(cfg).Initialize(context.Background()); err != nil {
+			t.Errorf("%v: %v", cfg, err)
 		}
 	}
 	t.Setenv("BOXD_API_KEY", "env-key")

@@ -195,12 +195,16 @@ func ValidateConfig(provider string, config map[string]any) error {
 			if !strings.HasPrefix(baseURL, "https://") {
 				return invalid("boxd API URL must use https: %s", baseURL)
 			}
-			if _, _, _, err := boxdEndpoints(strings.TrimRight(baseURL, "/"), ""); err != nil {
+			region := strings.ToLower(strings.TrimSpace(stringValue(config["region"])))
+			if _, _, _, err := boxdEndpoints(strings.TrimRight(baseURL, "/"), region); err != nil {
 				return invalid("%s", strings.TrimPrefix(err.Error(), "boxd: "))
 			}
 		}
 		if region := strings.ToLower(strings.TrimSpace(stringValue(config["region"]))); region != "" && !boxdRegionPattern.MatchString(region) {
 			return invalid("invalid boxd region: %s", region)
+		}
+		if timeout, lifetime := integerOr(config["timeout"], boxdDefaultTimeout), integerOr(config["max_lifetime"], boxdDefaultMaxLifetime); lifetime < timeout+boxdLifetimeHeadroom {
+			return invalid("max_lifetime (%d) must be at least the timeout (%d) plus %d seconds for the machine to start and return its results", lifetime, timeout, boxdLifetimeHeadroom)
 		}
 		if vcpu := integerOr(config["vcpu"], 0); !slices.Contains(boxdSizes, int(vcpu)) {
 			return invalid("vcpu must be 0, 1, 2, 4 or 8")
@@ -440,11 +444,11 @@ func boxdSchema() map[string]any {
 	return map[string]any{
 		"api_key":            fieldWith("string", true, "API Key", "secret", true, "placeholder", "bxd_...", "description", "boxd API key. Create one at https://app.boxd.sh?ref=ragflow under API keys."),
 		"region":             fieldWith("string", false, "Region", "placeholder", "fra", "description", "Region the machines run in: fra (Frankfurt) or nyc (New York). Empty uses fra."),
-		"org":                fieldWith("string", false, "Organization", "description", "boxd organization to create machines in, by name or id. Empty uses the API key's organization."),
+		"org":                fieldWith("string", false, "Organization", "description", "boxd organization to create machines in, by name or id. Empty uses the API key's organization. Executed code can read the environment variables and secrets boxd gives the organization's machines and the key's user, so use an organization and key with none."),
 		"vcpu":               limits("integer", false, "vCPUs", 0, 0, 8, "Machine size: 1, 2, 4 or 8 vCPUs with 4 GB of memory per vCPU. 0 uses the organization's default size."),
 		"allow_internet":     fieldWith("boolean", false, "Allow Internet Access", "default", false, "description", "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages)."),
 		"timeout":            limits("integer", false, "Timeout (seconds)", 30, 1, 600, "Maximum execution time for a single run."),
-		"max_lifetime":       limits("integer", false, "Max Machine Lifetime (seconds)", 3600, 60, 86400, "boxd deletes a machine after this, guarding against leaks if the run is interrupted."),
+		"max_lifetime":       limits("integer", false, "Max Machine Lifetime (seconds)", 3600, boxdMinLifetime, 86400, "boxd deletes a machine this long after creating it, guarding against leaks if the run is interrupted. Counts the machine's start too, so it must be at least the timeout plus 300."),
 		"name_prefix":        fieldWith("string", false, "Machine Name Prefix", "default", "ragflow-sandbox-", "description", "Machine names start with this prefix, so they are easy to find in the boxd console."),
 		"labels":             fieldWith("string", false, "Machine Labels", "placeholder", "team=data,env=prod", "description", "Labels added to every machine, as comma-separated key=value pairs. created-by=ragflow is always set."),
 		"base_url":           fieldWith("string", false, "API Endpoint", "placeholder", "https://boxd.sh:9443", "description", "Override the boxd API endpoint. Leave empty for boxd.sh."),

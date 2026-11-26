@@ -276,11 +276,11 @@ Create an API key in the [boxd console](https://app.boxd.sh?ref=ragflow) under *
 | --- | --- | --- | --- |
 | **API Key** | Yes | — | Begins with `bxd_`. |
 | **Region** | No | `fra` | `fra` (Frankfurt) or `nyc` (New York). |
-| **Organization** | No | The API key's organization | The boxd organization to create machines in, by name or ID. |
+| **Organization** | No | The API key's organization | The boxd organization to create machines in, by name or ID. Executed code can read the environment variables and secrets boxd gives the organization's machines and the key's user, so use an organization and key with none. |
 | **vCPUs** | No | `0` | `1`, `2`, `4`, or `8` vCPUs, with 4 GB of memory per vCPU. `0` uses the organization's default size. |
 | **Allow Internet Access** | No | Disabled | Applied as the machine's egress policy before code runs. Enable only when required. |
 | **Timeout (seconds)** | No | `30` | Range: 1–600. |
-| **Max Machine Lifetime (seconds)** | No | `3600` | Range: 60–86400. boxd deletes a machine after this even if the run is interrupted. |
+| **Max Machine Lifetime (seconds)** | No | `3600` | Range: 360–86400, and at least the timeout plus 300. Counted from machine creation, so it includes the start. boxd deletes a machine after this even if the run is interrupted. |
 | **Machine Name Prefix** | No | `ragflow-sandbox-` | Machine names start with it, so you can find them in the boxd console. |
 | **Machine Labels** | No | — | Comma-separated `key=value` pairs added to every machine. `created-by=ragflow` is always set. |
 | **API Endpoint** | No | `https://boxd.sh:9443` | Override the boxd API endpoint. Must use HTTPS. |
@@ -288,7 +288,7 @@ Create an API key in the [boxd console](https://app.boxd.sh?ref=ragflow) under *
 | **Max Artifacts** | No | `20` | Number of returned files. |
 | **Max Artifact Bytes** | No | `10485760` | Per returned file. |
 
-The settings can also come from the `BOXD_API_KEY`, `BOXD_BASE_URL`, `BOXD_REGION`, `BOXD_ORG`, `BOXD_TIMEOUT`, and `BOXD_ALLOW_INTERNET` environment variables when `SANDBOX_PROVIDER_TYPE=boxd`. Keep internet access disabled unless executed code requires it. A new machine takes a few seconds to start, so each execution has that much more latency than with a warm pool.
+The settings can also come from the `BOXD_API_KEY`, `BOXD_BASE_URL`, `BOXD_REGION`, `BOXD_ORG`, `BOXD_TIMEOUT`, and `BOXD_ALLOW_INTERNET` environment variables when `SANDBOX_PROVIDER_TYPE=boxd` and no sandbox provider is saved in **Admin**. A provider saved in **Admin** takes precedence, so on an existing deployment select and save **boxd** there instead. Keep internet access disabled unless executed code requires it. A new machine takes a few seconds to start, so each execution has that much more latency than with a warm pool.
 
 ## Verify code execution
 

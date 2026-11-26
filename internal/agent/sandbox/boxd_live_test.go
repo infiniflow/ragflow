@@ -125,10 +125,17 @@ func TestBoxdLive(t *testing.T) {
 		if len(artifacts) != 2 || artifacts[0]["name"] != "out.csv" || artifacts[1]["name"] != "sub/big.json" {
 			t.Fatalf("artifacts: %d %v", len(artifacts), res.Metadata["artifacts"])
 		}
-		small, _ := base64.StdEncoding.DecodeString(artifacts[0]["content_b64"].(string))
-		big, _ := base64.StdEncoding.DecodeString(artifacts[1]["content_b64"].(string))
-		if string(small) != "a,b\n1,2\n" || len(big) != 5242881 {
-			t.Fatalf("artifact sizes %d %d", len(small), len(big))
+		small, err := base64.StdEncoding.DecodeString(artifacts[0]["content_b64"].(string))
+		if err != nil {
+			t.Fatalf("decode out.csv: %v", err)
+		}
+		big, err := base64.StdEncoding.DecodeString(artifacts[1]["content_b64"].(string))
+		if err != nil {
+			t.Fatalf("decode sub/big.json: %v", err)
+		}
+		wantBig := sha256.Sum256([]byte("[" + strings.Repeat("1,", 2621439) + "1]"))
+		if gotBig := sha256.Sum256(big); string(small) != "a,b\n1,2\n" || gotBig != wantBig {
+			t.Fatalf("artifacts differ: out.csv %q, sub/big.json %d bytes, sha256 %x, want %x", small, len(big), gotBig, wantBig)
 		}
 		step("ExecuteCode python: stdout and stderr apart, structured result, 2 artifacts (5 MiB one byte-exact)", start)
 
@@ -142,8 +149,9 @@ func TestBoxdLive(t *testing.T) {
 		step("5 MiB script uploaded, sha256 matches in the machine", start)
 
 		start = time.Now()
-		res, err = p.ExecuteCode(ctx, inst, "import urllib.request\ndef main():\n    try:\n        urllib.request.urlopen('https://example.com', timeout=5)\n        return 'reached'\n    except Exception as e:\n        return 'blocked: ' + type(e).__name__\n", "python", 30, nil)
-		if err != nil || !strings.Contains(string(mustJSON(res.Metadata["structured_result"])), "blocked") {
+		res, err = p.ExecuteCode(ctx, inst, "import urllib.error, urllib.request\ndef main():\n    try:\n        urllib.request.urlopen('https://example.com', timeout=5)\n        return 'reached'\n    except urllib.error.HTTPError as e:\n        return 'reached: HTTP %d' % e.code\n    except Exception as e:\n        return 'blocked: ' + type(e).__name__\n", "python", 30, nil)
+		// An HTTP answer of any status means the machine got out.
+		if probe := string(mustJSON(res.Metadata["structured_result"])); err != nil || !strings.Contains(probe, "blocked") || strings.Contains(probe, "reached") {
 			t.Fatalf("egress: %v %#v", err, res)
 		}
 		step("outbound network closed: "+string(mustJSON(res.Metadata["structured_result"])), start)
@@ -215,6 +223,12 @@ func TestBoxdLive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateInstance: %v", err)
 		}
+		// Delete by id if the test stops before the machine is gone.
+		t.Cleanup(func() {
+			if err := p.deleteMachine(context.Background(), inst.InstanceID); err != nil {
+				t.Errorf("delete %s by id: %v", inst.InstanceID, err)
+			}
+		})
 		name := inst.Metadata["machine_name"].(string)
 		// The cleanup after a lost create answer deletes by name.
 		p.cleanup(ctx, name)

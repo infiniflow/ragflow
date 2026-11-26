@@ -215,6 +215,18 @@ func TestValidateConfigTypesRangesAndProviderRules(t *testing.T) {
 	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "base_url": "https://boxd.example.com/api"}); err == nil {
 		t.Fatal("boxd endpoint with a path accepted")
 	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "region": "nyc", "base_url": "https://127.0.0.1:9443"}); err == nil {
+		t.Fatal("boxd region with an IP endpoint accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "base_url": "https://127.0.0.1:9443"}); err != nil {
+		t.Fatalf("boxd IP endpoint without a region rejected: %v", err)
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "timeout": 600, "max_lifetime": 600}); err == nil {
+		t.Fatal("boxd max_lifetime shorter than the timeout plus start accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "timeout": 600}); err != nil {
+		t.Fatalf("boxd timeout 600 with the default lifetime rejected: %v", err)
+	}
 	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "region": "NYC", "vcpu": 4, "labels": "team=data", "name_prefix": "rag-"}); err != nil {
 		t.Fatalf("valid boxd config rejected: %v", err)
 	}

@@ -53,6 +53,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -94,7 +95,17 @@ const (
 	boxdDeleteAttempts   = 3
 	boxdDeleteBackoff    = 500 * time.Millisecond
 	boxdDeleteMaxBackoff = 3 * time.Second
-	boxdUploadChunk      = 1 << 20
+	// boxdDeleteCallTimeout bounds one delete attempt, so a call that
+	// stalls leaves time for the next attempt.
+	boxdDeleteCallTimeout = 20 * time.Second
+	// boxdCleanupBudget bounds all delete attempts after a failed start.
+	boxdCleanupBudget = boxdDeleteAttempts*boxdDeleteCallTimeout + 2*boxdDeleteMaxBackoff
+	boxdUploadChunk   = 1 << 20
+	// boxdLifetimeHeadroom is how many seconds a machine needs beyond the
+	// run's timeout: the lifetime counts from creation, so it also covers
+	// the start, the script upload, the kill grace and the artifacts.
+	boxdLifetimeHeadroom = 300
+	boxdMinLifetime      = 360
 )
 
 var (
@@ -129,6 +140,7 @@ type BoxdProvider struct {
 	startPoll     time.Duration
 	execGrace     time.Duration
 	deleteBackoff time.Duration
+	deleteTimeout time.Duration
 	// dialOptions are added to the gRPC dial options (tests use them to
 	// dial an in-memory server).
 	dialOptions []grpc.DialOption
@@ -195,6 +207,7 @@ func newBoxdProviderFromConfig(cfg map[string]any) *BoxdProvider {
 		startPoll:        boxdStartPoll,
 		execGrace:        boxdExecGrace,
 		deleteBackoff:    boxdDeleteBackoff,
+		deleteTimeout:    boxdDeleteCallTimeout,
 		instances:        make(map[string]boxdInstance),
 	}
 }
@@ -217,8 +230,12 @@ func (p *BoxdProvider) Initialize(context.Context) error {
 	if p.baseURL == "" {
 		p.baseURL = boxdDefaultBaseURL
 	}
-	if p.timeoutSec <= 0 || p.maxLifetimeSec < 60 || p.maxOutputBytes <= 0 || p.maxArtifactBytes <= 0 || p.maxArtifacts < 0 {
-		return errors.New("boxd: timeout and size limits must be positive, max_lifetime at least 60 seconds, and max_artifacts non-negative")
+	if p.timeoutSec <= 0 || p.maxLifetimeSec < boxdMinLifetime || p.maxOutputBytes <= 0 || p.maxArtifactBytes <= 0 || p.maxArtifacts < 0 {
+		return fmt.Errorf("boxd: timeout and size limits must be positive, max_lifetime at least %d seconds, and max_artifacts non-negative", boxdMinLifetime)
+	}
+	if p.maxLifetimeSec < p.timeoutSec+boxdLifetimeHeadroom {
+		return fmt.Errorf("boxd: max_lifetime (%d) must be at least the timeout (%d) plus %d seconds for the machine to start and return its results",
+			p.maxLifetimeSec, p.timeoutSec, boxdLifetimeHeadroom)
 	}
 	if !slices.Contains(boxdSizes, p.vcpu) {
 		return fmt.Errorf("boxd: vcpu must be 0 (the org's default), 1, 2, 4 or 8, not %d", p.vcpu)
@@ -255,7 +272,11 @@ func (p *BoxdProvider) Initialize(context.Context) error {
 	p.conn = conn
 	p.api = boxdpb.NewBoxdApiClient(conn)
 	p.exchangeURL = exchangeURL
-	p.httpClient = &http.Client{Timeout: 30 * time.Second}
+	p.httpClient = &http.Client{
+		Timeout: 30 * time.Second,
+		// The exchange posts the API key: never send it on to another URL.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	p.labelSet = labels
 	p.initialized = true
 	return nil
@@ -516,18 +537,22 @@ func (p *BoxdProvider) HealthCheck(ctx context.Context) error {
 }
 
 // cleanup deletes a machine after a failed CreateInstance. It runs even
-// when ctx was cancelled.
+// when ctx was cancelled, and logs a delete that fails: the machine then
+// stays until max_lifetime.
 func (p *BoxdProvider) cleanup(ctx context.Context, machine string) {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), boxdCleanupBudget)
 	defer cancel()
-	_ = p.deleteMachine(cleanupCtx, machine)
+	if err := p.deleteMachine(cleanupCtx, machine); err != nil {
+		common.Warn("boxd: could not delete a machine after a failed start; it is deleted at max_lifetime",
+			zap.String("machine", machine), zap.Int("max_lifetime", p.maxLifetimeSec), zap.Error(err))
+	}
 }
 
 // deleteMachine deletes a machine by id or name, retrying transient
 // errors. A machine that is already gone counts as deleted.
 func (p *BoxdProvider) deleteMachine(ctx context.Context, machine string) error {
 	for attempt := 1; ; attempt++ {
-		callCtx, cancel := context.WithTimeout(ctx, boxdCallTimeout)
+		callCtx, cancel := context.WithTimeout(ctx, p.deleteTimeout)
 		_, err := p.api.DestroyVm(callCtx, &boxdpb.DestroyVmRequest{VmId: machine})
 		cancel()
 		if err == nil || status.Code(err) == codes.NotFound {
