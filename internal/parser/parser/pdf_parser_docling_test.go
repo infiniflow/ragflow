@@ -808,6 +808,11 @@ func TestDoclingRegionsConvertBottomLeftOrigin(t *testing.T) {
 	if pos := row(items[1]); pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
 		t.Fatalf("TOPLEFT must pass through unchanged: %#v", pos)
 	}
+	// Height-only page metadata flips BOTTOMLEFT boxes without clamping x.
+	items, _ = doclingStandardItems(t, "", `{"pages":{"1":{"size":{"height":200}}},"texts":[`+bottomLeft+`]}`)
+	if pos := row(items[0]); pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("BOTTOMLEFT with height alone not converted: %#v", pos)
+	}
 	// Unknown page height: the bottom-origin Y cannot meet the top-origin
 	// contract, so the position is dropped rather than emitted wrong. A
 	// TOPLEFT box needs no page size.

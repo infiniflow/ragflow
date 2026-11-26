@@ -147,9 +147,6 @@ func externalBlockMaps(blocks []ExternalBlock, opts ExternalBlockOptions) ([]map
 				body = []map[string]any{item}
 			}
 		}
-		if len(positions) == 0 && block.KeepPagePosition && block.Page > 0 && (block.Items != nil || block.Type != ExternalBlockFigure) {
-			positions = [][]any{{block.Page, 0.0, 0.0, 0.0, 0.0}}
-		}
 		for _, item := range body {
 			if item == nil {
 				continue
@@ -163,11 +160,17 @@ func externalBlockMaps(blocks []ExternalBlock, opts ExternalBlockOptions) ([]map
 			if block.PreserveOrder {
 				item["_preserve_order"] = true
 			}
-			if len(positions) > 0 {
+			itemPositions := positions
+			if len(itemPositions) == 0 && block.KeepPagePosition && block.Page > 0 {
+				if kind, _ := item[DocTypeKey].(string); kind == DocTypeText || kind == DocTypeTable {
+					itemPositions = [][]any{{block.Page, 0.0, 0.0, 0.0, 0.0}}
+				}
+			}
+			if len(itemPositions) > 0 {
 				// One matrix per item: items of the same block must not share
 				// rows that a later stage rewrites in place.
-				matrix := make([][]any, len(positions))
-				for i, row := range positions {
+				matrix := make([][]any, len(itemPositions))
+				for i, row := range itemPositions {
 					matrix[i] = slices.Clone(row)
 				}
 				item["positions"], item["_pdf_positions"] = matrix, matrix
@@ -397,12 +400,17 @@ func (s *externalBlockSpace) position(region ExternalRegion) []any {
 		}
 	}
 	if region.BottomLeft {
-		// The flip needs the page height. It assumes both sides describe the
-		// same page box after rotation.
+		// The flip needs only the page height. It assumes both sides describe
+		// the same page box after rotation.
+		height := size[1]
 		if !sized {
-			return nil
+			if rawSize, ok := s.opts.PageSizes[page]; ok && positiveFinite(rawSize[1]) {
+				height = rawSize[1]
+			} else {
+				return nil
+			}
 		}
-		y0, y1 = size[1]-y1, size[1]-y0
+		y0, y1 = height-y1, height-y0
 	}
 	if !sized {
 		return []any{page, x0, x1, y0, y1}

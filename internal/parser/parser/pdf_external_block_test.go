@@ -30,6 +30,7 @@ func TestExternalBlockPosition(t *testing.T) {
 		{"points need no page size", ExternalBlockOptions{}, ExternalRegion{Page: 2, Box: [4]float64{10, 20, 110, 40}}, []any{2, 10.0, 110.0, 20.0, 40.0}},
 		{"points are clamped to a known page", ExternalBlockOptions{PageSizes: letter}, ExternalRegion{Page: 1, Box: [4]float64{-20, 700, 620, 800}}, []any{1, 0.0, 612.0, 700.0, 792.0}},
 		{"bottom-left origin is flipped", ExternalBlockOptions{PageSizes: letter}, ExternalRegion{Page: 1, Box: [4]float64{100, 50, 200, 80}, BottomLeft: true}, []any{1, 100.0, 200.0, 712.0, 742.0}},
+		{"bottom-left origin flips with height alone", ExternalBlockOptions{PageSizes: map[int][2]float64{1: {0, 792}}}, ExternalRegion{Page: 1, Box: [4]float64{100, 50, 700, 80}, BottomLeft: true}, []any{1, 100.0, 700.0, 712.0, 742.0}},
 		{"bottom-left origin needs the page height", ExternalBlockOptions{}, ExternalRegion{Page: 1, Box: [4]float64{100, 50, 200, 80}, BottomLeft: true}, nil},
 		{"bleed inside the tolerance is clamped", ExternalBlockOptions{PageSizes: letter, BleedTolerance: 0.1}, ExternalRegion{Page: 1, Box: [4]float64{-20, 12, 620, 92}}, []any{1, 0.0, 612.0, 12.0, 92.0}},
 		{"bleed beyond the tolerance is another space", ExternalBlockOptions{PageSizes: letter, BleedTolerance: 0.1}, ExternalRegion{Page: 1, Box: [4]float64{0, 0, 1275, 1650}}, nil},
@@ -83,7 +84,11 @@ func TestExternalBlockAspectMismatchDropsThePage(t *testing.T) {
 		{Text: "rounding", Page: 3, Regions: []ExternalRegion{{Page: 3, Box: [4]float64{30, 40, 300, 160}}}},
 	}, opts)
 	located := []bool{true, false, true}
-	for i, item := range ItemsToMaps(items) {
+	mapped := ItemsToMaps(items)
+	if len(mapped) != len(located) {
+		t.Fatalf("items = %d, want %d: %v", len(mapped), len(located), mapped)
+	}
+	for i, item := range mapped {
 		if _, ok := ExtractPDFPositions(item); ok != located[i] {
 			t.Errorf("item %q located = %v, want %v", item["text"], ok, located[i])
 		}
@@ -304,24 +309,47 @@ func TestExternalBlocksToItemsAttribution(t *testing.T) {
 			t.Fatalf("items = %v, want none", items)
 		}
 	})
-	t.Run("KeepPagePosition retains page-only position for non-figure blocks without regions", func(t *testing.T) {
+	t.Run("KeepPagePosition retains page-only position for text and table items without regions", func(t *testing.T) {
 		items := externalBlockItems(t, ExternalBlockOptions{},
 			ExternalBlock{Text: "body", Page: 3, KeepPagePosition: true},
 			ExternalBlock{Type: ExternalBlockFigure, Page: 3, KeepPagePosition: true},
 			ExternalBlock{Type: ExternalBlockFigure, Text: "caption", Page: 3, KeepPagePosition: true},
-			ExternalBlock{Text: "located", Page: 3, KeepPagePosition: true, Regions: []ExternalRegion{{Page: 3, Box: [4]float64{10, 20, 30, 40}}}},
+			ExternalBlock{
+				Page: 3, KeepPagePosition: true,
+				Items: []map[string]any{
+					{DocTypeKey: DocTypeText, "text": "mixed text"},
+					{DocTypeKey: DocTypeTable, "text": "mixed table"},
+					{DocTypeKey: DocTypeImage, "text": "mixed image"},
+				},
+			},
+			ExternalBlock{
+				Page: 3, KeepPagePosition: true,
+				Regions: []ExternalRegion{{Page: 3, Box: [4]float64{10, 20, 30, 40}}},
+				Items: []map[string]any{
+					{DocTypeKey: DocTypeText, "text": "located text"},
+					{DocTypeKey: DocTypeImage, "text": "located image"},
+				},
+			},
 		)
-		if len(items) != 3 {
-			t.Fatalf("items = %d, want 3 (unlocated empty figure dropped)", len(items))
+		if len(items) != 7 {
+			t.Fatalf("items = %d, want 7 (unlocated empty figure dropped)", len(items))
 		}
-		if rows, ok := ExtractPDFPositions(items[0]); !ok || !reflect.DeepEqual(rows, [][]any{{3, 0.0, 0.0, 0.0, 0.0}}) {
-			t.Fatalf("text positions = %v, want [[3 0 0 0 0]]", items[0]["positions"])
+		wantPageOnly := [][]any{{3, 0.0, 0.0, 0.0, 0.0}}
+		for _, idx := range []int{0, 2, 3} {
+			if rows, ok := ExtractPDFPositions(items[idx]); !ok || !reflect.DeepEqual(rows, wantPageOnly) {
+				t.Fatalf("item %d (%v) positions = %v, want %v", idx, items[idx][DocTypeKey], items[idx]["positions"], wantPageOnly)
+			}
 		}
-		if _, ok := ExtractPDFPositions(items[1]); ok {
-			t.Fatalf("figure without region should not get a synthetic page position: %v", items[1]["positions"])
+		for _, idx := range []int{1, 4} {
+			if _, ok := ExtractPDFPositions(items[idx]); ok {
+				t.Fatalf("image %d without region should not get a synthetic page position: %v", idx, items[idx]["positions"])
+			}
 		}
-		if rows, ok := ExtractPDFPositions(items[2]); !ok || !reflect.DeepEqual(rows, [][]any{{3, 10.0, 30.0, 20.0, 40.0}}) {
-			t.Fatalf("located text positions = %v, want real region", items[2]["positions"])
+		wantReal := [][]any{{3, 10.0, 30.0, 20.0, 40.0}}
+		for _, idx := range []int{5, 6} {
+			if rows, ok := ExtractPDFPositions(items[idx]); !ok || !reflect.DeepEqual(rows, wantReal) {
+				t.Fatalf("located item %d (%v) positions = %v, want %v", idx, items[idx][DocTypeKey], items[idx]["positions"], wantReal)
+			}
 		}
 	})
 }

@@ -372,6 +372,28 @@ func TestSoMarkPositionsAtPageEdgesWithScaling(t *testing.T) {
 	}
 }
 
+func TestSoMarkItemsScaleRepeatedPageByOwnRaster(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": 1, "page_size": map[string]any{"w": 100, "h": 100}, "blocks": []any{
+			map[string]any{"type": "text", "content": "first", "bbox": []any{10, 20, 50, 60}},
+		}},
+		map[string]any{"page_size": map[string]any{"w": 200, "h": 200}, "blocks": []any{
+			map[string]any{"type": "text", "content": "second", "bbox": []any{20, 40, 100, 120}},
+		}},
+	}}}}
+	items, _, warnings := soMarkItems(t.Context(), result, false, [][2]float64{{100, 100}, {100, 100}})
+	if len(items) != 2 || len(warnings) != 0 {
+		t.Fatalf("items = %d, warnings = %q", len(items), warnings)
+	}
+	want := []any{2, 10.0, 50.0, 20.0, 60.0}
+	for i, item := range items {
+		rows, _ := item["positions"].([][]any)
+		if item["page_number"] != 2 || len(rows) != 1 || !reflect.DeepEqual(rows[0], want) {
+			t.Fatalf("item %d positions = %v (page %v), want %v", i, rows, item["page_number"], want)
+		}
+	}
+}
+
 func TestSoMarkPagePointSizesHonorRotate(t *testing.T) {
 	// Fixture page 3 declares MediaBox [0 0 400 300] with /Rotate 90: the
 	// rendered page is 300 wide x 400 high, and positions must scale and

@@ -365,16 +365,6 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		pageCount = len(pageSizes)
 	}
 
-	pixByPage := make(map[int][2]float64, len(pages))
-	for pageIndex, pageRaw := range pages {
-		page, ok := pageRaw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if w, h := soMarkPagePixelSize(page["page_size"]); w > 0 && h > 0 {
-			pixByPage[soMarkPageNumber(page, pageIndex)] = [2]float64{w, h}
-		}
-	}
 	pointsByPage := make(map[int][2]float64, len(pageSizes))
 	for index, size := range pageSizes {
 		if size[0] > 0 && size[1] > 0 {
@@ -382,13 +372,23 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		}
 	}
 
-	var blocks []ExternalBlock
+	baseOpts := ExternalBlockOptions{
+		Provider:          "SoMark",
+		PageSizes:         pointsByPage,
+		BleedTolerance:    0.1,
+		ReorderEdges:      true,
+		FigurePlaceholder: "[Image]",
+	}
+
+	var items []map[string]any
+	seenWarnings := map[string]bool{}
 	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
 			continue
 		}
 		pageNumber := soMarkPageNumber(page, pageIndex)
+		var pageBlocks []ExternalBlock
 		rawBlocks, _ := page["blocks"].([]any)
 		for _, blockRaw := range rawBlocks {
 			raw, ok := blockRaw.(map[string]any)
@@ -404,18 +404,27 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			if box, ok := soMarkBox(raw); ok {
 				block.Regions = []ExternalRegion{{Page: pageNumber, Box: box}}
 			}
-			blocks = append(blocks, block)
+			pageBlocks = append(pageBlocks, block)
+		}
+		if len(pageBlocks) == 0 {
+			continue
+		}
+		// Convert each page entry with its own pixel dimensions so two entries
+		// resolving to the same PDF page cannot overwrite each other's scale.
+		pageOpts := baseOpts
+		pageOpts.SourceSizes = map[int][2]float64{}
+		if w, h := soMarkPagePixelSize(page["page_size"]); w > 0 && h > 0 {
+			pageOpts.SourceSizes[pageNumber] = [2]float64{w, h}
+		}
+		pageItems, placementWarnings := externalBlockMaps(pageBlocks, pageOpts)
+		items = append(items, pageItems...)
+		for _, w := range placementWarnings {
+			if !seenWarnings[w] {
+				seenWarnings[w] = true
+				warnings = append(warnings, w)
+			}
 		}
 	}
-	items, placementWarnings := externalBlockMaps(blocks, ExternalBlockOptions{
-		Provider:          "SoMark",
-		PageSizes:         pointsByPage,
-		SourceSizes:       pixByPage,
-		BleedTolerance:    0.1,
-		ReorderEdges:      true,
-		FigurePlaceholder: "[Image]",
-	})
-	warnings = append(warnings, placementWarnings...)
 	return items, pageCount, append(state.warnings(), warnings...)
 }
 
