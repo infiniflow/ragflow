@@ -15,9 +15,8 @@ import (
 
 const builtinTemplatePrefix = "ingestion_pipeline_"
 
-// builtinParserOrder matches settings.PARSERS order, projected onto
-// the canonical builtin templates shipped by Go. Templates not in this list
-// are appended deterministically after the shared parser methods.
+// builtinParserOrder defines the display order of the built-in pipeline catalog.
+// Templates not in this list are appended deterministically after these pipelines.
 var builtinParserOrder = map[string]int{
 	"general":      0,
 	"qa":           1,
@@ -31,6 +30,9 @@ var builtinParserOrder = map[string]int{
 	"one":          9,
 	"audio":        10,
 	"email":        11,
+	"outline":      12,
+	"summary":      13,
+	"enriched":     14,
 }
 
 //go:embed template/ingestion_pipeline_*.json

@@ -121,7 +121,7 @@ func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "custom"} {
+	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "enriched", "summary", "outline", "custom"} {
 		mustWrite("ingestion_pipeline_"+id+".json", `{"title":{"en":"`+id+`"},"dsl":{"components":{}}}`)
 	}
 
@@ -129,7 +129,7 @@ func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistryFromDir: %v", err)
 	}
-	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "custom"}
+	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "outline", "summary", "enriched", "custom"}
 	if got := r.Refs(); len(got) != len(want) {
 		t.Fatalf("Refs() length = %d, want %d (%#v)", len(got), len(want), want)
 	} else {
