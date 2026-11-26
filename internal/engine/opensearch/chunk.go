@@ -1135,12 +1135,12 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// Two legs (text + knn) decide the result set; when the window comes back
 	// short the body is logged below, to tell "the index has less" from "the
 	// request asked for less".
-	hybrid := hasVectorMatch && matchText != nil && e.hybridSearchEnabled
+	hybrid := hasVectorMatch && matchText != nil
 
 	switch {
 	case hybrid:
-		// Both legs + pipeline available: send a real hybrid query with an inline
-		// temporary search pipeline so keyword (BM25) and vector (knn) legs are scored
+		// Both legs present: send a real hybrid query with an inline temporary
+		// search pipeline so keyword (BM25) and vector (knn) legs are scored
 		// separately and merged by the normalization-processor with dynamic weights.
 		queryBody["query"] = map[string]interface{}{
 			"hybrid": map[string]interface{}{
@@ -1163,7 +1163,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			},
 		}
 	case hasVectorMatch:
-		// Vector-only, or no pipeline available: fall back to a plain knn query.
+		// Vector-only search: send a plain knn query.
 		queryBody["query"] = map[string]interface{}{"knn": knnQuery}
 	default:
 		if keywordQuery != nil {

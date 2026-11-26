@@ -69,7 +69,7 @@ func newCaptureEngine(t *testing.T, transport *requestCaptureTransport) *Engine 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Engine{client: client, hybridSearchEnabled: true}
+	return &Engine{client: client}
 }
 
 // TestSearchRequestsExactTotalHits guards against OpenSearch's default cap on
@@ -291,7 +291,6 @@ func TestHybridSearchUsesInlinePipelineWithDynamicWeights(t *testing.T) {
 				body:   `{"took":1,"hits":{"total":{"value":1},"hits":[{"_id":"c1","_index":"ragflow_t","_score":1.0,"_source":{"id":"c1"}}]}}`,
 			}
 			eng := newCaptureEngine(t, transport)
-			eng.hybridSearchEnabled = true
 
 			matchExprs := []interface{}{
 				&types.MatchTextExpr{MatchingText: "hello", Fields: []string{"content_ltks"}, TopN: 10},
@@ -364,27 +363,31 @@ func TestHybridSearchUsesInlinePipelineWithDynamicWeights(t *testing.T) {
 	}
 }
 
-func TestSupportsHybridSearch(t *testing.T) {
+func TestIsSupportedOpenSearchVersion(t *testing.T) {
 	cases := []struct {
 		version string
 		want    bool
 	}{
+		{"1.3.0", false},
 		{"2.9.0", false},
-		{"2.9.1", false},
-		{"2.10.0", true},
-		{"2.11.0", true},
+		{"2.10.0", false},
+		{"2.14.0", false},
+		{"2.17.0", false},
+		{"2.18.0", false},
+		{"2.19.0", true},
 		{"2.19.7", true},
+		{"2.19.8", true},
 		{"3.0.0", true},
 		{"3.6.0", true},
 		{"3.9.0", true},
-		{"7.10.2", false}, // compatibility mode
+		{"7.10.2", false}, // Elasticsearch compatibility mode
 		{"invalid", false},
-		{"1.3.0", false},
+		{"", false},
 	}
 	for _, tc := range cases {
-		got := supportsHybridSearch(tc.version)
+		got := isSupportedOpenSearchVersion(tc.version)
 		if got != tc.want {
-			t.Errorf("supportsHybridSearch(%q) = %v, want %v", tc.version, got, tc.want)
+			t.Errorf("isSupportedOpenSearchVersion(%q) = %v, want %v", tc.version, got, tc.want)
 		}
 	}
 }
