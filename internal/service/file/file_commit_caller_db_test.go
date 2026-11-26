@@ -17,10 +17,13 @@
 package file
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -45,7 +48,7 @@ func TestCreateCommitUsesCallerDB(t *testing.T) {
 	svc := NewFileCommitService()
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		_, e := svc.CreateCommit(t.Context(), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
+		_, e := svc.CreateCommit(permission.WithIdentity(t.Context(), "u1", "t1"), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
 			{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 		})
 		if e != nil {
@@ -71,7 +74,7 @@ func TestCreateCommitReadsParentThroughCallerDB(t *testing.T) {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// Seed the parent inside the caller's transaction but do not commit it.
 		seedCommitWithTree(t, tx, "uncommitted-parent", "folder-1")
-		created, e := svc.CreateCommit(t.Context(), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
+		created, e := svc.CreateCommit(permission.WithIdentity(t.Context(), "u1", "t1"), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
 			{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 		})
 		if e != nil {
@@ -92,20 +95,22 @@ func TestRecordPageEditUsesCallerDB(t *testing.T) {
 	db := newPageCommitTestDB(t)
 	svc := NewFileCommitService()
 
-	err := db.Transaction(func(tx *gorm.DB) error {
-		_, e := svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
-			DatasetID:  "dataset-1",
-			Slug:       "page-1",
-			PageType:   "doc",
-			Title:      "Page",
-			AuthorID:   "u1",
-			OldContent: "old",
-			NewContent: "new",
+	err := WithPageCommitLock(t.Context(), "dataset-1", "doc", "page-1", func(locked context.Context) error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			_, e := svc.RecordPageEdit(locked, tx, PageEditCommitInput{
+				DatasetID:  "dataset-1",
+				Slug:       "page-1",
+				PageType:   "doc",
+				Title:      "Page",
+				AuthorID:   "u1",
+				OldContent: "old",
+				NewContent: "new",
+			})
+			if e != nil {
+				return e
+			}
+			return errForceFileCommitRollback
 		})
-		if e != nil {
-			return e
-		}
-		return errForceFileCommitRollback
 	})
 	if !errors.Is(err, errForceFileCommitRollback) {
 		t.Fatalf("expected forced rollback, got %v", err)
@@ -124,19 +129,21 @@ func TestRecordPageEditReadsParentThroughCallerDB(t *testing.T) {
 	svc := NewFileCommitService()
 
 	var second *entity.FileCommit
-	err := db.Transaction(func(tx *gorm.DB) error {
-		_, e := svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
-			DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "First", AuthorID: "u1",
-			OldContent: "", NewContent: "v1",
-		})
-		if e != nil {
+	err := WithPageCommitLock(t.Context(), "dataset-1", "doc", "page-1", func(locked context.Context) error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			_, e := svc.RecordPageEdit(locked, tx, PageEditCommitInput{
+				DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "First", AuthorID: "u1",
+				OldContent: "", NewContent: "v1",
+			})
+			if e != nil {
+				return e
+			}
+			second, e = svc.RecordPageEdit(locked, tx, PageEditCommitInput{
+				DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "Second", AuthorID: "u1",
+				OldContent: "v1", NewContent: "v2",
+			})
 			return e
-		}
-		second, e = svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
-			DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "Second", AuthorID: "u1",
-			OldContent: "v1", NewContent: "v2",
 		})
-		return e
 	})
 	if err != nil {
 		t.Fatalf("transaction: %v", err)
@@ -153,6 +160,50 @@ func TestRecordPageEditReadsParentThroughCallerDB(t *testing.T) {
 	}
 }
 
+// TestWithPageCommitLockHoldsLockThroughFn pins the core P1 fix: while the
+// wrapper's fn runs (which is where the caller commits its transaction), the
+// per-page mutex must still be held. TryLock reports whether the lock is free;
+// it must fail inside fn, proving a concurrent edit cannot resolve the parent
+// from committed data before this transaction's parent write is committed.
+func TestWithPageCommitLockHoldsLockThroughFn(t *testing.T) {
+	fileID := wikiFileID("dataset-1", "doc", "page-1")
+	mu := pageCommitLock(fileID)
+	lockFreeInsideFn := true
+	err := WithPageCommitLock(t.Context(), "dataset-1", "doc", "page-1", func(context.Context) error {
+		lockFreeInsideFn = mu.TryLock() // false => wrapper holds it (correct)
+		if lockFreeInsideFn {
+			mu.Unlock() // avoid leaving a stray lock if the invariant breaks
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithPageCommitLock: %v", err)
+	}
+	if lockFreeInsideFn {
+		t.Fatal("page lock was free inside WithPageCommitLock fn — a caller tx could commit after the lock was released")
+	}
+}
+
+// TestRecordPageEditRejectsUnwrappedTx pins the fail-fast contract: passing a
+// caller-owned transaction handle without holding the page lock across the
+// transaction is rejected, because the lock would otherwise be released before
+// the caller commits and a concurrent edit could fork the parent chain.
+func TestRecordPageEditRejectsUnwrappedTx(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		_, e := svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
+			DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "Page", AuthorID: "u1",
+			OldContent: "old", NewContent: "new",
+		})
+		return e
+	})
+	if err == nil || !strings.Contains(err.Error(), "WithPageCommitLock") {
+		t.Fatalf("expected unwrapped tx to be rejected with WithPageCommitLock guidance, got %v", err)
+	}
+}
+
 // TestFileCommitMethodsAcceptNilDB pins the fallback: a nil db uses dao.DB so
 // existing callers that have no handle can still call the methods.
 func TestFileCommitMethodsAcceptNilDB(t *testing.T) {
@@ -161,7 +212,7 @@ func TestFileCommitMethodsAcceptNilDB(t *testing.T) {
 	seedCommitWithTree(t, db, "c1", "folder-1")
 	svc := NewFileCommitService()
 
-	commit, err := svc.CreateCommit(t.Context(), nil, "folder-1", "u1", "remove a.txt", []entity.FileChange{
+	commit, err := svc.CreateCommit(permission.WithIdentity(t.Context(), "u1", "t1"), nil, "folder-1", "u1", "remove a.txt", []entity.FileChange{
 		{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 	})
 	if err != nil {

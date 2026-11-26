@@ -595,10 +595,15 @@ const (
 //
 // This path is independent of the workspace File tree (it does not require a
 // File record or a tree_state snapshot). The db handle is caller-supplied: pass
-// dao.DB for a standalone write, a transaction handle to join a larger unit of
-// work, or nil to fall back to dao.DB. The parent lookup and the database clock
-// read use the same handle as the write. The page snapshot is stored best-effort
-// before the transaction, as before.
+// dao.DB for a standalone write, or nil to fall back to dao.DB. The parent
+// lookup and the database clock read use the same handle as the write. The page
+// snapshot is stored best-effort before the transaction, as before.
+//
+// A caller-owned transaction handle is accepted only when the transaction is
+// wrapped in WithPageCommitLock, which holds the per-page lock until the caller
+// commits or rolls back. Without that wrapper the lock would end before the
+// caller's commit and a concurrent edit could fork the parent chain, so it is
+// rejected. Standalone callers need no wrapper.
 func (s *FileCommitService) RecordPageEdit(ctx context.Context, db *gorm.DB, in PageEditCommitInput) (*entity.FileCommit, error) {
 	if db == nil {
 		db = dao.DB
@@ -647,17 +652,33 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, db *gorm.DB, in 
 		item.ContentAfterLocation = &contentAfterLocation
 	}
 
-	var commit *entity.FileCommit
 	// Serialize parent selection with insertion in process so two concurrent
 	// edits on the same page cannot both read the same parent and fork the
 	// chain. This is backend-agnostic (works identically on MySQL and SQLite)
 	// and cheaper than row-level DB locks.
-	mu := pageCommitLock(fileID)
-	mu.Lock()
-	defer mu.Unlock()
+	//
+	// A standalone db handle is committed inside this function, so taking the
+	// lock here covers the commit. A caller-owned transaction handle, however,
+	// commits after this function returns; taking the lock here would release
+	// it before that commit and let a concurrent edit fork the chain. Such
+	// callers must wrap the transaction in WithPageCommitLock so the lock spans
+	// the commit; the context token tells us the lock is already held (and must
+	// not be re-acquired, since the mutex is not reentrant).
+	if heldFileID, ok := ctx.Value(pageCommitLockKey{}).(string); ok {
+		if heldFileID != fileID {
+			return nil, fmt.Errorf("page commit lock held for %q, not %q", heldFileID, fileID)
+		}
+	} else if _, isTx := db.Statement.ConnPool.(gorm.TxCommitter); isTx {
+		return nil, fmt.Errorf("passing a transaction handle to RecordPageEdit requires WithPageCommitLock")
+	} else {
+		mu := pageCommitLock(fileID)
+		mu.Lock()
+		defer mu.Unlock()
+	}
 
 	item.Seq = uint(pageCommitSeq.Add(1))
 
+	var commit *entity.FileCommit
 	// Read the parent inside the lock, on the shared connection, so it always
 	// reflects the previously committed edit for this page.
 	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, db, fileID)
@@ -785,6 +806,27 @@ var pageCommitLocks sync.Map // fileID -> *sync.Mutex
 func pageCommitLock(fileID string) *sync.Mutex {
 	v, _ := pageCommitLocks.LoadOrStore(fileID, &sync.Mutex{})
 	return v.(*sync.Mutex)
+}
+
+// pageCommitLockKey is the context key carrying the fileID whose page lock the
+// caller already holds. It lets RecordPageEdit avoid re-locking a non-reentrant
+// mutex when invoked inside WithPageCommitLock.
+type pageCommitLockKey struct{}
+
+// WithPageCommitLock runs fn while holding the per-page serialization lock for
+// the page identified by datasetID/pageType/slug. Callers that pass a
+// transaction handle to RecordPageEdit MUST wrap the transaction with this
+// function: the lock is then held until fn returns, i.e. after the caller
+// commits or rolls back, so a concurrent edit cannot resolve the parent from
+// committed data while this transaction's parent write is still uncommitted.
+// Standalone callers need not use this wrapper — RecordPageEdit takes the lock
+// itself for them.
+func WithPageCommitLock(ctx context.Context, datasetID, pageType, slug string, fn func(context.Context) error) error {
+	fileID := wikiFileID(datasetID, pageType, slug)
+	mu := pageCommitLock(fileID)
+	mu.Lock()
+	defer mu.Unlock()
+	return fn(context.WithValue(ctx, pageCommitLockKey{}, fileID))
 }
 
 // ListPageCommits lists audit commits for a specific wiki/skill page and
