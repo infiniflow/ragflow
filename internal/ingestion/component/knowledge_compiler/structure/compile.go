@@ -54,11 +54,11 @@ func chatRequest(llmID, systemPrompt, userPrompt string) common.ChatRequest {
 // one batch are strictly sequential; batches parallelise at the caller.
 func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, nodePrompt, edgePromptTmpl, packedText string) (nodes, edges []map[string]any, err error) {
 	user := UserPrompt(packedText)
-	nodeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, nodePrompt, user))
+	nodeRaw, err := common.GenJSONOrArray(ctx, deps.Chat, chatRequest(cfg.LLMID, nodePrompt, user))
 	if err != nil {
 		return nil, nil, err
 	}
-	nodes = unwrapItems(nodeRaw)
+	nodes = unwrapItems(nodeRaw, entityItemFallbackKeys...)
 
 	// Known entities: unique values of the config's entity id field, in
 	// first-seen order (mirrors _struct_extract_hypergraph's known_keys).
@@ -84,27 +84,30 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	if strings.TrimSpace(edgePromptTmpl) == "" {
 		return nodes, nil, nil
 	}
-	edgeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, fillKnownNodes(edgePromptTmpl, known), EdgeUserPrompt(packedText)))
+	edgeRaw, err := common.GenJSONOrArray(ctx, deps.Chat, chatRequest(cfg.LLMID, fillKnownNodes(edgePromptTmpl, known), EdgeUserPrompt(packedText)))
 	if err != nil {
 		return nil, nil, err
 	}
-	return nodes, unwrapItems(edgeRaw), nil
+	return nodes, unwrapItems(edgeRaw, relationItemFallbackKeys...), nil
 }
 
 // Shared endpoint and relation-type aliases used across extraction, row building, and merge passes.
 var (
-	sourceEndpointAliases = []string{"source", "src", "from", "from_entity", "source_entity", "head", "start", "subject", "origin"}
-	targetEndpointAliases = []string{"target", "tgt", "to", "to_entity", "target_entity", "tail", "end", "object", "destination"}
-	relationTypeAliases   = []string{"type", "relation", "relationship", "relation_type", "rel", "predicate", "label"}
+	sourceEndpointAliases    = []string{"source", "src", "from", "from_entity", "source_entity", "head", "start", "subject", "origin"}
+	targetEndpointAliases    = []string{"target", "tgt", "to", "to_entity", "target_entity", "tail", "end", "object", "destination"}
+	relationTypeAliases      = []string{"type", "relation", "relationship", "relation_type", "rel", "predicate", "label"}
+	entityItemFallbackKeys   = []string{"entities", "data", "results"}
+	relationItemFallbackKeys = []string{"relationships", "relations", "edges", "links", "triples", "data", "results"}
 )
 
 // unwrapItems mirrors _struct_unwrap_items: the canonical contract is
-// {"items": [{...}, ...]}; recognized alias keys ("relationships", "relations",
-// "edges", "links", "entities", "data", "results", "triples") are accepted
-// defensively to accommodate LLMs and custom templates.
-// Non-object entries are converted to {"name": string} if scalar strings,
-// otherwise dropped. Diagnostic arrays (e.g. warnings, errors) are never accepted.
-func unwrapItems(raw map[string]any) []map[string]any {
+// {"items": [{...}, ...]}; stage-specific fallbackKeys are checked when
+// "items" is absent or empty (entities vs. relations) so a combined
+// {"entities": [...], "relations": [...]} payload cannot cross-contaminate
+// stages. Non-object entries are converted to {"name": string} if scalar
+// strings, otherwise dropped. Diagnostic arrays (e.g. warnings, errors) are
+// never accepted.
+func unwrapItems(raw map[string]any, fallbackKeys ...string) []map[string]any {
 	if raw == nil {
 		return nil
 	}
@@ -112,7 +115,7 @@ func unwrapItems(raw map[string]any) []map[string]any {
 	if a, ok := raw["items"].([]any); ok && len(a) > 0 {
 		arr = a
 	} else {
-		for _, k := range []string{"relationships", "relations", "edges", "links", "entities", "data", "results", "triples"} {
+		for _, k := range fallbackKeys {
 			if a, ok := raw[k].([]any); ok && len(a) > 0 {
 				arr = a
 				break

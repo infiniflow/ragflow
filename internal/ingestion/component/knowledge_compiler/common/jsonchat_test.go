@@ -80,16 +80,77 @@ func TestGenJSON_NoRetryOnPermanentError(t *testing.T) {
 	}
 }
 
-// TestTryUnmarshalJSONErr_Array verifies that top-level JSON arrays are safely
-// unmarshaled and wrapped in {"items": [...]}.
-func TestTryUnmarshalJSONErr_Array(t *testing.T) {
+// TestTryUnmarshalJSONErr_RejectsArray verifies that tryUnmarshalJSONErr keeps
+// object-only semantics so callers expecting keyed objects (wiki, merge, chain)
+// still trigger retries instead of silently receiving {"items": ...}.
+func TestTryUnmarshalJSONErr_RejectsArray(t *testing.T) {
 	s := `[{"from_entity": "WO-001", "to_entity": "Pump-001", "relation": "repairs"}]`
-	m, err := tryUnmarshalJSONErr(s)
+	if _, err := tryUnmarshalJSONErr(s); err == nil {
+		t.Fatal("expected tryUnmarshalJSONErr to reject top-level array")
+	}
+}
+
+// TestTryUnmarshalJSONOrArrayErr_Array verifies that top-level JSON arrays are
+// safely unmarshaled and wrapped in {"items": [...]} when array wrapping is enabled.
+func TestTryUnmarshalJSONOrArrayErr_Array(t *testing.T) {
+	s := `[{"from_entity": "WO-001", "to_entity": "Pump-001", "relation": "repairs"}]`
+	m, err := tryUnmarshalJSONOrArrayErr(s)
 	if err != nil {
-		t.Fatalf("tryUnmarshalJSONErr array: %v", err)
+		t.Fatalf("tryUnmarshalJSONOrArrayErr array: %v", err)
 	}
 	items, ok := m["items"].([]any)
 	if !ok || len(items) != 1 {
 		t.Fatalf("expected items array, got %#v", m)
+	}
+}
+
+type scriptedChatInvoker struct {
+	mu      sync.Mutex
+	replies []string
+	calls   int
+}
+
+func (s *scriptedChatInvoker) Chat(_ context.Context, _ ChatRequest) (*ChatResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := s.calls
+	if idx >= len(s.replies) {
+		idx = len(s.replies) - 1
+	}
+	s.calls++
+	return &ChatResponse{Content: s.replies[idx]}, nil
+}
+
+// TestGenJSON_RetriesOnTopLevelArray verifies that GenJSON rejects a bare array
+// and retries instead of returning an empty keyed-object map.
+func TestGenJSON_RetriesOnTopLevelArray(t *testing.T) {
+	ctx := WithRetryDelay(t.Context(), time.Millisecond)
+	inv := &scriptedChatInvoker{replies: []string{`[{"a": 1}]`, `{"entities": [{"name": "Alpha"}]}`}}
+	got, err := GenJSON(ctx, inv, ChatRequest{}, 1)
+	if err != nil {
+		t.Fatalf("GenJSON: %v", err)
+	}
+	if inv.calls != 2 {
+		t.Fatalf("calls = %d, want 2", inv.calls)
+	}
+	if _, ok := got["entities"]; !ok {
+		t.Fatalf("expected entities key, got %#v", got)
+	}
+}
+
+// TestGenJSONOrArray_AcceptsTopLevelArray verifies that GenJSONOrArray accepts
+// a bare array on the first attempt and wraps it into {"items": [...]}.
+func TestGenJSONOrArray_AcceptsTopLevelArray(t *testing.T) {
+	inv := &scriptedChatInvoker{replies: []string{`[{"name": "Alpha"}]`}}
+	got, err := GenJSONOrArray(t.Context(), inv, ChatRequest{}, 0)
+	if err != nil {
+		t.Fatalf("GenJSONOrArray: %v", err)
+	}
+	if inv.calls != 1 {
+		t.Fatalf("calls = %d, want 1", inv.calls)
+	}
+	items, ok := got["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected items array, got %#v", got)
 	}
 }

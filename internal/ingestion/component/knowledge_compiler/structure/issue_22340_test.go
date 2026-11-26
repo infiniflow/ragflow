@@ -27,7 +27,7 @@ func TestIssue22340_UnwrapItems(t *testing.T) {
 			},
 		},
 	}
-	rels := unwrapItems(rawRel)
+	rels := unwrapItems(rawRel, relationItemFallbackKeys...)
 	if len(rels) != 2 {
 		t.Fatalf("unwrapItems(relationships): got %d items, want 2", len(rels))
 	}
@@ -39,7 +39,7 @@ func TestIssue22340_UnwrapItems(t *testing.T) {
 	rawEnt := map[string]any{
 		"entities": []any{"WO-001", "Pump-001", "Bearing-001"},
 	}
-	ents := unwrapItems(rawEnt)
+	ents := unwrapItems(rawEnt, entityItemFallbackKeys...)
 	if len(ents) != 3 {
 		t.Fatalf("unwrapItems(entities string slice): got %d items, want 3", len(ents))
 	}
@@ -53,7 +53,7 @@ func TestIssue22340_UnwrapItems(t *testing.T) {
 			map[string]any{"source": "A", "target": "B", "type": "connects"},
 		},
 	}
-	edges := unwrapItems(rawEdges)
+	edges := unwrapItems(rawEdges, relationItemFallbackKeys...)
 	if len(edges) != 1 || edges[0]["source"] != "A" {
 		t.Fatalf("unwrapItems(edges): got %#v", edges)
 	}
@@ -63,8 +63,26 @@ func TestIssue22340_UnwrapItems(t *testing.T) {
 		"items":    []any{},
 		"warnings": []any{"No entities found in batch"},
 	}
-	if diag := unwrapItems(rawDiag); len(diag) != 0 {
+	if diag := unwrapItems(rawDiag, entityItemFallbackKeys...); len(diag) != 0 {
 		t.Fatalf("unwrapItems(diagnostic array): expected nil/empty, got %#v", diag)
+	}
+
+	// 5. Combined {"entities": [...], "relations": [...]} payload must stay stage-isolated
+	combined := map[string]any{
+		"entities": []any{
+			map[string]any{"name": "Alpha", "type": "System"},
+		},
+		"relations": []any{
+			map[string]any{"id": "rel-1", "source": "Alpha", "target": "Beta", "type": "uses"},
+		},
+	}
+	gotEnts := unwrapItems(combined, entityItemFallbackKeys...)
+	if len(gotEnts) != 1 || gotEnts[0]["name"] != "Alpha" {
+		t.Fatalf("entity stage consumed wrong key from combined payload: got %#v", gotEnts)
+	}
+	gotRels := unwrapItems(combined, relationItemFallbackKeys...)
+	if len(gotRels) != 1 || gotRels[0]["id"] != "rel-1" {
+		t.Fatalf("relation stage consumed wrong key from combined payload: got %#v", gotRels)
 	}
 }
 
