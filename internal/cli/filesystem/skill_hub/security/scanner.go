@@ -65,7 +65,7 @@ func mustCompileThreatPatterns(patterns []ThreatPattern) []compiledThreatPattern
 	for _, p := range patterns {
 		compiled = append(compiled, compiledThreatPattern{
 			ThreatPattern: p,
-			re:             regexp.MustCompile("(?i:" + p.Pattern + ")"),
+			re:            regexp.MustCompile("(?i:" + p.Pattern + ")"),
 		})
 	}
 	return compiled

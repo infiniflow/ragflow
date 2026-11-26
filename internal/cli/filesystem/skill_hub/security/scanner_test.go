@@ -159,9 +159,9 @@ func TestVerdictSeverityMapping(t *testing.T) {
 		line        string
 		wantVerdict string
 	}{
-		{"critical_is_dangerous", "rm -rf /", "dangerous"},      // destructive_root_rm (critical)
-		{"high_is_caution", "base64 -d | sh", "caution"},         // base64_decode_pipe (high)
-		{"medium_is_caution", "crontab -e", "caution"},           // persistence_cron (medium)
+		{"critical_is_dangerous", "rm -rf /", "dangerous"}, // destructive_root_rm (critical)
+		{"high_is_caution", "base64 -d | sh", "caution"},   // base64_decode_pipe (high)
+		{"medium_is_caution", "crontab -e", "caution"},     // persistence_cron (medium)
 		{"none_is_safe", "echo hello", "safe"},
 	}
 	for _, c := range cases {

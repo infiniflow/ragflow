@@ -41,9 +41,9 @@ func resultFor(trustLevel, verdict string) *ScanResult {
 func TestGuardInstallPolicyMatrix(t *testing.T) {
 	g := NewGuard()
 	cases := []struct {
-		trust  string
+		trust   string
 		verdict string
-		allow  bool
+		allow   bool
 	}{
 		{"builtin", "safe", true},
 		{"builtin", "caution", true},
