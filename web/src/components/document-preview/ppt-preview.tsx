@@ -72,6 +72,8 @@ export const PptPreviewer: React.FC<PptPreviewerProps> = ({
       ref={containerRef}
       className={classNames(
         'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md ppt-previewer',
+        // Preserve the slide renderer's image dimensions inside its crop boxes.
+        '[&_.pptx-preview-slide-wrapper_img]:max-w-none [&_.pptx-preview-slide-wrapper_img]:[height:revert-layer]',
         className,
       )}
     >

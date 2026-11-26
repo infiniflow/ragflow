@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 
 	"gorm.io/gorm"
 )
@@ -51,8 +52,8 @@ func TestAggregateTagsBatchesDatasetQueries(t *testing.T) {
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("AggregateTags: code=%d err=%v", code, err)
 	}
-	if n := capture.knowledgebaseSelects(); n > 2 {
-		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= 2 (batch); got SQL: %v", n, len(ids), capture.sqls)
+	if n, limit := capture.knowledgebaseSelects(), 1+testsupport.DatasetPermissionQueryCount(len(ids)); n > limit {
+		t.Fatalf("knowledgebase SELECTs = %d for %d datasets, want <= %d; got SQL: %v", n, len(ids), limit, capture.sqls)
 	}
 }
 
@@ -68,7 +69,13 @@ func TestAggregateTagsRejectsUnauthorizedDatasetInBatch(t *testing.T) {
 		insertAggregateTagsKB(t, strings.ReplaceAll(rawID, "-", ""), "tag-owner", string(entity.TenantPermissionMe), "", 0)
 	}
 	foreign := "923e4567-e89b-12d3-a456-426614174999"
-	insertAggregateTagsKB(t, strings.ReplaceAll(foreign, "-", ""), "other-tenant", string(entity.TenantPermissionMe), "", 0)
+	foreignID := strings.ReplaceAll(foreign, "-", "")
+	// A different owner in the same tenant exercises a denial in both editions.
+	insertAggregateTagsKB(t, foreignID, "tag-owner", string(entity.TenantPermissionMe), "", 0)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", foreignID).
+		Updates(map[string]any{"user_id": "other-user", "created_by": "other-user"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	ctx := withDatasetTestContext(t.Context(), "tag-owner", "tag-owner")
 
 	_, code, err := testDatasetServiceForAggregateTags(t, noopTagLoader).AggregateTags(ctx, []string{ids[0], foreign, ids[1]})

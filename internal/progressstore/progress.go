@@ -74,6 +74,14 @@ type Snapshot struct {
 	Status        string    `json:"status"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	Stages        []Stage   `json:"stages"`
+
+	// AttemptID identifies one worker execution of a run. A single run may
+	// execute more than once (broker redelivery after a crash), so positions
+	// are only comparable within one attempt.
+	AttemptID string `json:"attempt_id,omitempty"`
+	// AttemptStartedAt is stamped when the worker takes over the run. Readers
+	// use it to discard snapshots left by an earlier execution.
+	AttemptStartedAt time.Time `json:"attempt_started_at,omitempty"`
 }
 
 // Key returns the Kvrocks key for one run. pipeline_log_id is the immutable
@@ -143,16 +151,24 @@ func (s *Store) save(ctx context.Context, snap *Snapshot) bool {
 	if s == nil || s.kv == nil || snap == nil {
 		return false
 	}
-	// A terminal settlement may land between this writer's load and save
-	// (lifecycle callbacks and detail callbacks use different locks). Re-read
-	// the current status and preserve a terminal one so a late detail write
-	// cannot revert a finished run to RUNNING.
+	// A terminal settlement or a new attempt may land between this writer's
+	// load and save (lifecycle and detail callbacks use different locks).
+	// Re-read the current snapshot to preserve a terminal status and to reject
+	// a stale write after a newer execution opened its window.
 	current, state := s.loadState(ctx, snap.PipelineLogID)
 	if state == loadFailed {
 		return false // never overwrite a snapshot we could not read
 	}
-	if state == loadFound && isTerminal(current.Status) {
-		snap.Status = current.Status
+	if state == loadFound {
+		// A newer execution may have opened its window between our read and
+		// this commit. Its later start wins; this write must not roll back
+		// the fresh snapshot with positions from the old execution.
+		if current.AttemptStartedAt.After(snap.AttemptStartedAt) {
+			return false
+		}
+		if isTerminal(current.Status) {
+			snap.Status = current.Status
+		}
 	}
 	snap.UpdatedAt = time.Now().UTC()
 	return s.kv.SetObj(ctx, Key(snap.PipelineLogID), snap, snapshotTTL)
@@ -166,6 +182,60 @@ func newSnapshot(id, docID, datasetID string) *Snapshot {
 		Status:        StatusRunning,
 		UpdatedAt:     time.Now().UTC(),
 	}
+}
+
+func newAttemptSnapshot(id, docID, datasetID, attemptID string, startedAt time.Time) *Snapshot {
+	snap := newSnapshot(id, docID, datasetID)
+	snap.AttemptID = attemptID
+	snap.AttemptStartedAt = startedAt.UTC()
+	return snap
+}
+
+type attemptContextKey struct{}
+
+// WithAttempt binds a worker execution to a context so terminal settlement
+// carries the same fencing token as the progress writes of that execution.
+func WithAttempt(ctx context.Context, attemptID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, attemptContextKey{}, attemptID)
+}
+
+// AttemptFromContext returns the execution bound to ctx, or "" for callers
+// that predate attempt fencing (legacy snapshots use the same empty value).
+func AttemptFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	value, _ := ctx.Value(attemptContextKey{}).(string)
+	return value
+}
+
+// BeginAttempt opens a fresh progress window for one worker execution. It
+// clears positions left by an earlier execution while preserving a terminal
+// run, and is idempotent when the same attempt starts again.
+func (s *Store) BeginAttempt(ctx context.Context, id, docID, datasetID, attemptID string, startedAt time.Time) bool {
+	if s == nil || s.kv == nil || id == "" || attemptID == "" {
+		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx = context.WithoutCancel(ctx)
+	snap, state := s.loadState(ctx, id)
+	switch state {
+	case loadFailed:
+		return false // a failed read must not discard a known snapshot
+	case loadFound:
+		if isTerminal(snap.Status) {
+			return true // a late redelivery cannot reopen a settled run
+		}
+		if snap.AttemptID == attemptID {
+			return true
+		}
+	}
+	return s.save(ctx, newAttemptSnapshot(id, docID, datasetID, attemptID, startedAt))
 }
 
 func stageByName(snap *Snapshot, name string) *Stage {
@@ -187,11 +257,16 @@ func isTerminal(status string) bool {
 	}
 }
 
-// Update records a component's discrete position. It is monotonic per
-// (component, unit): out-of-order callbacks from parallel futures settle in
-// arbitrary order, and a stale lower value must never pull the snapshot back.
-// Equal positions are skipped so repeated callbacks do not rewrite the key.
-func (s *Store) Update(ctx context.Context, id, docID, datasetID, component, unit string, current, total uint32) bool {
+// UpdateAttempt records a position for one specific worker execution. Writes
+// from an earlier execution are fenced out by the attempt id.
+func (s *Store) UpdateAttempt(ctx context.Context, id, docID, datasetID, attemptID, component, unit string, current, total uint32) bool {
+	if attemptID == "" {
+		return false
+	}
+	return s.update(ctx, id, docID, datasetID, attemptID, component, unit, current, total)
+}
+
+func (s *Store) update(ctx context.Context, id, docID, datasetID, attemptID, component, unit string, current, total uint32) bool {
 	if s == nil || s.kv == nil || id == "" || component == "" || unit == "" {
 		return false
 	}
@@ -199,10 +274,12 @@ func (s *Store) Update(ctx context.Context, id, docID, datasetID, component, uni
 	switch state {
 	case loadMissing:
 		snap = newSnapshot(id, docID, datasetID)
+		snap.AttemptID = attemptID
+		snap.AttemptStartedAt = time.Now().UTC()
 	case loadFailed:
 		return false // a failed read must not create a fresh, lossy snapshot
 	case loadFound:
-		if isTerminal(snap.Status) {
+		if isTerminal(snap.Status) || snap.AttemptID != attemptID {
 			return false
 		}
 	}
@@ -218,8 +295,15 @@ func (s *Store) Update(ctx context.Context, id, docID, datasetID, component, uni
 	return s.save(ctx, snap)
 }
 
-// SetPhase records a component lifecycle phase (running/done/failed).
-func (s *Store) SetPhase(ctx context.Context, id, docID, datasetID, component, phase string) bool {
+// SetPhaseAttempt records a lifecycle phase for one specific worker execution.
+func (s *Store) SetPhaseAttempt(ctx context.Context, id, docID, datasetID, attemptID, component, phase string) bool {
+	if attemptID == "" {
+		return false
+	}
+	return s.setPhase(ctx, id, docID, datasetID, attemptID, component, phase)
+}
+
+func (s *Store) setPhase(ctx context.Context, id, docID, datasetID, attemptID, component, phase string) bool {
 	if s == nil || s.kv == nil || id == "" || component == "" || phase == "" {
 		return false
 	}
@@ -227,10 +311,12 @@ func (s *Store) SetPhase(ctx context.Context, id, docID, datasetID, component, p
 	switch state {
 	case loadMissing:
 		snap = newSnapshot(id, docID, datasetID)
+		snap.AttemptID = attemptID
+		snap.AttemptStartedAt = time.Now().UTC()
 	case loadFailed:
 		return false
 	case loadFound:
-		if isTerminal(snap.Status) {
+		if isTerminal(snap.Status) || snap.AttemptID != attemptID {
 			return false
 		}
 	}
@@ -256,15 +342,20 @@ func (s *Store) MarkTerminal(ctx context.Context, id, docID, datasetID, status s
 		ctx = context.Background()
 	}
 	ctx = context.WithoutCancel(ctx)
+	attemptID := AttemptFromContext(ctx)
 	snap, state := s.loadState(ctx, id)
 	switch state {
 	case loadMissing:
 		snap = newSnapshot(id, docID, datasetID)
+		snap.AttemptID = attemptID
 	case loadFailed:
 		return false
 	case loadFound:
 		if isTerminal(snap.Status) {
 			return true
+		}
+		if snap.AttemptID != attemptID {
+			return false // terminal from a superseded execution is ignored
 		}
 	}
 	snap.Status = status

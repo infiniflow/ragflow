@@ -28,8 +28,67 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
+	"ragflow/internal/progressstore"
 	servicepkg "ragflow/internal/service"
 )
+
+type capturingProgressBeginner struct{ attemptIDs []string }
+
+func (c *capturingProgressBeginner) BeginAttempt(_ context.Context, _, _, _, attemptID string, _ time.Time) bool {
+	c.attemptIDs = append(c.attemptIDs, attemptID)
+	return true
+}
+
+// TestHandleAndExecute_RedeliveryOpensFreshAttemptAndPropagatesToken guards the
+// wiring end to end: each delivery of the same run must open its own progress
+// window, and the worker must execute with that exact attempt token. A broken
+// context hand-off would silently drop every progress write.
+func TestHandleAndExecute_RedeliveryOpensFreshAttemptAndPropagatesToken(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	setRunning := func() {
+		t.Helper()
+		if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.RUNNING).Error; err != nil {
+			t.Fatalf("set task RUNNING: %v", err)
+		}
+	}
+	setRunning()
+
+	beginner := &capturingProgressBeginner{}
+	ingestor := newUnitIngestor("test-redelivery-attempt", 1)
+	ingestor.progressAttemptStarter = beginner
+
+	var propagated []string
+	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
+		propagated = append(propagated, progressstore.AttemptFromContext(ctx))
+		return nil
+	}
+
+	for i := 0; i < 2; i++ {
+		handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+		ingestor.handleAndExecute(nil, handle)
+		// A crash between settlement and redelivery leaves the task RUNNING.
+		setRunning()
+	}
+
+	if len(beginner.attemptIDs) != 2 {
+		t.Fatalf("attempts opened = %d, want 2 (one per delivery)", len(beginner.attemptIDs))
+	}
+	if beginner.attemptIDs[0] == "" || beginner.attemptIDs[0] == beginner.attemptIDs[1] {
+		t.Fatalf("attempts = %v, want two distinct non-empty tokens", beginner.attemptIDs)
+	}
+	if len(propagated) != 2 {
+		t.Fatalf("pipeline executions = %d, want 2", len(propagated))
+	}
+	for i := range propagated {
+		if propagated[i] != beginner.attemptIDs[i] {
+			t.Fatalf("delivery %d ran with token %q, want %q (context hand-off broken)", i, propagated[i], beginner.attemptIDs[i])
+		}
+	}
+}
 
 // TestHandleAndExecute_MemoryTaskIDInvokesRunner verifies memory deliveries
 // need only the task id because execution input lives in the database.

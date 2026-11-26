@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"ragflow/internal/entity"
 	"strconv"
@@ -156,6 +157,40 @@ func (dao *FileCommitDAO) ListByIDs(ctx context.Context, db *gorm.DB, commitIDs 
 		return nil, 0, err
 	}
 	return commits, total, nil
+}
+
+// PageCommitRow is one entry of a page's commit chain.
+type PageCommitRow struct {
+	FileID     string
+	CommitID   string
+	CreateTime sql.NullInt64
+	Operation  sql.NullString
+}
+
+// PageCommitRows reads the commit chains of the given page file keys, oldest first
+// within each page, in one query for all of them.
+//
+// The chain is read through the items, by the same file key ListByFileID lists by:
+// a row the history does not list must not take a position in the numbering shown
+// beside it. Ordering is that listing's exact reverse, down to item.seq, so two
+// edits sharing a millisecond keep the order they were made in. A commit that
+// touched a page twice repeats its id; callers count it once.
+func (dao *FileCommitDAO) PageCommitRows(ctx context.Context, db *gorm.DB, folderID string, fileIDs []string) ([]PageCommitRow, error) {
+	if folderID == "" || len(fileIDs) == 0 {
+		return nil, nil
+	}
+	var rows []PageCommitRow
+	err := db.WithContext(ctx).
+		Table("file_commit_item AS item").
+		Select("item.file_id, item.commit_id, commit_row.create_time, item.operation").
+		Joins("JOIN file_commit AS commit_row ON item.commit_id = commit_row.id").
+		Where("commit_row.folder_id = ? AND item.file_id IN ?", folderID, fileIDs).
+		Order("item.file_id ASC, commit_row.create_time ASC, item.seq ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // FileCommitItemDAO file commit item data access object

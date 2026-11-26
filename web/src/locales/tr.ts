@@ -3948,7 +3948,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       qAChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       tableChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       pageChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
-      extractor: 'Dönüştürücü',
+      extractor: 'Çıkarıcı',
       extractorDescription:
         'Belge parçalarından yapılandırılmış içgörüler çıkarmak için LLM kullanır.',
       compiler: 'Derleyici',

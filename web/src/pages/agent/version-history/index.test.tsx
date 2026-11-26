@@ -15,7 +15,9 @@
  */
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { AgentCategory } from '@/constants/agent';
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -35,6 +37,20 @@ jest.mock('react-router', () => ({
   useParams: () => ({ id: 'canvas-1' }),
 }));
 
+const mockApplyVersion = jest.fn();
+const mockNavigateToAgent = jest.fn();
+const mockNavigate = jest.fn();
+const mockUpdateVersion = jest.fn();
+let mockIsPipeline = false;
+
+jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
+  useNavigatePage: () => ({ navigateToAgent: mockNavigateToAgent }),
+}));
+
+jest.mock('../hooks/use-is-pipeline', () => ({
+  useIsPipeline: () => mockIsPipeline,
+}));
+
 // The component imports nodeTypes from the canvas graph, which transitively loads
 // the chat/i18n machinery. Mock it so the heavy canvas module is never imported.
 jest.mock('../canvas', () => ({ nodeTypes: {} }));
@@ -47,9 +63,7 @@ jest.mock('@xyflow/react', () => ({
   ConnectionMode: { Loose: 'loose' },
 }));
 
-const mockUpdateVersion = jest.fn();
-
-// One released version and one unpublished legacy snapshot: the dialog lists
+// One released version and one unpublished legacy snapshot: the page lists
 // every row and marks only the released one with a Dot.
 // `let` so pagination tests can swap in a larger list before rendering.
 let mockVersions = [
@@ -77,7 +91,10 @@ jest.mock('@/hooks/use-agent-request', () => ({
     isError: false,
   }),
   useSaveAgent: () => ({ saveAgent: jest.fn(), loading: false }),
-  useApplyVersion: () => ({ applyVersion: jest.fn(), loading: false }),
+  useApplyVersion: () => ({
+    applyVersion: mockApplyVersion,
+    loading: false,
+  }),
   useUpdateVersion: () => ({
     updateVersion: mockUpdateVersion,
     loading: false,
@@ -85,28 +102,51 @@ jest.mock('@/hooks/use-agent-request', () => ({
   }),
 }));
 
-import { VersionDialog } from './index';
+import AgentVersionHistory from './index';
 
 // TooltipProvider lives at the app root in production; tests must supply it.
-const renderDialog = () =>
+const renderPage = () =>
   render(
     <TooltipProvider>
-      <VersionDialog hideModal={jest.fn()} />
+      <AgentVersionHistory />
     </TooltipProvider>,
   );
 
 const getRow = (title: string) => screen.getByText(title).closest('li')!;
 
-describe('VersionDialog release marker', () => {
+async function restoreLatestVersion() {
+  const restoreButton = screen.getByRole('button', {
+    name: 'flow.version.restore',
+  });
+  await waitFor(() => expect(restoreButton).toBeEnabled());
+  fireEvent.click(restoreButton);
+
+  const confirmation = screen.getByRole('alertdialog');
+  await act(async () => {
+    fireEvent.click(
+      within(confirmation).getByRole('button', {
+        name: 'flow.version.restore',
+      }),
+    );
+  });
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockIsPipeline = false;
+  mockNavigateToAgent.mockReturnValue(mockNavigate);
+});
+
+describe('AgentVersionHistory release marker', () => {
   it('lists unpublished legacy versions alongside released ones', () => {
-    renderDialog();
+    renderPage();
 
     expect(screen.getByText('Latest')).toBeInTheDocument();
     expect(screen.getByText('Old Snapshot')).toBeInTheDocument();
   });
 
   it('marks only released rows with the accent dot', () => {
-    renderDialog();
+    renderPage();
 
     expect(
       getRow('Latest').querySelector('.bg-accent-primary'),
@@ -117,9 +157,9 @@ describe('VersionDialog release marker', () => {
   });
 });
 
-describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
+describe('AgentVersionHistory alias edit entry (G2/section 4.4, T35)', () => {
   it('renders an edit-alias button for every version', () => {
-    renderDialog();
+    renderPage();
     // Two mock versions => one edit-alias button per row.
     expect(within(getRow('Latest')).getByRole('button')).toBeInTheDocument();
     expect(
@@ -128,7 +168,7 @@ describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
   });
 
   it('opens the alias dialog with the current alias when the button is clicked', () => {
-    renderDialog();
+    renderPage();
 
     fireEvent.click(within(getRow('Old Snapshot')).getByRole('button'));
 
@@ -138,8 +178,7 @@ describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
   });
 
   it('PATCHes the trimmed new alias on confirm', async () => {
-    mockUpdateVersion.mockClear();
-    renderDialog();
+    renderPage();
 
     fireEvent.click(within(getRow('Old Snapshot')).getByRole('button'));
     fireEvent.change(screen.getByPlaceholderText('flow.version.alias'), {
@@ -158,8 +197,7 @@ describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
   });
 
   it('does not PATCH when the dialog is cancelled', () => {
-    mockUpdateVersion.mockClear();
-    renderDialog();
+    renderPage();
 
     fireEvent.click(within(getRow('Old Snapshot')).getByRole('button'));
     fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));
@@ -171,9 +209,9 @@ describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
   });
 });
 
-describe('VersionDialog alias filter (A2/F1, T19)', () => {
+describe('AgentVersionHistory alias filter (A2/F1, T19)', () => {
   it('narrows the list to aliases matching the query', () => {
-    renderDialog();
+    renderPage();
 
     const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
     fireEvent.change(filter, { target: { value: 'prod' } });
@@ -183,7 +221,7 @@ describe('VersionDialog alias filter (A2/F1, T19)', () => {
   });
 
   it('shows every version when the alias filter is cleared', () => {
-    renderDialog();
+    renderPage();
 
     const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
     fireEvent.change(filter, { target: { value: 'prod' } });
@@ -206,7 +244,7 @@ describe('VersionDialog alias filter (A2/F1, T19)', () => {
     }));
 
     try {
-      renderDialog();
+      renderPage();
 
       fireEvent.click(screen.getByText('2'));
       expect(screen.queryByText('Version 0')).not.toBeInTheDocument();
@@ -222,5 +260,49 @@ describe('VersionDialog alias filter (A2/F1, T19)', () => {
     } finally {
       mockVersions = originalVersions;
     }
+  });
+});
+
+describe('AgentVersionHistory restore navigation', () => {
+  it('returns a restored workflow to its agent canvas', async () => {
+    mockApplyVersion.mockResolvedValue(true);
+    renderPage();
+
+    await restoreLatestVersion();
+
+    expect(mockApplyVersion).toHaveBeenCalledWith({
+      canvasId: 'canvas-1',
+      versionId: 'v-latest',
+    });
+    expect(mockNavigateToAgent).toHaveBeenCalledWith(
+      'canvas-1',
+      AgentCategory.AgentCanvas,
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a restored pipeline to its dataflow canvas', async () => {
+    mockIsPipeline = true;
+    mockApplyVersion.mockResolvedValue(true);
+    renderPage();
+
+    await restoreLatestVersion();
+
+    expect(mockNavigateToAgent).toHaveBeenCalledWith(
+      'canvas-1',
+      AgentCategory.DataflowCanvas,
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays on the page when restoring fails', async () => {
+    mockApplyVersion.mockResolvedValue(false);
+    renderPage();
+
+    await restoreLatestVersion();
+
+    expect(mockApplyVersion).toHaveBeenCalledTimes(1);
+    expect(mockNavigateToAgent).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

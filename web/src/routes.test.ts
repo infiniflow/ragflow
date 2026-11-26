@@ -20,3 +20,25 @@ describe('user setting routes', () => {
     ).toBe(false);
   });
 });
+
+describe('agent editor routes', () => {
+  it('registers Version history under the agent layout', () => {
+    const editorRootRoute = routers.routes.find(
+      (route) =>
+        route.path === Routes.Root &&
+        route.children?.some((child) => child.path === Routes.Agent),
+    );
+    const agentRoute = editorRootRoute?.children?.find(
+      (route) => route.path === Routes.Agent,
+    );
+    const agentLayoutRoute = agentRoute?.children?.find(
+      (route) => route.path === `${Routes.Agent}/:id`,
+    );
+
+    expect(
+      agentLayoutRoute?.children?.some(
+        (route) => route.path === Routes.AgentVersionHistory,
+      ),
+    ).toBe(true);
+  });
+});

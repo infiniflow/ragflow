@@ -75,9 +75,6 @@ func TestHTTPHelper_DefaultTransportHasStageTimeouts(t *testing.T) {
 // without going through HTTPHelper. Bare http.Get has no Timeout and
 // is the exact bug PR #15436 was closing. The single allowed caller
 // is http_helper.go (the helper itself).
-//
-// Jin10 is a stub that does no network I/O, so it is allowed to have
-// no helper reference.
 func TestTools_NoBareHTTPGet(t *testing.T) {
 	banned := map[string]struct{}{
 		"http.Get":                {},

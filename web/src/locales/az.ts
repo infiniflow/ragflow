@@ -3557,7 +3557,7 @@ Bu proses sonrakı düyünlər üçün vahid konfiqurasiya yaratmaq məqsədilə
         'Bu hissələrə bölücü üçün əlavə konfiqurasiya tələb olunmur.',
       pageChunkerDescription:
         'Bu hissələrə bölücü üçün əlavə konfiqurasiya tələb olunmur.',
-      extractor: 'Çevirici',
+      extractor: 'Çıxarıcı',
       extractorDescription:
         'Sənəd hissələrindən xülasələr, təsnifatlar və s. kimi strukturlaşdırılmış məlumatları çıxarmaq üçün LLM-dən istifadə edin.',
       compiler: 'Kompilyator',

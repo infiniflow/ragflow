@@ -189,9 +189,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	baseURL := strings.TrimSpace(c.Query("base_url"))
 	region := strings.TrimSpace(c.Query("region"))
 	instanceName := strings.TrimSpace(c.Query("instance_name"))
+	providerID := strings.TrimSpace(c.Query("provider_id"))
+	instanceID := strings.TrimSpace(c.Query("instance_id"))
+	if (providerID == "") != (instanceID == "") {
+		common.Respond(c, http.StatusBadRequest, 400, nil, "provider_id and instance_id must be provided together")
+		return
+	}
 	if strings.EqualFold(c.Query("use_saved_credentials"), "true") {
-		if instanceName == "" {
-			common.Respond(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance name")
+		if instanceName == "" && instanceID == "" {
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance ID")
 			return
 		}
 		var baseURLOverride, regionOverride *string
@@ -203,6 +209,8 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		}
 		apiKeyConfig := json.RawMessage(c.Query("api_key_config"))
 		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, service.SavedProviderModelOptions{
+			ProviderID:   providerID,
+			InstanceID:   instanceID,
 			APIKeyConfig: apiKeyConfig,
 			BaseURL:      baseURLOverride,
 			Region:       regionOverride,
@@ -216,8 +224,8 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	}
 	_, baseURLProvided := c.GetQuery("base_url")
 	_, regionProvided := c.GetQuery("region")
-	if instanceName != "" && !apiKeyProvided && !baseURLProvided && !regionProvided {
-		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, service.SavedProviderModelOptions{})
+	if (instanceName != "" || instanceID != "") && !apiKeyProvided && !baseURLProvided && !regionProvided {
+		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, service.SavedProviderModelOptions{ProviderID: providerID, InstanceID: instanceID})
 		if err == nil {
 			common.RespondSuccessList(c, instanceModels, "success")
 			return
@@ -247,7 +255,7 @@ func (h *ProviderHandler) fetchSavedProviderModels(ctx context.Context, provider
 		return nil, err
 	}
 
-	return FetchProviderModels(ctx, providerName, config.APIKey, config.BaseURL, config.Region)
+	return FetchProviderModels(ctx, config.ProviderName, config.APIKey, config.BaseURL, config.Region)
 }
 
 // FetchProviderModels returns the bundled model catalog, optionally enriched
@@ -841,7 +849,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	if keywords == "true" {
 		// list supported models
 
-		modelList, err := h.fetchSavedProviderModels(ctx, providerName, instanceName, service.SavedProviderModelOptions{})
+		modelList, err := h.fetchSavedProviderModels(ctx, providerName, instanceName, service.SavedProviderModelOptions{ProviderID: providerName, InstanceID: instanceName})
 		if err != nil {
 			common.RespondError(c, common.CodeServerError, err.Error())
 			return

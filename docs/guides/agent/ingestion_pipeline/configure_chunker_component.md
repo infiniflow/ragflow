@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # Configure the Chunker Component
 
-After **Parser**, choose **Token Chunker** or **Title Chunker** through the outgoing connection point. After the Chunker, add **Transformer** or **Compiler** to enrich the chunks, or **Indexer** to index them.
+After **Parser**, choose **Token Chunker** or **Title Chunker** through the outgoing connection point. After the Chunker, add **Extractor** or **Compiler** to enrich the chunks, or **Indexer** to index them.
 
 The custom pipeline's connection menu offers **Token Chunker** and **Title Chunker**. Built-in previews can display other names, such as **Manual Chunker**; those names are not additional choices in the custom pipeline's add menu. A canvas supports one chunking component, so the menu no longer offers another after one has been added.
 

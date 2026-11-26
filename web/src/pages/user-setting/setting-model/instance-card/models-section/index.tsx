@@ -99,16 +99,15 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
-  // Key the query on the provider name, not `instance.provider_id`: the
-  // add/remove/patch mutation hooks invalidate
-  // `LlmKeys.instanceModels(provider_name, ...)`, and `provider_id` is a
-  // UUID, so a UUID-keyed query would never match and the list would stay
-  // stale until a page reload.
+  // Use persisted IDs so same-named instances under different providers do
+  // not resolve to each other's models or share a React Query cache entry.
+  const providerID = isDraftInstance ? '' : (instance?.provider_id ?? '');
+  const instanceID = isDraftInstance ? '' : (instance?.id ?? '');
   const {
     data: instanceModels,
     loading: instanceModelsLoading,
     isSuccess: instanceModelsSucceeded,
-  } = useFetchInstanceModels(providerName, instanceName);
+  } = useFetchInstanceModels(providerID, instanceID);
 
   useLayoutEffect(() => {
     if (
@@ -272,7 +271,9 @@ export function ModelsSection(props: ModelsSectionProps) {
     batchLoading,
   } = useModelMutations({
     providerName,
+    providerID,
     instanceName,
+    instanceID,
     isDraftInstance,
     hideActions,
     resolveCreds,
@@ -299,7 +300,9 @@ export function ModelsSection(props: ModelsSectionProps) {
     providerFeatureKeys,
   } = useModelEdit({
     providerName,
+    providerID,
     instanceName,
+    instanceID,
     isModelAdded,
     isDraftInstance,
     defaultToolsEnabled: isDraftInstance,

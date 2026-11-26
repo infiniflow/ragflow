@@ -2631,7 +2631,7 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       titleChunkerDescription:
         'Divise les documents en sections par hiérarchie de titres. Définissez les niveaux de titre avec des règles regex, puis choisissez le mode Hiérarchie ou Groupe pour contrôler la structure des blocs.',
       titleChunker: 'Découpeur par titres',
-      extractor: 'Transformateur',
+      extractor: 'Extracteur',
       extractorDescription:
         'Utilise un LLM pour extraire des informations structurées des blocs de document — telles que des résumés, classifications, etc.',
       outputFormat: 'Format de sortie',

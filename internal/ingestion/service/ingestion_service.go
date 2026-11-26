@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/utility"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -157,6 +158,11 @@ type Ingestor struct {
 	// normalized to an empty Deps; a nil sub-value disables the matching
 	// capability (e.g. a nil DB skips startup task scheduling).
 	deps *ingestion.Deps
+
+	// progressAttemptStarter opens the KV progress window for a claimed task.
+	// Production uses the store backed by deps.KV; tests inject an observer to
+	// verify that each delivery opens a fresh attempt and propagates its token.
+	progressAttemptStarter progressBeginner
 }
 
 type worker struct {
@@ -593,6 +599,9 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 		return
 	}
 
+	// Carries the worker's attempt identity for RUNNING executions; other
+	// branches settle the message without starting a progress window.
+	runCtx := e.ctx
 	switch task.Status {
 	case common.COMPLETED, common.STOPPED, common.FAILED:
 		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
@@ -631,18 +640,27 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 		// the worker that claimed this task, so we carry the per-task worker
 		// identity on the context here (before the call) rather than only on the
 		// task-scheduling context used for terminal events below.
-		runCtx := e.ctx
+		runCtx = progressstore.WithAttempt(e.ctx, uuid.NewString())
 		if w != nil {
 			runCtx = observability.WithWorkerName(runCtx, fmt.Sprintf("worker-%d", w.id))
 		}
 		e.ingestionTaskSvc.PrepareValidatedRun(runCtx, task)
+		// Open a fresh progress window only after the claim succeeded and the
+		// document was reset; every later write is fenced by this attempt.
+		starter := e.progressAttemptStarter
+		if starter == nil && e.deps != nil && e.deps.KV != nil {
+			starter = progressstore.New(e.deps.KV)
+		}
+		if starter != nil {
+			e.beginProgressAttempt(runCtx, task, starter)
+		}
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
 		return
 	}
 
-	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
+	taskCtx := taskpkg.NewTaskContextForScheduling(runCtx, task)
 	taskCtx.Handle = handle
 	// Attribute the run to the user who created the task: the pipeline's model
 	// resolutions and usage records (embedder, knowledge compiler) run on this
@@ -1309,6 +1327,16 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		if parserID == "" {
 			return fmt.Errorf("ingestion task %s: no pipeline_id or parser_id configured for document %s", ingestionTask.ID, docTaskCtx.Doc.ID)
 		}
+		// The document parses with the selection on its own row, so a dataset
+		// bound to a pipeline never reaches documents saved before the binding
+		// (binding updates the dataset row only; documents are updated by the
+		// explicit apply-parser-config step). A per-document built-in choice is
+		// legitimate, so surface the fallback instead of rerouting or failing.
+		if kbPipelineID := docTaskCtx.KB.PipelineID; kbPipelineID != nil && strings.TrimSpace(*kbPipelineID) != "" {
+			common.Warn(fmt.Sprintf(
+				"document %s has no pipeline selection; falling back to the built-in %s template while dataset %s is bound to pipeline %s (run POST /api/v1/datasets/{id}/documents/apply-parser-config to apply the dataset's parser settings to its documents)",
+				docTaskCtx.Doc.ID, parserID, docTaskCtx.KB.ID, strings.TrimSpace(*kbPipelineID)))
+		}
 		pipelineID = parserID // builtin: parser_id acts as the logical pipeline identifier
 	}
 
@@ -1351,7 +1379,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	// Progress positions/phases are buffered in memory and drained by the sink's
 	// flusher, keeping KV I/O off the emitMu-guarded emit path. A nil/disabled
 	// client degrades to a no-op inside the store.
-	sink.installProgressWriter(progressstore.New(e.deps.KV), pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID)
+	sink.installProgressWriter(progressstore.New(e.deps.KV), pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID, progressstore.AttemptFromContext(ctx))
 	sink.detailEmitter = func(component, unit string, current, total uint32) {
 		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
 		common.LogIngest(&log)

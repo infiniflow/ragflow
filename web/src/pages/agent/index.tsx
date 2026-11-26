@@ -25,9 +25,8 @@ import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
-  ChevronDown,
   CirclePlay,
-  History,
+  Ellipsis,
   LaptopMinimalCheck,
   MessageSquareCode,
   ScreenShare,
@@ -61,7 +60,6 @@ import { PipelineLogSheet } from './pipeline-log-sheet';
 import PipelineRunSheet from './pipeline-run-sheet';
 import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
-import { VersionDialog } from './version-dialog';
 import WebhookSheet from './webhook-sheet';
 import { RunTooltip } from './flow-tooltip';
 import { debugRunLimitsTooltipKey } from './utils/debug-run-limits';
@@ -126,12 +124,6 @@ export default function Agent() {
   const { buildDslData } = useBuildDslData();
   const { saveAgent, loading: savingWidgetSettings } = useSaveAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
-  const {
-    visible: versionDialogVisible,
-    hideModal: hideVersionDialog,
-    showModal: showVersionDialog,
-  } = useSetModalState();
-
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const time = useWatchAgentChange(chatDrawerVisible);
@@ -316,8 +308,12 @@ export default function Agent() {
           <CanvasChecklist issues={issues} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant={'secondary'}>
-                <ChevronDown /> {t('flow.management')}
+              <Button
+                variant="secondary"
+                size="icon"
+                aria-label={t('flow.management')}
+              >
+                <Ellipsis />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -328,11 +324,6 @@ export default function Agent() {
                 </AgentDropdownMenuItem>
                 <DropdownMenuSeparator />
               </AgentEditGuard>
-              <AgentDropdownMenuItem onClick={showVersionDialog}>
-                <History />
-                {t('flow.historyVersion')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
@@ -379,11 +370,6 @@ export default function Agent() {
           onSaveWidgetSettings={handleSaveWidgetSettings}
           savingWidgetSettings={savingWidgetSettings}
         ></EmbedDialog>
-      )}
-      {versionDialogVisible && (
-        <DropdownProvider>
-          <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
-        </DropdownProvider>
       )}
       {pipelineLogSheetVisible && (
         <PipelineLogSheet

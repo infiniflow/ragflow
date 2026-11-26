@@ -3507,7 +3507,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',
       pageChunkerDescription: '此 Chunker 无需额外配置。',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       compiler: 'Compiler',

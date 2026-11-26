@@ -19,6 +19,7 @@ const Routes = {
   Pipeline: '/pipeline',
   Explore: '/explore',
   AgentExplore: '/agent/:id/explore',
+  AgentVersionHistory: '/agent/:id/version-history',
   AgentSetting: '/agent/:id/setting',
   Memories: '/memories',
   Memory: '/memory',

@@ -150,6 +150,7 @@ const svgIcons = [
   LLMFactory.GreenNode,
   LLMFactory.Morse,
   LLMFactory.TeamoRouter,
+  LLMFactory.Straitly,
 ];
 
 export const LlmIcon = ({
