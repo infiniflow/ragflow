@@ -47,7 +47,7 @@ const UserSettingTeam = () => {
         <Card className="bg-transparent border-none">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
             {/* <User className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-            <CardTitle className="text-base">
+            <CardTitle className="text-2xl">
               {t('setting.teamMembers')}
             </CardTitle>
 
@@ -73,7 +73,7 @@ const UserSettingTeam = () => {
         <Card className="bg-transparent border-none mt-8">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4">
             {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-            <CardTitle className="text-base w-fit">
+            <CardTitle className="text-2xl w-fit">
               {t('setting.joinedTeams')}
             </CardTitle>
             <SearchInput
