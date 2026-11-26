@@ -36,7 +36,7 @@ EOF
   exit 1
 fi
 
-install -d "$(dirname "$dest")"
+mkdir -p "$(dirname "$dest")"
 
 # Re-copying half a gigabyte on every build is pointless: the engine is rebuilt
 # in place, so its mtime moves when it changes. The DLLs below are staged on
@@ -46,7 +46,10 @@ size() { stat -c %s "$1" 2>/dev/null || stat -f %z "$1"; }
 if [ -f "$dest" ] && [ ! "$src" -nt "$dest" ] && [ "$(size "$src")" = "$(size "$dest")" ]; then
   echo "stage-sidecar: engine up to date ($(du -h "$dest" | cut -f1))"
 else
-  install -m 0755 "$src" "$dest"
+  cp -f "$src" "$dest"
+  # The macOS/Linux bundle marks the sidecar executable; cp keeps the mode go
+  # build wrote, but the bundle step is the one that has to be able to exec it.
+  chmod 0755 "$dest" 2>/dev/null || true
   echo "stage-sidecar: $(du -h "$dest" | cut -f1) -> ${dest#"$here"/}"
 fi
 
@@ -56,7 +59,7 @@ fi
 if [ -n "$exe" ]; then
   for dll in "$(dirname "$src")"/*.dll; do
     [ -f "$dll" ] || continue
-    install -m 0755 "$dll" "$(dirname "$dest")/$(basename "$dll")"
+    cp -f "$dll" "$(dirname "$dest")/$(basename "$dll")"
     echo "stage-sidecar: staged $(basename "$dll")"
   done
 fi

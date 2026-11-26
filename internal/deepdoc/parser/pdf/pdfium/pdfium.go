@@ -4,6 +4,10 @@
 // at build time via CGO_LDFLAGS). It exists solely to replace pdf_oxide's
 // RenderPageRaw for use cases where image quality matters for downstream
 // OCR/DLA — pdf_oxide still handles all text/char/table extraction.
+//
+// The linker flags live in the preamble below, one directive per OS, and the
+// other files in the package carry none: cgo merges them all, and -ldl/-lpthread
+// do not exist in the MinGW toolchain Windows builds with.
 package pdfium
 
 /*

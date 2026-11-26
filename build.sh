@@ -356,6 +356,19 @@ _pdfium_deps_present() {
     return 0
 }
 
+# The one command that provisions the native libraries for the target platform.
+# Linux/macOS take the pinned Python downloader; Windows has no assets in it and
+# needs build_windows_native_dlls.sh, which fetches the release archives and
+# produces the MinGW import libraries, the DLLs and the static pcre2 that build.sh
+# links and ships.
+native_libs_provision_hint() {
+    if [ "$TARGET_OS" = "windows" ]; then
+        printf '%s\n' "bash tools/scripts/build_windows_native_dlls.sh"
+    else
+        printf '%s\n' "uv run tools/scripts/download_dev_deps.py"
+    fi
+}
+
 # True when every native lib the Go build links is already in the versioned user
 # cache for the target platform. Used to skip the network entirely on an
 # already-provisioned host.
@@ -368,10 +381,21 @@ _native_libs_present() {
     [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ] || return 1
     _pdfium_deps_present || return 1
     [ -f "${PDF_OXIDE_PREFIX}/lib/$(pdf_oxide_lib_subdir)/libpdf_oxide.a" ] || return 1
-    # Windows loads onnxruntime.dll at run time, so there is no static archive to
-    # require here — the remaining checks below are POSIX-only.
+    # Windows never links the archives checked above: it links MinGW import
+    # libraries and loads the DLLs at run time. The archives only prove the
+    # download landed, so gate on what setup_cgo_env and stage_native_dlls
+    # actually consume — otherwise this function reports "present" and the build
+    # still fails one step later.
     if [ "$TARGET_OS" = "windows" ]; then
-        return 0
+        [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.dll.a" ] || return 1
+        [ -f "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.dll.a" ] || return 1
+        [ -f "${PDFIUM_STATIC_PREFIX}/pdfium.dll" ] || return 1
+        local ort_dll
+        for ort_dll in "${ONNXRUNTIME_STATIC_PREFIX}/lib/onnxruntime.dll" \
+            "${NATIVE_LIBS_DIR}"/onnxruntime/*/onnxruntime.dll; do
+            [ -f "$ort_dll" ] && return 0
+        done
+        return 1
     fi
     # ORT must match the SAME version+platform-keyed dir that check_onnxruntime_deps
     # links (*/${ort_dir_prefix}${ort_version}*/lib/*.a). A shared cache holding
@@ -399,6 +423,22 @@ _native_libs_present() {
 # when the cache is still incomplete afterwards (a locked-down host with no
 # network and no pre-placed libs).
 _ensure_native_libs_installed() {
+    # Windows is provisioned differently and cannot use the downloader at all:
+    # tools/scripts/download_dev_deps.py only knows linux/darwin assets and exits
+    # on anything else, and Windows needs import libraries plus DLLs rather than
+    # the static archives. Running it here turned a missing cache into a
+    # misleading "downloader failed" wall, so name the step that can fix it.
+    if [ "$TARGET_OS" = "windows" ]; then
+        _native_libs_present && return 0
+        echo -e "${RED}Error: the Windows native libraries are not provisioned.${NC}" >&2
+        echo "  Windows links MinGW import libraries and loads the DLLs at run time," >&2
+        echo "  so the Linux/macOS downloader cannot provision them. Run, once:" >&2
+        echo "    bash tools/scripts/build_windows_native_dlls.sh" >&2
+        echo "  It fetches office_oxide/pdfium/pdf_oxide/onnxruntime and builds the" >&2
+        echo "  pinned pcre2 with the MinGW toolchain; pdfium and onnxruntime are" >&2
+        echo "  relinked with MSVC's link.exe (see the script header for that step)." >&2
+        exit 1
+    fi
     # Validate the variant config BEFORE the presence gate. An invalid variant
     # makes _native_libs_present return 1, which would otherwise be mistaken for
     # "libs missing" and trigger a pointless full downloader run. Fail fast on
@@ -822,7 +862,7 @@ check_office_oxide_deps() {
     if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
         echo -e "${RED}Error: office_oxide native library not found${NC}"
         echo "  Expected: ${lib_path}"
-        echo "  Run: uv run tools/scripts/download_dev_deps.py"
+        echo "  Run: $(native_libs_provision_hint)"
         echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/$(office_oxide_asset)"
         exit 1
     fi
@@ -837,7 +877,7 @@ check_office_oxide_deps() {
         echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
         echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
         echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-        echo "    uv run tools/scripts/download_dev_deps.py   # re-extracts into ${OFFICE_OXIDE_PREFIX}"
+        echo "    $(native_libs_provision_hint)   # re-extracts into ${OFFICE_OXIDE_PREFIX}"
         exit 1
     fi
 
@@ -859,7 +899,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) missing or incompatible with ${TARGET_OS}/${TARGET_ARCH}"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run tools/scripts/download_dev_deps.py"
+    echo "  Run: $(native_libs_provision_hint)"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/$(pdfium_asset) | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -1436,6 +1476,7 @@ find_resource_tree() {
         "$PROJECT_ROOT/resource" \
         "$PROJECT_ROOT/../resource" \
         "$PROJECT_ROOT/../../resource" \
+        "$PROJECT_ROOT/bin/resource" \
         "$HOME/.ragflow/resource" \
         /usr/share/infinity/resource; do
         [ -n "$candidate" ] && [ -f "$candidate/rag/huqie.trie" ] || continue
@@ -1457,8 +1498,10 @@ link_desktop_resources() {
         echo -e "${GREEN}✓ Analyzer resources: bin/resource -> $tree${NC}"
     else
         # Windows needs developer mode for symlinks; running with
-        # RAGFLOW_DICT_PATH set is equivalent.
-        echo -e "${YELLOW}Warning: could not link bin/resource -> $tree; set RAGFLOW_DICT_PATH instead.${NC}" >&2
+        # RAGFLOW_DICT_PATH set is equivalent for the binaries. desktop/stage-resources.sh
+        # takes the tree from RAGFLOW_RESOURCE_DIR or a checkout-relative
+        # resource/, so the bundle needs that variable when this link is absent.
+        echo -e "${YELLOW}Warning: could not link bin/resource -> $tree. Set RAGFLOW_DICT_PATH to run the binaries, and RAGFLOW_RESOURCE_DIR to bundle the app.${NC}" >&2
     fi
 }
 
@@ -1599,6 +1642,10 @@ build_infinity_embedded() {
         echo "  A toolchain problem shows up there first; this script never installs" >&2
         echo "  a compiler itself. Check the pin with:" >&2
         echo "    cd ${root} && rustup show" >&2
+        if [ -n "$INFINITY_CARGO_TARGET" ]; then
+            echo "  A missing cross target is the usual cause for ${INFINITY_CARGO_TARGET}; install it with:" >&2
+            echo "    rustup target add ${INFINITY_CARGO_TARGET}" >&2
+        fi
         return 1
     }
     if ! target="$(infinity_embedded_target_dir)"; then
@@ -1835,7 +1882,18 @@ prepare_infinity_embedded() {
         "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.so" \
         "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.dylib" \
         "${INFINITY_EMBEDDED_STAGE}/infinity_embedded."*
-    ln -sfn "$staged" "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a"
+    # The link flag below names the hashed archive, so this stable name is only a
+    # convenience for tools and humans. Windows gets no copy of it: MSYS answers
+    # `ln -s` by duplicating the ~190 MB archive, and `MSYS=winsymlinks:nativestrict`
+    # fails outright without the privilege, which under `set -e` would abort a
+    # build whose remaining work is done. POSIX still gets the symlink, and a
+    # failure there degrades to a warning for the same reason.
+    if [ "$TARGET_OS" = "windows" ]; then
+        rm -f "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a"
+    else
+        ln -sfn "$staged" "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a" 2>/dev/null ||
+            echo -e "${YELLOW}Warning: could not publish ${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a; the link flag names $staged directly.${NC}" >&2
+    fi
 
     INFINITY_EMBEDDED_LINK_FLAG="$staged"
     INFINITY_EMBEDDED_STAGED="$staged"
@@ -2407,12 +2465,15 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.26.4
     - clang++ with C++20 support
-    - office_oxide native library (download with: uv run tools/scripts/download_dev_deps.py)
+    - office_oxide native library:
+        - Linux/macOS: uv run tools/scripts/download_dev_deps.py
+        - Windows:     bash tools/scripts/build_windows_native_dlls.sh
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
-    - pcre2 development files
+    - pcre2
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
         - macOS (Homebrew): pcre2
+        - Windows: built from source by build_windows_native_dlls.sh (no system pcre2)
     - Rust/cargo (desktop builds only): Infinity's embedded engine is compiled
       from a checkout; rustup installs the pinned nightly automatically.
 

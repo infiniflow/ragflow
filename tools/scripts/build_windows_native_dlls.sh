@@ -2,12 +2,15 @@
 #
 # Builds the Windows-only native artifacts the desktop bundle links and ships:
 #
-#   <cache>/office_oxide/v<ver>/lib/liboffice_oxide.dll.a   MinGW import library
-#   <cache>/pdfium-static/v<ver>/pdfium.dll                 the DLL itself
-#   <cache>/pdfium-static/v<ver>/lib/libpdfium.dll.a        MinGW import library
-#   <cache>/onnxruntime/windows-x64-v<ver>/onnxruntime.dll  the DLL itself
+#   <cache>/office_oxide/v<ver>/lib/liboffice_oxide.dll.a    MinGW import library
+#   <cache>/pdfium-static/v<ver>/pdfium.dll                  the DLL itself
+#   <cache>/pdfium-static/v<ver>/lib/libpdfium.dll.a         MinGW import library
+#   <cache>/onnxruntime/windows-x64-v<ver>/onnxruntime.dll   the DLL itself
+#   <cache>/pcre2/v<ver>/lib/libpcre2-8.a                    static, MinGW-built
 #
-# <cache> is ragflow_native_libs_dir() (~/ragflow-native-libs by default).
+# <cache> is ragflow_native_libs_dir() (~/ragflow-native-libs by default). These
+# paths are exactly what build.sh probes, so running this script is the whole
+# Windows provisioning step.
 #
 # Why a separate step: cgo on Windows links with MinGW-w64, and MinGW's ld
 # cannot consume the archives the upstream Windows releases publish — they are
@@ -23,6 +26,9 @@
 #   onnxruntime     same, plus tools/scripts/windows/std_unique_shim.c, which
 #                   supplies the one STL helper the archive's newer toolset
 #                   expects and the relink cannot find.
+#   pcre2           the tokenizer's regex engine, which Windows does not ship at
+#                   all: the pinned release is compiled here with the same
+#                   MinGW toolchain that links it (cmake + ninja or mingw32-make).
 #
 # Inputs are downloaded from the pinned releases when they are missing (same
 # versions build.sh and tools/scripts/download_dev_deps.py resolve), so this is
@@ -48,13 +54,17 @@ repo_root="$(cd "$here/../.." && pwd)"
 
 usage() {
   cat <<'EOF'
-Builds the Windows native DLLs and MinGW import libraries the desktop bundle
-needs, downloading the pinned release archives when they are missing.
+Builds the Windows native DLLs, MinGW import libraries and the static pcre2 the
+desktop bundle needs, downloading the pinned release archives when they are
+missing.
 
   bash tools/scripts/build_windows_native_dlls.sh              # fetch + build
   bash tools/scripts/build_windows_native_dlls.sh --check      # report only
   bash tools/scripts/build_windows_native_dlls.sh --no-download
   bash tools/scripts/build_windows_native_dlls.sh --force      # rebuild
+
+Needs the MinGW-w64 toolchain, cmake (plus ninja or mingw32-make), and MSVC's
+link.exe for pdfium/onnxruntime — the only part of the Windows build that does.
 
 Overrides: RAGFLOW_ORT_DLL, RAGFLOW_PDFIUM_DLL (use an existing DLL instead of
 building one), GH_PROXY (mirror prefix for the downloads), and
@@ -95,15 +105,13 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 source "$repo_root/tools/scripts/native_lib_version.sh"
 NATIVE_LIBS_DIR="$(ragflow_native_libs_dir)"
 
-module_version() {
-  sed -n "s|^[[:space:]]*$1 v\([0-9][^[:space:]]*\).*|\1|p" "$repo_root/go.mod" | head -1
-}
-
 PDFIUM_VERSION="$(pdfium_static_version "$repo_root")"
 [ -n "$PDFIUM_VERSION" ] || die "pdfium_static_version produced nothing"
-OFFICE_OXIDE_VERSION="$(module_version github.com/yfedoseev/office_oxide/go)"
+PCRE2_VERSION="$(pcre2_static_version)"
+[ -n "$PCRE2_VERSION" ] || die "pcre2_static_version produced nothing"
+OFFICE_OXIDE_VERSION="$(go_module_version github.com/yfedoseev/office_oxide/go "$repo_root")"
 [ -n "$OFFICE_OXIDE_VERSION" ] || die "office_oxide version not found in go.mod"
-PDF_OXIDE_VERSION="$(module_version github.com/yfedoseev/pdf_oxide/go)"
+PDF_OXIDE_VERSION="$(go_module_version github.com/yfedoseev/pdf_oxide/go "$repo_root")"
 [ -n "$PDF_OXIDE_VERSION" ] || die "pdf_oxide version not found in go.mod"
 ORT_VERSION="$(sed -n 's/^const DeepDocORTVersion = "\([^"]*\)".*/\1/p' "$repo_root/internal/common/environments.go")"
 [ -n "$ORT_VERSION" ] || die "DeepDocORTVersion not found in internal/common/environments.go"
@@ -117,6 +125,10 @@ OFFICE_OXIDE_DIR="$NATIVE_LIBS_DIR/office_oxide/v$OFFICE_OXIDE_VERSION"
 PDFIUM_DIR="$NATIVE_LIBS_DIR/pdfium-static/v$PDFIUM_VERSION"
 PDF_OXIDE_DIR="$NATIVE_LIBS_DIR/pdf_oxide/v$PDF_OXIDE_VERSION"
 ORT_DIR="$NATIVE_LIBS_DIR/onnxruntime/windows-x64-v$ORT_VERSION$ORT_SUFFIX"
+# The C++ build takes pcre2 from the same version-keyed cache
+# (PCRE2_STATIC_PREFIX in build.sh) — Windows has no system pcre2.
+PCRE2_DIR="$NATIVE_LIBS_DIR/pcre2/v$PCRE2_VERSION"
+PCRE2_SRC="$NATIVE_LIBS_DIR/_build/pcre2-$PCRE2_VERSION"
 DOWNLOADS="$NATIVE_LIBS_DIR/_downloads"
 
 say "cache: $NATIVE_LIBS_DIR"
@@ -124,6 +136,7 @@ say "  office_oxide v$OFFICE_OXIDE_VERSION"
 say "  pdfium       v$PDFIUM_VERSION"
 say "  pdf_oxide    v$PDF_OXIDE_VERSION"
 say "  onnxruntime  v$ORT_VERSION ($ORT_TAG)"
+say "  pcre2        v$PCRE2_VERSION"
 
 # ── inputs ─────────────────────────────────────────────────────────────────
 fetch() { # url dest
@@ -200,6 +213,24 @@ ensure_onnxruntime() {
   [ -d "$ORT_DIR" ] || die "unexpected layout inside $zip"
 }
 
+# pcre2 is not a prebuilt download on Windows: there is no system copy, so the
+# C++ tokenizer links an archive built from the pinned release with the MinGW
+# toolchain. The source tree is kept out of the cache layout and rebuilt on
+# demand (a minute), because the archive itself is the only artifact build.sh
+# looks for (PCRE2_STATIC_PREFIX/lib/libpcre2-8.a).
+ensure_pcre2() {
+  [ -f "$PCRE2_DIR/lib/libpcre2-8.a" ] && return 0
+  [ -d "$PCRE2_SRC" ] && return 0
+  step "pcre2 v$PCRE2_VERSION (source)"
+  [ "$download" = on ] || die "$PCRE2_SRC is missing and --no-download was given"
+  local tgz="$DOWNLOADS/pcre2-$PCRE2_VERSION.tar.gz"
+  fetch "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-$PCRE2_VERSION/pcre2-$PCRE2_VERSION.tar.gz" "$tgz"
+  rm -rf "$PCRE2_SRC"
+  mkdir -p "$NATIVE_LIBS_DIR/_build"
+  unpack_tgz "$tgz" "$NATIVE_LIBS_DIR/_build"
+  [ -d "$PCRE2_SRC" ] || die "unexpected layout inside $tgz"
+}
+
 # ── toolchains ─────────────────────────────────────────────────────────────
 need_mingw_tool() {
   command -v "$1" >/dev/null 2>&1 ||
@@ -257,6 +288,58 @@ msvc_batch() { # out-file, then commands on stdin
     printf 'call "%s" >nul || exit /b 1\n' "$(cygpath -w "$VCVARS64")"
     cat
   } | sed 's/$/\r/' > "$bat"
+}
+
+# ── static library: pcre2 ──────────────────────────────────────────────────
+# build.sh's C++ step links PCRE2_STATIC_PREFIX/lib/libpcre2-8.a and there is no
+# system pcre2 on Windows, so the archive is built here from the pinned release
+# with the same MinGW toolchain that will link it. Only the 8-bit library is
+# needed (the analyzer uses PCRE2_UTF/PCRE2_UCP on 8-bit patterns); the 16/32-bit
+# variants, tests and pcre2grep would triple the build for nothing.
+build_pcre2() {
+  local archive="$PCRE2_DIR/lib/libpcre2-8.a"
+  if [ "$mode" = build ] && [ "$force" = off ] && [ -f "$archive" ]; then
+    say "  libpcre2-8.a: up to date"
+    return 0
+  fi
+  if [ "$mode" = check ]; then
+    [ -f "$archive" ] || say "  libpcre2-8.a: MISSING (run without --check)"
+    return 0
+  fi
+  step "libpcre2-8.a (pcre2 v$PCRE2_VERSION)"
+  need_mingw_tool gcc
+  command -v cmake >/dev/null 2>&1 ||
+    die "cmake not found; it is required to build pcre2 from source"
+  [ -d "$PCRE2_SRC" ] || die "$PCRE2_SRC is missing; rerun without --no-download"
+
+  # Ninja when it is available, otherwise the MinGW makefile generator: the
+  # winlibs toolchain ships mingw32-make but not make, so the Unix Makefiles
+  # generator would look for a program that is not there.
+  local -a generator
+  if command -v ninja >/dev/null 2>&1; then
+    generator=(-G Ninja)
+  elif command -v mingw32-make >/dev/null 2>&1; then
+    generator=(-G "MinGW Makefiles")
+  else
+    die "neither ninja nor mingw32-make is available to build pcre2"
+  fi
+
+  local build="$NATIVE_LIBS_DIR/_build/pcre2-$PCRE2_VERSION-mingw"
+  rm -rf "$build"
+  cmake -S "$PCRE2_SRC" -B "$build" "${generator[@]}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DPCRE2_BUILD_PCRE2_8=ON \
+    -DPCRE2_BUILD_PCRE2_16=OFF \
+    -DPCRE2_BUILD_PCRE2_32=OFF \
+    -DPCRE2_BUILD_TESTS=OFF \
+    -DPCRE2_BUILD_PCRE2GREP=OFF >/dev/null
+  cmake --build "$build" --config Release --parallel >/dev/null
+  [ -f "$build/libpcre2-8.a" ] || die "cmake produced no libpcre2-8.a in $build"
+  mkdir -p "$PCRE2_DIR/lib"
+  cp -f "$build/libpcre2-8.a" "$PCRE2_DIR/lib/"
+  rm -rf "$build"
+  say "  wrote $archive"
 }
 
 # ── import libraries and DLLs ──────────────────────────────────────────────
@@ -447,10 +530,18 @@ verify() {
   else
     warn "pdf_oxide: libpdf_oxide.a missing"; ok=1
   fi
+  if [ -f "$PCRE2_DIR/lib/libpcre2-8.a" ] && nm "$PCRE2_DIR/lib/libpcre2-8.a" 2>/dev/null | grep -q ' T _*pcre2_compile_8$'; then
+    say "  pcre2: libpcre2-8.a exposes pcre2_compile_8"
+  elif [ -f "$PCRE2_DIR/lib/libpcre2-8.a" ]; then
+    warn "pcre2: libpcre2-8.a present but pcre2_compile_8 was not found"; ok=1
+  else
+    warn "pcre2: no libpcre2-8.a (the C++ tokenizer cannot build without it)"; ok=1
+  fi
   return "$ok"
 }
 
 if [ "$mode" = check ]; then
+  build_pcre2
   build_office_oxide
   build_pdfium
   build_onnxruntime
@@ -462,7 +553,9 @@ ensure_office_oxide
 ensure_pdfium
 ensure_pdf_oxide
 ensure_onnxruntime
+ensure_pcre2
 
+build_pcre2
 build_office_oxide
 build_pdfium
 build_onnxruntime
@@ -470,8 +563,9 @@ verify
 
 cat <<EOF
 
-Native DLLs are in place. bin/ gets them from build.sh, and the app bundles them
-via desktop/src-tauri/tauri.windows.conf.json:
+Native libraries are in place; bin/ gets the DLLs from build.sh, and the app
+bundles them via desktop/src-tauri/tauri.windows.conf.json. The C++ tokenizer
+takes libpcre2-8.a from the same cache. Next:
 
     bash desktop/build.sh
 EOF

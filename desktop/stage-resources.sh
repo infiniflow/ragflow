@@ -17,6 +17,11 @@
 # A tree is only complete when it contains rag/huqie.trie; a half-copied
 # directory would make the engine fail later with a confusing error, so the
 # marker is checked here instead.
+#
+# Copying uses mkdir/cp only. install(1) comes from coreutils, which is present
+# in the Git for Windows that build.sh already needs but is not guaranteed by
+# every bash a Windows host may have, and there is no fallback for a missing
+# install.
 
 set -euo pipefail
 
@@ -33,6 +38,7 @@ find_source() {
     "$repo_root/resource" \
     "$repo_root/../resource" \
     "$repo_root/../../resource" \
+    "$repo_root/bin/resource" \
     "$HOME/.ragflow/resource" \
     /usr/share/infinity/resource; do
     [ -n "$candidate" ] && [ -f "$candidate/$marker" ] || continue
@@ -47,11 +53,17 @@ if ! src="$(find_source)"; then
 stage-resources: no analyzer resource tree found.
 
 Looked for a directory containing $marker in:
-    \$RAGFLOW_RESOURCE_DIR, $repo_root/{resource,../resource,../../resource},
+    \$RAGFLOW_RESOURCE_DIR, $repo_root/{resource,bin/resource,../resource,../../resource},
     ~/.ragflow/resource, /usr/share/infinity/resource
 
-Download it (uv run deps/download_deps.py) or point RAGFLOW_RESOURCE_DIR at the
-tree, then retry.
+This tree is not one of the downloads: deps/download_deps.py fetches DeepDoc
+weights and tokenizer assets, and the Go native libraries come from the release
+bundles, but the analyzer dictionaries (rag/, wordnet/, opencc/) are a separate
+data checkout. Clone it next to this repository (or into ./resource) and retry:
+
+    git clone --depth 1 https://gitee.com/infiniflow/resource.git resource
+
+Or point RAGFLOW_RESOURCE_DIR at an existing tree.
 EOF
   exit 1
 fi
@@ -66,12 +78,12 @@ stage_conf() {
     echo "stage-resources: warning: $conf_src is missing; the packaged app cannot load model providers" >&2
     return 0
   fi
-  install -d "$conf_dest"
+  mkdir -p "$conf_dest"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --delete "$conf_src/" "$conf_dest/"
   else
     rm -rf "$conf_dest"
-    install -d "$conf_dest"
+    mkdir -p "$conf_dest"
     cp -R "$conf_src/." "$conf_dest/"
   fi
   chmod -R u+w "$conf_dest"
@@ -88,11 +100,11 @@ copy_templates() {
   local src="$1" dest="$2"
   [ -d "$src" ] || return 0
   if command -v rsync >/dev/null 2>&1; then
-    install -d "$dest"
+    mkdir -p "$dest"
     rsync -a --delete "$src/" "$dest/"
   else
     rm -rf "$dest"
-    install -d "$dest"
+    mkdir -p "$dest"
     cp -R "$src/." "$dest/"
   fi
 }
@@ -106,12 +118,12 @@ stage_deepdoc() {
     echo "stage-resources: warning: $model_src is missing; the packaged app cannot start (DeepDoc is required)" >&2
     return 0
   fi
-  install -d "$model_dest"
+  mkdir -p "$model_dest"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --delete --exclude=.cache "$model_src/" "$model_dest/"
   else
     rm -rf "$model_dest"
-    install -d "$model_dest"
+    mkdir -p "$model_dest"
     ( cd "$model_src" && tar -cf - --exclude=.cache . ) | ( cd "$model_dest" && tar -xf - )
   fi
   chmod -R u+w "$model_dest"
@@ -145,8 +157,8 @@ stage_deps() {
       echo "stage-resources: warning: deps/$rel is missing; a tokenizer counter will be unavailable" >&2
       continue
     fi
-    install -d "$deps_dest/$(dirname "$rel")"
-    install -m 0644 "$deps_src/$rel" "$deps_dest/$rel"
+    mkdir -p "$deps_dest/$(dirname "$rel")"
+    cp -f "$deps_src/$rel" "$deps_dest/$rel"
   done
   chmod -R u+w "$deps_dest"
   echo "stage-resources: deps/ $(du -sh "$deps_dest" | cut -f1)"
@@ -184,7 +196,7 @@ fi
 # target/<profile> on every build-script run, so the second copy would then fail
 # with EACCES opening its own earlier output. The chmod covers the rest.
 rm -rf "$dest"
-install -d "$dest"
+mkdir -p "$dest"
 for part in $resource_include; do
   if [ ! -e "$src/$part" ]; then
     echo "stage-resources: warning: $src/$part is missing; the analyzer may not load" >&2
