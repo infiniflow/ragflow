@@ -74,6 +74,52 @@ func TestCustomDelimiterJSONCRLFNormalized(t *testing.T) {
 	}
 }
 
+// TestCustomDelimiterEntryCRLFNormalized covers the delimiter side of the same
+// rule: input is normalized before matching, so a delimiter entry configured
+// with CRLF must be normalized too. Otherwise "`\r\n\r\n`" would look for bytes
+// the input no longer contains and the document would stay one chunk.
+func TestCustomDelimiterEntryCRLFNormalized(t *testing.T) {
+	crlfParams := map[string]any{
+		"chunk_token_size": float64(128),
+		"delimiters":       []string{"`\r\n\r\n`"},
+	}
+	crlf := chunkTexts(invokeTokenChunks(t, crlfParams, crlfTextInput(crlfCustomDelimDoc)))
+	lf := chunkTexts(invokeTokenChunks(t, customCRLFTextParams(), crlfTextInput(lfCustomDelimDoc)))
+
+	if len(crlf) != 2 {
+		t.Fatalf("CRLF delimiter entry: want 2 chunks, got %d (%q)", len(crlf), crlf)
+	}
+	if !reflect.DeepEqual(crlf, lf) {
+		t.Errorf("CRLF delimiter entry diverged from LF delimiter:\n crlf=%q\n lf  =%q", crlf, lf)
+	}
+}
+
+// TestBareDelimiterEntryCRLFNormalized is the bare (non-backtick) counterpart:
+// a CRLF bare delimiter must behave like its LF twin after normalization.
+func TestBareDelimiterEntryCRLFNormalized(t *testing.T) {
+	// A small target forces the token merge to keep paragraph boundaries, so a
+	// delimiter that failed to match would produce different chunk texts.
+	crlfParams := map[string]any{
+		"chunk_token_size": float64(4),
+		"delimiters":       []string{"\r\n\r\n"},
+	}
+	lfParams := map[string]any{
+		"chunk_token_size": float64(4),
+		"delimiters":       []string{"\n\n"},
+	}
+	crlf := chunkTexts(invokeTokenChunks(t, crlfParams, crlfTextInput(crlfCustomDelimDoc)))
+	lf := chunkTexts(invokeTokenChunks(t, lfParams, crlfTextInput(lfCustomDelimDoc)))
+
+	for i, s := range crlf {
+		if strings.Contains(s, "\r") {
+			t.Errorf("chunk[%d] carries carriage return: %q", i, s)
+		}
+	}
+	if !reflect.DeepEqual(crlf, lf) {
+		t.Errorf("CRLF bare delimiter entry diverged from LF delimiter:\n crlf=%q\n lf  =%q", crlf, lf)
+	}
+}
+
 // TestCustomDelimiterJSONNonTextBytesUntouched locks the scope of the fix: only
 // text items are normalized. A table/image item keeps its bytes verbatim.
 func TestCustomDelimiterJSONNonTextBytesUntouched(t *testing.T) {

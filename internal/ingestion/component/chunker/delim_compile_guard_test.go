@@ -97,9 +97,9 @@ func TestCompileDelimPatternIsCaseSensitive(t *testing.T) {
 	}
 }
 
-// TestCompileDelimPatternDelegatesToChunk pins that the wrapper stays a thin
-// delegation to chunk.CompileDelimiterPatternList(..., keepBare=true): any
-// divergence would silently fork children_delimiters behaviour from the main
+// TestCompileDelimPatternDelegatesToChunk pins that the wrapper delegates to
+// chunk.CompileDelimiterPatternList(..., keepBare=true) for already-LF input:
+// any divergence would silently fork children_delimiters behaviour from the main
 // delimiter list.
 func TestCompileDelimPatternDelegatesToChunk(t *testing.T) {
 	inputs := [][]string{
@@ -119,6 +119,30 @@ func TestCompileDelimPatternDelegatesToChunk(t *testing.T) {
 		}
 		if got != nil && got.String() != want.String() {
 			t.Fatalf("compileDelimPattern(%q) = %q, want %q", delims, got.String(), want.String())
+		}
+	}
+}
+
+// TestCompileDelimPatternNormalizesDelimiterLineEndings: input text is
+// normalized to LF before matching, so delimiter entries must be normalized
+// too. A CRLF delimiter has to compile to the same pattern as its LF twin.
+func TestCompileDelimPatternNormalizesDelimiterLineEndings(t *testing.T) {
+	cases := []struct {
+		crlf []string
+		lf   []string
+	}{
+		{[]string{"`\r\n\r\n`"}, []string{"`\n\n`"}},
+		{[]string{"\r\n\r\n"}, []string{"\n\n"}},
+		{[]string{"`\r`"}, []string{"`\n`"}},
+	}
+	for _, c := range cases {
+		got := compileDelimPattern(c.crlf)
+		want := compileDelimPattern(c.lf)
+		if (got == nil) != (want == nil) {
+			t.Fatalf("compileDelimPattern(%q) nil-ness = %v, want %v", c.crlf, got == nil, want == nil)
+		}
+		if got != nil && got.String() != want.String() {
+			t.Fatalf("compileDelimPattern(%q) = %q, want %q", c.crlf, got.String(), want.String())
 		}
 	}
 }
