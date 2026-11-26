@@ -112,6 +112,9 @@ type ParserFormProps = INextOperatorForm & {
   // Dataset-side embeddings (settings page, document pipeline dialog) show a
   // fixed set of file types; only the canvas parser allows add/remove.
   fixedFileFormats?: boolean;
+  // Render only the global vision-enhancement fields. Used by formats whose
+  // file setup has no user-configurable options.
+  visionOnly?: boolean;
 };
 
 type AddFileTypeMenuItemProps = {
@@ -138,6 +141,7 @@ const ParserForm = ({
   hideOutputs,
   externalErrors,
   fixedFileFormats,
+  visionOnly,
 }: ParserFormProps) => {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
@@ -190,6 +194,16 @@ const ParserForm = ({
   );
 
   const canRemove = !fixedFileFormats && fields.length > 1;
+
+  if (visionOnly) {
+    return (
+      <Form {...form}>
+        <form className="space-y-5 px-5 pt-4">
+          <VisionEnhancementFormFields />
+        </form>
+      </Form>
+    );
+  }
 
   return (
     <Form {...form}>
