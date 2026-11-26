@@ -71,9 +71,9 @@ const templates = [
   makeTemplate('pipeline-general', 'Ingestion Pipeline', 'dataflow_canvas'),
 ];
 
-function renderTemplates(initialEntry = '/agent-templates') {
+function renderTemplates() {
   return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
+    <MemoryRouter initialEntries={['/agent-templates']}>
       <TooltipProvider>
         <QueryClientProvider client={new QueryClient()}>
           <AgentTemplates />
@@ -88,8 +88,8 @@ beforeEach(() => {
   agentRequest.useFetchAgentTemplates.mockReturnValue(templates);
 });
 
-describe('AgentTemplates source scoping', () => {
-  it('defaults to the Workflow catalog on the Recommended theme', () => {
+describe('AgentTemplates', () => {
+  it('defaults to the Recommended theme', () => {
     renderTemplates();
 
     expect(screen.getByText('agent-recommended')).toBeInTheDocument();
@@ -101,16 +101,6 @@ describe('AgentTemplates source scoping', () => {
     renderTemplates();
 
     expect(screen.queryByText(/\d{4}-\d{2}-\d{2}/)).toBeNull();
-  });
-
-  it('shows only pipeline templates without a sidebar on the Pipeline source', () => {
-    renderTemplates('/agent-templates?canvas_category=dataflow_canvas');
-
-    expect(screen.getByText('pipeline-general')).toBeInTheDocument();
-    expect(screen.queryByText('agent-recommended')).toBeNull();
-    expect(screen.queryByText('agent-marketing')).toBeNull();
-    // The pipeline catalog has no theme breakdown, so the sidebar is hidden.
-    expect(screen.queryByText('Recommended')).toBeNull();
   });
 
   it('treats a missing canvas_category as a workflow template', () => {
@@ -130,7 +120,7 @@ describe('AgentTemplates source scoping', () => {
     expect(screen.queryByText('pipeline-general')).toBeNull();
   });
 
-  it('renders the theme sidebar and current theme heading for the Workflow source', () => {
+  it('renders the theme sidebar and current theme heading', () => {
     renderTemplates();
     expect(
       screen.getByRole('button', { name: 'Recommended' }),
@@ -174,23 +164,6 @@ describe('AgentTemplates source scoping', () => {
     });
   });
 
-  it('searches only pipeline titles when the sidebar is hidden', async () => {
-    renderTemplates('/agent-templates?canvas_category=dataflow_canvas');
-    const searchInput = screen.getByRole('searchbox');
-
-    fireEvent.change(searchInput, {
-      target: { value: 'agent-recommended' },
-    });
-    await waitFor(() => {
-      expect(screen.queryByText('pipeline-general')).toBeNull();
-    });
-
-    fireEvent.change(searchInput, {
-      target: { value: ' PIPELINE-GENERAL ' },
-    });
-    expect(await screen.findByText('pipeline-general')).toBeInTheDocument();
-  });
-
   it('opens the existing creation dialog from the Use button', () => {
     renderTemplates();
 
@@ -201,11 +174,11 @@ describe('AgentTemplates source scoping', () => {
     );
   });
 
-  it('closes back to the current source catalog', () => {
-    renderTemplates('/agent-templates?canvas_category=dataflow_canvas');
+  it('closes back to the agents list', () => {
+    renderTemplates();
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
-    expect(mockNavigateToAgents).toHaveBeenCalledWith('dataflow_canvas');
+    expect(mockNavigateToAgents).toHaveBeenCalledWith();
   });
 });

@@ -10,18 +10,13 @@ import { PageCloseButton } from '@/components/page-close-button';
 import { SidebarPageFrame } from '@/components/sidebar-page-frame';
 import { TruncatedText } from '@/components/truncated-text';
 import { SearchInput } from '@/components/ui/input';
-import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { AgentCategory } from '@/constants/agent';
 import { LanguageAbbreviation } from '@/constants/common';
 import { useClientSearch } from '@/hooks/use-client-search';
 import { DSL, IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router';
-import {
-  CanvasCategoryToFlowType,
-  TemplateMenuItemKey,
-  TemplateMenuItems,
-} from './constant';
+import { FlowType, TemplateMenuItemKey, TemplateMenuItems } from './constant';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
 import {
@@ -30,18 +25,6 @@ import {
   bindUnboundModel,
 } from './template-retrieval-binding';
 import { SideBar } from './template-sidebar';
-
-function resolveSourceCategory(value: string | null): AgentCategory {
-  return value === AgentCategory.DataflowCanvas
-    ? AgentCategory.DataflowCanvas
-    : AgentCategory.AgentCanvas;
-}
-
-function normalizeTemplateCategory(template: IFlowTemplate): AgentCategory {
-  return template.canvas_category === AgentCategory.DataflowCanvas
-    ? AgentCategory.DataflowCanvas
-    : AgentCategory.AgentCanvas;
-}
 
 function resolveTemplateLanguage(
   language: string,
@@ -59,26 +42,15 @@ export default function AgentTemplates() {
   const list = useFetchAgentTemplates();
   const { loading, createAgent } = useCreateAgent();
   const { t, i18n } = useTranslation();
-  const [searchParams] = useSearchParams();
-  // canvas_category is the source tab; canvas_type(s) remain the secondary
-  // theme filter rendered by the sidebar.
-  const sourceCategory = resolveSourceCategory(
-    searchParams.get(AgentQuery.CanvasCategory),
-  );
   const [selectMenuItem, setSelectMenuItem] = useState<TemplateMenuItemKey>(
     TemplateMenuItemKey.Recommended,
   );
 
-  // The Pipeline catalog has no theme breakdown, so it renders without the
-  // sidebar; the theme filter only applies to Workflow templates.
-  const showSidebar = sourceCategory === AgentCategory.AgentCanvas;
   const language = resolveTemplateLanguage(i18n.language);
   const selectedMenuItem =
     TemplateMenuItems.find((item) => item.key === selectMenuItem) ??
     TemplateMenuItems[0];
-  const contentTitle = showSidebar
-    ? t(`flow.${selectedMenuItem.labelKey}`)
-    : t('flow.tabList.ingestionPipeline');
+  const contentTitle = t(`flow.${selectedMenuItem.labelKey}`);
 
   const {
     visible: creatingVisible,
@@ -99,15 +71,12 @@ export default function AgentTemplates() {
   const { navigateToAgent, navigateToAgents } = useNavigatePage();
 
   const handleClose = useCallback(() => {
-    navigateToAgents(sourceCategory);
-  }, [navigateToAgents, sourceCategory]);
+    navigateToAgents();
+  }, [navigateToAgents]);
 
   const handleOk = useCallback(
     async (payload: any) => {
       const dsl = template?.dsl;
-      const canvasCategory = template
-        ? normalizeTemplateCategory(template)
-        : AgentCategory.AgentCanvas;
       const memoryIds: string[] = payload?.memory_ids ?? [];
       const modelId: string = payload?.llm_id ?? '';
       const datasetBlocks = collectUnboundRetrievalBindings(dsl).datasetBlocks;
@@ -131,16 +100,12 @@ export default function AgentTemplates() {
         title: payload.name,
         dsl: boundDsl,
         avatar: template?.avatar,
-        canvas_category: canvasCategory,
+        canvas_category: AgentCategory.AgentCanvas,
       });
 
       if (ret?.code === 0) {
         hideCreatingModal();
-        if (canvasCategory === AgentCategory.DataflowCanvas) {
-          navigateToAgent(ret.data.id, AgentCategory.DataflowCanvas)();
-        } else {
-          navigateToAgent(ret.data.id)();
-        }
+        navigateToAgent(ret.data.id)();
       }
     },
     [hideCreatingModal, navigateToAgent, createAgent, template],
@@ -151,14 +116,14 @@ export default function AgentTemplates() {
   }, []);
 
   const tempListFilter = useMemo(() => {
-    const scoped = list.filter(
-      (item) => normalizeTemplateCategory(item) === sourceCategory,
-    );
-    if (!showSidebar || !selectMenuItem) {
-      return scoped;
-    }
     const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
-    return scoped.filter((item) => {
+    return list.filter((item) => {
+      if (
+        item.canvas_category &&
+        item.canvas_category !== AgentCategory.AgentCanvas
+      ) {
+        return false;
+      }
       if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
         return item.canvas_types.some(
           (canvasType) =>
@@ -168,7 +133,7 @@ export default function AgentTemplates() {
       }
       return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
     });
-  }, [selectMenuItem, list, sourceCategory, showSidebar]);
+  }, [selectMenuItem, list]);
 
   const templateSearchFields = useMemo(
     () => [(item: IFlowTemplate) => item.title[language]],
@@ -185,12 +150,10 @@ export default function AgentTemplates() {
       <SidebarPageFrame
         closeButton={<PageCloseButton onClick={handleClose} />}
         sidebar={
-          showSidebar ? (
-            <SideBar
-              change={handleSidebarChange}
-              selected={selectMenuItem}
-            ></SideBar>
-          ) : undefined
+          <SideBar
+            change={handleSidebarChange}
+            selected={selectMenuItem}
+          ></SideBar>
         }
       >
         <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -230,11 +193,7 @@ export default function AgentTemplates() {
           loading={loading}
           visible={creatingVisible}
           hideModal={hideCreatingModal}
-          selectedType={
-            CanvasCategoryToFlowType[
-              template ? normalizeTemplateCategory(template) : sourceCategory
-            ]
-          }
+          selectedType={FlowType.Agent}
           template={template}
           onOk={handleOk}
         ></CreateAgentDialog>
