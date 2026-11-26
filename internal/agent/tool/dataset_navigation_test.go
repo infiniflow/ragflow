@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nav"
 )
 
@@ -315,27 +316,46 @@ func TestDatasetNavigation_MaxDocsCannotExceedCap(t *testing.T) {
 	}
 }
 
-// TestCanvasTenantID_FromCanvasState asserts the tenant id resolves from canvas
-// state, falling back to user_id.
 func TestCanvasTenantID_FromCanvasState(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "task-1")
-	state.Sys["tenant_id"] = "canvas-tenant"
-	ctx := runtime.WithState(context.Background(), state)
+	state.SeedIdentity("user-1", "canvas-tenant")
+	ctx := runtime.WithState(permission.WithIdentity(t.Context(), "user-1", "active-tenant"), state)
 	if got := canvasTenantID(ctx); got != "canvas-tenant" {
 		t.Errorf("canvasTenantID = %q, want canvas tenant canvas-tenant", got)
 	}
 
-	// Fall back to user_id when tenant_id is absent.
-	state2 := runtime.NewCanvasState("run-1", "task-1")
-	state2.Sys["user_id"] = "user-1"
-	ctx2 := runtime.WithState(context.Background(), state2)
-	if got := canvasTenantID(ctx2); got != "user-1" {
-		t.Errorf("canvasTenantID = %q, want fallback user-1", got)
+	ctx = permission.WithIdentity(t.Context(), "user-1", "active-tenant")
+	if got := canvasTenantID(ctx); got != "active-tenant" {
+		t.Errorf("canvasTenantID = %q, want permission tenant without canvas state", got)
 	}
 
-	// No canvas state at all → empty.
-	if got := canvasTenantID(context.Background()); got != "" {
-		t.Errorf("canvasTenantID = %q, want empty without canvas state", got)
+	if got := canvasTenantID(t.Context()); got != "" {
+		t.Errorf("canvasTenantID = %q, want empty without tenant context", got)
+	}
+}
+
+func TestDatasetNavigationRequiresTenantContext(t *testing.T) {
+	service := &navRoutingFake{}
+	previous := nav.GetNavService()
+	nav.SetNavService(service)
+	t.Cleanup(func() { nav.SetNavService(previous) })
+
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SeedIdentity("user-1", "")
+	ctx := runtime.WithState(t.Context(), state)
+	out, err := NewDatasetNavigationByTree().InvokableRun(ctx, `{"topic":"hello","dataset_ids":["kb-1"]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var result datasetNavigationResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if !result.NotFound || result.Error != "dataset navigation requires a tenant and dataset context" {
+		t.Errorf("result = %s, want missing tenant context", out)
+	}
+	if topics := service.searchedTopics(); len(topics) != 0 {
+		t.Errorf("searched topics = %v, want no search without tenant context", topics)
 	}
 }
 

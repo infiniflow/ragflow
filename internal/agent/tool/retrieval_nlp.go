@@ -190,15 +190,6 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		topN = 8
 	}
 
-	datasets, err := a.resolveDatasets(ctx, db, req)
-	if err != nil {
-		return nil, err
-	}
-	// The datasets may span tenants: a team-shared dataset stays in the sharing
-	// tenant's index while the conversation reading it lives in the caller's.
-	// Both legs below are already per-dataset (nlp searches one index per tenant,
-	// and the embedding-model validation requires a single base model), so the
-	// scope is the full tenant set, not one tenant.
 	// Dataset authorization must use the caller identity established by the
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
 	userID := permission.UserIDFromContext(ctx)
@@ -216,15 +207,22 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		return nil, permission.ErrUnauthenticated
 	}
 	tenantID := canvasTenantID(ctx)
+	if tenantID == "" {
+		return nil, fmt.Errorf("retrieval: tenant context is required: %w", permission.ErrPermissionDenied)
+	}
 	contextTenantID := permission.TenantIDFromContext(ctx)
-	if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
+	if contextTenantID != "" && contextTenantID != tenantID {
 		return nil, permission.ErrIdentityMismatch
 	}
 	if permission.UserIDFromContext(ctx) == "" || contextTenantID == "" {
-		if contextTenantID == "" {
-			contextTenantID = tenantID
-		}
-		ctx = permission.WithIdentity(ctx, userID, contextTenantID)
+		ctx = permission.WithIdentity(ctx, userID, tenantID)
+	}
+
+	// A shared dataset stays in its owner's index, so search scope includes
+	// the tenant of each authorized dataset.
+	datasets, err := a.resolveDatasets(ctx, db, req)
+	if err != nil {
+		return nil, err
 	}
 	checker := permission.NewDatabaseChecker(db)
 	if err := CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasets.kbIDs); err != nil {

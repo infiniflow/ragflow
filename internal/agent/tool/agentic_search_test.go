@@ -23,6 +23,9 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+
+	einotool "github.com/cloudwego/eino/components/tool"
 )
 
 // TestSplitKeywords_BigramFallback asserts comma terms are used when >=3, and
@@ -147,6 +150,50 @@ func TestAgenticSearchKeywordWeights(t *testing.T) {
 			}
 			if nlpRequest.VectorSimilarityWeight == nil || math.Abs(*nlpRequest.VectorSimilarityWeight-testCase.wantVectorWeight) > 1e-9 {
 				t.Fatalf("VectorSimilarityWeight = %v, want %v", nlpRequest.VectorSimilarityWeight, testCase.wantVectorWeight)
+			}
+		})
+	}
+}
+
+func TestAgenticSearchTenantContext(t *testing.T) {
+	previous := GetRetrievalService()
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	search, err := BuildByName(toolHybridSearch, nil)
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	for _, tc := range []struct {
+		name             string
+		canvasTenant     string
+		permissionTenant string
+		wantTenant       string
+	}{
+		{name: "missing tenant"},
+		{name: "canvas tenant", canvasTenant: "canvas-tenant", wantTenant: "canvas-tenant"},
+		{name: "permission tenant", permissionTenant: "active-tenant", wantTenant: "active-tenant"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &capturingRetrievalService{}
+			SetRetrievalService(service)
+			state := runtime.NewCanvasState("run-1", "session-1")
+			state.SeedIdentity("user-1", tc.canvasTenant)
+			ctx := permission.WithIdentity(t.Context(), "user-1", tc.permissionTenant)
+			ctx = runtime.WithState(ctx, state)
+
+			out, err := search.(einotool.InvokableTool).InvokableRun(ctx, `{"query":"hello","kb_ids":["kb-1"]}`)
+			if err != nil {
+				t.Fatalf("InvokableRun: %v", err)
+			}
+			if tc.wantTenant == "" {
+				if service.req.Query != "" {
+					t.Fatalf("retrieval called with tenant %q despite missing tenant context", service.req.TenantID)
+				}
+				if out != jsonChunksEmpty() {
+					t.Errorf("result = %s, want empty chunks", out)
+				}
+			} else if service.req.TenantID != tc.wantTenant {
+				t.Errorf("retrieval tenant = %q, want %q", service.req.TenantID, tc.wantTenant)
 			}
 		})
 	}
