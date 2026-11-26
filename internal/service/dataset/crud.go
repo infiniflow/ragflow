@@ -497,11 +497,18 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 }
 
 // DeleteDatasetTx cleans up storage and index data before committing metadata
-// deletion. The caller supplies the db handle so that deletion joins the
+// deletion. The caller supplies the db handle so that the DB mutations join the
 // caller's transaction: pass dao.DB for a standalone delete, or a transaction
-// handle to make the deletion part of a larger unit of work. All DB mutations
-// run inside db's transaction; storage and engine cleanup stay outside it since
-// those resources are not transactional.
+// handle to make the metadata deletion part of a larger unit of work.
+//
+// Only the DB mutations are transactional. Storage objects, the dataset bucket,
+// and engine data are removed before that transaction runs and cannot be rolled
+// back. When db already wraps a transaction, db.Transaction uses a savepoint and
+// does not commit the caller's work on return. A caller that rolls back after
+// this method returns therefore gets its metadata rows back without their
+// stored content or index data. Caller-owned transactions are rollback-safe only
+// for the database, not for storage or the engine. A standalone delete with
+// dao.DB commits on return and is unaffected.
 func (d *DatasetService) DeleteDatasetTx(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
