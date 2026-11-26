@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
@@ -63,7 +65,60 @@ func TestDOCXParser_ParseWithResult_CGOMinimalDocument(t *testing.T) {
 	}
 }
 
+func TestDOCXParserHeaderFooterSetting(t *testing.T) {
+	const documentNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+	const relationshipsNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+	data := writeDOCX(t, `
+    <w:p><w:r><w:t>Body text</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Approval</w:t></w:r></w:p>
+    <w:sectPr xmlns:r="`+relationshipsNS+`">
+      <w:headerReference w:type="default" r:id="rId1"/>
+      <w:footerReference w:type="default" r:id="rId2"/>
+    </w:sectPr>`, map[string]string{
+		"word/_rels/document.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rId1" Type="` + relationshipsNS + `/header" Target="header1.xml"/>
+      <Relationship Id="rId2" Type="` + relationshipsNS + `/footer" Target="footer1.xml"/>
+    </Relationships>`,
+		"word/header1.xml": `<w:hdr xmlns:w="` + documentNS + `">
+      <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Document number</w:t></w:r></w:p></w:tc>
+      <w:tc><w:p><w:r><w:t>DOC-123</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+    </w:hdr>`,
+		"word/footer1.xml": `<w:ftr xmlns:w="` + documentNS + `"><w:p><w:r><w:t>Approval</w:t></w:r></w:p></w:ftr>`,
+	})
+
+	p := NewDOCXParser()
+	res := p.ParseWithResult(t.Context(), "header_footer.docx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if len(res.JSON) != 4 {
+		t.Fatalf("got %d items, want a header table, two body paragraphs, and a footer", len(res.JSON))
+	}
+	items := ItemsToMaps(res.JSON)
+	if table, ok := items[0]["table"].(*entity.TableData); !ok ||
+		len(table.Grid) != 1 || len(table.Grid[0]) != 2 || table.Grid[0][1].Text != "DOC-123" {
+		t.Fatalf("first item = %+v, want a header table with DOC-123", items[0])
+	}
+	if got := joinItemTexts(items); got != "Body text\nApproval\nApproval" {
+		t.Errorf("text with headers and footers = %q", got)
+	}
+
+	p.ConfigureFromSetup(map[string]any{"remove_header_footer": true})
+	res = p.ParseWithResult(t.Context(), "header_footer.docx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if got := joinItemTexts(ItemsToMaps(res.JSON)); len(res.JSON) != 2 || got != "Body text\nApproval" {
+		t.Errorf("got %d items with text %q, want both body paragraphs", len(res.JSON), got)
+	}
+}
+
 func minimalDOCX(t *testing.T, text string) []byte {
+	t.Helper()
+	return writeDOCX(t, `<w:p><w:r><w:t>`+text+`</w:t></w:r></w:p>`, nil)
+}
+
+func writeDOCX(t *testing.T, body string, parts map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -79,10 +134,11 @@ func minimalDOCX(t *testing.T, text string) []byte {
 </Relationships>`)
 	writeZipFile(t, zw, "word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p><w:r><w:t>`+text+`</w:t></w:r></w:p>
-  </w:body>
+  <w:body>`+body+`</w:body>
 </w:document>`)
+	for name, content := range parts {
+		writeZipFile(t, zw, name, content)
+	}
 	if err := zw.Close(); err != nil {
 		t.Fatalf("zip close: %v", err)
 	}
