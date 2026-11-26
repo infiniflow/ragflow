@@ -17,7 +17,6 @@
 package file
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -26,24 +25,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// fileCommitCallerDB pins the new signatures: both entry points must accept a
-// caller-supplied *gorm.DB. A runtime type assertion makes a missing parameter
-// a real assertion failure (RED) rather than a compile error.
-type fileCommitCallerDB interface {
-	CreateCommit(context.Context, *gorm.DB, string, string, string, []entity.FileChange) (*entity.FileCommit, error)
-	RecordPageEdit(context.Context, *gorm.DB, PageEditCommitInput) (*entity.FileCommit, error)
-}
-
 var errForceFileCommitRollback = errors.New("force rollback")
-
-func requireFileCommitCallerDB(t *testing.T, svc *FileCommitService) fileCommitCallerDB {
-	t.Helper()
-	caller, ok := any(svc).(fileCommitCallerDB)
-	if !ok {
-		t.Fatal("CreateCommit and RecordPageEdit must accept a caller *gorm.DB")
-	}
-	return caller
-}
 
 // seedCommitWithTree seeds a parent commit whose tree contains f1 so a
 // delete-only change can be recorded without a live file row.
@@ -60,10 +42,10 @@ func TestCreateCommitUsesCallerDB(t *testing.T) {
 	db := newCommitDeleteTestDB(t)
 	seedFolder(t, db, "folder-1", "")
 	seedCommitWithTree(t, db, "c1", "folder-1")
-	caller := requireFileCommitCallerDB(t, NewFileCommitService())
+	svc := NewFileCommitService()
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		_, e := caller.CreateCommit(t.Context(), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
+		_, e := svc.CreateCommit(t.Context(), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
 			{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 		})
 		if e != nil {
@@ -83,13 +65,13 @@ func TestCreateCommitUsesCallerDB(t *testing.T) {
 func TestCreateCommitReadsParentThroughCallerDB(t *testing.T) {
 	db := newCommitDeleteTestDB(t)
 	seedFolder(t, db, "folder-1", "")
-	caller := requireFileCommitCallerDB(t, NewFileCommitService())
+	svc := NewFileCommitService()
 
 	var newCommit *entity.FileCommit
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// Seed the parent inside the caller's transaction but do not commit it.
 		seedCommitWithTree(t, tx, "uncommitted-parent", "folder-1")
-		created, e := caller.CreateCommit(t.Context(), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
+		created, e := svc.CreateCommit(t.Context(), tx, "folder-1", "u1", "remove a.txt", []entity.FileChange{
 			{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 		})
 		if e != nil {
@@ -108,10 +90,10 @@ func TestCreateCommitReadsParentThroughCallerDB(t *testing.T) {
 
 func TestRecordPageEditUsesCallerDB(t *testing.T) {
 	db := newPageCommitTestDB(t)
-	caller := requireFileCommitCallerDB(t, NewFileCommitService())
+	svc := NewFileCommitService()
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		_, e := caller.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
+		_, e := svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
 			DatasetID:  "dataset-1",
 			Slug:       "page-1",
 			PageType:   "doc",
@@ -139,18 +121,18 @@ func TestRecordPageEditUsesCallerDB(t *testing.T) {
 // but not yet committed must be visible to the next edit on the same page.
 func TestRecordPageEditReadsParentThroughCallerDB(t *testing.T) {
 	db := newPageCommitTestDB(t)
-	caller := requireFileCommitCallerDB(t, NewFileCommitService())
+	svc := NewFileCommitService()
 
 	var second *entity.FileCommit
 	err := db.Transaction(func(tx *gorm.DB) error {
-		_, e := caller.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
+		_, e := svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
 			DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "First", AuthorID: "u1",
 			OldContent: "", NewContent: "v1",
 		})
 		if e != nil {
 			return e
 		}
-		second, e = caller.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
+		second, e = svc.RecordPageEdit(t.Context(), tx, PageEditCommitInput{
 			DatasetID: "dataset-1", Slug: "page-1", PageType: "doc", Title: "Second", AuthorID: "u1",
 			OldContent: "v1", NewContent: "v2",
 		})
@@ -177,9 +159,9 @@ func TestFileCommitMethodsAcceptNilDB(t *testing.T) {
 	db := newCommitDeleteTestDB(t)
 	seedFolder(t, db, "folder-1", "")
 	seedCommitWithTree(t, db, "c1", "folder-1")
-	caller := requireFileCommitCallerDB(t, NewFileCommitService())
+	svc := NewFileCommitService()
 
-	commit, err := caller.CreateCommit(t.Context(), nil, "folder-1", "u1", "remove a.txt", []entity.FileChange{
+	commit, err := svc.CreateCommit(t.Context(), nil, "folder-1", "u1", "remove a.txt", []entity.FileChange{
 		{FileID: "f1", FileName: "a.txt", Operation: "delete"},
 	})
 	if err != nil {

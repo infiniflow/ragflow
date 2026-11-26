@@ -123,9 +123,9 @@ func normalizeCommitRenames(changes []entity.FileChange) ([]entity.FileChange, e
 }
 
 // CreateCommit creates a new commit for a workspace folder through the
-// caller-supplied db handle. Pass
-// dao.DB for a standalone write, or a transaction handle to join a larger unit
-// of work; a nil db falls back to dao.DB. Both the read of the latest commit and
+// caller-supplied db handle. Pass dao.DB for a standalone write, or a
+// transaction handle to join a larger unit of work; a nil db falls back to
+// dao.DB. Both the read of the latest commit and
 // all writes use the same handle, so a caller's uncommitted rows are visible.
 // Object storage writes stay inside the transaction (best-effort on failure).
 func (s *FileCommitService) CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
