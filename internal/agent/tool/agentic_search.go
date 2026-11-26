@@ -25,6 +25,8 @@ import (
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/dao"
 )
 
 // Agentic search tool names mirror Python rag/advanced_rag/harness/tools/search.py.
@@ -123,7 +125,7 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 		TenantID:                 tenantID,
 		ExcludeCompiled:          true,
 	}
-	chunks, err := svc.Search(ctx, nil, req)
+	chunks, err := svc.Search(ctx, dao.DB, req)
 	if err != nil {
 		return "", fmt.Errorf("%s: retrieval: %w", a.mode, err)
 	}
