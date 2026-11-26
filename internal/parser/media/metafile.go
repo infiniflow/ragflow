@@ -39,8 +39,31 @@ func init() {
 	}
 }
 
-// MetafileMIME identifies WMF and EMF by their headers.
+// MetafileMIME identifies WMF, EMF and their gzip-compressed forms.
 func MetafileMIME(data []byte) string {
+	if !bytes.HasPrefix(data, []byte{0x1f, 0x8b}) {
+		return rawMetafileMIME(data)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return ""
+	}
+	defer reader.Close()
+	var header [44]byte // Covers the signature at the end of the EMF header prefix.
+	n, err := io.ReadFull(reader, header[:])
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return ""
+	}
+	switch rawMetafileMIME(header[:n]) {
+	case "image/x-wmf":
+		return "image/x-wmz"
+	case "image/x-emf":
+		return "image/x-emz"
+	}
+	return ""
+}
+
+func rawMetafileMIME(data []byte) string {
 	switch {
 	case len(data) >= 44 && binary.LittleEndian.Uint32(data) == 1 && string(data[40:44]) == " EMF":
 		return "image/x-emf"

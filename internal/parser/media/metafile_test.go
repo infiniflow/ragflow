@@ -16,12 +16,27 @@ package media
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"image/png"
 	"os"
 	"strings"
 	"testing"
 )
+
+func TestMetafileMIMEIgnoresNonMetafileGzip(t *testing.T) {
+	var compressed bytes.Buffer
+	w := gzip.NewWriter(&compressed)
+	if _, err := w.Write([]byte("a gzip-compressed text document")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := MetafileMIME(compressed.Bytes()); got != "" {
+		t.Fatalf("ordinary gzip MIME = %q, want no metafile MIME", got)
+	}
+}
 
 func TestMetafileFontFallback(t *testing.T) {
 	wmf := make([]byte, 18+56)
@@ -65,6 +80,32 @@ func TestMetafileFontFallback(t *testing.T) {
 	}
 	if got := substituteMetafileFonts(wmf, map[string]bool{"宋体": true, "noto serif cjk sc": true}); !bytes.Equal(got, wmf) {
 		t.Fatal("the available original font was replaced")
+	}
+	for _, tc := range []struct {
+		name       string
+		kind, size uint32
+		options    int
+	}{
+		{"ExtTextOutW", 84, 80, 52},
+		{"SmallTextOut", 108, 40, 20},
+		{"PolyTextOutW", 97, 104, 80},
+	} {
+		t.Run(tc.name+" glyph indexes", func(t *testing.T) {
+			record := make([]byte, tc.size)
+			binary.LittleEndian.PutUint32(record, tc.kind)
+			binary.LittleEndian.PutUint32(record[4:], tc.size)
+			if tc.kind == 97 {
+				binary.LittleEndian.PutUint32(record[36:], 2)
+				// The first descriptor omits its rectangle and uses characters.
+				binary.LittleEndian.PutUint32(record[56:], 0x0100)
+			}
+			binary.LittleEndian.PutUint32(record[tc.options:], 0x0010)
+			// Put the text after the font to test discarding earlier rewrites.
+			data := append(bytes.Clone(emf), record...)
+			if got := substituteMetafileFonts(data, fonts); !bytes.Equal(got, data) {
+				t.Fatal("font substitution changed a metafile with glyph-index text")
+			}
+		})
 	}
 }
 

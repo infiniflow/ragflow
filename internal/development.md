@@ -410,13 +410,13 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
   and Excelize expose already materialized image bytes, so these budgets bound
   emitted/cached payloads, not native extraction or ZIP decoding peak memory.
-  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures;
-  XLSX-content spreadsheets use an extension allowlist, including EMZ/WMZ
-  which the byte-only Office detector does not recognize. Unsupported images
-  are skipped with warnings. The shared media sink renders WMF and EMF to PNG
-  before caching. Standalone metafiles use the same renderer before OCR and
-  vision enhancement. Before rendering, the transcoder can substitute installed
-  fonts for missing Windows Chinese font families in the metafile.
+  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures,
+  including the decompressed headers of EMZ/WMZ. XLSX-content spreadsheets
+  use an extension allowlist. Unsupported images are skipped with warnings.
+  The shared media sink renders WMF and EMF to PNG before caching. Standalone
+  metafiles use the same renderer before OCR and vision enhancement. The
+  transcoder can substitute installed fonts for missing Windows Chinese font
+  families when the metafile can be rendered without changing glyph identities.
   File text extraction and email attachment re-chunking use text-only parsers;
   Office images skipped by limits produce warnings without placeholder items.
   Debug previews use a temporary `pipeline_<document-id>` run scope and purge

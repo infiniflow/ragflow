@@ -58,7 +58,7 @@ func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 		}
 	}
 
-	switch MetafileMIME(data) {
+	switch rawMetafileMIME(data) {
 	case "image/x-wmf":
 		offset := 18 // META_HEADER
 		if bytes.HasPrefix(data, []byte{0xd7, 0xcd, 0xc6, 0x9a}) {
@@ -88,6 +88,11 @@ func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 			if size < 8 || size%4 != 0 || size > int64(len(record)) || kind == 14 { // EMR_EOF
 				break
 			}
+			if emfUsesGlyphIndexes(kind, record[:int(size)]) {
+				// Glyph IDs belong to the original face. Preserve its identity so
+				// Ivy can reject an unavailable font instead of drawing wrong glyphs.
+				return data
+			}
 			if kind == 82 && size >= 104 { // EMR_EXTCREATEFONTINDIRECTW
 				field := record[40:104]
 				var name [32]uint16
@@ -109,6 +114,40 @@ func substituteMetafileFonts(data []byte, fonts map[string]bool) []byte {
 		return replaced
 	}
 	return data
+}
+
+func emfUsesGlyphIndexes(kind uint32, record []byte) bool {
+	const glyphIndex = 0x0010 // ETO_GLYPH_INDEX
+	switch kind {
+	case 84: // EMR_EXTTEXTOUTW
+		return len(record) >= 56 && binary.LittleEndian.Uint32(record[52:])&glyphIndex != 0
+	case 108: // EMR_SMALLTEXTOUT
+		return len(record) >= 24 && binary.LittleEndian.Uint32(record[20:])&glyphIndex != 0
+	case 97: // EMR_POLYTEXTOUTW
+		if len(record) < 40 {
+			return false
+		}
+		count := binary.LittleEndian.Uint32(record[36:])
+		texts := record[40:]
+		for range count {
+			if len(texts) < 24 {
+				return false
+			}
+			options := binary.LittleEndian.Uint32(texts[16:])
+			if options&glyphIndex != 0 {
+				return true
+			}
+			size := 24
+			if options&0x0100 == 0 { // ETO_NO_RECT
+				size += 16
+			}
+			if len(texts) < size {
+				return false
+			}
+			texts = texts[size:]
+		}
+	}
+	return false
 }
 
 func wmfFaceName(field []byte, charset byte) string {
