@@ -3631,8 +3631,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       modelInputsUnavailable:
         'Bu çalıştırma için model girdileri kullanılamıyor.',
       testRunError: 'Test çalıştırması başarısız oldu ({{code}}): {{message}}',
-      debugRunLimits:
-        'Hata ayıklama çalıştırması, akışın hatasız yürüdüğünü doğrular: PDF yalnızca ilk 2 sayfayı ayrıştırır (diğer biçimlerde tüm sayfalar ayrıştırılır); bir parçalayıcı düğüm varsa yalnızca ilk 3 parça önizlenir; bir bilgi derleyici düğümü varsa yalnızca yerel olarak çalışır, dataset yeniden oluşturma veya bildirim tetiklemez.',
       template: 'Şablon',
       templateDescription:
         'Diğer bileşenlerin çıktısını biçimlendiren bir bileşen. 1. Jinja2 şablonlarını destekler; girdiyi önce bir nesneye dönüştürür, ardından şablonu işler. 2. Aynı zamanda {parameter} dize değiştirme yönteminin özgün kullanımını da korur',
@@ -3894,7 +3892,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       parserDescription:
         'Aşağı akış işleme için dosyalardan ham metin ve yapı çıkarır.',
       tokenizer: 'İndeksleyici',
-      tokenizerRequired: 'Lütfen önce İndeksleyici düğümü ekleyin',
       nodeFormInvalid: 'Geçersiz ayarlar, lütfen önce bunları düzeltin',
       apiKeyRequired: 'Lütfen API Anahtarını girin',
       apiKeyMissing:
@@ -3988,8 +3985,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       markdownImageResponseType: 'Markdown görüntü yanıt türü',
       systemPromptPlaceholder:
         'Görüntü analizi için sistem istemi girin, boş bırakılırsa sistem varsayılanı kullanılır',
-      exportJson: 'JSON dışa aktar',
-      viewResult: 'Sonucu görüntüle',
       running: 'Çalışıyor',
       summary: 'Özet',
       keywords: 'Anahtar kelimeler',

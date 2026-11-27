@@ -2063,7 +2063,6 @@ export default {
       parserDescription:
         'يستخرج النص الخام والبنية من الملفات للمعالجة النهائية.',
       tokenizer: 'مفهرس',
-      tokenizerRequired: 'الرجاء إضافة عقدة المفهرس أولاً',
       tokenizerDescription:
         'يحول النص إلى بنية البيانات المطلوبة (على سبيل المثال، التضمينات المتجهة لبحث التضمين) اعتمادًا على طريقة البحث المختارة.',
       tokenChunkerDescription:
@@ -2101,8 +2100,6 @@ export default {
       markdownImageResponseType: 'نوع استجابة الصورة Markdown',
       systemPromptPlaceholder:
         'أدخل موجه النظام لتحليل الصور، إذا كان فارغًا، فسيتم استخدام القيمة الافتراضية للنظام',
-      exportJson: 'تصدير JSON',
-      viewResult: 'عرض النتيجة',
       running: 'جري',
       summary: 'ملخص',
       keywords: 'الكلمات الرئيسية',

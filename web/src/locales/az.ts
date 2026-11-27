@@ -3280,8 +3280,6 @@ Nümunə: Virtual host üslubu`,
       optional: 'İstəyə bağlı',
       pasteFileLink: 'Fayl keçidini yapışdır',
       testRun: 'Sınaq icrası',
-      debugRunLimits:
-        'Sazlama icrası axının xətasız işlədiyini yoxlayır: PDF faylının yalnız ilk 2 səhifəsi təhlil edilir (digər formatlarda bütün səhifələr təhlil edilir); hissələrə bölmə düyünü varsa, yalnız ilk 3 hissənin önbaxışı göstərilir; bilik tərtibi düyünü varsa, o, yalnız lokal olaraq işləyir və verilənlər dəstinin yenidən qurulmasını və ya bildiriş göndərilməsini başlatmır.',
       template: 'Şablon',
       templateDescription:
         'Digər komponentlərin çıxışını formatlaşdıran komponent. 1. Jinja2 şablonlarını dəstəkləyir, əvvəlcə girişi obyektə çevirir, sonra şablonu formalaşdırır. 2. Eyni zamanda, {parameter} sətrinin əvəzlənməsi ilə işləyən ilkin üsulu saxlayır',
@@ -3519,7 +3517,6 @@ Bu proses sonrakı düyünlər üçün vahid konfiqurasiya yaratmaq məqsədilə
       parserDescription:
         'Sonrakı emal üçün fayllardan xam mətni və strukturu çıxarır.',
       tokenizer: 'İndeksləşdirici',
-      tokenizerRequired: 'Əvvəlcə indeksləşdirici düyününü əlavə edin',
       nodeFormInvalid: 'Parametrlər yanlışdır, əvvəlcə onları düzəldin',
       agentModelMissing: 'Model seçilməyib, əvvəlcə birini seçin',
       retrievalDatasetMissing:
@@ -3596,8 +3593,6 @@ Bu proses sonrakı düyünlər üçün vahid konfiqurasiya yaratmaq məqsədilə
       markdownImageResponseType: 'Markdown şəkil cavabının növü',
       systemPromptPlaceholder:
         'Şəkil təhlili üçün sistem təlimatını daxil edin; boş saxlanılarsa, sistemin standart dəyəri istifadə olunacaq',
-      exportJson: 'JSON ixrac et',
-      viewResult: 'Nəticəyə bax',
       running: 'İcra olunur',
       summary: 'Xülasə',
       keywords: 'Avtomatik açar sözlər',

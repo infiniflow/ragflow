@@ -45,6 +45,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/service"
+	"ragflow/internal/utility"
 )
 
 // GetComponentInputForm GET /api/v1/agents/:canvas_id/components/:component_id/input-form
@@ -158,6 +160,11 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 			return
 		}
 		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	if service.IsIngestionCanvas(cv) && !service.IngestionPipelinePreviewEnabled() {
+		respondFeatureDisabled(c, utility.ErrFeatureDisabled)
 		return
 	}
 

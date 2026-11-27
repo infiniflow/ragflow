@@ -225,8 +225,7 @@ type Deps struct {
 	WikiPages     WikiPageStore // optional (wiki)
 	// WikiMapVersions requires BOTH TenantID and DatasetID on every access:
 	// the DocStore-backed store keys its rows ragflow_<tenant_id>/<kb_id> and
-	// fails loudly on an empty scope. Runs missing either scope (canvas debug
-	// dry-runs) take the cache-less MAP path instead of calling the store.
+	// fails loudly on an empty scope.
 	WikiMapVersions WikiMapVersionStore // optional (wiki version cache)
 	Redis           RedisClient         // optional (datasetnav)
 	TenantID        string

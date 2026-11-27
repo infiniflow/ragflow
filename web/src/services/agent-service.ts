@@ -44,7 +44,6 @@ const {
   fetchAgentSessions,
   fetchExternalAgentInputs,
   prompt,
-  cancelDataflow,
   cancelCanvas,
   listBuiltinPipelines,
   getBuiltinPipeline,
@@ -149,10 +148,6 @@ const methods = {
   fetchPrompt: {
     url: prompt,
     method: 'get',
-  },
-  cancelDataflow: {
-    url: cancelDataflow,
-    method: 'post',
   },
   cancelCanvas: {
     url: cancelCanvas,

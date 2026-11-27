@@ -1773,6 +1773,32 @@ func (s *AgentService) ApplyVersion(ctx context.Context, canvasID, versionID str
 	return s.UpdateAgent(ctx, canvasID, map[string]interface{}{"dsl": version.DSL, "apply": true})
 }
 
+// IsIngestionCanvas also checks component ownership because canvas categories are caller supplied.
+func IsIngestionCanvas(cv *entity.UserCanvas) bool {
+	if cv == nil {
+		return false
+	}
+	return cv.CanvasCategory == "dataflow_canvas" || hasIngestionComponents(cv.DSL)
+}
+
+func hasIngestionComponents(dsl map[string]any) bool {
+	components, _ := dslpkg.NormalizeForRun(dsl)["components"].(map[string]any)
+	for _, raw := range components {
+		node, _ := raw.(map[string]any)
+		name := ""
+		if obj, ok := node["obj"].(map[string]any); ok {
+			name, _ = obj["component_name"].(string)
+		}
+		if name == "" {
+			name, _ = node["name"].(string)
+		}
+		if _, category, _, ok := runtime.DefaultRegistry.Lookup(name); ok && category == runtime.CategoryIngestion {
+			return true
+		}
+	}
+	return false
+}
+
 // RunAgent starts a run for the given canvas and returns a channel of
 // orchestrator events the HTTP layer streams back as SSE. The driver owns
 // the wait-for-user cycle (eino interrupt, gap-analysis §11.6.4): the
@@ -1797,6 +1823,10 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	if err != nil {
 		return nil, err
 	}
+	if IsIngestionCanvas(canvasRow) {
+		return nil, fmt.Errorf("ingestion pipelines require canvas preview: %w", utility.ErrFeatureDisabled)
+	}
+
 	agentTenantID := canvasRow.EffectiveTenantID()
 	defer func() {
 		if runErr == nil && events != nil {
@@ -2075,6 +2105,10 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			}
 		}
 	}
+	if hasIngestionComponents(dsl) {
+		return nil, fmt.Errorf("ingestion components require canvas preview: %w", utility.ErrFeatureDisabled)
+	}
+
 	if err := validateAgentChatModels(ctx, agentTenantID, dsl); err != nil {
 		return nil, err
 	}

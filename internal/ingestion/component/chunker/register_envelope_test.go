@@ -40,9 +40,6 @@ func (t *typedChunksInner) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 // re-emit the []map[string]any wire form. Before migration the bare
 // .([]map[string]any) assertion failed on a typed carrier, so the whole
 // id-stamp/upload pass was skipped.
-//
-// kb_id is intentionally absent, so this exercises the dry-run branch (drop
-// image bytes, no MinIO upload).
 func TestImageUploadDecorator_ProcessesTypedChunks(t *testing.T) {
 	inner := &typedChunksInner{out: map[string]any{
 		"chunks": []schema.ChunkDoc{

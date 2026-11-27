@@ -2274,7 +2274,6 @@ export default {
       parserDescription:
         'Извлекает сырой текст и структуру из файлов для последующей обработки.',
       tokenizer: 'Индексатор',
-      tokenizerRequired: 'Сначала добавьте узел индексатора',
       tokenizerDescription:
         'Преобразует текст в нужную структуру данных (например, векторные эмбеддинги для embedding-поиска) в зависимости от выбранного метода поиска.',
       splitter: 'Токен',
@@ -2314,8 +2313,6 @@ export default {
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Системный промпт для анализа изображений; если пусто — используется значение по умолчанию',
-      exportJson: 'Экспорт JSON',
-      viewResult: 'Результат',
       running: 'Выполняется',
       summary: 'Сводка',
       keywords: 'Ключевые слова',

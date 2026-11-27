@@ -465,46 +465,6 @@ func installStrictScopeWikiDeps(t *testing.T, store *strictScopeWikiMapVersions)
 	installVariantTemplateResolver(t, "wiki")
 }
 
-// TestKnowledgeCompiler_Wiki_DebugRunWithoutDataset reproduces the canvas
-// debug (dry-run) scenario from the field report: a dataflow canvas run
-// (File → Parser → Chunker → Compiler/wiki) executes with tenant_id but no
-// kb_id, because the debug TaskContext deliberately carries no KB. The wiki
-// variant must run cache-less there instead of failing on the DocStore-backed
-// MAP version cache, keeping debug runs side-effect free (same contract as
-// the tokenizer skipping embedding and the executor skipping persistence).
-// Both guard variants are covered: tenant without dataset (the field report)
-// and neither scope at all. In both, the strict-scope store must never be
-// touched — any access would fail the run (the pre-fix behavior).
-func TestKnowledgeCompiler_Wiki_DebugRunWithoutDataset(t *testing.T) {
-	store := &strictScopeWikiMapVersions{}
-	installStrictScopeWikiDeps(t, store)
-
-	// Inputs mirror a canvas debug run: tenant_id present, no dataset_id/kb_id.
-	chunks := invokeWikiCompiler(t, map[string]any{
-		"chunks":    wikiScopeFixtureChunks(),
-		"doc_id":    "d1",
-		"tenant_id": "t1",
-	})
-	if !hasWikiPageChunk(chunks) {
-		t.Fatalf("debug wiki run (tenant, no dataset): no 'page' chunk; got %d chunks", len(chunks))
-	}
-	if gets, puts := store.storeAccess(); gets != 0 || puts != 0 {
-		t.Fatalf("debug wiki run (tenant, no dataset) touched the version cache: gets=%d puts=%d, want 0/0", gets, puts)
-	}
-
-	// Neither scope present must also stay on the cache-less path.
-	chunks = invokeWikiCompiler(t, map[string]any{
-		"chunks": wikiScopeFixtureChunks(),
-		"doc_id": "d1",
-	})
-	if !hasWikiPageChunk(chunks) {
-		t.Fatalf("debug wiki run (no scope): no 'page' chunk; got %d chunks", len(chunks))
-	}
-	if gets, puts := store.storeAccess(); gets != 0 || puts != 0 {
-		t.Fatalf("debug wiki run (no scope) touched the version cache: gets=%d puts=%d, want 0/0", gets, puts)
-	}
-}
-
 // TestKnowledgeCompiler_Wiki_VersionedMapWritesAreScoped covers the other
 // branch of the runMap scope guard: a production-shaped run (tenant_id and
 // dataset_id both present) takes the versioned MAP path, and every MAP version

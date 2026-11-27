@@ -144,13 +144,6 @@ export interface NavigateToDataflowResultProps {
   id: string;
   [PipelineResultSearchParams.KnowledgeId]?: string;
   [PipelineResultSearchParams.DocumentId]: string;
-  [PipelineResultSearchParams.AgentId]?: string;
-  [PipelineResultSearchParams.AgentTitle]?: string;
   [PipelineResultSearchParams.IsReadOnly]?: string;
   [PipelineResultSearchParams.Type]: string;
-  [PipelineResultSearchParams.CreatedBy]?: string;
-  [PipelineResultSearchParams.DocumentExtension]?: string;
-  [PipelineResultSearchParams.DocumentName]?: string;
-  [PipelineResultSearchParams.DocumentSize]?: string | number;
-  [PipelineResultSearchParams.DocumentCreatedAt]?: string | number;
 }

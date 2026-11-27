@@ -1,205 +1,35 @@
-import DocumentPreview from '@/components/document-preview';
+import { PipelinePreviewResult } from '@/ee/pages/dataflow-result/pipeline-preview-result';
 import { useFetchNextChunkList } from '@/hooks/use-chunk-request';
-import { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useGetDocumentUrl } from '@/components/document-preview/hooks';
+import { Routes } from '@/routes';
 import {
   useFetchPipelineFileLogDetail,
-  useFetchPipelineResult,
-  useGetChunkHighlights,
   useGetPipelineResultSearchParams,
-  useHandleChunkCardClick,
-  useSummaryInfo,
-  useTimelineDataFlow,
 } from './hooks';
+import { PipelineResultView } from './view';
 
-import DocumentHeader from '@/components/document-preview/document-header';
-
-import { useGetDocumentUrl } from '@/components/document-preview/hooks';
-import { TimelineNode } from '@/components/originui/timeline';
-import { PageHeader } from '@/components/page-header';
-import Spotlight from '@/components/spotlight';
-import { Button } from '@/components/ui/button';
-import { AgentCategory, AgentQuery } from '@/constants/agent';
-import { Images } from '@/constants/common';
-import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { IKnowledgeFile } from '@/interfaces/database/dataset';
-import { Routes } from '@/routes';
-import { LucideArrowBigLeft } from 'lucide-react';
-import TimelineDataFlow from './components/time-line';
-import { TimelineNodeType } from './constant';
-import styles from './index.module.less';
-import { IDslComponent, IPipelineFileLogDetail } from './interface';
-import ParserContainer from './parser';
-
-const DataflowResult = () => {
+function DatasetResult() {
+  const { isReadOnly, knowledgeId } = useGetPipelineResultSearchParams();
   const {
-    isReadOnly,
-    knowledgeId,
-    agentId,
-    documentExtension,
-    documentName,
-    documentSize,
-    documentCreatedAt,
-  } = useGetPipelineResultSearchParams();
-
-  const isAgent = !!agentId;
-
-  const { pipelineResult } = useFetchPipelineResult({ agentId });
-
-  const {
-    data: { documentInfo: chunkDocumentInfo },
-  } = useFetchNextChunkList(!isAgent);
-
-  // In agent mode the chunk list query is disabled, so the document info
-  // comes from the search params passed by the pipeline log sheet instead.
-  const documentInfo = useMemo<IKnowledgeFile>(() => {
-    if (!isAgent) {
-      return chunkDocumentInfo;
-    }
-    return {
-      name: documentName,
-      size: Number(documentSize) || 0,
-      create_date: documentCreatedAt
-        ? new Date(Number(documentCreatedAt) * 1000).toISOString()
-        : '',
-    } as IKnowledgeFile;
-  }, [
-    chunkDocumentInfo,
-    documentCreatedAt,
-    documentName,
-    documentSize,
-    isAgent,
-  ]);
-
-  const { selectedChunk, handleChunkCardClick } = useHandleChunkCardClick();
-  const [activeStepId, setActiveStepId] = useState<number | string>(2);
-  const { data: dataset } = useFetchPipelineFileLogDetail({
-    isAgent,
-  });
-  const { t } = useTranslation();
-
-  const { timelineNodes } = useTimelineDataFlow(
-    agentId ? (pipelineResult as IPipelineFileLogDetail) : dataset,
-  );
-
-  const fileUrl = useGetDocumentUrl(isAgent);
-
-  const { highlights, setWidthAndHeight } =
-    useGetChunkHighlights(selectedChunk);
-
-  const fileType = useMemo(() => {
-    if (isAgent) {
-      return Images.some((x) => x === documentExtension)
-        ? documentInfo?.name?.split('.').pop() || documentExtension
-        : documentExtension;
-    }
-    switch (documentInfo?.type) {
-      case 'doc':
-        return documentInfo?.name.split('.').pop() || 'doc';
-      case 'visual':
-        return documentInfo?.name.split('.').pop() || 'visual';
-      case 'docx':
-      case 'txt':
-      case 'md':
-      case 'mdx':
-      case 'pdf':
-        return documentInfo?.type;
-    }
-    return 'unknown';
-  }, [documentExtension, documentInfo?.name, documentInfo?.type, isAgent]);
-
-  const handleStepChange = (id: number | string) => {
-    setActiveStepId(id);
-  };
-
-  const { type } = useGetKnowledgeSearchParams();
-
-  const currentTimeNode: TimelineNode = useMemo(() => {
-    return (
-      timelineNodes.find((node) => node.id === activeStepId) ||
-      ({} as TimelineNode)
-    );
-  }, [activeStepId, timelineNodes]);
-  const { summaryInfo } = useSummaryInfo(dataset, currentTimeNode);
+    data: { documentInfo },
+  } = useFetchNextChunkList();
+  const { data } = useFetchPipelineFileLogDetail({});
+  const fileUrl = useGetDocumentUrl();
   return (
-    <>
-      <PageHeader>
-        <Button
-          asLink
-          variant="outline"
-          to={
-            knowledgeId
-              ? `${Routes.DatasetBase}${Routes.DataSetOverview}/${knowledgeId}`
-              : isAgent
-                ? `${Routes.Agent}/${agentId}?${AgentQuery.Category}=${AgentCategory.DataflowCanvas}`
-                : '#'
-          }
-        >
-          <LucideArrowBigLeft />
-          {t('common.back')}
-        </Button>
-      </PageHeader>
-
-      {type === 'dataflow' && (
-        <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">
-          <TimelineDataFlow
-            activeFunc={handleStepChange}
-            activeId={activeStepId}
-            data={dataset}
-            timelineNodes={timelineNodes}
-          />
-        </div>
-      )}
-      <div className={styles.chunkPage}>
-        <div className="flex flex-none gap-8 border border-border mt-[26px] p-3 rounded-lg h-[calc(100vh-100px)]">
-          <div className="w-2/5">
-            <div className="h-[50px] flex flex-col justify-end pb-[5px]">
-              <DocumentHeader {...documentInfo} />
-            </div>
-            <section className={styles.documentPreview}>
-              <DocumentPreview
-                className={styles.documentPreview}
-                fileType={fileType}
-                highlights={highlights}
-                setWidthAndHeight={setWidthAndHeight}
-                url={fileUrl}
-              ></DocumentPreview>
-            </section>
-          </div>
-          <div className="h-[calc(100vh-100px)] border-r -mt-3"></div>
-          <div className="w-3/5 h-full">
-            {/* {currentTimeNode?.type === TimelineNodeType.splitter && (
-              <ChunkerContainer
-                isChange={isChange}
-                setIsChange={setIsChange}
-                step={currentTimeNode as TimelineNode}
-              />
-            )} */}
-            {/* {currentTimeNode?.type === TimelineNodeType.parser && ( */}
-            {(currentTimeNode?.type === TimelineNodeType.parser ||
-              currentTimeNode?.type === TimelineNodeType.tokenChunker ||
-              currentTimeNode?.type === TimelineNodeType.titleChunker ||
-              currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
-              <ParserContainer
-                isReadonly={isReadOnly}
-                step={currentTimeNode as TimelineNode}
-                data={
-                  currentTimeNode.detail as {
-                    value: IDslComponent;
-                    key: string;
-                  }
-                }
-                summaryInfo={summaryInfo}
-                clickChunk={handleChunkCardClick}
-              />
-            )}
-            {/* )} */}
-            <Spotlight opcity={0.6} coverage={60} />
-          </div>
-        </div>
-      </div>
-    </>
+    <PipelineResultView
+      documentInfo={documentInfo}
+      dataset={data}
+      fileUrl={fileUrl}
+      isReadOnly={isReadOnly}
+      backTo={
+        knowledgeId
+          ? `${Routes.DatasetBase}${Routes.DataSetOverview}/${knowledgeId}`
+          : '#'
+      }
+    />
   );
-};
+}
 
-export default DataflowResult;
+export default function DataflowResult() {
+  return <PipelinePreviewResult fallback={<DatasetResult />} />;
+}

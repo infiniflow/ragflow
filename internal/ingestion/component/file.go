@@ -157,14 +157,7 @@ func (c *FileComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 	if in.fileDesc != nil {
 		out["file"] = in.fileDesc
 	}
-	// Pass through in-memory bytes when present (debug / dataflow dry-run
-	// where no doc row exists in storage). The downstream Parser reads
-	// `binary` first and skips the doc_id → storage lookup, so a debug run
-	// can parse the uploaded file without a persisted document. Persist
-	// runs set no `binary` here, so they keep resolving from storage.
-	if len(in.binary) > 0 {
-		out["binary"] = in.binary
-	}
+	publishPreviewFile(out, in)
 	// Publish the resolved run-level metadata into the workflow-wide
 	// CanvasState.Globals bag so downstream components (Tokenizer,
 	// Chunker, ...) read it from ctx instead of relying on this output
@@ -195,16 +188,7 @@ func parseFileInputs(ctx context.Context, db *gorm.DB, inputs map[string]any) (f
 	}
 	out := fileInputs{}
 
-	// Debug / dataflow dry-run fast path: in-memory bytes were supplied
-	// via the graph input `binary` (no persisted document exists). Use
-	// them directly and skip the doc_id → storage resolution so a debug
-	// run parses the uploaded file without a DB/storage round-trip. The
-	// executor only sets `binary` for the non-persist (debug) marker doc.
-	if b, ok := inputs["binary"].([]byte); ok && len(b) > 0 {
-		out.binary = b
-		if n, ok := getString(inputs, "name"); ok && n != "" {
-			out.name = n
-		}
+	if out, ok := previewFileInputs(inputs); ok {
 		return out, nil
 	}
 

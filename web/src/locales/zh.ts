@@ -3298,8 +3298,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
-      debugRunLimits:
-        '调试运行用于验证流程能否正常执行：PDF 仅解析前 2 页（其他格式解析全部）；若含分块节点，仅取前 3 个分块预览；若含知识编译节点，仅本地验证、不会触发知识库重建或通知。',
       template: '模板转换',
       templateDescription:
         '该组件用于排版各种组件的输出。1、支持 Jinja2 模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
@@ -3480,7 +3478,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       parser: 'Parser',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: 'Indexer',
-      tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
       apiKeyRequired: '请输入 API Key',
       apiKeyMissing: '未配置 API Key，请先填写',
@@ -3563,8 +3560,6 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:
         '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
-      exportJson: '导出 JSON',
-      viewResult: '查看结果',
       running: '运行中',
       summary: '增强上下文',
       keywords: '自动关键词',

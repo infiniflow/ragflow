@@ -1,3 +1,4 @@
+import { PipelinePreview } from '@/ee/pages/agent/pipeline-preview';
 import { PageHeader } from '@/components/page-header';
 import { TruncatedText } from '@/components/truncated-text';
 import { Badge } from '@/components/ui/badge';
@@ -10,8 +11,6 @@ import AgentCanvas from '../agent/canvas';
 import { DropdownProvider } from '../agent/canvas/context';
 import { useFetchBuiltinPipelineDataOnMount } from './use-fetch-builtin-pipeline-data';
 
-// Built-in pipelines use the shared read-only canvas without save/run/log
-// hooks. They have no secondary navigation or sidebar.
 export default function BuiltinPipelinePage() {
   const { id } = useParams();
   const { t } = useTranslation();
@@ -34,6 +33,7 @@ export default function BuiltinPipelinePage() {
             {t('knowledgeConfiguration.builtInBadge')}
           </Badge>
         </section>
+        {!loading && <PipelinePreview readOnly title={title} />}
       </PageHeader>
       {loading ? (
         <div className="flex h-[calc(100%-64px)] items-center justify-center">

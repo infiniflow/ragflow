@@ -2138,7 +2138,6 @@ The above is the content you need to summarize.`,
       parserDescription:
         'Извлича суров текст и структура от файлове за последваща обработка.',
       tokenizer: 'Индексатор',
-      tokenizerRequired: 'Моля, първо добавете възел Индексатор',
       tokenizerDescription:
         'Трансформира текст в необходимата структура от данни (напр. векторни вграждания за Embedding Search) в зависимост от избрания метод за търсене.',
       tokenChunkerDescription:
@@ -2176,8 +2175,6 @@ The above is the content you need to summarize.`,
       markdownImageResponseType: 'Тип отговор за Markdown изображение',
       systemPromptPlaceholder:
         'Въведете системна подсказка за анализ на изображения, ако е празно, ще се използва системната стойност по подразбиране',
-      exportJson: 'Експорт на JSON',
-      viewResult: 'Преглед на резултат',
       running: 'Изпълнява се',
       summary: 'Обобщение',
       keywords: 'Ключови думи',

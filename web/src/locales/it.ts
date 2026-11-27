@@ -2601,7 +2601,6 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       parserDescription:
         "Estrae testo grezzo e struttura dai file per l'elaborazione a valle.",
       tokenizer: 'Indicizzatore',
-      tokenizerRequired: 'Aggiungi prima il nodo Indicizzatore',
       tokenizerDescription:
         'Trasforma il testo nella struttura dati richiesta (es. embedding vettoriali per la ricerca Embedding) a seconda del metodo di ricerca scelto.',
       tokenChunker: 'Token Chunker',
@@ -2646,8 +2645,6 @@ L'Indicizzatore memorizzerà il contenuto nelle corrispondenti strutture dati pe
       markdownImageResponseType: 'Tipo risposta immagine Markdown',
       systemPromptPlaceholder:
         "Inserisci il prompt di sistema per l'analisi dell'immagine, se vuoto sarà usato il valore predefinito del sistema",
-      exportJson: 'Esporta JSON',
-      viewResult: 'Visualizza risultato',
       running: 'In esecuzione',
       summary: 'Riepilogo',
       keywords: 'Parole chiave',

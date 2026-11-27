@@ -1,3 +1,4 @@
+import { PipelinePreview } from '@/ee/pages/agent/pipeline-preview';
 import EmbedDialog, {
   defaultWidgetSettings,
   type WidgetSettings,
@@ -13,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchAgent, useSaveAgent } from '@/hooks/use-agent-request';
@@ -21,7 +21,6 @@ import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
 } from '@/hooks/use-llm-request';
-import { showPipelineRunButton } from '@/ee/constants/feature-flags';
 import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { canEditAgent } from '@/ee/pages/agent/can-edit-agent';
@@ -42,30 +41,21 @@ import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { CanvasChecklist } from './components/canvas-checklist';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
-import { Operator } from './constant';
 import { ResourceTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
-import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useCanvasChecklist } from './hooks/use-canvas-checklist';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
-import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
 import { useIsPipeline } from './hooks/use-is-pipeline';
 import { useIsWebhookMode } from './hooks/use-is-webhook';
-import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { OnlineUsers } from '@/ee/pages/agent/online-users';
-import { PipelineLogSheet } from './pipeline-log-sheet';
-import PipelineRunSheet from './pipeline-run-sheet';
-import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import WebhookSheet from './webhook-sheet';
-import { RunTooltip } from './flow-tooltip';
-import { debugRunLimitsTooltipKey } from './utils/debug-run-limits';
 
 /**
  * Standardizes dropdown menu item styling for agent management actions.
@@ -96,13 +86,6 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  // Resolves the i18n key for the canvas "Run" tooltip describing the
-  // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
-  // canvas — an agent canvas runs the agent, not an ingestion debug preview.
-  const runTooltipKey = debugRunLimitsTooltipKey(isPipeline);
-  // The ingestion (dataflow) canvas shows the Run/test-run entry only when the
-  // edition enables it; the agent canvas always keeps its Run button.
-  const showRunButton = showPipelineRunButton || !isPipeline;
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
@@ -132,24 +115,10 @@ export default function Agent() {
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
 
-  // pipeline
-
-  const {
-    visible: pipelineRunSheetVisible,
-    hideModal: hidePipelineRunSheet,
-    showModal: showPipelineRunSheet,
-  } = useSetModalState();
-
   const {
     visible: webhookTestSheetVisible,
     hideModal: hideWebhookTestSheet,
     showModal: showWebhookTestSheet,
-  } = useSetModalState();
-
-  const {
-    visible: pipelineLogSheetVisible,
-    showModal: showPipelineLogSheet,
-    hideModal: hidePipelineLogSheet,
   } = useSetModalState();
 
   const {
@@ -158,62 +127,13 @@ export default function Agent() {
     hideModal: hideGlobalParamSheet,
   } = useSetModalState();
 
-  const {
-    isParsing,
-    logs,
-    messageId,
-    setMessageId,
-    isCompleted,
-    stopFetchTrace,
-    isLogEmpty,
-  } = useFetchPipelineLog(pipelineLogSheetVisible);
-
-  const findNodeByName = useGraphStore((state) => state.findNodeByName);
-
-  const handleRunPipeline = useCallback(() => {
-    if (!findNodeByName(Operator.Tokenizer)) {
-      message.warning(t('flow.tokenizerRequired'));
-      return;
-    }
-
-    if (isParsing) {
-      // show log sheet
-      showPipelineLogSheet();
-    } else {
-      hidePipelineLogSheet();
-      // handleRun();
-      showPipelineRunSheet();
-    }
-  }, [
-    findNodeByName,
-    hidePipelineLogSheet,
-    isParsing,
-    showPipelineLogSheet,
-    showPipelineRunSheet,
-    t,
-  ]);
-
-  const { handleCancel } = useCancelCurrentDataflow({
-    messageId,
-    stopFetchTrace,
-  });
-
   const handleButtonRunClick = useCallback(async () => {
     if (isWebhookMode) {
       if ((await saveGraph())?.code === 0) showWebhookTestSheet();
-    } else if (isPipeline) {
-      handleRunPipeline();
     } else {
       handleRun();
     }
-  }, [
-    handleRun,
-    handleRunPipeline,
-    isPipeline,
-    isWebhookMode,
-    saveGraph,
-    showWebhookTestSheet,
-  ]);
+  }, [handleRun, isWebhookMode, saveGraph, showWebhookTestSheet]);
 
   const handleEmbedClick = useCallback(() => {
     showEmbedModal();
@@ -231,12 +151,6 @@ export default function Agent() {
       {t('flow.run')}
     </Button>
   );
-
-  const {
-    run: runPipeline,
-    loading: pipelineRunning,
-    uploadedFileData,
-  } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
   const { data: presence } = useFetchCanvasPresence();
   const operatorPermission = presence.operator_permission ?? 0;
@@ -303,12 +217,7 @@ export default function Agent() {
                 onPublish={handlePublish}
               />
             </AgentEditGuard>
-            {showRunButton &&
-              (runTooltipKey ? (
-                <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-              ) : (
-                runButton
-              ))}
+            {isPipeline ? <PipelinePreview /> : runButton}
             <CanvasChecklist issues={issues} />
             {isPipeline ? (
               <Button variant="secondary" onClick={handleExportJson}>
@@ -382,25 +291,6 @@ export default function Agent() {
           onSaveWidgetSettings={handleSaveWidgetSettings}
           savingWidgetSettings={savingWidgetSettings}
         ></EmbedDialog>
-      )}
-      {pipelineLogSheetVisible && (
-        <PipelineLogSheet
-          hideModal={hidePipelineLogSheet}
-          isParsing={isParsing}
-          isCompleted={isCompleted}
-          isLogEmpty={isLogEmpty}
-          logs={logs}
-          handleCancel={handleCancel}
-          messageId={messageId}
-          uploadedFileData={uploadedFileData}
-        ></PipelineLogSheet>
-      )}
-      {pipelineRunSheetVisible && (
-        <PipelineRunSheet
-          hideModal={hidePipelineRunSheet}
-          run={runPipeline}
-          loading={pipelineRunning}
-        ></PipelineRunSheet>
       )}
       {globalParamSheetVisible && (
         <GlobalParamSheet

@@ -16,8 +16,6 @@
 
 import { Authorization } from '@/constants/authorization';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { useGetPipelineResultSearchParams } from '@/pages/dataflow-result/hooks';
-import api, { restAPIv1 } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
 import { useDebounceFn, useSize } from 'ahooks';
@@ -95,18 +93,9 @@ export const useHighlightText = (searchText: string = '') => {
   return textRenderer;
 };
 
-export const useGetDocumentUrl = (isAgent: boolean) => {
+export const useGetDocumentUrl = () => {
   const { documentId } = useGetKnowledgeSearchParams();
-  const { createdBy, documentId: id } = useGetPipelineResultSearchParams();
-
-  const url = useMemo(() => {
-    if (isAgent) {
-      return api.downloadFile + `?id=${id}&created_by=${createdBy}`;
-    }
-    return `${restAPIv1}/documents/${documentId}/preview`;
-  }, [createdBy, documentId, id, isAgent]);
-
-  return url;
+  return `${restAPIv1}/documents/${documentId}/preview`;
 };
 
 export const useFetchDocument = () => {

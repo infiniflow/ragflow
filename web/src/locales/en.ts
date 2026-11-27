@@ -3733,8 +3733,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       noModelInputs: 'No model calls were captured in this run.',
       modelInputsUnavailable: 'Model inputs are unavailable for this run.',
       testRunError: 'Test run failed ({{code}}): {{message}}',
-      debugRunLimits:
-        'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
       templateDescription:
         'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
@@ -3995,7 +3993,6 @@ This process aggregates variables from multiple branches into a single variable 
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Indexer',
-      tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid: 'Invalid settings, please fix them first',
       apiKeyRequired: 'Please enter the API Key',
       apiKeyMissing: 'No API key configured, please enter one first',
@@ -4090,8 +4087,6 @@ The Indexer will store the content in the corresponding data structures for the 
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
-      exportJson: 'Export JSON',
-      viewResult: 'View result',
       running: 'Running',
       summary: 'Summary',
       keywords: 'Auto keywords',

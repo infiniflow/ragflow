@@ -432,11 +432,6 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}
 	copyPipelineControlValues(out, inputs)
 
-	// Embedding requires a KB: the embedder (and its embd_id) is configured
-	// on the knowledgebase, so without kb_id there is nothing to resolve
-	// against. A canvas-debug (dry-run) run has kb_id == "" by construction,
-	// so embedding is skipped there — debug only exercises parse+chunk and
-	// must stay side-effect free.
 	if shouldHaveEmbedding(c.param.SearchMethod, kbID) {
 		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, name, chunks, chunkcache.Client())
 		if err != nil {
@@ -1127,17 +1122,9 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 	return b.String()
 }
 
-// shouldHaveEmbedding reports whether the tokenizer must attach embedding
-// vectors: the search method requests embedding AND a KB is present.
-//
-// go_intentional (A4): the kbID != "" guard is deliberate. Each dataset
-// configures its own embedding model, so an empty kb_id (e.g. a canvas-debug
-// dry run) must NOT fall back to the tenant's default embedding model — doing
-// so would produce vectors a dataset cannot actually use at retrieval time.
-// This is a deliberate, go_intentional divergence. Do NOT "align" this to a
-// path that injects a default embedding.
+// shouldHaveEmbedding reports whether this run needs embedding vectors.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
-	return slices.Contains(searchMethods, "embedding") && kbID != ""
+	return slices.Contains(searchMethods, "embedding") && embeddingEnabledForRun(kbID)
 }
 
 func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []string, kbID string) error {
