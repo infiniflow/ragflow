@@ -1072,3 +1072,56 @@ func TestAzureDevOpsPullRequestResumeFollowsTheAnchor(t *testing.T) {
 		t.Fatalf("unexpected document: %s", got)
 	}
 }
+
+// Azure DevOps reports 40-character commit ids and a status+timestamp pull
+// request fingerprint, but content_hash is varchar(32): storing the raw token
+// fails the sync with "Data too long for column 'content_hash'" (#20972).
+// Long tokens are folded into the compact digest the other connectors already
+// use, and the comparison path calls the same function so an unchanged
+// revision still matches its stored value.
+func TestAzureDevOpsFingerprintFitsTheContentHashColumn(t *testing.T) {
+	commitA := strings.Repeat("a", 40)
+	commitB := strings.Repeat("b", 40)
+	item := azureDevOpsItem{Path: "/src/App.cs"}
+	item.LatestProcessedChange = &azureDevOpsChange{CommitID: commitA}
+
+	fingerprint := azureDevOpsItemFingerprint(item)
+	if len(fingerprint) != 32 {
+		t.Fatalf("item fingerprint length = %d (%q), want the 32-character content-hash width", len(fingerprint), fingerprint)
+	}
+	other := item
+	other.LatestProcessedChange = &azureDevOpsChange{CommitID: commitB}
+	if azureDevOpsItemFingerprint(other) == fingerprint {
+		t.Fatal("different commits must produce different fingerprints")
+	}
+
+	request := SyncRequest{Fingerprints: map[string]string{"source-id": fingerprint}}
+	if includeAzureDevOpsItem(request, "source-id", item) {
+		t.Fatal("an unchanged commit must not be re-synced after its fingerprint is stored")
+	}
+
+	closed := time.Date(2026, 1, 13, 21, 53, 6, 123456789, time.UTC)
+	pullRequest := azureDevOpsPullRequest{PullRequestID: 7, Status: "completed", ClosedDate: &closed}
+	if got := azureDevOpsPullRequestFingerprint(pullRequest); len(got) > 32 {
+		t.Fatalf("pull request fingerprint length = %d (%q), want <= 32", len(got), got)
+	}
+}
+
+func TestAzureDevOpsDocumentKeepsTheRawCommitIDInMetadata(t *testing.T) {
+	connector, _ := NewAzureDevOpsConnector(map[string]any{
+		"organization": "contoso",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	repo := azureDevOpsRepository{Project: "iddaa", Name: "Bayi-Portal", Branch: "master"}
+	commit := strings.Repeat("c", 40)
+	item := azureDevOpsItem{Path: "/src/App.cs"}
+	item.LatestProcessedChange = &azureDevOpsChange{CommitID: commit}
+
+	document := connector.buildAzureDevOpsCodeDocument(repo, item, []byte("public class App {}"))
+	if len(document.Fingerprint) != 32 {
+		t.Fatalf("document fingerprint length = %d (%q), want 32", len(document.Fingerprint), document.Fingerprint)
+	}
+	if got, _ := document.Metadata["commit_id"].(string); got != commit {
+		t.Fatalf("metadata commit_id = %q, want the full commit id", got)
+	}
+}

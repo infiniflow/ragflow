@@ -793,7 +793,24 @@ func azureDevOpsItemFingerprint(item azureDevOpsItem) string {
 	if item.LatestProcessedChange == nil {
 		return ""
 	}
-	return item.LatestProcessedChange.CommitID
+	return azureDevOpsFingerprint(item.LatestProcessedChange.CommitID)
+}
+
+// contentHashMaxLength is the width of entity.Document.ContentHash. Azure
+// DevOps fingerprints are opaque remote tokens: a commit id is 40 hex
+// characters and the pull request fingerprint is a status plus an RFC3339
+// timestamp. A token wider than the column makes the document write fail with
+// "Data too long for column 'content_hash'" (#20972), so wider tokens are
+// folded into the same xxh128 digest contentFingerprint gives the other
+// connectors. Comparison and storage both call this function, so an unchanged
+// revision still matches its stored value.
+const contentHashMaxLength = 32
+
+func azureDevOpsFingerprint(token string) string {
+	if len(token) <= contentHashMaxLength {
+		return token
+	}
+	return contentFingerprint([]byte(token))
 }
 
 func azureDevOpsItemUpdatedAt(item azureDevOpsItem) time.Time {
@@ -848,7 +865,7 @@ func azureDevOpsPullRequestFingerprint(pullRequest azureDevOpsPullRequest) strin
 	if updatedAt.IsZero() {
 		return ""
 	}
-	return pullRequest.Status + ":" + updatedAt.UTC().Format(time.RFC3339Nano)
+	return azureDevOpsFingerprint(pullRequest.Status + ":" + updatedAt.UTC().Format(time.RFC3339Nano))
 }
 
 // buildAzureDevOpsCodeDocument maps a repository file to a source document.
@@ -862,9 +879,10 @@ func (c *AzureDevOpsConnector) buildAzureDevOpsCodeDocument(repo azureDevOpsRepo
 	webURL := fmt.Sprintf("%s/%s/_git/%s?path=/%s&version=GB%s",
 		c.baseURL, url.PathEscape(repo.Project), url.PathEscape(repo.Name), relativePath, repo.Branch)
 
-	commitID := azureDevOpsItemFingerprint(item)
+	commitID := ""
 	committer := ""
 	if item.LatestProcessedChange != nil {
+		commitID = item.LatestProcessedChange.CommitID
 		committer = firstNonEmpty(item.LatestProcessedChange.Committer.Name, item.LatestProcessedChange.Author.Name)
 	}
 
@@ -875,7 +893,7 @@ func (c *AzureDevOpsConnector) buildAzureDevOpsCodeDocument(repo azureDevOpsRepo
 		Blob:               content,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(content)),
-		Fingerprint:        commitID,
+		Fingerprint:        azureDevOpsItemFingerprint(item),
 		Metadata: map[string]any{
 			"type":       "CodeFile",
 			"path":       relativePath,
