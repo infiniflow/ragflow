@@ -21,8 +21,11 @@ import (
 )
 
 func (c *CLI) apiModeClient() (*HTTPClient, error) {
-	if c.Config.CLIMode != APIMode {
+	if c.Config == nil || c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+	if c.Config.APIClientConfig == nil {
+		return nil, fmt.Errorf("no authorization")
 	}
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 	if httpClient == nil || (httpClient.LoginToken == nil && !httpClient.useAPIKey) {
