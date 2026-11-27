@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { AppSidebar } from './index';
 
 const mockToggleDatasetSidebar = jest.fn();
+const mockToggleFilesSidebar = jest.fn();
 const mockToggleAgentSidebar = jest.fn();
 const mockToggleChatSidebar = jest.fn();
 const mockToggleSearchSidebar = jest.fn();
@@ -11,6 +12,7 @@ const mockToggleMemorySidebar = jest.fn();
 const mockTogglePrimarySidebar = jest.fn();
 let mockPrimarySidebarCollapsed = false;
 let mockDatasetSidebarCollapsed = false;
+let mockFilesSidebarCollapsed = false;
 let mockAgentSidebarCollapsed = false;
 let mockChatSidebarCollapsed = false;
 let mockSearchSidebarCollapsed = false;
@@ -25,6 +27,13 @@ jest.mock('@/hooks/use-dataset-sidebar-collapse', () => ({
   useDatasetSidebarCollapse: () => ({
     collapsed: mockDatasetSidebarCollapsed,
     toggleCollapsed: mockToggleDatasetSidebar,
+  }),
+}));
+
+jest.mock('@/hooks/use-files-sidebar-collapse', () => ({
+  useFilesSidebarCollapse: () => ({
+    collapsed: mockFilesSidebarCollapsed,
+    toggleCollapsed: mockToggleFilesSidebar,
   }),
 }));
 
@@ -115,11 +124,35 @@ describe('AppSidebar secondary sidebar expansion', () => {
     jest.clearAllMocks();
     mockPrimarySidebarCollapsed = false;
     mockDatasetSidebarCollapsed = false;
+    mockFilesSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
     mockSearchSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
     mockMemorySidebarCollapsed = false;
+  });
+
+  it('expands the Library secondary sidebar on the Files route', () => {
+    mockFilesSidebarCollapsed = true;
+    mockDatasetSidebarCollapsed = true;
+    renderAppSidebar('/files?folderId=folder-1');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockToggleFilesSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
+  });
+
+  it('does not show the Library expander on the Skills route', () => {
+    mockFilesSidebarCollapsed = true;
+    renderAppSidebar('/files/skills');
+
+    expect(
+      screen.queryByRole('button', { name: 'sidebar.expandSidebar' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
   });
 
   it('expands the agent secondary sidebar on agent detail routes', () => {
@@ -247,6 +280,7 @@ describe('AppSidebar primary sidebar border', () => {
   beforeEach(() => {
     mockPrimarySidebarCollapsed = true;
     mockDatasetSidebarCollapsed = false;
+    mockFilesSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
     mockSearchSidebarCollapsed = false;

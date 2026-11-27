@@ -15,13 +15,14 @@ import { ArrowUpDown } from 'lucide-react';
 import * as React from 'react';
 
 import { FileIcon } from '@/components/icon-font';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
 import { RenameDialog } from '@/components/rename-dialog';
+import { ResourceMetadata } from '@/components/resource-metadata';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -61,6 +62,7 @@ type FilesTableProps = Pick<
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
   UseMoveDocumentShowType & {
     connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType;
+    createTime?: string;
     showPrivilegeModal?(record: IFile): void;
   };
 
@@ -74,6 +76,7 @@ export function FilesTable({
   setRowSelection,
   showMoveFileModal,
   connectKnowledgeModal,
+  createTime,
   showPrivilegeModal,
 }: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -321,72 +324,73 @@ export function FilesTable({
     debugTable: true,
   });
 
+  const handlePageChange = React.useCallback(
+    (page: number, pageSize: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
+
   return (
     <>
-      <div className="flex-1 min-h-0 size-full">
-        <Table rootClassName="max-h-full overflow-auto">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead
-                      key={header.id}
-                      className={
-                        header.column.columnDef.meta?.headerCellClassName
-                      }
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
+      <PaginatedTableLayout
+        footerLeading={<ResourceMetadata createTime={createTime} />}
+        pagination={
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={handlePageChange}
+          />
+        }
+      >
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => {
+                return (
+                  <TableHead
+                    key={header.id}
+                    className={
+                      header.column.columnDef.meta?.headerCellClassName
+                    }
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                  </TableHead>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody className="max-h-96 overflow-y-auto">
+          {loading ? (
+            <TableSkeleton columnsLength={columns.length}></TableSkeleton>
+          ) : table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && 'selected'}
+                className="group"
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cell.column.columnDef.meta?.cellClassName}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
               </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody className="max-h-96 overflow-y-auto">
-            {loading ? (
-              <TableSkeleton columnsLength={columns.length}></TableSkeleton>
-            ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                  className="group"
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cell.column.columnDef.meta?.cellClassName}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableEmpty columnsLength={columns.length}></TableEmpty>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <footer className="flex items-center justify-end pb-5 mt-4">
-        <RAGFlowPagination
-          {...pick(pagination, 'current', 'pageSize')}
-          total={total}
-          onChange={(page, pageSize) => {
-            setPagination({ page, pageSize });
-          }}
-        />
-      </footer>
+            ))
+          ) : (
+            <TableEmpty columnsLength={columns.length}></TableEmpty>
+          )}
+        </TableBody>
+      </PaginatedTableLayout>
 
       {connectToKnowledgeVisible && (
         <LinkToDatasetDialog

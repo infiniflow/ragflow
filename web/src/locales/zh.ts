@@ -2418,6 +2418,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       uploadFolderTitle: '上传文件夹',
       folder: '文件夹',
       files: '文件',
+      allFiles: '全部文件',
       name: '名称',
       uploadDate: '上传日期',
       knowledgeBase: '知识库',

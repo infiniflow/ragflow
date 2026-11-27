@@ -1,5 +1,9 @@
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchParentFolderList } from '@/hooks/use-file-request';
+import {
+  useFetchParentFolderList,
+  useGetFolderId,
+} from '@/hooks/use-file-request';
+import { IFolder } from '@/interfaces/database/file-manager';
 import { useCallback } from 'react';
 
 export const useNavigateToOtherFolder = () => {
@@ -24,4 +28,16 @@ export const useSelectBreadcrumbItems = () => {
         title: x.name === '/' ? 'root' : x.name,
         folderId: x.id,
       }));
+};
+
+export const useCurrentFolder = (rootFolder?: IFolder) => {
+  const folderId = useGetFolderId();
+  const folderPath = useFetchParentFolderList();
+
+  if (!folderId) {
+    return rootFolder;
+  }
+
+  const currentFolder = folderPath.at(-1);
+  return currentFolder?.id === folderId ? currentFolder : undefined;
 };
