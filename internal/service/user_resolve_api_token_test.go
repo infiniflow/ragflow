@@ -105,6 +105,34 @@ func TestResolveAPITokenIdentityUnknownUserReturnsUnauthorized(t *testing.T) {
 	}
 }
 
+// TestResolveAPITokenIdentityRejectsDisabledUser guards that an admin-disabled
+// account cannot keep using its API or beta keys: deactivation only rotates the
+// login token, so the key path must check the account status itself.
+func TestResolveAPITokenIdentityRejectsDisabledUser(t *testing.T) {
+	db := newAPITokenTestDB(t)
+	accessToken := "secret-token-value"
+	if err := db.Create(&entity.User{
+		ID:          apiTokenUserIDHex,
+		Email:       "a@example.com",
+		Nickname:    "alice",
+		AccessToken: &accessToken,
+		IsActive:    "0",
+	}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	uid := apiTokenUserIDHex
+	apiToken := &entity.APIToken{UserID: &uid, TenantID: "tenant-1"}
+	identity, code, err := (&UserService{}).resolveAPITokenIdentity(context.Background(), apiToken)
+	if err == nil || code != common.CodeUnauthorized || identity != nil {
+		t.Fatalf("resolveAPITokenIdentity() = (%v, %v, %v); want unauthorized for a disabled user", identityUserID(identity), code, err)
+	}
+}
+
 func identityUserID(identity *AuthIdentity) string {
 	if identity == nil || identity.User == nil {
 		return ""
