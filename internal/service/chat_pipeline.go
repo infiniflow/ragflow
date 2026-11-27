@@ -328,7 +328,6 @@ func (s *ChatPipelineService) AsyncChat(
 ) (results <-chan AsyncChatResult, runErr error) {
 	defer func() {
 		if runErr == nil && results != nil {
-			results = s.filterChatOutput(ctx, chat, stream, results)
 			results = logChatCompletion(ctx, chat, messages, stream, results)
 		}
 	}()
@@ -353,15 +352,6 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 	question, err := NormalizeOpenAIMessageContent(lastMsg["content"])
 	if err != nil {
-		return nil, err
-	}
-	ctx, err = compliance.WithOutputFilter(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			out := make(chan AsyncChatResult)
-			close(out)
-			return out, nil
-		}
 		return nil, err
 	}
 	if err := compliance.ValidateQuestion(ctx, question); err != nil {
@@ -903,7 +893,6 @@ func (s *ChatPipelineService) AsyncChat(
 
 					docEngine := engine.Get()
 					documentDAO := dao.NewDocumentDAO()
-					retrievalSvc := nlp.NewRetrievalService(docEngine, documentDAO)
 
 					top := int(chat.TopK)
 					threshold := chat.SimilarityThreshold
@@ -928,24 +917,102 @@ func (s *ChatPipelineService) AsyncChat(
 						Language:               entity.KnowledgebasesLanguage(kbs),
 					}
 
-					result, retErr := retrievalSvc.Retrieval(ctx, req)
-					if retErr != nil {
+					// runRetrieval executes one engine query with the given
+					// resolved models. The pipeline up to this point is
+					// read-only, so group failover can safely replay it on the
+					// next member.
+					runRetrieval := func(ctx context.Context, emb *modelModule.EmbeddingModel, rerank *modelModule.RerankModel) (*nlp.RetrievalResult, error) {
+						attempt := *req
+						attempt.EmbeddingModel = emb
+						attempt.RerankModel = rerank
+						return nlp.NewRetrievalService(docEngine, documentDAO).Retrieval(ctx, &attempt)
+					}
+
+					resetResult := func() {
 						kbinfos = map[string]interface{}{
 							"total":    0,
 							"chunks":   []map[string]interface{}{},
 							"doc_aggs": []interface{}{},
 						}
-						err = retErr
-					} else {
+					}
+					applyResult := func(result *nlp.RetrievalResult) {
 						docAggs := make([]interface{}, len(result.DocAggs))
 						for i, da := range result.DocAggs {
 							docAggs[i] = da
 						}
-
 						kbinfos = map[string]interface{}{
 							"total":    len(result.Chunks),
 							"chunks":   result.Chunks,
 							"doc_aggs": docAggs,
+						}
+					}
+
+					// Group failover: when exactly one of the embedding/rerank
+					// references is a gp- group, an invocation failure flips
+					// that group's current member inactive and the retrieval
+					// retries on the next member. With both behind groups the
+					// failing side cannot be attributed to one group, so
+					// failover covers the single-group case — the same
+					// contract as DatasetService.SearchDatasets.
+					embdRef := ""
+					if len(kbs) > 0 {
+						embdRef = kbs[0].EmbdID
+					}
+					failoverType, failoverRef := nlp.RetrievalFailoverTarget(embdRef, chat.RerankID)
+
+					if failoverType == 0 {
+						result, retErr := runRetrieval(ctx, embModel, rerankModel)
+						if retErr != nil {
+							resetResult()
+							err = retErr
+						} else {
+							applyResult(result)
+						}
+					} else {
+						type retrievalModels struct {
+							embedding *modelModule.EmbeddingModel
+							rerank    *modelModule.RerankModel
+						}
+						resolveModels := func(ctx context.Context) (*retrievalModels, error) {
+							var embeddingModel *modelModule.EmbeddingModel
+							if embdRef != "" {
+								m, rerr := s.ModelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, kbs[0].TenantID), embdRef)
+								if rerr != nil {
+									return nil, fmt.Errorf("failed to get embedding model: %w", rerr)
+								}
+								embeddingModel = m
+							}
+							var rerankModel *modelModule.RerankModel
+							if chat.RerankID != "" {
+								m, rerr := s.ModelFactory.NewRerankModel(permission.WithTenantID(ctx, chat.TenantID), chat.RerankID)
+								if rerr != nil {
+									return nil, fmt.Errorf("failed to get rerank model: %w", rerr)
+								}
+								rerankModel = m
+							}
+							return &retrievalModels{embedding: embeddingModel, rerank: rerankModel}, nil
+						}
+						// Only flip when the failing side is the model behind
+						// the group: document engine outages and request
+						// errors say nothing about the member's health, so
+						// they must not deactivate a healthy member.
+						failoverCanRetry := nlp.RetrievalFailoverCanRetry(failoverType)
+						var result *nlp.RetrievalResult
+						retErr := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, failoverType, failoverRef,
+							resolveModels, nil,
+							func(ctx context.Context, resolved *retrievalModels) error {
+								r, invErr := runRetrieval(ctx, resolved.embedding, resolved.rerank)
+								if invErr != nil {
+									return invErr
+								}
+								result = r
+								return nil
+							}, failoverCanRetry)
+						if retErr != nil {
+							resetResult()
+							err = retErr
+						} else {
+							applyResult(result)
 						}
 					}
 				}
@@ -2423,7 +2490,16 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankModel, _ = s.ModelFactory.NewRerankModel(modelCtx, chat.RerankID)
+		m, rerr := s.ModelFactory.NewRerankModel(modelCtx, chat.RerankID)
+		if rerr != nil {
+			// A gp- group reference with no usable member (or a broken model
+			// configuration) must not degrade silently to "no rerank" — the
+			// dialog would return unranked results with no trace of why.
+			common.Warn("Failed to get rerank model; continuing without rerank",
+				zap.String("rerankID", chat.RerankID), zap.Error(rerr))
+		} else {
+			rerankModel = m
+		}
 	}
 
 	// TTS model.
@@ -2815,11 +2891,6 @@ func stripTTSTags(text string) string {
 
 // synthesizeTTS calls the TTS model to convert text to audio.
 func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
-	// Filtered turns synthesize the sanitized final answer in filterChatOutput;
-	// per-delta synthesis could speak a word before its remaining chunks arrive.
-	if compliance.OutputFilterEnabled(ctx) {
-		return nil
-	}
 	if ttsModel == nil || text == "" {
 		return nil
 	}
