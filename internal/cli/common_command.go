@@ -38,14 +38,29 @@ func (c *CLI) LoginUserByCommand(commandCount int, cmd *Command) (ResponseIf, er
 	if !ok {
 		return nil, fmt.Errorf("email not provided")
 	}
-	password, ok := cmd.Params["password"].(string)
-	if !ok {
-		password = ""
-	}
 
-	err := c.LoginUserInteractive(email, password)
-	if err != nil {
-		return nil, err
+	maxAttempts := 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		fmt.Printf("Please input your password: ")
+
+		password, err := ReadPassword()
+
+		if password == "" {
+			if attempt < maxAttempts {
+				fmt.Println("Password cannot be empty, please try again")
+				continue
+			}
+			return nil, fmt.Errorf("no password provided after 3 attempts")
+		}
+
+		if err = c.VerifyAuth(email, password); err != nil {
+			if attempt < maxAttempts {
+				fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
+				continue
+			}
+			return nil, fmt.Errorf("authentication failed after %d attempts", maxAttempts)
+		}
+		break
 	}
 
 	var result SimpleResponse
