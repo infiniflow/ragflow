@@ -40,6 +40,7 @@ import (
 
 	"ragflow/internal/common"
 	charsetlib "ragflow/internal/parser/charset"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/utility"
 )
 
@@ -656,7 +657,8 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // operation cannot silently succeed after a denied attachment parse.
 //
 // The function returns structured JSON items (one per non-empty text
-// segment), each carrying only "text" and "doc_type_kwd".
+// segment), each carrying only "text" and "doc_type_kwd"; a table item is
+// rendered to its HTML form (see attachmentItemText).
 //
 // Re-chunking stops at one level of nesting: a nested email is parsed (so its
 // body becomes retrievable) but its own attachments are not re-chunked, to
@@ -749,13 +751,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		}
 
 		var texts []string
-		if len(res.JSON) > 0 {
-			for _, it := range res.JSON {
-				if t, ok := it.ToMap()["text"].(string); ok {
-					if t = strings.TrimSpace(t); t != "" {
-						texts = append(texts, t)
-					}
-				}
+		for _, it := range res.JSON {
+			if t := attachmentItemText(it); t != "" {
+				texts = append(texts, t)
 			}
 		}
 
@@ -767,4 +765,16 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		}
 	}
 	return extra, nil
+}
+
+// attachmentItemText is the retrievable text of one re-parsed attachment item.
+// A table keeps its cells in TableData rather than a "text" field - and a
+// spreadsheet attachment yields nothing but tables - so it is rendered the way
+// the chunker renders a standalone table.
+func attachmentItemText(it DocItem) string {
+	if table, ok := it.(TableItem); ok {
+		return strings.TrimSpace(tableutil.RenderTableHTML(table.Table))
+	}
+	text, _ := it.ToMap()["text"].(string)
+	return strings.TrimSpace(text)
 }

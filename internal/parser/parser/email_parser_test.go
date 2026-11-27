@@ -27,6 +27,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func mustParseEML(t *testing.T, reader io.Reader, fields []string) map[string]any {
@@ -879,6 +881,66 @@ func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("attachment text not found in JSON output:\n%#v", result.JSON)
+	}
+}
+
+// TestEmailParser_SpreadsheetAttachmentIsRetrievable covers attachments whose
+// parser emits only table items: their cells must reach the email's items, as a
+// standalone spreadsheet's would.
+func TestEmailParser_SpreadsheetAttachmentIsRetrievable(t *testing.T) {
+	xlsx := excelize.NewFile()
+	defer xlsx.Close()
+	for cell, value := range map[string]string{"A1": "id", "B1": "statement", "A2": "FX0225", "B2": "the turbine program budget is 22393 units"} {
+		if err := xlsx.SetCellValue("Sheet1", cell, value); err != nil {
+			t.Fatalf("SetCellValue: %v", err)
+		}
+	}
+	xlsxBuf, err := xlsx.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+
+	for _, tc := range []struct {
+		filename string
+		payload  []byte
+	}{
+		{"numbers.csv", []byte("id,statement\nFX0225,the turbine program budget is 22393 units\n")},
+		{"numbers.xlsx", xlsxBuf.Bytes()},
+	} {
+		t.Run(tc.filename, func(t *testing.T) {
+			boundary := "tableboundary"
+			raw := strings.Join([]string{
+				"From: ops@example.com",
+				"To: team@example.com",
+				"Subject: Quarterly numbers",
+				"Content-Type: multipart/mixed; boundary=" + boundary,
+				"",
+				"--" + boundary,
+				"Content-Type: text/plain; charset=utf-8",
+				"",
+				"Numbers attached.",
+				"--" + boundary,
+				"Content-Type: application/octet-stream",
+				"Content-Disposition: attachment; filename=\"" + tc.filename + "\"",
+				"Content-Transfer-Encoding: base64",
+				"",
+				base64.StdEncoding.EncodeToString(tc.payload),
+				"--" + boundary + "--",
+			}, "\r\n")
+
+			p := NewEmailParser()
+			p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "body", "attachments"}})
+			result := p.ParseWithResult(t.Context(), "quarterly.eml", []byte(raw))
+			if result.Err != nil {
+				t.Fatalf("unexpected error: %v", result.Err)
+			}
+			for _, it := range ItemsToMaps(result.JSON) {
+				if text, _ := it["text"].(string); strings.Contains(text, "FX0225") && strings.Contains(text, "22393 units") {
+					return
+				}
+			}
+			t.Errorf("attachment table cells not found in JSON output:\n%#v", ItemsToMaps(result.JSON))
+		})
 	}
 }
 
