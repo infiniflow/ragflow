@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
+	"slices"
 	"testing"
 )
 
@@ -48,6 +51,41 @@ func TestSarvamProviderConfig(t *testing.T) {
 	}
 	if _, ok := provider.ModelDriver.(*SarvamModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.SarvamModel", provider.ModelDriver)
+	}
+}
+
+func TestSarvamCatalogOnlyServerlessModels(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "conf", "models", "sarvam.json"))
+	if err != nil {
+		t.Fatalf("read sarvam.json: %v", err)
+	}
+
+	var conf struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &conf); err != nil {
+		t.Fatalf("unmarshal sarvam.json: %v", err)
+	}
+
+	got := make([]string, len(conf.Models))
+	for i, model := range conf.Models {
+		got[i] = model.Name
+	}
+	want := []string{
+		"sarvam-105b",
+		"sarvam-105b-conversations",
+		"glm5.3",
+		"glm5.3-flash",
+		"gemma4",
+		"deepseekv4.1-flash-1017",
+		"deepseekv4.1-flash-1017-interactive",
+	}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("models=%v, want the seven serverless models %v", got, want)
 	}
 }
 

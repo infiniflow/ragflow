@@ -89,17 +89,6 @@
       "tools": {
         "support": true
       }
-    },
-    {
-      "name": "qwen38-27b",
-      "context_length": 262144,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "tools": {
-        "support": true
-      }
     }
   ]
 }
