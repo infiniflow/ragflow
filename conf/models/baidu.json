@@ -1,7 +1,8 @@
 {
   "name": "BaiduYiyan",
   "url": {
-    "default": "https://qianfan.baidubce.com/v2"
+    "default": "https://qianfan.baidubce.com/v2",
+    "global": "https://api.baiduqianfan.ai/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
