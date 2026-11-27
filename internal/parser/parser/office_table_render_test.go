@@ -1676,6 +1676,45 @@ func TestDetectHeaderRow_MergedHeaderBelowMetadata(t *testing.T) {
 	}
 }
 
+func TestAxisToRCAbsoluteReferences(t *testing.T) {
+	cases := []struct {
+		axis     string
+		row, col int
+	}{
+		{"A1", 1, 1},
+		{"$A$1", 1, 1},
+		{"$B2", 2, 2},
+		{"A$5", 5, 1},
+		{"$AA$10", 10, 27},
+		{"$XFD$1048576", 1_048_576, 16_384},
+	}
+	for _, tc := range cases {
+		row, col := axisToRC(tc.axis)
+		if row != tc.row || col != tc.col {
+			t.Errorf("axisToRC(%q) = (%d, %d), want (%d, %d)", tc.axis, row, col, tc.row, tc.col)
+		}
+	}
+	if got := rangeTopRow("$A$5:$D$20"); got != 5 {
+		t.Errorf("rangeTopRow(%q) = %d, want 5", "$A$5:$D$20", got)
+	}
+	for _, axis := range []string{
+		"A$$1",
+		"$A$$1",
+		"A$1$",
+		"$A1$",
+		"A $1",
+		"A0",
+		"$A$0",
+		"XFE2",
+		"A1048577",
+		"ZZZZZZZZZZZZZZZZZZZZ1",
+	} {
+		if row, col := axisToRC(axis); row != 0 || col != 0 {
+			t.Errorf("axisToRC(%q) = (%d, %d), want malformed", axis, row, col)
+		}
+	}
+}
+
 func TestXLSXParserPreservesTitleBeforeHeader(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "角色岗位对照表")
@@ -1704,6 +1743,21 @@ func TestXLSXParserPreservesTitleBeforeHeader(t *testing.T) {
 		if pos[1] != float64(i+1) {
 			t.Fatalf("position %d = %v", i, pos)
 		}
+	}
+}
+
+func TestDetectHeaderRow_TableRangeMustFitRows(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	records := [][]string{{"Name", "Count"}, {"Alice", "1"}, {"Bob", "2"}}
+	tables := []excelize.Table{{Range: "$A$2:$B$3"}}
+	if got := detectHeaderRow(f, "Sheet1", records, tables, nil); got != 2 {
+		t.Fatalf("valid table top row: got %d, want 2", got)
+	}
+
+	tables[0].Range = "$A$5:$B$8"
+	if got := detectHeaderRow(f, "Sheet1", records, tables, nil); got != 1 {
+		t.Fatalf("out-of-range table top row: got %d, want fallback 1", got)
 	}
 }
 

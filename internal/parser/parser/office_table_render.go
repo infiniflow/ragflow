@@ -661,29 +661,57 @@ func trimTrailingEmptyColumns(records [][]string) [][]string {
 
 // ──────────────────────────────────────────────────────────── axis helpers
 
-// axisToRC parses an "A1"-style cell reference (optionally with a leading "$")
-// into 1-based (row, col). A malformed reference yields (0, 0).
+const (
+	maxExcelRow    = 1_048_576
+	maxExcelColumn = 16_384
+)
+
+// axisToRC parses an "A1"-style cell reference into 1-based (row, col).
+// Excel marks an absolute row or column with "$", and a reference can carry
+// either marker on its own ("$A1", "A$1") or both ("$A$1"). Each marker is only
+// valid immediately before its column or row; a malformed reference yields (0, 0).
 func axisToRC(axis string) (row, col int) {
 	axis = strings.TrimSpace(axis)
-	axis = strings.TrimPrefix(axis, "$")
 	i := 0
-	for i < len(axis) && (axis[i] < '0' || axis[i] > '9') {
+	if i < len(axis) && axis[i] == '$' {
 		i++
 	}
-	if i == 0 || i == len(axis) {
+	columnStart := i
+	for i < len(axis) {
+		ch := axis[i]
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+			break
+		}
+		i++
+	}
+	if i == columnStart {
 		return 0, 0
 	}
-	letter, num := axis[:i], axis[i:]
-	r, err := strconv.Atoi(num)
+	columnEnd := i
+	if i < len(axis) && axis[i] == '$' {
+		i++
+	}
+	rowStart := i
+	for i < len(axis) && axis[i] >= '0' && axis[i] <= '9' {
+		i++
+	}
+	if i == rowStart || i != len(axis) {
+		return 0, 0
+	}
+	r, err := strconv.Atoi(axis[rowStart:i])
 	if err != nil {
 		return 0, 0
 	}
 	c := 0
-	for _, ch := range strings.ToUpper(letter) {
-		if ch < 'A' || ch > 'Z' {
+	for _, ch := range strings.ToUpper(axis[columnStart:columnEnd]) {
+		digit := int(ch - 'A' + 1)
+		if c > (maxExcelColumn-digit)/26 {
 			return 0, 0
 		}
-		c = c*26 + int(ch-'A'+1)
+		c = c*26 + digit
+	}
+	if r < 1 || r > maxExcelRow || c < 1 {
+		return 0, 0
 	}
 	return r, c
 }
@@ -843,7 +871,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 				minTop = tr
 			}
 		}
-		if minTop > 1 {
+		if minTop > 1 && minTop <= n {
 			return minTop
 		}
 	}
