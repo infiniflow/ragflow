@@ -494,3 +494,27 @@ func TestAzureChatStreamSendsUsageOptionWhenSupported(t *testing.T) {
 		})
 	}
 }
+
+func TestAzureChatOmitsEmptyStop(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAzureServer(t, "gpt-4o", "chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if _, present := body["stop"]; present {
+			t.Errorf("stop must stay absent for an empty stop list, got %v", body["stop"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]interface{}{"content": "pong"}}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	empty := []string{}
+	if _, err := newAzureForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"gpt-4o",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, &ChatConfig{Stop: &empty}, nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
