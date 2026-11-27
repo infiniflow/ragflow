@@ -38,6 +38,35 @@ func mustParseEML(t *testing.T, reader io.Reader, fields []string) map[string]an
 	return content
 }
 
+func TestEmailParserMultipartDefaultBodyType(t *testing.T) {
+	for _, tc := range []struct {
+		name, subtype, part, want string
+	}{
+		{"mixed", "mixed", "\r\nService window moved to Friday.", "Service window moved to Friday."},
+		{"nested alternative", "mixed", "Content-Type: multipart/alternative; boundary=alt\r\n\r\n" +
+			"--alt\r\nContent-Transfer-Encoding: base64\r\n\r\nRnJpZGF5\r\n--alt--", "Friday"},
+		{"digest message", "digest", "\r\nSubject: forwarded\r\n\r\nDigest body", ""},
+		{"unselected attachment", "mixed", "Content-Disposition: attachment; filename=note.txt\r\n\r\nAttachment", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			message := "MIME-Version: 1.0\r\nContent-Type: multipart/" + tc.subtype + "; boundary=parts\r\n\r\n" +
+				"--parts\r\n" + tc.part + "\r\n--parts--\r\n"
+			p := NewEmailParser()
+			p.ConfigureFromSetup(map[string]any{"fields": []string{"body"}})
+			result := p.ParseWithResult(t.Context(), "message.eml", []byte(message))
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			if len(result.JSON) != 1 {
+				t.Fatalf("got %d items, want the body item", len(result.JSON))
+			}
+			if got := result.JSON[0].ToMap()["text"]; got != tc.want {
+				t.Errorf("body = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEmailParser_EmlJSON(t *testing.T) {
 	ctx := t.Context()
 	raw := strings.Join([]string{

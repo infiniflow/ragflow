@@ -364,6 +364,11 @@ func readMailBody(body io.Reader, contentType, cte string, collectAttachments bo
 			continue
 		}
 
+		// An untyped body part defaults to text/plain, except inside
+		// multipart/digest where the default is message/rfc822 (RFC 2046 §5.1).
+		if partCT == "" && mediaType != "multipart/digest" && !isAttachmentPart(part) {
+			partMedia = "text/plain"
+		}
 		raw, _ := io.ReadAll(part)
 		raw = decodeCTE(raw, part.Header.Get("Content-Transfer-Encoding"))
 		decoded := decodeMailPayload(raw, partParams["charset"])
