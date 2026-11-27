@@ -62,7 +62,7 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 // Embedded images are stored in the run media cache and emitted as media_ref;
 // text-only parsers skip them instead.
 func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	if err := checkWPSLicense(filename); err != nil {
+	if err := checkWPSLicense(ctx, filename); err != nil {
 		return ParseResult{Err: err}
 	}
 	irJSON, _, _, _, err := docxExtract(data, "docx")
