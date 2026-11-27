@@ -400,8 +400,25 @@ func (s *ChatPipelineService) AsyncChat(
 	// an agentic level therefore keeps that engine when the request omits the
 	// level, and the dispatch stays ahead of the solo-chat short-circuit below so
 	// a level-selected turn is never diverted to a plain LLM answer.
+	//
+	// A dialog with neither knowledge bases nor a knowledge layer is NOT
+	// agentic-eligible. The agent resolves a citation with an explicit kb_id
+	// scope, and an empty scope drops that term from the ES query
+	// (buildBoolQueryFromCondition), which would let a cited chunk resolve out
+	// of any KB in the tenant. Falling through keeps an empty scope unreachable
+	// instead of trusting every citation path to defend itself; grep_chunks and
+	// fetchChunksByIDs each refuse an empty scope for the same reason.
+	//
+	// The bound knowledge layer is the second thing that makes a turn
+	// agentic-eligible, because a turn with a knowledge layer and no documents
+	// has exactly one way to be answered: the agent, answering from the compiled
+	// assertions. Its citations are scoped to the knowledge datasets: the
+	// reference lookup starts from the conversation's datasets and falls back to
+	// the binding's when there are none, so an ontology-only turn still resolves
+	// against the chunks its assertions were compiled from.
+	ontology := OntologyBindingFor(kwargs, chat.PromptConfig, agenticTemplateIDFor(kwargs))
 	level := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
-	selectedEngine := selectAgenticEngine(level, hasKBs)
+	selectedEngine := selectAgenticEngine(level, hasKBs, ontology != nil)
 	// The engine dispatch hands the caller's identity to the engine runs below;
 	// the regular pipeline phases read it from ctx themselves.
 	userID := permission.UserIDFromContext(ctx)
@@ -5526,20 +5543,28 @@ const (
 // test cannot drift apart: the mapping below IS the contract, and a test that
 // re-derived it would pass while the production branch said something else.
 //
-// No knowledge bases means NO mode-5 engine: it resolves citations against an
+// No scope at all means NO mode-5 engine: it resolves citations against an
 // explicit kb_id scope, and an empty scope drops that term from the ES query
 // (buildBoolQueryFromCondition), letting a cited chunk resolve out of any KB in
 // the tenant. Falling through to the regular pipeline keeps the empty-scope
 // query unconstructible instead of trusting every citation path to defend
 // itself.
 //
+// A bound knowledge layer is a scope in its own right, so it replaces the
+// knowledge-base requirement: a turn with a knowledge layer and no documents
+// has exactly one way to be answered, and its citations resolve against the
+// binding's datasets (see referenceDatasets) rather than an empty kb_id term.
+//
 // mode 8 is deliberately exempt from that gate: Codex is a general assistant
 // that can converse without a KB, and its MCP retrieval tools return an error on
 // a no-scope call (never an empty/default scope query). So level 8 is handled
 // BEFORE the !hasKBs return.
-func selectAgenticEngine(level int, hasKBs bool) agenticEngine {
+func selectAgenticEngine(level int, hasKBs, hasKnowledgeLayer bool) agenticEngine {
 	if level == reasoningLevelCodex {
 		return engineCodex
+	}
+	if hasKnowledgeLayer && !hasKBs {
+		return engineAgenticRAG
 	}
 	if !hasKBs {
 		return ""

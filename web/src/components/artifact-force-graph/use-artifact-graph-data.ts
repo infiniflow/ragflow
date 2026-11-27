@@ -19,7 +19,7 @@ import {
   type IArtifactGraphEntity,
 } from '@/interfaces/database/dataset';
 import isEmpty from 'lodash/isEmpty';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { type GraphData } from 'react-force-graph-2d';
 import {
   getNodeColor as defaultGetNodeColor,
@@ -38,13 +38,32 @@ export interface UseArtifactGraphDataOptions {
   ) => number;
 }
 
+/**
+ * A fingerprint of everything the canvas would draw.
+ *
+ * Callers build their graph data inline (`classes={declaredClasses(...)}`,
+ * `getNodeColor={(node) => ...}`), so the object identity changes on every
+ * render of the page. Handing that straight to ForceGraph2D restarts the force
+ * simulation each time, and a page that re-renders while the drawer loads leaves
+ * the main thread simulating instead of handling clicks — the panel looks dead
+ * until some other view unmounts the canvas.
+ */
+const graphSignature = (
+  graph: GraphData<ArtifactGraphNode, { source: string; target: string }>,
+) =>
+  `${graph.nodes
+    .map((node) => `${node.id}|${node.__color}|${node.__radius}`)
+    .join(',')}##${graph.links
+    .map((link) => `${link.source}>${link.target}|${link.type ?? ''}`)
+    .join(',')}`;
+
 export const useArtifactGraphData = ({
   data,
   getNodeId = (node) => node.slug,
   getNodeColor = defaultGetNodeColor,
   getNodeRadius = defaultGetNodeRadius,
 }: UseArtifactGraphDataOptions) => {
-  return useMemo<
+  const computed = useMemo<
     GraphData<ArtifactGraphNode, { source: string; target: string }>
   >(() => {
     if (isEmpty(data) || !data) {
@@ -95,4 +114,13 @@ export const useArtifactGraphData = ({
 
     return { nodes, links };
   }, [data, getNodeColor, getNodeId, getNodeRadius]);
+
+  // Reuse the previous object while the drawing is unchanged: same picture, same
+  // simulation, no reheat.
+  const signature = graphSignature(computed);
+  const last = useRef({ signature, graph: computed });
+  if (last.current.signature !== signature) {
+    last.current = { signature, graph: computed };
+  }
+  return last.current.graph;
 };

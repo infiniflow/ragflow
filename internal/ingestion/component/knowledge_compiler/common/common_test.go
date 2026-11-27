@@ -63,6 +63,45 @@ func TestRepairJSONTextRepairsMalformedResponse(t *testing.T) {
 	}
 }
 
+type replyChat struct{ reply string }
+
+func (c replyChat) Chat(context.Context, ChatRequest) (*ChatResponse, error) {
+	return &ChatResponse{Content: c.reply}, nil
+}
+
+// A reply that drops the {"items": [...]} wrapper is still the extraction
+// contract for the callers that declare a homogeneous item list; unmarshalling
+// it as a map used to fail for every array with two or more items, discarding a
+// valid extraction after six attempts. Accepting an array is opt-in: GenJSON
+// stays object-only so a wrapper the prompt never asked for still retries.
+func TestGenJSONOrArrayAcceptsTopLevelArray(t *testing.T) {
+	const reply = `[{"type": "person", "name": "Ada"}, {"type": "person", "name": "Bob"}]`
+	m, err := GenJSONOrArray(context.Background(), replyChat{reply: reply}, ChatRequest{}, 0)
+	if err != nil {
+		t.Fatalf("GenJSONOrArray: %v", err)
+	}
+	items, ok := m["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("items = %v, want the two array entries", m["items"])
+	}
+}
+
+func TestResponseShapeClassification(t *testing.T) {
+	cases := map[string]string{
+		"":                              "empty",
+		"   \n":                         "empty",
+		"```json\n{}\n```":              "fenced",
+		`{"items": []}`:                 "object",
+		`[{"type": "place"}]`:           "array",
+		"Here is the JSON: {\"items\":": "prose",
+	}
+	for raw, want := range cases {
+		if got := responseShape(raw); got != want {
+			t.Errorf("responseShape(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 type failingChat struct{ err error }
 
 func (c failingChat) Chat(context.Context, ChatRequest) (*ChatResponse, error) {

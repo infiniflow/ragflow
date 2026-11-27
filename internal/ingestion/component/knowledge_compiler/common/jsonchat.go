@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/kaptinlin/jsonrepair"
-	"go.uber.org/zap"
-
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/common"
+	appcommon "ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 // jsonRetryMax is how many times a non-JSON (or otherwise transiently failed)
@@ -96,7 +96,7 @@ func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn
 		if err != nil {
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
-			if !common.IsTransientError(err) {
+			if !appcommon.IsTransientError(err) {
 				if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, err, true); ok {
 					runtime.ReportProgressMessage(ctx, "Compiler", message)
 				}
@@ -113,7 +113,7 @@ func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn
 					}
 					return m, nil
 				} else {
-					common.Info("knowledge_compiler: GenJSON unparseable repaired candidate",
+					appcommon.Info("knowledge_compiler: GenJSON unparseable repaired candidate",
 						zap.Int("attempt", attempt),
 						zap.Int("len", len(repaired)), zap.Error(unmarshalErr))
 				}
@@ -131,11 +131,18 @@ func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn
 				// (PII), so it is deliberately excluded from the log.
 				for i, candidate := range candidates {
 					_, perr := unmarshalFn(candidate)
-					common.Info("knowledge_compiler: GenJSON unparseable candidate",
+					appcommon.Info("knowledge_compiler: GenJSON unparseable candidate",
 						zap.Int("attempt", attempt), zap.Int("candidate", i),
 						zap.Int("len", len(candidate)), zap.Error(perr))
 				}
 			}
+			// Structural summary only. The body is customer-derived (PII), but
+			// the failure class is what decides the fix: a prose preamble or a
+			// fence is recovered above, whereas a bare array or an elided member
+			// copied from the prompt's skeleton is a parser gap.
+			appcommon.Info("knowledge_compiler: GenJSON unparseable response",
+				zap.Int("attempt", attempt), zap.Int("bytes", len(resp.Content)),
+				zap.String("shape", responseShape(resp.Content)))
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
 		if attempt == maxRetries {
@@ -147,11 +154,11 @@ func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn
 		// Compute the capped delay for the current attempt (1-indexed:
 		// attempt 0 -> baseDelay) before reporting and sleeping, so the
 		// progress message names the wait the caller is about to take.
-		d := common.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
+		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
 		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, d, lastErr, false); ok {
 			runtime.ReportProgressMessage(ctx, "Compiler", message)
 		}
-		common.Info("knowledge_compiler: GenJSON attempt failed, retrying",
+		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
 		select {
@@ -170,7 +177,7 @@ func genJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, unmarshalFn
 // malformed forms such as trailing commas or unquoted keys. The returned text
 // is guaranteed to be a valid JSON object or array.
 func RepairJSONText(s string) (string, error) {
-	s = common.StripThinkTrailing(s)
+	s = appcommon.StripThinkTrailing(s)
 	var lastErr error
 	for _, candidate := range jsonCandidates(s) {
 		candidate = strings.TrimSpace(candidate)
@@ -244,6 +251,24 @@ func jsonCandidates(s string) []string {
 		}
 	}
 	return cands
+}
+
+// responseShape classifies an unparseable reply without recording its text, so
+// the log says which failure class the model produced (see the caller).
+func responseShape(s string) string {
+	trimmed := strings.TrimSpace(appcommon.StripThinkTrailing(s))
+	switch {
+	case trimmed == "":
+		return "empty"
+	case strings.HasPrefix(trimmed, "```"):
+		return "fenced"
+	case strings.HasPrefix(trimmed, "{"):
+		return "object"
+	case strings.HasPrefix(trimmed, "["):
+		return "array"
+	default:
+		return "prose"
+	}
 }
 
 func tryUnmarshalJSON(s string) (map[string]any, bool) {

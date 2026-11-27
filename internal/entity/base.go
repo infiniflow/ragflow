@@ -178,6 +178,48 @@ func (m *BaseModel) UpdateUpdateDateAndTime() error {
 	return nil
 }
 
+// JSONList is a list of strings persisted as a JSON array.
+//
+// The model's MCP addresses are read and written whole, never filtered in SQL,
+// so an array keeps the column honest about what the operator entered.
+type JSONList []string
+
+// Value implements driver.Valuer interface
+func (j JSONList) Value() (driver.Value, error) {
+	if j == nil {
+		return nil, nil
+	}
+	return json.Marshal([]string(j))
+}
+
+// Scan implements sql.Scanner interface
+func (j *JSONList) Scan(value interface{}) error {
+	if value == nil {
+		*j = nil
+		return nil
+	}
+	var raw string
+	switch v := value.(type) {
+	case []byte:
+		raw = string(v)
+	case string:
+		raw = v
+	default:
+		raw = fmt.Sprint(value)
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		*j = nil
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return err
+	}
+	*j = out
+	return nil
+}
+
 // JSONMap is a map type that can store JSON data
 type JSONMap map[string]interface{}
 

@@ -12,6 +12,11 @@ jest.mock('@/components/artifact-force-graph', () => ({
   },
 }));
 jest.mock('@/components/ui/tree-view', () => ({ TreeView: () => null }));
+// The ABox panel queries the index; this suite is about the graph views, so it
+// stands in for the panel instead of pulling its request stack in.
+jest.mock('@/components/ontology-abox', () => ({
+  OntologyAboxPanel: () => null,
+}));
 jest.mock('../mindmap-g6-graph', () => ({
   __esModule: true,
   default: () => null,

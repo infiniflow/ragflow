@@ -49,10 +49,54 @@ export const deleteDocumentStructureGraph = (
     data: { template_id: templateId },
   });
 
+/**
+ * One page of a scope's compiled rows — the ABox browser's single read.
+ *
+ * `kind` decides whether the page answers instances (`entity`) or assertions
+ * (`relation`); `class` / `property` narrow it and are OMITTED for "everything"
+ * (an empty term list means opposite things on the two engines, so the absent
+ * key is the only spelling that means "all").
+ */
+export const getOntologyArtifacts = (
+  datasetId: string,
+  params: {
+    kind: 'entity' | 'relation';
+    class?: string;
+    property?: string;
+    source_type?: string;
+    target_type?: string;
+    template_id?: string;
+    document_id?: string;
+    offset?: number;
+    limit?: number;
+  },
+) =>
+  request.get(api.ontologyArtifacts(datasetId), {
+    params,
+  });
+
+// The ABox canvas read. `class` picks the centre of the walk, `hop` how far it
+// widens into neighbouring classes, `limit` how many nodes it may draw.
+export const getOntologyGraph = (
+  datasetId: string,
+  params: {
+    class?: string;
+    template_id?: string;
+    document_id?: string;
+    hop?: number;
+    limit?: number;
+  },
+) =>
+  request.get(api.ontologyGraph(datasetId), {
+    params,
+  });
+
 const documentStructureService = {
   getDocumentStructureGraph,
   getDocumentStructureClaims,
   deleteDocumentStructureGraph,
+  getOntologyArtifacts,
+  getOntologyGraph,
 };
 
 export default documentStructureService;

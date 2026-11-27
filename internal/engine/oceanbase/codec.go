@@ -46,11 +46,12 @@ var arrayColumns = map[string]bool{
 	"doc_ids_kwd": true, "entity_names_kwd": true, "entity_names": true,
 	"outlinks_kwd": true, "related_kb_pages_kwd": true, "page_ids": true,
 	"rechunked_from_chunk_ids": true, "aliases": true, "children_kwd": true,
+	"contract_missing_kwd": true, "hyperedge_ids": true,
 }
 
 var jsonColumns = map[string]bool{
 	"tag_feas": true, "chunk_data": true, "metadata": true, "extra": true, "meta_fields": true,
-	"claims": true, "source_chunk_hashes": true,
+	"claims": true, "source_chunk_hashes": true, "attr": true, "contract": true,
 }
 
 var knownChunkColumns = func() map[string]bool {

@@ -300,6 +300,16 @@ const apiEndpoints = {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   documentStructureClaims: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
+  // Ontology ABox browser: one page of the rows a compile produced in a scope.
+  // `kind` / `class` / `property` travel as query parameters so "everything" is
+  // the absent key rather than an empty path segment.
+  ontologyArtifacts: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/artifacts`,
+  // The ABox canvas. A separate endpoint from the artifacts page because the
+  // cost model differs: here the budget (`limit` / `hop`) is the parameter and
+  // the response reports what it left out.
+  ontologyGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/graph`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -462,6 +472,86 @@ const apiEndpoints = {
   compilationTemplateGroup: (id: string) =>
     `${restAPIv1}/compilation-template-groups/${id}`,
   wikiPresets: `${restAPIv1}/compilation-templates/wiki-presets`,
+  // The model lifecycle: which version of a template is in force, and who
+  // moved it there. Separate from the template palette above because a save
+  // stops affecting the corpus the moment a model has been published.
+  ontologyModels: `${restAPIv1}/ontology-models`,
+  ontologyModelCheck: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/check`,
+  ontologyModelReview: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/review`,
+  ontologyModelPublish: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/publish`,
+  ontologyModelReject: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/reject`,
+  ontologyModelRetire: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/retire`,
+  ontologyModelVersions: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/versions`,
+  ontologyModelVersionDiff: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/versions/diff`,
+  // The draft against the published version, readable without reviewer rights —
+  // the drift panel asks it while deciding what to declare.
+  ontologyModelChanges: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/changes`,
+  // Findings the operator set aside, scoped to one model × dataset: the next
+  // compile must not bring them back, and another corpus must not inherit them.
+  ontologyDriftDismissals: (id: string, datasetId: string) =>
+    `${restAPIv1}/ontology-models/${id}/datasets/${datasetId}/dismissals`,
+  ontologyDriftDismissal: (id: string, datasetId: string, className: string) =>
+    `${restAPIv1}/ontology-models/${id}/datasets/${datasetId}/dismissals/${encodeURIComponent(
+      className,
+    )}`,
+  ontologyModelDatasets: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/datasets`,
+  // The measured half of a model: what the corpus produced against the
+  // declaration, stored when a compile finishes. The read never scans, so a
+  // workspace tab costs one row lookup; the POST is the explicit refresh.
+  ontologyModelInsight: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/insight`,
+  // The read-only product of one version: prose, YAML and JSON schema from the
+  // same snapshot.
+  ontologyModelContract: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/contract`,
+  // The rows themselves, streamed as JSON Lines. Separate from the ABox page
+  // read because an export has no page window.
+  ontologyInstancesExport: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/instances.jsonl`,
+  // The assertion queue and the verdicts on it share a path: a review is a
+  // write to the rows the read just listed, not a separate resource.
+  assertionReview: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/assertions/review`,
+  // Actions: the compiled actions of a model, their tool bindings, and the
+  // audit of every attempt. The contract edit is a PATCH on one action row
+  // because it changes that row and nothing else.
+  ontologyModelActions: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions`,
+  ontologyModelAction: (id: string, actionId: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionId}`,
+  ontologyModelActionExecute: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionName}/execute`,
+  ontologyModelMCPEndpoint: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/mcp-endpoint`,
+  ontologyModelMCPEndpointTools: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/mcp-endpoint/tools`,
+  ontologyModelActionBindings: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/action-bindings`,
+  ontologyModelActionBinding: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/action-bindings/${actionName}`,
+  ontologyModelActionBackfill: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/backfill`,
+  ontologyModelActionExecutions: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/action-executions`,
+  // The contract's own history: the action row keeps only its newest signature,
+  // so "who widened the authorization, and from what" lives here.
+  ontologyModelActionContractEdits: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionName}/contract-edits`,
+  // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
+  compilationTemplateOntologyFix: (id: string) =>
+    `${restAPIv1}/compilation-templates/${id}/ontology-fix`,
+  // The knowledge layer read on its own: the compiled assertions that fit a
+  // declared structure, which is what the agent loop's prefetch calls too.
+  ontologyRetrieval: `${restAPIv1}/retrieval/ontology`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

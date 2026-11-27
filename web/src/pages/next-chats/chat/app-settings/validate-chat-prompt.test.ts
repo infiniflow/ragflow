@@ -5,7 +5,10 @@ const t = (key: string) => key;
 describe('chatPromptKbIssues', () => {
   it('flags a system prompt missing {knowledge} when datasets are selected', () => {
     const issues = chatPromptKbIssues(
-      { dataset_ids: ['kb1'], prompt_config: { system: 'answer the question' } },
+      {
+        dataset_ids: ['kb1'],
+        prompt_config: { system: 'answer the question' },
+      },
       t,
     );
     expect(issues).toContainEqual({
@@ -37,7 +40,10 @@ describe('chatPromptKbIssues', () => {
     const issues = chatPromptKbIssues(
       {
         dataset_ids: [],
-        prompt_config: { system: '{knowledge}', empty_response: 'nothing found' },
+        prompt_config: {
+          system: '{knowledge}',
+          empty_response: 'nothing found',
+        },
       },
       t,
     );

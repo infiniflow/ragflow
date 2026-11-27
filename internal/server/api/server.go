@@ -24,6 +24,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
@@ -103,6 +104,17 @@ func Run(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs
 	tenantHandler := handler.NewTenantHandler(tenantService, userTenantService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
+	// One compiled-rows (ABox) retrieval service serves both entry points: its
+	// REST endpoint and the agent loop's knowledge-layer prefetch. Sharing the
+	// instance is what keeps the preview a person reads and the rows a turn
+	// searches narrowed by the same structure under the same model version.
+	ontologyABoxRetrieval := service.NewOntologyABoxRetrievalService(docEngine, documentDAO)
+	agentic_rag.SetOntologyService(service.NewOntologyAdapter(ontologyABoxRetrieval))
+	// The action layer's boundary. The agent reads a contract and asks for
+	// execution; every judgement (contract state, binding switches, the process
+	// switch) happens behind this interface, never in the prompt.
+	agentic_rag.SetActionService(service.NewOntologyActionAdapter(nil))
+	ontologyABoxRetrievalHandler := handler.NewOntologyABoxRetrievalHandler(ontologyABoxRetrieval)
 	systemHandler := handler.NewSystemHandler(systemService)
 	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
@@ -162,6 +174,7 @@ func Run(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs
 	pipelineHandler := handler.NewPipelineHandler()
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	ontologyModelHandler := handler.NewOntologyModelHandler(service.NewCompilationTemplateGovernanceService())
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Initialize router
@@ -197,7 +210,9 @@ func Run(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs
 		pipelineHandler,
 		compilationTemplateHandler,
 		compilationTemplateGroupHandler,
-		datasetArtifactHandler)
+		ontologyModelHandler,
+		datasetArtifactHandler,
+		ontologyABoxRetrievalHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

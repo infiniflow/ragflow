@@ -2342,33 +2342,43 @@ func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
 // branch said something else.
 func TestSelectAgenticEngine(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		level  int
-		hasKBs bool
-		want   agenticEngine
+		name     string
+		level    int
+		hasKBs   bool
+		hasLayer bool
+		want     agenticEngine
 	}{
-		{"agentic level with KBs", reasoningLevelAgentic, true, engineAgenticRAG},
-		{"agentic level without KBs", reasoningLevelAgentic, false, ""},
+		{"agentic level with KBs", reasoningLevelAgentic, true, false, engineAgenticRAG},
+		{"agentic level without KBs", reasoningLevelAgentic, false, false, ""},
 		// mode 8 (Codex) is exempt from the KB gate: Codex can converse without a
 		// KB, and its MCP retrieval tools error on a no-scope call rather than
 		// querying an unbounded scope.
-		{"codex level with KBs", reasoningLevelCodex, true, engineCodex},
-		{"codex level without KBs", reasoningLevelCodex, false, engineCodex},
+		{"codex level with KBs", reasoningLevelCodex, true, false, engineCodex},
+		{"codex level without KBs", reasoningLevelCodex, false, false, engineCodex},
 		// The depth levels stay on the regular pipeline: they select a harness
 		// mode, not an engine.
-		{"harness depth with KBs", 3, true, ""},
-		{"harness depth without KBs", 4, false, ""},
-		{"off with KBs", 0, true, ""},
-		{"off without KBs", 0, false, ""},
+		{"harness depth with KBs", 3, true, false, ""},
+		{"harness depth without KBs", 4, false, false, ""},
+		{"off with KBs", 0, true, false, ""},
+		{"off without KBs", 0, false, false, ""},
 		// A level above the ladder (a future level, or a stale client) must not be
 		// read as "deeper"; nothing above 7 exists and nothing below 0 does.
-		{"above the ladder", 9, true, ""},
-		{"below the ladder", -1, true, ""},
+		{"above the ladder", 9, true, false, ""},
+		{"below the ladder", -1, true, false, ""},
+		// A bound knowledge layer replaces the corpus scope: the turn has exactly
+		// one way to be answered, so mode 5 runs even with no KB and even when the
+		// request asked for nothing.
+		{"knowledge layer without KBs", reasoningLevelAgentic, false, true, engineAgenticRAG},
+		{"knowledge layer without KBs and no level", 0, false, true, engineAgenticRAG},
+		{"knowledge layer with KBs and no level", 0, true, true, ""},
+		// Codex still wins: the knowledge layer does not override an explicit
+		// mode-8 request.
+		{"knowledge layer with codex level", reasoningLevelCodex, false, true, engineCodex},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := selectAgenticEngine(tc.level, tc.hasKBs); got != tc.want {
-				t.Errorf("selectAgenticEngine(%d, %v) = %q, want %q",
-					tc.level, tc.hasKBs, got, tc.want)
+			if got := selectAgenticEngine(tc.level, tc.hasKBs, tc.hasLayer); got != tc.want {
+				t.Errorf("selectAgenticEngine(%d, %v, %v) = %q, want %q",
+					tc.level, tc.hasKBs, tc.hasLayer, got, tc.want)
 			}
 		})
 	}
@@ -2399,7 +2409,8 @@ func TestAgentModeIsNotASelector(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := selectAgenticEngine(
 				resolveReasoningLevel(tc.kwargs, map[string]interface{}(chat.PromptConfig)),
-				true)
+				true,
+				false)
 			if got != tc.want {
 				t.Errorf("dispatch = %q, want %q", got, tc.want)
 			}

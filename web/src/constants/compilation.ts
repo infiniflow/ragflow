@@ -17,6 +17,8 @@
 export const enum CompilationTemplateKind {
   Artifacts = 'wiki',
   KnowledgeGraph = 'knowledge_graph',
+  /** Class-level ontology: classes are nodes, properties are domain→range edges. */
+  Ontology = 'ontology',
   PageIndex = 'page_index',
   Tree = 'tree',
   Empty = 'empty',

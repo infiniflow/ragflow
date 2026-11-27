@@ -6,6 +6,8 @@ import {
   findEntityDisplayNameByKeyword,
   getEntityDisplayName,
 } from '@/components/structure-graph/adapters';
+import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
+import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
 import {
   useGenerateStatus,
@@ -125,6 +127,17 @@ export function DatasetStructureView({
   return (
     <CompilationViewLayout {...viewProps}>
       <div className="flex-1 min-h-0 flex flex-col">
+        {kind === ViewMode.Ontology && (
+          // The ontology's numbers are page-level information, so they are laid
+          // out here rather than floated over the canvas. Shrunk-to-content: the
+          // canvas row below is `flex-1`, so nothing here may grow.
+          <div className="flex shrink-0 flex-col gap-2 px-4 pt-3">
+            <OntologyStats graph={template?.ontology} />
+            {/* The ledger sits next to the totals: the totals say what the scope
+                contains, the ledger says what still has to be fixed. */}
+            <OntologyQualityPanel graph={template?.ontology} />
+          </div>
+        )}
         <div className="flex justify-between gap-4 px-4 pt-4">
           {kind === ViewMode.Graph && (
             <SelectWithSearch
@@ -145,6 +158,10 @@ export function DatasetStructureView({
           highlightNodeId={selectedEntityName || null}
           totalEntities={data?.total_entities}
           returnedEntities={data?.returned_entities}
+          // The ontology ABox reads the index directly, so it needs the scope
+          // the page is already showing.
+          datasetId={knowledgeBaseId}
+          templateId={template?.template_id}
         />
       </div>
     </CompilationViewLayout>
