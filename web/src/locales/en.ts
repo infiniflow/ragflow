@@ -2883,6 +2883,9 @@ Example: Virtual Hosted Style`,
       includeHeadingContent: 'Separate parent-heading content',
       includeHeadingContentTip:
         'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',
+      chunkTokenCap: 'Chunk token cap',
+      chunkTokenCapTip:
+        'Maximum tokens per text chunk. Chunks exceeding the cap are re-split on sentence boundaries; boundary-less runs are hard-split. Tables and images are not split.',
       rootAsHeading: 'Set first chunk as global context',
       rootAsHeadingTip:
         'Treats the first split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',

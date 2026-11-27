@@ -918,13 +918,11 @@ func convertIngestionChunkTokenNum(config map[string]any, target builtinIngestio
 		}
 		writes.set(target.chunkerNode, "chunk_token_size", size)
 	case "TitleChunker":
-		// Known semantic difference: Python used chunk_token_num as the merge
-		// target of rag/app/{book,laws,paper}.py while Go's chunk_token_cap is a
-		// hard ceiling on an emitted chunk. 0 disables the ceiling in Go, which
-		// is what Python's "no cap" guard did, so it carries over; a non-zero
-		// value must be inside the range the chunker accepts or the component
-		// would refuse to build.
-		if size != 0 && (size < 128 || size > 8000) {
+		// Python's chunk_token_num was a naive_merge target; Go's
+		// chunk_token_cap is a hard ceiling. Values outside the accepted range,
+		// including 0, are not valid caps in Go, so drop the setting and keep
+		// the template default (512).
+		if size < 128 || size > 8000 {
 			row.retire("chunk_token_num", fmt.Sprintf("%d is outside the title chunker's accepted 128..8000 range", size))
 			return
 		}

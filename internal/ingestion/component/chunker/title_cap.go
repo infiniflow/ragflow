@@ -150,7 +150,8 @@ func hardSplitByTokens(text string, cap int) []string {
 
 // enforceTitleTokenCap applies the hard token ceiling to every text chunk
 // after build_chunks. Mirrors BaseTitleChunker._enforce_token_cap
-//   - cap <= 0 disables the ceiling (chunks returned unchanged);
+//   - cap <= 0 disables the ceiling (chunks returned unchanged); ManualChunker
+//     passes 0 explicitly, while TitleChunker validation requires 128..8000;
 //   - non-text chunks (table/image) are atomic and skipped;
 //   - a text chunk already within cap is kept;
 //   - an over-cap text chunk is re-split via splitTitleChunkByCap.
