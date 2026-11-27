@@ -640,7 +640,12 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// around it across item boundaries. Attaching per upstream item instead
 	// leaves every media chunk without neighbours, because one item rarely
 	// yields more than one chunk.
-	flat := flatten(perItem)
+	var flat []schema.ChunkDoc
+	if customDelim && hasActiveDelimiter(delimPattern) {
+		flat = mergeCustomDelimiterItems(items, perItem, delimPattern)
+	} else {
+		flat = flatten(perItem)
+	}
 	// perItem is no longer needed once flattened: drop the [][]ChunkDoc
 	// scaffolding (its sub-slice backing arrays) so it can be collected. The
 	// ChunkDoc values now live solely in flat.
@@ -755,6 +760,99 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 // JSON-payload internals
 // ---------------------------------------------------------------------------
 
+// Parser item boundaries separate paragraphs; custom delimiters separate chunks.
+func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+	var out []schema.ChunkDoc
+	var pending *schema.ChunkDoc
+	var textBuilder strings.Builder
+	flush := func() {
+		if pending != nil {
+			pending.Text = textBuilder.String()
+			pending.TKNums = intPtr(tokenizeStr(pending.Text))
+			out = append(out, *pending)
+			pending = nil
+			textBuilder.Reset()
+		}
+	}
+	for i, pieces := range perItem {
+		if itemDocType(items[i]) != "text" {
+			flush()
+			out = append(out, pieces...)
+			continue
+		}
+		text := itemTextOrFallback(items[i])
+		matches := pattern.FindAllStringIndex(text, -1)
+		if len(matches) > 0 && strings.TrimSpace(text[:matches[0][0]]) == "" {
+			flush()
+		}
+		for j, piece := range pieces {
+			if j > 0 {
+				flush()
+			}
+			if pending != nil {
+				separator := ""
+				text := textBuilder.String()
+				if !strings.HasSuffix(text, "\n") && !strings.HasPrefix(piece.Text, "\n") {
+					separator = "\n"
+				}
+				if pattern.MatchString(separator) || !mergeChunkMetadata(pending, piece) {
+					flush()
+				} else {
+					textBuilder.WriteString(separator)
+					textBuilder.WriteString(piece.Text)
+					if len(piece.PDFPositions) > 0 {
+						pending.PDFPositions = extendRawJSONArray(pending.PDFPositions, piece.PDFPositions)
+					}
+					if len(piece.Positions) > 0 {
+						pending.Positions = extendRawJSONArray(pending.Positions, piece.Positions)
+					}
+					continue
+				}
+			}
+			pending = &piece
+			textBuilder.WriteString(piece.Text)
+		}
+		if len(matches) > 0 && strings.TrimSpace(text[matches[len(matches)-1][1]:]) == "" {
+			flush()
+		}
+	}
+	flush()
+	return out
+}
+
+func mergeChunkMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) bool {
+	// Conflicting scalar metadata needs separate chunks to remain representable.
+	if (dst.PageNumber != nil && src.PageNumber != nil && *dst.PageNumber != *src.PageNumber) ||
+		(dst.SheetIndex != nil && src.SheetIndex != nil && *dst.SheetIndex != *src.SheetIndex) ||
+		(dst.MediaRef != nil && src.MediaRef != nil && *dst.MediaRef != *src.MediaRef) {
+		return false
+	}
+	for _, pair := range [][2]string{
+		{dst.Layout, src.Layout}, {dst.LayoutType, src.LayoutType}, {dst.LayoutNo, src.LayoutNo},
+		{dst.Sheet, src.Sheet}, {dst.Mom, src.Mom}, {dst.ImgID, src.ImgID}, {dst.Image, src.Image},
+	} {
+		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
+			return false
+		}
+	}
+	for key, value := range src.Extra {
+		if existing, ok := dst.Extra[key]; ok && string(existing) != string(value) {
+			return false
+		}
+	}
+	mergeGeneralMetadata(dst, src)
+	if dst.Mom == "" {
+		dst.Mom = src.Mom
+	}
+	if dst.Sheet == "" {
+		dst.Sheet = src.Sheet
+	}
+	if dst.SheetIndex == nil {
+		dst.SheetIndex = src.SheetIndex
+	}
+	return true
+}
+
 func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
 	var previous *schema.ChunkDoc
 	for i := range perItem {
@@ -802,6 +900,9 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	}
 	kept := foldWhitespaceSegments(parts)
 	if len(kept) == 0 {
+		if !keepDelim {
+			return nil
+		}
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
 	// If the item carries PDF positions, slice them proportionally so each
