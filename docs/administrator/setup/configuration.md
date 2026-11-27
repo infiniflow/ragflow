@@ -220,7 +220,7 @@ s3:
 
 ### `S3` (other S3-compatible services)
 
-For an S3-compatible service with regional endpoints, use the same `general.storage_engine: s3` and `STORAGE_IMPL=AWS_S3` settings, and set `region_name` to the region of the endpoint:
+For an S3-compatible service with regional endpoints (for example, Backblaze B2, DigitalOcean Spaces, or Wasabi), use the same `general.storage_engine: s3` and `STORAGE_IMPL=AWS_S3` settings, and set `region_name` to the region of the endpoint:
 
 ```yaml
 s3:
