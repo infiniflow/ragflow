@@ -19,20 +19,16 @@ package infinity
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/utility"
+	"ragflow/internal/engine/tablequery"
 
 	"go.uber.org/zap"
 )
@@ -44,215 +40,7 @@ const (
 	defaultPsqlPort = "5432"
 )
 
-var whitespaceRe = regexp.MustCompile("[ `]+")
-
 var rowCountFooterRe = regexp.MustCompile(`^\(\d+ rows?`)
-
-var selectClauseRe = regexp.MustCompile(`(?si)(select\s+)(.+?)(\s+from\b)`)
-
-// Alias patterns are pure functions of the alias string, so they are compiled
-// once per alias and reused across every RunSQL call.
-var (
-	aliasBoundaryRegexCache sync.Map
-	aliasWordRegexCache     sync.Map
-	keywordRegexCache       sync.Map
-)
-
-func cachedKeywordRegex(keyword string) *regexp.Regexp {
-	if cached, ok := keywordRegexCache.Load(keyword); ok {
-		return cached.(*regexp.Regexp)
-	}
-	compiled := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(keyword) + `\b`)
-	actual, _ := keywordRegexCache.LoadOrStore(keyword, compiled)
-	return actual.(*regexp.Regexp)
-}
-
-func cachedAliasBoundaryRegex(alias string) *regexp.Regexp {
-	if cached, ok := aliasBoundaryRegexCache.Load(alias); ok {
-		return cached.(*regexp.Regexp)
-	}
-	compiled := regexp.MustCompile(`(^|[,\s])` + regexp.QuoteMeta(alias) + `($|[,\s])`)
-	actual, _ := aliasBoundaryRegexCache.LoadOrStore(alias, compiled)
-	return actual.(*regexp.Regexp)
-}
-
-func cachedAliasWordRegex(alias string) *regexp.Regexp {
-	if cached, ok := aliasWordRegexCache.Load(alias); ok {
-		return cached.(*regexp.Regexp)
-	}
-	compiled := regexp.MustCompile(`\b` + regexp.QuoteMeta(alias) + `\b`)
-	actual, _ := aliasWordRegexCache.LoadOrStore(alias, compiled)
-	return actual.(*regexp.Regexp)
-}
-
-// fieldMappingEntry is one entry in infinity_mapping.json.
-type fieldMappingEntry struct {
-	Type    string `json:"type"`
-	Comment string `json:"comment"`
-}
-
-// fieldMappingCacheEntry is the parsed result reused across RunSQL calls.
-// The file fingerprint keeps the runtime-reload behavior the baseline had:
-// a replaced or edited mapping file must be picked up on the next query.
-type fieldMappingCacheEntry struct {
-	aliasToActual      map[string]string
-	actualToFirstAlias map[string]string
-	modTime            time.Time
-	size               int64
-}
-
-// fieldMappingCache is keyed by the resolved mapping file path, so two
-// projects with the same file name never share an entry.
-var fieldMappingCache sync.Map
-
-// fieldMappingGeneration detects an invalidation that lands while a cold load
-// is reading the file; such a load must not republish the old mapping.
-var fieldMappingGeneration atomic.Uint64
-
-// readFieldMappingFile is an indirection so tests can interleave a file
-// replacement or an invalidation with the read.
-var readFieldMappingFile = os.ReadFile
-
-// InvalidateFieldMapping drops all cached field mappings. Call after a mapping
-// file is replaced at runtime, or in tests that rewrite the fixture in place.
-func InvalidateFieldMapping() {
-	fieldMappingGeneration.Add(1)
-	fieldMappingCache.Range(func(key, _ any) bool {
-		fieldMappingCache.Delete(key)
-		return true
-	})
-}
-
-// loadFieldMapping reads infinity_mapping.json and returns alias→actual
-// and actual→firstAlias maps. Silently returns empty maps on missing file.
-// Parsed results are cached per resolved file path because RunSQL calls this
-// on every query.
-func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, actualToFirstAlias map[string]string, err error) {
-	if mappingFileName == "" {
-		mappingFileName = "infinity_mapping.json"
-	}
-
-	filePath, err := utility.FindConfFileInProject(mappingFileName)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Stat is cheap compared with ReadFile + Unmarshal. The pre-read fingerprint
-	// describes the bytes we are about to parse and is the only one we publish.
-	preInfo, preStatErr := os.Stat(*filePath)
-	if preStatErr == nil {
-		if cached, ok := fieldMappingCache.Load(*filePath); ok {
-			cachedEntry := cached.(fieldMappingCacheEntry)
-			if cachedEntry.modTime.Equal(preInfo.ModTime()) && cachedEntry.size == preInfo.Size() {
-				return cachedEntry.aliasToActual, cachedEntry.actualToFirstAlias, nil
-			}
-		}
-	}
-	generation := fieldMappingGeneration.Load()
-
-	data, err := readFieldMappingFile(*filePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]string{}, map[string]string{}, nil
-		}
-		return nil, nil, fmt.Errorf("load field mapping %q: %w", *filePath, err)
-	}
-
-	fields := map[string]fieldMappingEntry{}
-	if err = json.Unmarshal(data, &fields); err != nil {
-		return nil, nil, fmt.Errorf("parse field mapping %q: %w", *filePath, err)
-	}
-
-	aliasToActual = make(map[string]string, len(fields)*2)
-	actualToFirstAlias = make(map[string]string, len(fields))
-	for actual, info := range fields {
-		if info.Comment == "" {
-			continue
-		}
-		var firstAlias string
-		for raw := range strings.SplitSeq(info.Comment, ",") {
-			alias := strings.TrimSpace(raw)
-			if alias == "" {
-				continue
-			}
-			aliasToActual[alias] = actual
-			if firstAlias == "" {
-				firstAlias = alias
-			}
-		}
-		if firstAlias != "" {
-			actualToFirstAlias[actual] = firstAlias
-		}
-	}
-	// Publish only when the file was unchanged across the read and no
-	// invalidation landed in between. Otherwise the parsed bytes describe a
-	// file state that is no longer current.
-	if preStatErr == nil && fieldMappingGeneration.Load() == generation {
-		if postInfo, postStatErr := os.Stat(*filePath); postStatErr == nil &&
-			postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
-			fieldMappingCache.Store(*filePath, fieldMappingCacheEntry{
-				aliasToActual:      aliasToActual,
-				actualToFirstAlias: actualToFirstAlias,
-				modTime:            preInfo.ModTime(),
-				size:               preInfo.Size(),
-			})
-		}
-	}
-	return aliasToActual, actualToFirstAlias, nil
-}
-
-// preprocessSQL collapses spaces/backticks and strips '%'.
-func preprocessSQL(sql string) string {
-	sql = whitespaceRe.ReplaceAllString(sql, " ")
-	sql = strings.ReplaceAll(sql, "%", "")
-	return sql
-}
-
-// rewriteFieldAliases rewrites alias field names to actual stored names
-// in SELECT, WHERE, ORDER BY, GROUP BY, and HAVING clauses.
-func rewriteFieldAliases(sql string, aliasToActual map[string]string) string {
-	if len(aliasToActual) == 0 {
-		return sql
-	}
-	sql = selectClauseRe.ReplaceAllStringFunc(sql, func(m string) string {
-		parts := selectClauseRe.FindStringSubmatch(m)
-		prefix, cols, suffix := parts[1], parts[2], parts[3]
-		for alias, actual := range aliasToActual {
-			cols = cachedAliasBoundaryRegex(alias).ReplaceAllString(cols, "${1}"+actual+"${2}")
-		}
-		return prefix + cols + suffix
-	})
-
-	clauseAliases := func(sql, keyword string) string {
-		return rewriteFirstAliasAfterKeyword(sql, keyword, aliasToActual)
-	}
-	sql = clauseAliases(sql, "where")
-	sql = clauseAliases(sql, "order by")
-	sql = clauseAliases(sql, "group by")
-	sql = clauseAliases(sql, "having")
-	return sql
-}
-
-func rewriteFirstAliasAfterKeyword(sql, keyword string, aliasToActual map[string]string) string {
-	// The keyword pattern is identical for every alias in this clause; compile
-	// it once instead of once per alias.
-	kwIdx := cachedKeywordRegex(keyword).FindStringIndex(sql)
-	if kwIdx == nil {
-		return sql
-	}
-	for alias, actual := range aliasToActual {
-		aliasPat := cachedAliasWordRegex(alias)
-		tail := sql[kwIdx[1]:]
-		aliasIdx := aliasPat.FindStringIndex(tail)
-		if aliasIdx == nil {
-			continue
-		}
-		absStart := kwIdx[1] + aliasIdx[0]
-		absEnd := kwIdx[1] + aliasIdx[1]
-		sql = sql[:absStart] + actual + sql[absEnd:]
-	}
-	return sql
-}
 
 // psqlResult is the structured parse of a psql table-format output.
 type psqlResult struct {
@@ -260,8 +48,31 @@ type psqlResult struct {
 	Rows    [][]string
 }
 
+// assertSafePsqlSelect enforces defense-in-depth before invoking psql: only a
+// single-line SELECT statement without semicolons or psql meta-commands may be
+// executed.
+func assertSafePsqlSelect(sqlText string) error {
+	trimmed := strings.TrimSpace(sqlText)
+	if trimmed == "" {
+		return fmt.Errorf("infinity ExecuteTableQuery: empty SQL")
+	}
+	if !strings.HasPrefix(strings.ToUpper(trimmed), "SELECT ") {
+		return fmt.Errorf("infinity ExecuteTableQuery: only SELECT statements are allowed")
+	}
+	if strings.ContainsAny(trimmed, ";\r\n") {
+		return fmt.Errorf("infinity ExecuteTableQuery: multi-statement or multiline SQL is not allowed")
+	}
+	if strings.HasPrefix(trimmed, `\`) {
+		return fmt.Errorf("infinity ExecuteTableQuery: psql meta-commands are not allowed")
+	}
+	return nil
+}
+
 // runPsql shells out to psql and parses the table-format output.
 func runPsql(ctx context.Context, host, port, sql string) (*psqlResult, error) {
+	if err := assertSafePsqlSelect(sql); err != nil {
+		return nil, err
+	}
 	psqlPath, err := findPsqlBinary()
 	if err != nil {
 		return nil, err
@@ -384,31 +195,25 @@ func resolvePsqlHostPort(hostURI string, postgresPort int) (host, port string) {
 	return host, port
 }
 
-// RunSQL implements the SQL retrieval path: preprocess, rewrite aliases,
-// run psql subprocess, parse output.
-func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[string]interface{}, error) {
+// ExecuteTableQuery compiles a validated single-dataset TableQuery into
+// Infinity SQL, verifies the single-SELECT psql guard, runs psql, and maps
+// rows.
+func (e *Engine) ExecuteTableQuery(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
-		return nil, fmt.Errorf("infinity RunSQL: client not initialized")
+		return nil, fmt.Errorf("infinity ExecuteTableQuery: client not initialized")
 	}
-	sqlText = strings.TrimSpace(sqlText)
-	if sqlText == "" {
-		return nil, fmt.Errorf("infinity RunSQL: empty SQL")
-	}
-
-	common.Debug("InfinityConnection.sql get sql", zap.String("sql", sqlText))
-
-	sqlText = preprocessSQL(sqlText)
-
-	aliasMap, _, err := loadFieldMapping(e.client.mappingFileName)
+	compiled, err := tablequery.Compile(query, tablequery.DialectInfinity)
 	if err != nil {
-		return nil, fmt.Errorf("infinity RunSQL: %w", err)
+		return nil, fmt.Errorf("infinity ExecuteTableQuery: %w", err)
 	}
-	sqlText = rewriteFieldAliases(sqlText, aliasMap)
+	if err := assertSafePsqlSelect(compiled.SQL); err != nil {
+		return nil, err
+	}
 
-	common.Debug("InfinityConnection.sql to execute", zap.String("sql", sqlText))
+	common.Debug("InfinityConnection.sql to execute", zap.String("sql", compiled.SQL))
 
 	host, port := resolvePsqlHostPort(e.client.hostURI, e.client.postgresPort)
-	res, err := runPsql(ctx, host, port, sqlText)
+	res, err := runPsql(ctx, host, port, compiled.SQL)
 	if err != nil {
 		return nil, err
 	}

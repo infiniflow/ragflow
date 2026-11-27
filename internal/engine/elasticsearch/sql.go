@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/internal/esoscommon"
+	"ragflow/internal/engine/tablequery"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
@@ -39,23 +40,30 @@ const (
 const esSQLRetryAttempts = 2
 const esSQLRetryDelay = 3 * time.Second
 
-// RunSQL posts SQL to `/_sql`, translates the response into chunk-shaped maps.
-// Returns (nil, nil) on empty rows; (nil, error) when retries exhausted.
-func (e *Engine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
+// ExecuteTableQuery compiles a validated TableQuery into read-only Elasticsearch
+// SQL, posts it to `/_sql`, and translates the response into row maps.
+// Returns (nil, nil) on empty rows; (nil, error) on validation or query failure.
+func (e *Engine) ExecuteTableQuery(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
-		return nil, fmt.Errorf("Elasticsearch RunSQL: client not initialized")
+		return nil, fmt.Errorf("Elasticsearch ExecuteTableQuery: client not initialized")
 	}
+	compiled, err := tablequery.Compile(query, tablequery.DialectElasticsearch)
+	if err != nil {
+		return nil, fmt.Errorf("Elasticsearch ExecuteTableQuery: %w", err)
+	}
+	return e.runCompiledSQL(ctx, compiled.SQL)
+}
+
+func (e *Engine) runCompiledSQL(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
 	if sqlText == "" {
-		return nil, fmt.Errorf("Elasticsearch RunSQL: empty SQL")
+		return nil, fmt.Errorf("Elasticsearch ExecuteTableQuery: empty SQL")
 	}
 
-	common.Debug("ESConnection.sql get sql", zap.String("sql", sqlText))
-	sqlText = esoscommon.PreprocessSQL(sqlText)
 	common.Debug("ESConnection.sql to es", zap.String("sql", sqlText))
 
 	var lastErr error
 	for attempt := 0; attempt < esSQLRetryAttempts; attempt++ {
-		rows, err := e.runSQLOnce(ctx, sqlText, format)
+		rows, err := e.runSQLOnce(ctx, sqlText, "json")
 		if err == nil {
 			return rows, nil
 		}
@@ -79,7 +87,7 @@ func (e *Engine) RunSQL(ctx context.Context, sqlText string, format string) ([]m
 		}
 	}
 	common.Error(fmt.Sprintf("ESConnection.sql timeout after %d attempts. SQL: %s", esSQLRetryAttempts, sqlText), lastErr)
-	return nil, fmt.Errorf("Elasticsearch RunSQL: timeout after %d attempts: %w", esSQLRetryAttempts, lastErr)
+	return nil, fmt.Errorf("Elasticsearch ExecuteTableQuery: timeout after %d attempts: %w", esSQLRetryAttempts, lastErr)
 }
 
 func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {

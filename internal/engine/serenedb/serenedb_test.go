@@ -28,6 +28,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
 )
@@ -389,84 +390,57 @@ func TestParseMatchExprs(t *testing.T) {
 	}
 }
 
-func TestBoundRunSQL(t *testing.T) {
-	if got, err := boundRunSQL("SELECT * FROM t;", 1024); err != nil || got != "SELECT * FROM t\nLIMIT 1024" {
-		t.Errorf("bound = %q, error = %v", got, err)
-	}
-	if got, err := boundRunSQL("SELECT * FROM t LIMIT 5", 1024); err != nil || got != "SELECT * FROM t LIMIT 5" {
-		t.Errorf("existing limit must be kept: %q, error = %v", got, err)
-	}
-	if _, err := boundRunSQL("UPDATE t SET x=1", 1024); err == nil {
-		t.Error("UPDATE should be rejected")
-	}
-	if _, err := boundRunSQL("WITH changed AS (DELETE FROM t RETURNING id) SELECT * FROM changed", 1024); err == nil {
-		t.Error("data-modifying CTE should be rejected")
-	}
-	if _, err := boundRunSQL("SELECT 1; DROP TABLE t", 1024); err == nil {
-		t.Error("multiple statements should be rejected")
-	}
-	if _, err := boundRunSQL("SELECT 1 --\r; DROP TABLE t", 1024); err == nil {
-		t.Error("CR-terminated comment must not hide a second statement")
-	}
-	if _, err := boundRunSQL(`SELECT E'\'' ; DROP TABLE t; --'`, 1024); err == nil {
-		t.Error("backslash escape in E string must not hide a second statement")
-	}
-	if _, err := boundRunSQL("SELECT 'x\\'; DROP TABLE t; --'", 1024); err == nil {
-		t.Error("ambiguous backslash escape in a plain string must be rejected")
-	}
-	if got, err := boundRunSQL("SELECT 'UPDATE; DROP'; -- ignored trailing comment", 1024); err != nil || got != "SELECT 'UPDATE; DROP'\nLIMIT 1024" {
-		t.Errorf("quoted commands should not be interpreted as SQL: %q, error = %v", got, err)
-	}
-	if got, err := boundRunSQL("SELECT * FROM t -- trailing comment", 1024); err != nil || got != "SELECT * FROM t -- trailing comment\nLIMIT 1024" {
-		t.Errorf("limit should follow a trailing line comment: %q, error = %v", got, err)
-	}
-}
-
-func TestRunSQLRejectsMutationStatementsBeforeExecution(t *testing.T) {
-	for _, query := range []string{
-		"DROP TABLE chunks",
-		"UPDATE chunks SET content = 'changed'",
-		"SELECT 1 INTO chunks",
-		"WITH changed AS (DELETE FROM chunks RETURNING id) SELECT * FROM changed",
-		"SELECT 1; DROP TABLE chunks",
-	} {
-		t.Run(query, func(t *testing.T) {
-			db, _, err := sqlmock.New()
-			if err != nil {
-				t.Fatalf("sqlmock.New: %v", err)
-			}
-			defer db.Close()
-
-			engine := &serenedbEngine{db: db}
-			_, err = engine.RunSQL(context.Background(), query, "json")
-			if err == nil {
-				t.Fatalf("RunSQL(%q) error = %v, want read-only SELECT rejection before query execution", query, err)
-			}
-			if !strings.Contains(err.Error(), "only read-only SELECT statements") && !strings.Contains(err.Error(), "multiple SQL statements are not allowed") {
-				t.Fatalf("RunSQL(%q) error = %v, want read-only SELECT rejection before query execution", query, err)
-			}
-		})
-	}
-}
-
-func TestRunSQLUsesReadOnlyTransaction(t *testing.T) {
+func TestExecuteTableQueryUsesReadOnlyTransaction(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
 	}
 	defer db.Close()
 
+	const kbID = "11111111-1111-1111-1111-111111111111"
+	vq, err := tablequery.Validate(tablequery.Scope{
+		TenantID:  "t1",
+		TableName: "ragflow_t1",
+		KBIDs:     []string{kbID},
+		Fields:    tablequery.FieldsFromFieldMap(map[string]interface{}{"title": "Title"}),
+	}, tablequery.Query{
+		Select: []string{"title"},
+		Where:  &tablequery.FilterNode{Field: "title", Op: tablequery.OpEq, Value: "hello"},
+	}, true)
+	if err != nil {
+		t.Fatalf("tablequery.Validate: %v", err)
+	}
+
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT 1\nLIMIT 1024")).WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(1))
+	mock.ExpectQuery(regexp.QuoteMeta(
+		`SELECT "doc_id", "docnm_kwd", "title" FROM "ragflow_t1" WHERE ("title" = $1) AND ("kb_id" = $2) LIMIT 1024`)).
+		WithArgs("hello", kbID).
+		WillReturnRows(sqlmock.NewRows([]string{"doc_id", "docnm_kwd", "title"}).AddRow("d1", "doc.xlsx", "hello"))
 	mock.ExpectCommit()
 
 	engine := &serenedbEngine{db: db}
-	rows, err := engine.RunSQL(context.Background(), "SELECT 1", "json")
+	rows, err := engine.ExecuteTableQuery(context.Background(), vq)
 	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
+		t.Fatalf("ExecuteTableQuery: %v", err)
 	}
-	if len(rows) != 1 || rows[0]["value"] != int64(1) {
-		t.Fatalf("RunSQL rows = %#v", rows)
+	if len(rows) != 1 || rows[0]["doc_id"] != "d1" || rows[0]["title"] != "hello" {
+		t.Fatalf("ExecuteTableQuery rows = %#v", rows)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
+	}
+}
+
+func TestExecuteTableQueryRejectsNilQuery(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	engine := &serenedbEngine{db: db}
+	if _, err := engine.ExecuteTableQuery(context.Background(), nil); err == nil {
+		t.Fatal("expected error for nil ValidatedQuery")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("SQL expectations: %v", err)

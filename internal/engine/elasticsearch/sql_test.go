@@ -28,13 +28,36 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/tokenizer"
 
 	"github.com/elastic/go-elasticsearch/v8"
 )
 
-// capturedRequest holds the request body the test server saw, for
-// assertions.
+const testKBID = "11111111-1111-1111-1111-111111111111"
+
+func sampleValidatedQuery(t *testing.T) *tablequery.ValidatedQuery {
+	t.Helper()
+	scope := tablequery.Scope{
+		TenantID:  "t1",
+		TableName: "ragflow_t1",
+		KBIDs:     []string{testKBID},
+		Fields: tablequery.FieldsFromFieldMap(map[string]interface{}{
+			"title_tks": "Title",
+			"count":     "Count (int)",
+		}),
+	}
+	vq, err := tablequery.Validate(scope, tablequery.Query{
+		Select: []string{"title_tks", "count"},
+		Where:  &tablequery.FilterNode{Field: "count", Op: tablequery.OpGt, Value: 0},
+	}, true)
+	if err != nil {
+		t.Fatalf("tablequery.Validate: %v", err)
+	}
+	return vq
+}
+
+// capturedRequest holds the request body the test server saw, for assertions.
 type capturedRequest struct {
 	mu     sync.Mutex
 	path   string
@@ -42,8 +65,6 @@ type capturedRequest struct {
 	method string
 }
 
-// newCapturingServer returns an httptest.Server that captures each
-// incoming request and replies with the given body / status.
 func newCapturingServer(t *testing.T, replyStatus int, replyBody string) (*httptest.Server, *capturedRequest) {
 	t.Helper()
 	capRequest := &capturedRequest{}
@@ -62,9 +83,6 @@ func newCapturingServer(t *testing.T, replyStatus int, replyBody string) (*httpt
 	return srv, capRequest
 }
 
-// newTestEngine constructs an Engine pointing at the given
-// test server. Bypasses NewEngine (which calls ES Info to verify
-// connectivity) — the test server is a stub, not a real ES cluster.
 func newTestEngine(t *testing.T, srvURL string) *Engine {
 	t.Helper()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
@@ -79,7 +97,7 @@ func newTestEngine(t *testing.T, srvURL string) *Engine {
 const sampleESResponse = `{
   "columns": [
     {"name": "doc_id", "type": "text"},
-    {"name": "docnm", "type": "text"},
+    {"name": "docnm_kwd", "type": "text"},
     {"name": "count", "type": "long"}
   ],
   "rows": [
@@ -88,89 +106,52 @@ const sampleESResponse = `{
   ]
 }`
 
-// TestRunSQL_NoFilterAdded verifies the request body is exactly
-// {"query": <sql>} — the redundant `filter` field that the previous
-// implementation added is gone. (service.addKBFilter is the source of
-// truth for kb_id scoping upstream of RunSQL.)
-func TestRunSQL_NoFilterAdded(t *testing.T) {
+func TestExecuteTableQuery_CompilesScopedQueryAndPostsToSQL(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
 
-	rows, err := e.RunSQL(ctx, "SELECT doc_id FROM ragflow_t1", "json")
+	rows, err := e.ExecuteTableQuery(ctx, sampleValidatedQuery(t))
 	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
+		t.Fatalf("ExecuteTableQuery: %v", err)
 	}
 	if len(rows) != 2 {
 		t.Fatalf("rows: got %d, want 2", len(rows))
 	}
 	cap.mu.Lock()
-	got := cap.body
+	gotPath := cap.path
+	gotBody := cap.body
 	cap.mu.Unlock()
 
+	if gotPath != "/_sql" {
+		t.Errorf("path: got %q, want /_sql", gotPath)
+	}
+
 	var body map[string]interface{}
-	if err := json.Unmarshal([]byte(got), &body); err != nil {
-		t.Fatalf("body is not JSON: %v\nbody=%q", err, got)
+	if err := json.Unmarshal([]byte(gotBody), &body); err != nil {
+		t.Fatalf("body is not JSON: %v\nbody=%q", err, gotBody)
 	}
 	if _, has := body["filter"]; has {
-		t.Errorf("RunSQL request must NOT include top-level filter (addKBFilter is the source of truth upstream). body=%v", body)
+		t.Errorf("request must not include top-level filter; body=%v", body)
 	}
-	if _, has := body["query"]; !has {
-		t.Errorf("RunSQL request must include query. body=%v", body)
-	}
-}
-
-// TestRunSQL_WhitespaceNormalizedAndPercentStripped verifies the Python
-// preprocessing step `re.sub(r"[ `]+", " ", sql)` + `sql.replace("%", "")`
-// is applied. Without these, the LLM-generated SQL with stray backticks
-// or `%` characters (e.g. from JSON decoding glitches) would fail to
-// parse in ES.
-func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
-	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
-	e := newTestEngine(t, srv.URL)
-	ctx := t.Context()
-
-	// Input SQL has multiple backticks/spaces and trailing % characters.
-	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(ctx, in, "json")
-	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
-	}
-	cap.mu.Lock()
-	got := cap.body
-	cap.mu.Unlock()
-
-	var body map[string]interface{}
-	if err := json.Unmarshal([]byte(got), &body); err != nil {
-		t.Fatalf("body is not JSON: %v\nbody=%q", err, got)
+	if fmt.Sprint(body["fetch_size"]) != "128" {
+		t.Errorf("fetch_size: got %v, want 128", body["fetch_size"])
 	}
 	q, _ := body["query"].(string)
-	if strings.Contains(q, "  ") {
-		t.Errorf("query still has multiple spaces (whitespace not normalized): %q", q)
-	}
-	if strings.Contains(q, "`") {
-		t.Errorf("query still has backticks (whitespace+backtick regex not applied): %q", q)
-	}
-	if strings.Contains(q, "%") {
-		t.Errorf("query still has %% (percent strip not applied): %q", q)
+	if !strings.Contains(q, "FROM ragflow_t1 WHERE (count > 0) AND (kb_id = '"+testKBID+"')") {
+		t.Errorf("unexpected compiled query: %q", q)
 	}
 }
 
-// TestRunSQL_PerAttemptTimeout verifies the derived context has a 2s
-// deadline. We send a hanging response from the test server and assert
-// the call returns well before 30s (the Go ES client's default
-// transport-level timeout). With the retry loop in place, the total
-// time is 2s (first attempt) + 3s (sleep) + 2s (second attempt) = ~7s.
-//
-// The load-bearing assertion is the LOWER bound on elapsed wall-clock
-// time: it proves the timeout actually fired AND a retry was issued
-// (a single attempt that bailed at 2s would fail the lower bound). The
-// UPPER bound is a regression guard against a hang; rather than a
-// fragile absolute threshold, we use a generous outer-context budget
-// (15s) and a watchdog. The error message check is the contract-level
-// assertion ("timeout after 2 attempts") that the retry path produced
-// the right error.
-func TestRunSQL_PerAttemptTimeout(t *testing.T) {
+func TestExecuteTableQuery_RejectsNilQuery(t *testing.T) {
+	srv, _ := newCapturingServer(t, http.StatusOK, sampleESResponse)
+	e := newTestEngine(t, srv.URL)
+	if _, err := e.ExecuteTableQuery(t.Context(), nil); err == nil {
+		t.Fatal("expected error for nil ValidatedQuery")
+	}
+}
+
+func TestExecuteTableQuery_PerAttemptTimeout(t *testing.T) {
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-hang
@@ -181,10 +162,6 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	})
 	e := newTestEngine(t, srv.URL)
 
-	// 15s outer budget — well above the expected ~7s. If this fires,
-	// the retry loop or the timeout is broken; the test will report
-	// a clear "did not return within 15s" message rather than a
-	// fragile absolute wall-clock assertion.
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
@@ -195,34 +172,27 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		start := time.Now()
-		_, err := e.RunSQL(ctx, "SELECT 1", "json")
+		_, err := e.ExecuteTableQuery(ctx, sampleValidatedQuery(t))
 		done <- result{elapsed: time.Since(start), err: err}
 	}()
 
 	select {
 	case r := <-done:
 		if r.err == nil {
-			t.Fatalf("RunSQL: got nil error, want timeout error")
+			t.Fatalf("ExecuteTableQuery: got nil error, want timeout error")
 		}
-		// 2s + 3s + 2s = 7s. Lower bound proves both attempts fired
-		// AND the retry was scheduled. A constant-delay or single-attempt
-		// regression would slip below this.
 		if r.elapsed < 6*time.Second {
-			t.Errorf("RunSQL returned in %s; expected ~7s (2 attempts + 3s sleep)", r.elapsed)
+			t.Errorf("ExecuteTableQuery returned in %s; expected ~7s (2 attempts + 3s sleep)", r.elapsed)
 		}
 		if !strings.Contains(r.err.Error(), "timeout after 2 attempts") {
 			t.Errorf("err: got %q, want substring %q", r.err.Error(), "timeout after 2 attempts")
 		}
 	case <-time.After(20 * time.Second):
-		t.Fatal("RunSQL did not return within 15s — suspected hang in retry/timeout chain")
+		t.Fatal("ExecuteTableQuery did not return within 15s — suspected hang in retry/timeout chain")
 	}
 }
 
-// TestRunSQL_RetryOnTimeoutThenSucceed simulates Python's
-// ConnectionTimeout-retry pattern: the first attempt times out, the
-// second attempt returns valid rows. The loop should silently retry
-// and return the rows.
-func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
+func TestExecuteTableQuery_RetryOnTimeoutThenSucceed(t *testing.T) {
 	var (
 		mu    sync.Mutex
 		calls int
@@ -234,7 +204,6 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 		attempt := calls
 		mu.Unlock()
 		if attempt == 1 {
-			// First attempt: hang so the 2s context fires.
 			select {
 			case <-release:
 			case <-r.Context().Done():
@@ -251,10 +220,9 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 	})
 
 	e := newTestEngine(t, srv.URL)
-	ctx := t.Context()
-	rows, err := e.RunSQL(ctx, "SELECT 1", "json")
+	rows, err := e.ExecuteTableQuery(t.Context(), sampleValidatedQuery(t))
 	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
+		t.Fatalf("ExecuteTableQuery: %v", err)
 	}
 	if len(rows) != 2 {
 		t.Errorf("rows: got %d, want 2 (second attempt should succeed)", len(rows))
@@ -266,11 +234,7 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 	}
 }
 
-// TestRunSQL_NonTimeoutErrorSurfacesImmediately verifies the non-retry
-// path: a 4xx ES response should NOT trigger a retry. The error must
-// be wrapped as `SQL error: <e>\n\nSQL: <sql>`, matching Python's
-// es_conn_base.py:400.
-func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
+func TestExecuteTableQuery_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 	var (
 		mu    sync.Mutex
 		calls int
@@ -286,97 +250,34 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	e := newTestEngine(t, srv.URL)
-	ctx := t.Context()
-	_, err := e.RunSQL(ctx, "SELECT bad", "json")
+	_, err := e.ExecuteTableQuery(t.Context(), sampleValidatedQuery(t))
 	if err == nil {
-		t.Fatalf("RunSQL: got nil error, want error")
+		t.Fatalf("ExecuteTableQuery: got nil error, want error")
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	if calls != 1 {
 		t.Errorf("server calls: got %d, want 1 (non-timeout error must NOT retry)", calls)
 	}
-	// Python wraps as `f"SQL error: {e}\n\nSQL: {sql}"`.
 	if !strings.Contains(err.Error(), "SQL error:") {
 		t.Errorf("err: got %q, want substring 'SQL error:'", err.Error())
 	}
-	if !strings.Contains(err.Error(), "SQL: SELECT bad") {
-		t.Errorf("err: got %q, want substring 'SQL: SELECT bad'", err.Error())
-	}
 }
 
-// TestRunSQL_RequestBodyHasFetchSizeAndFormat verifies the request body
-// includes fetch_size=128 and the SQLQueryRequest is built with
-// format="json", matching the Python defaults at rag/nlp/search.py:773.
-func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
-	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
-	e := newTestEngine(t, srv.URL)
-
-	ctx := t.Context()
-	if _, err := e.RunSQL(ctx, "SELECT 1", "json"); err != nil {
-		t.Fatalf("RunSQL: %v", err)
-	}
-	cap.mu.Lock()
-	got := cap.body
-	cap.mu.Unlock()
-
-	var body map[string]interface{}
-	if err := json.Unmarshal([]byte(got), &body); err != nil {
-		t.Fatalf("body is not JSON: %v\nbody=%q", err, got)
-	}
-	fs, ok := body["fetch_size"]
-	if !ok {
-		t.Errorf("body has no fetch_size; got %v", body)
-	}
-	if fmt.Sprint(fs) != "128" {
-		t.Errorf("fetch_size: got %v, want 128", fs)
-	}
-}
-
-// TestRunSQL_EmptyRowsReturnsNilNil verifies the (nil, nil) sentinel
-// for empty results — callers treat this as "fall through to vector
-// retrieval".
-func TestRunSQL_EmptyRowsReturnsNilNil(t *testing.T) {
+func TestExecuteTableQuery_EmptyRowsReturnsNilNil(t *testing.T) {
 	empty := `{"columns": [{"name": "doc_id", "type": "text"}], "rows": []}`
 	srv, _ := newCapturingServer(t, http.StatusOK, empty)
 	e := newTestEngine(t, srv.URL)
 
-	ctx := t.Context()
-	rows, err := e.RunSQL(ctx, "SELECT doc_id FROM ragflow_t1", "json")
+	rows, err := e.ExecuteTableQuery(t.Context(), sampleValidatedQuery(t))
 	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
+		t.Fatalf("ExecuteTableQuery: %v", err)
 	}
 	if rows != nil {
 		t.Errorf("rows: got %v, want nil (empty-rows sentinel)", rows)
 	}
 }
 
-// TestRunSQL_PostsToSQLPath verifies the request goes to the /_sql
-// endpoint (the modern ES SQL API; the older /_xpack/sql path is
-// deprecated as of ES 7.x). The Go SDK's esapi.SQLQueryRequest hits
-// /_sql; the Python ES client is also pinned to the modern endpoint
-// at runtime even though the legacy /_xpack/sql name appears in the
-// SDK's method (`es.sql.query(...)`).
-func TestRunSQL_PostsToSQLPath(t *testing.T) {
-	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
-	e := newTestEngine(t, srv.URL)
-
-	ctx := t.Context()
-	if _, err := e.RunSQL(ctx, "SELECT 1", "json"); err != nil {
-		t.Fatalf("RunSQL: %v", err)
-	}
-	cap.mu.Lock()
-	got := cap.path
-	cap.mu.Unlock()
-	if got != "/_sql" {
-		t.Errorf("path: got %q, want /_sql", got)
-	}
-}
-
-// TestMain registers the engine as "infinity" so tokenizer.Tokenize and
-// tokenizer.FineGrainedTokenize short-circuit and return the input
-// as-is. This lets the rewrite tests assert on the SHAPE of the MATCH()
-// substitution without depending on a real tokenizer pool.
 func TestMain(m *testing.M) {
 	tokenizer.SetEngineType("infinity")
 	m.Run()

@@ -19,135 +19,50 @@ package infinity
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"ragflow/internal/engine/tablequery"
 )
 
-// -----------------------------------------------------------------------------
-// preprocessSQL — mirrors infinity_conn_base.py:788-789.
-// -----------------------------------------------------------------------------
-
-func TestPreprocessSQL_WhitespaceAndBackticks(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"a  b", "a b"},
-		{"a   b   c", "a b c"},
-		{"a`b`c", "a b c"},
-		{"a `` b", "a b"},
-		// The regex collapses ALL runs of spaces/backticks — including
-		// leading and trailing whitespace. Trimming is a separate step
-		// in RunSQL (strings.TrimSpace before the preprocessing pass).
-		{"  leading and trailing  ", " leading and trailing "},
+func TestAssertSafePsqlSelect(t *testing.T) {
+	if err := assertSafePsqlSelect("SELECT doc_id, docnm FROM ragflow_t_kb LIMIT 10"); err != nil {
+		t.Fatalf("valid SELECT rejected: %v", err)
 	}
-	for _, c := range cases {
-		if got := preprocessSQL(c.in); got != c.want {
-			t.Errorf("preprocessSQL(%q) = %q, want %q", c.in, got, c.want)
+	for _, bad := range []string{
+		"",
+		"DELETE FROM ragflow_t_kb",
+		"SELECT 1; DROP TABLE ragflow_t_kb",
+		"SELECT 1\n\\! id",
+		`\copy ragflow_t_kb TO '/tmp/out'`,
+	} {
+		if err := assertSafePsqlSelect(bad); err == nil {
+			t.Fatalf("SECURITY: expected assertSafePsqlSelect to reject %q", bad)
 		}
 	}
 }
 
-func TestPreprocessSQL_StripsPercent(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"count > 0 %", "count > 0 "},
-		{"100% match", "100 match"},
-		{"%%%", ""},
+func TestExecuteTableQuery_RejectsNilAndMultiKB(t *testing.T) {
+	e := &Engine{client: &infinityClient{}}
+	if _, err := e.ExecuteTableQuery(t.Context(), nil); err == nil {
+		t.Fatal("expected error for nil ValidatedQuery")
 	}
-	for _, c := range cases {
-		if got := preprocessSQL(c.in); got != c.want {
-			t.Errorf("preprocessSQL(%q) = %q, want %q", c.in, got, c.want)
-		}
+	multiScope := tablequery.Scope{
+		TenantID:  "t1",
+		TableName: "ragflow_t1",
+		KBIDs: []string{
+			"11111111-1111-1111-1111-111111111111",
+			"22222222-2222-2222-2222-222222222222",
+		},
+		Fields: tablequery.FieldsFromFieldMap(map[string]interface{}{"title": "Title"}),
 	}
-}
-
-func TestPreprocessSQL_Combined(t *testing.T) {
-	in := "SELECT   docnm_kwd  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	got := preprocessSQL(in)
-	want := "SELECT docnm_kwd FROM ragflow_t1 WHERE count > 0 "
-	if got != want {
-		t.Errorf("preprocessSQL(%q) = %q, want %q", in, got, want)
+	vq, err := tablequery.Validate(multiScope, tablequery.Query{Select: []string{"title"}}, true)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
 	}
-}
-
-// -----------------------------------------------------------------------------
-// rewriteFieldAliases — mirrors infinity_conn_base.py:809-830.
-// -----------------------------------------------------------------------------
-
-func TestRewriteFieldAliases_SelectClause(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd":    "docnm",
-		"title_tks":    "docnm",
-		"title_sm_tks": "docnm",
-		"content_ltks": "content",
-	}
-	in := "select docnm_kwd, title_tks, content_ltks from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select docnm, docnm, content from ragflow_t1"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_WhereClause(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd": "docnm",
-	}
-	in := "select doc_id from ragflow_t1 where docnm_kwd = 'foo'"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select doc_id from ragflow_t1 where docnm = 'foo'"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_OrderGroupHaving(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd":     "docnm",
-		"important_kwd": "important_keywords",
-	}
-	in := "select doc_id from ragflow_t1 order by docnm_kwd group by important_kwd having important_kwd > 0"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select doc_id from ragflow_t1 order by docnm group by important_keywords having important_keywords > 0"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_EmptyMapIsNoop(t *testing.T) {
-	in := "select docnm_kwd from ragflow_t1"
-	if got := rewriteFieldAliases(in, map[string]string{}); got != in {
-		t.Errorf("empty alias map should not modify SQL; got %q", got)
-	}
-}
-
-func TestRewriteFieldAliases_WordBoundaryProtected(t *testing.T) {
-	// "title" is an alias; "title_sm_tks" should NOT match because
-	// word boundary is enforced.
-	aliases := map[string]string{
-		"title": "docnm",
-	}
-	in := "select title_sm_tks from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	// "title" inside "title_sm_tks" should NOT be rewritten.
-	want := "select title_sm_tks from ragflow_t1"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q (title_sm_tks must NOT be touched)", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_NoAliasMatchLeavesSQLAlone(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd": "docnm",
-	}
-	in := "select content_with_weight from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	if got != in {
-		t.Errorf("unrelated SQL should be unchanged; got %q", got)
+	if _, err := e.ExecuteTableQuery(t.Context(), vq); err == nil {
+		t.Fatal("SECURITY: Infinity ExecuteTableQuery must reject multi-KB query")
 	}
 }
 
@@ -308,78 +223,6 @@ func TestResolvePsqlHostPort_EmptyHostInURIFallsBackToDefault(t *testing.T) {
 	}
 	if port != "5432" {
 		t.Errorf("port: got %q, want 5432", port)
-	}
-}
-
-func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
-	// Write a temporary mapping file.
-	dir := t.TempDir()
-	contents := `{
-		"docnm": {"type": "varchar", "comment": "docnm_kwd, title_tks, title_sm_tks"},
-		"content": {"type": "varchar", "comment": "content_with_weight, content_ltks"},
-		"plain": {"type": "varchar"}
-	}`
-
-	// Set RAG_PROJECT_BASE to the temp dir's parent so loadFieldMapping
-	// finds the file at <base>/conf/<filename>.
-	t.Setenv("RAG_PROJECT_BASE", dir)
-
-	// Need to create conf/ subdir.
-	if err := os.MkdirAll(filepath.Join(dir, "conf"), 0o755); err != nil {
-		t.Fatalf("mkdir conf: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "conf", "test_mapping.json"), []byte(contents), 0o644); err != nil {
-		t.Fatalf("write conf/mapping: %v", err)
-	}
-
-	a2a, r2a, err := loadFieldMapping("test_mapping.json")
-	if err != nil {
-		t.Fatalf("loadFieldMapping: %v", err)
-	}
-
-	// alias → actual
-	expectedAliases := map[string]string{
-		"docnm_kwd":           "docnm",
-		"title_tks":           "docnm",
-		"title_sm_tks":        "docnm",
-		"content_with_weight": "content",
-		"content_ltks":        "content",
-	}
-	if !reflect.DeepEqual(a2a, expectedAliases) {
-		t.Errorf("aliasToActual: got %v, want %v", a2a, expectedAliases)
-	}
-
-	// actual → first alias (mirrors Python at line 807)
-	if r2a["docnm"] != "docnm_kwd" {
-		t.Errorf("actualToFirstAlias[docnm]: got %q, want docnm_kwd", r2a["docnm"])
-	}
-	if r2a["content"] != "content_with_weight" {
-		t.Errorf("actualToFirstAlias[content]: got %q, want content_with_weight", r2a["content"])
-	}
-	// "plain" has no comment, so it shouldn't appear in the reverse map.
-	if _, ok := r2a["plain"]; ok {
-		t.Errorf("actualToFirstAlias should not include fields without comments")
-	}
-}
-
-func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
-	// Ensure the test runs in an isolated project base so any repo file
-	// named "infinity_mapping.json" doesn't get picked up.
-	dir := t.TempDir()
-	os.Setenv("RAG_PROJECT_BASE", dir)
-	defer os.Unsetenv("RAG_PROJECT_BASE")
-
-	// Empty name → defaults to "infinity_mapping.json" (line 145).
-	// We just verify the function doesn't panic and the file-not-found
-	// path is taken silently.
-	t.Setenv("RAG_PROJECT_BASE", t.TempDir())
-
-	a2a, r2a, err := loadFieldMapping("")
-	if err != nil {
-		t.Fatalf("empty name: %v", err)
-	}
-	if len(a2a) == 0 || len(r2a) == 0 {
-		t.Errorf("empty name + no file should yield empty maps; got a2a=%v r2a=%v", a2a, r2a)
 	}
 }
 

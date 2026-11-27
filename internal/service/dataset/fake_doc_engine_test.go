@@ -3,6 +3,7 @@ package dataset
 import (
 	"context"
 
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 
 	"gorm.io/gorm"
@@ -67,7 +68,7 @@ func (fakeChatDocEngine) GetAggregation([]map[string]interface{}, string) []map[
 func (fakeChatDocEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (fakeChatDocEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
+func (fakeChatDocEngine) ExecuteTableQuery(context.Context, *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (fakeChatDocEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }

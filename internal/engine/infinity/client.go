@@ -52,7 +52,7 @@ type infinityClient struct {
 	// for the duration of a checkout.
 	dbConns sync.Map
 
-	// Original URI from config, used by RunSQL to extract the host.
+	// Original URI from config, used by ExecuteTableQuery to extract the host.
 	hostURI string
 
 	// Port for psql wire-protocol listener (default 5432).
