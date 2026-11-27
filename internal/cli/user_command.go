@@ -18,7 +18,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -32,8 +31,6 @@ import (
 	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"ragflow/internal/parser/chunk"
-	"ragflow/internal/parser/parser"
-	"ragflow/internal/utility"
 	"strings"
 	"time"
 )
