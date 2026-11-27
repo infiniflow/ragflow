@@ -81,7 +81,7 @@ type Storage interface {
 	// ObjectExists distinguishes a missing object from a storage error
 	ObjectExists(ctx context.Context, bucket, fnm string) (bool, error)
 
-	// ListObjects list all objects of the bucket
+	// ListObjects lists object keys relative to the logical bucket.
 	ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error)
 
 	// GetPresignedURL generates a presigned URL for accessing an object

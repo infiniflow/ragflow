@@ -46,7 +46,7 @@
 //     same (bucket, fnm) argument resolves to different keys on different
 //     backends. Treat the engine as fixed per deployment.
 //   - In shared-bucket mode OSS cannot scope a removal to a logical bucket,
-//     so RemoveBucket/RemoveEmptyBucket refuse rather than guess.
+//     so ListObjects/RemoveBucket/RemoveEmptyBucket refuse rather than guess.
 //
 // # Deliberately non-uniform health checks
 //

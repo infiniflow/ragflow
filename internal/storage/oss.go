@@ -116,6 +116,15 @@ func (o *OSSStorage) createBucket(ctx context.Context, bucket string) error {
 	return err
 }
 
+// ListObjects refuses shared-bucket mode because OSS object keys contain no
+// logical-bucket segment. Listing that prefix would include other datasets.
+func (o *OSSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
+	if o.bucket != "" {
+		return nil, fmt.Errorf("cannot list logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
+	}
+	return o.s3Base.ListObjects(ctx, bucket, tenantID...)
+}
+
 // RemoveBucket removes a bucket and all its objects. In shared-bucket mode a
 // logical bucket has no physical isolation, so removal is refused rather than
 // silently clearing the shared prefix.

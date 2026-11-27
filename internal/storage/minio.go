@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -306,17 +307,17 @@ func (m *MinioStorage) BucketExistsWithError(ctx context.Context, bucket string)
 }
 
 func (m *MinioStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
-
+	bucket, prefix := m.resolveBucketAndPath(bucket, "")
 	var objects []string
 	for obj := range m.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-		Prefix:    "",
+		Prefix:    prefix,
 		Recursive: true,
 	}) {
 		if obj.Err != nil {
 			common.Warn("Failed to list objects", zap.Error(obj.Err))
 			return nil, obj.Err
 		}
-		objects = append(objects, obj.Key)
+		objects = append(objects, strings.TrimPrefix(obj.Key, prefix))
 	}
 
 	return objects, nil
