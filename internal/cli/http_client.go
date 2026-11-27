@@ -170,7 +170,15 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 	failCount := 0
 	var respHeader http.Header
 	for i := 0; i < commandCount; i++ {
-		respBody, respHeader, statusCode, err = c.HttpDo(req)
+		iterationRequest := req
+		if i > 0 && req.GetBody != nil {
+			iterationRequest = req.Clone(req.Context())
+			iterationRequest.Body, err = req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+		}
+		respBody, respHeader, statusCode, err = c.HttpDo(iterationRequest)
 		if err == nil {
 			var result struct {
 				Code int `json:"code"`
