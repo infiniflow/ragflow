@@ -111,6 +111,8 @@ Install `uv` before running the downloaders; it installs each script's declared 
 
 `download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
+On macOS, contributors install the equivalent prerequisites with Homebrew: `brew install llvm@20 cmake simde pcre2`. Put `$(brew --prefix llvm@20)/bin` first on `PATH` (the prefix is `/opt/homebrew/opt/llvm@20` on Apple Silicon and `/usr/local/opt/llvm@20` on Intel) and export `CC` / `CXX` to that Clang; `simde` supplies the x86 SSE/AVX headers the C++ sources include on ARM. LLD is not used on macOS, and CMake must still be 4.0 or later. `bash build.sh --all` has a known configure failure when `go env GOARCH` reports `amd64` (Intel Macs and Rosetta toolchains): that value is passed to `CMAKE_OSX_ARCHITECTURES` while the PCRE2 architecture check expects `x86_64` (see [#22759](https://github.com/infiniflow/ragflow/issues/22759)); a native `arm64` toolchain does not hit it. If another CMake must be kept, install 4.x into an isolated environment, for example `uv venv ~/ragflow-native-libs/tools/cmake-venv && uv pip install --python ~/ragflow-native-libs/tools/cmake-venv/bin/python 'cmake>=4,<5'`, and prepend its `bin` to `PATH` only while building. macOS is not part of project CI; these notes summarize contributor experience rather than a maintained platform. See `docs/develop/launch_ragflow_from_source.md` for the source-build walkthrough.
+
 Build the Go resource image from `deps/` after preparing these files:
 
 ```shell
@@ -381,18 +383,32 @@ missing from the model directory.
 docker compose -f docker/docker-compose-base.yml --profile infinity up -d
 ```
 
-- Point the host-run Go binaries at Kvrocks. Kvrocks is published on
-  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; the Go
-  deployment disables the Valkey/Redis service so there is no clash). Export these
-  before running `./bin/ragflow_server ...` on the host, or load them from
-  `docker/.env-go`:
+- Elasticsearch requires `vm.max_map_count` of at least `262144` in the Docker
+  engine's Linux kernel. On a Linux host with a local Docker Engine set it with
+  `sudo sysctl -w vm.max_map_count=262144` (persist via `/etc/sysctl.conf`).
+  Docker Desktop (macOS or Linux) runs the engine in its own Linux VM, where a
+  host-side `sysctl` has no effect and recent releases preconfigure the value;
+  if Elasticsearch logs a `max virtual memory areas` error, raise it inside the
+  running VM (does not survive a Docker Desktop restart):
   ```bash
-  export KVROCKS_HOST=127.0.0.1
-  export KVROCKS_PORT=6379
+  docker run --rm --privileged --pid=host justincormack/nsenter1 \
+    /bin/sh -c 'sysctl -w vm.max_map_count=262144'
   ```
-  In docker the Go services override these to `kvrocks:6379` automatically
-  (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
-  process fails fast with `failed to connect to Kvrocks`.
+  Invoke through `/bin/sh -c`: the image `execve`s its argument directly
+  without a `PATH` lookup, so a bare `sysctl` fails with
+  `execve: No such file or directory`.
+
+- Kvrocks coordinates for a host-run Go process come from `kvrocks.host` in
+  `conf/service_conf.yaml` (default `localhost:6379`, loopback, reusing the
+  conventional Redis port; the Go deployment disables the Valkey/Redis service
+  so there is no clash). There is no host-run `KVROCKS_HOST` / `KVROCKS_PORT`
+  environment override: those variables exist only inside the container, where
+  the entrypoint renders `docker/service_conf.yaml.template`
+  (`host: '${KVROCKS_HOST:-kvrocks}:${KVROCKS_PORT:-6379}'`) to the in-network
+  `kvrocks:6379`. If you publish the container on another host port (set
+  `KVROCKS_PORT` in `docker/.env`), update `kvrocks.host` to match, in
+  `conf/service_conf.yaml` or in a config copy passed with `-f`. If Kvrocks is
+  unreachable at startup the process fails fast.
   HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images
   from the parser to the chunker; the ingestor also validates the injected
   Kvrocks client at startup.
@@ -427,6 +443,16 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
 
   ```bash
   RAGFLOW_REAL_OFFICE_MEDIA_TEST=1 bash build.sh --test-integration-go ./internal/ingestion/pipeline -run '^TestOfficeMediaRealServices$' -v
+  ```
+
+- Prepare the analyzer dictionaries for a host-run process. The tokenizer
+  defaults its dictionary path to `/usr/share/infinity/resource`, which exists
+  only inside the Docker image; without it server startup fails while creating
+  or loading the base analyzer. Clone the dictionary repository once and
+  export its path:
+  ```bash
+  git clone --depth 1 https://github.com/infiniflow/resource.git "$HOME/ragflow-native-libs/resource"
+  export RAGFLOW_DICT_PATH="$HOME/ragflow-native-libs/resource"
   ```
 
 - Start RAGFlow

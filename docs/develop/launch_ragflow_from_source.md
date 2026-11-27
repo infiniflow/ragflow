@@ -10,10 +10,10 @@ sidebar_custom_props: {
 
 # Launch Service from Source
 
-Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. This guide uses the default Elasticsearch and MySQL configuration on Ubuntu 24.04 x86_64; the native ONNX Runtime archive used by this build targets Linux x86_64.
+Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. The build is developed and tested on Ubuntu 24.04 x86_64, which is the supported platform. Native dependency archives are also published for darwin (amd64/arm64); a source build on macOS may work with the Homebrew toolchain in step 1, but macOS is not part of project CI and the steps are provided as-is.
 
-:::note macOS
-This source-build procedure is for Ubuntu 24.04 x86_64. macOS is temporarily not supported by the Go backend, so use a Linux x86_64 host to build and run the Go services.
+:::note
+This page covers running the Go process directly on your host. The prebuilt Docker image targets Linux x86_64 only.
 :::
 
 The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout analysis, OCR, and table recognition.
@@ -25,7 +25,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the selected document engine, local models, data volume, parsing workload, and concurrency.
 - Docker 24.0.0 or later and Docker Compose v2.26.1 or later.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
-- CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
+- CMake 4.0 or later, Clang 20, and PCRE2 development headers. On Linux, LLD 20 is also required.
 - Node.js 18.20.4 or later and npm for the frontend.
 - Python 3.10 or later for `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
 
@@ -39,7 +39,7 @@ cd ragflow
 go version
 cmake --version
 clang++ --version
-ld.lld --version
+ld.lld --version   # Linux only
 ```
 
 Install Go 1.27 or later if needed; make sure the Go executable selected by your shell meets the requirement in `go.mod`. Install `uv` as well; the dependency downloaders run through it. On Ubuntu, install the compiler, linker, PCRE2 headers, Python 3, and command-line tools used by the build with:
@@ -54,19 +54,50 @@ Ubuntu's enabled repositories may not provide `clang-20` and `lld-20`. If APT ca
 
 Make `clang++` resolve to Clang 20 and `ld.lld` to LLD 20 before building. Installing `lld-20` alone does not necessarily replace an older system default `ld.lld`. Check both versions above: an older LLD can produce a binary that builds successfully but fails before the Go server starts. Install CMake 4.0 or later separately if your distribution package is older; the Go development guide includes the Ubuntu 24.04 Kitware repository setup. The `binutils` package supplies `objcopy` and `nm`; do not ignore a missing-`objcopy` warning because skipping the RE2 symbol-renaming step can cause a runtime crash.
 
+On macOS, contributors provide the toolchain with Homebrew:
+
+```bash
+brew install llvm@20 cmake simde pcre2
+```
+
+- Put Homebrew LLVM 20 first on `PATH` and point `CC` / `CXX` at its Clang.
+- CMake must be 4.0 or later; install it separately if Homebrew provides an older version.
+- `simde` supplies the x86 SSE/AVX headers used in ARM builds.
+- LLD is only required on Linux.
+
+Export before running `build.sh`, deriving the paths from the installed Homebrew prefix (`/opt/homebrew/opt/llvm@20` on Apple Silicon, `/usr/local/opt/llvm@20` on Intel):
+
+```bash
+LLVM_PREFIX="$(brew --prefix llvm@20)"
+export PATH="$LLVM_PREFIX/bin:$PATH"
+export CC="$LLVM_PREFIX/bin/clang"
+export CXX="$LLVM_PREFIX/bin/clang++"
+```
+
+Known limitation: when `go env GOARCH` reports `amd64`, `bash build.sh --all` passes that value to CMake as `CMAKE_OSX_ARCHITECTURES`, while an x86_64 PCRE2 archive makes the architecture check fail. This affects Intel Macs and any macOS toolchain running under Rosetta; a native `arm64` toolchain does not hit it. A matching PCRE2 archive does not avoid the error. See [#22759](https://github.com/infiniflow/ragflow/issues/22759); until it is fixed, apply the architecture override in the build step below.
+
+macOS builds are not covered by project CI and are not independently verified by the maintainers; report build problems as issues.
+
 Download the native static libraries and the runtime model / tokenizer resources with the two dependency downloaders (`uv run` installs each script's declared Python dependencies):
 
 ```bash
 uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
 ```
 
-`download_dev_deps.py` is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run. The image-facing `deps/download_deps.py` fetches the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64. Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
+`download_dev_deps.py` is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run. The image-facing `deps/download_deps.py` fetches the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are published for linux/darwin on amd64/arm64; the downloader selects the host platform (override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`). Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
 
 Skip either script if you have prepared the same resources by other means.
 
 Build the C++ bindings and Go binaries:
 
 ```bash
+bash build.sh --all
+```
+
+When `go env GOARCH` reports `amd64`, export the architecture override before running the build so the PCRE2 architecture check passes (see [#22759](https://github.com/infiniflow/ragflow/issues/22759)); an `arm64` toolchain does not need it:
+
+```bash
+export RAGFLOW_CMAKE_ARGS=-DCMAKE_OSX_ARCHITECTURES=x86_64
 bash build.sh --all
 ```
 
@@ -84,7 +115,7 @@ Check that the newly built executable can load and parse its arguments:
 
 It should print server usage information and exit successfully. This command only checks that the binary can load and parse arguments; it does not initialize DeepDoc, connect to dependencies, or prove that the API can start. Complete the runtime checks in section 5 after starting the dependencies and Go processes.
 
-The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
+On Linux, the Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20. macOS uses the system linker and does not require LLD.
 
 To prepare the resource image used by the Go Dockerfile, first run `uv run deps/download_deps.py` (above) to populate `deps/`, then build from `deps/`:
 
@@ -100,7 +131,7 @@ The downloader prepares the five Go DeepDoc files under `deps/huggingface.co/Inf
 
 With the default `conf/service_conf.yaml`, the host-run Go processes need Elasticsearch, MySQL, MinIO, NATS, Kvrocks, and ClickHouse. Start these services explicitly from the repository root:
 
-The default Elasticsearch service requires `vm.max_map_count` of at least `262144` on the Docker host. Check and set it before starting the containers:
+The default Elasticsearch service requires `vm.max_map_count` of at least `262144` in the Docker engine's Linux kernel. With Docker Engine installed directly on a Linux host, check and set it on the host before starting the containers:
 
 ```bash
 sysctl vm.max_map_count
@@ -108,6 +139,8 @@ sudo sysctl -w vm.max_map_count=262144
 ```
 
 The change made with `sysctl -w` is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
+
+Docker Desktop runs the engine inside its own Linux VM, where a host-side `sysctl` does not apply. The parameter is preconfigured in recent Docker Desktop releases; if Elasticsearch still reports a `max virtual memory areas` error, adjust it inside the VM as described in `internal/development.md`.
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
@@ -118,9 +151,18 @@ The base Compose file also defines an unprofiled Redis service. Starting every s
 
 Check that the services are ready before migrating. For this host-run setup, edit **`conf/service_conf.yaml`** if you changed the published ports or credentials in `docker/.env`. The defaults include MySQL at `localhost:3306`, Elasticsearch at `localhost:1200`, MinIO at `localhost:9000`, Kvrocks at `localhost:6379`, NATS at `localhost:4222`, and ClickHouse at `localhost:9900`. Do not edit `docker/service_conf.yaml.template` for a Go process launched directly on the host, and no `/etc/hosts` entries for Docker service names are needed.
 
+If you publish Kvrocks on a non-default host port, set the same `host:port` in `kvrocks.host`, either in `conf/service_conf.yaml` or in a config copy passed with `-f`; the host-run server reads the address from the configuration file, while `KVROCKS_PORT` in `docker/.env` only changes the container's published port.
+
 ## 3. Launch the Go backend
 
-From the repository root:
+The analyzer needs dictionary files at startup. Clone the dictionary repository once and point `RAGFLOW_DICT_PATH` at it:
+
+```bash
+git clone --depth 1 https://github.com/infiniflow/resource.git "$HOME/ragflow-native-libs/resource"
+export RAGFLOW_DICT_PATH="$HOME/ragflow-native-libs/resource"
+```
+
+Then start the server from the repository root:
 
 ```bash
 ./bin/ragflow_server
@@ -146,7 +188,7 @@ Update `conf/service_conf.yaml` for host-run dependency ports and credentials.
 `kvrocks.host` is a single `host:port` value, defaulting to `localhost:6379`.
 Leave `RAGFLOW_DEV_MODE` unset in production; it bypasses downgrade protection.
 
-If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `internal/rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `deps/`.
+If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `internal/rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If startup fails while creating or loading the base analyzer, check that `RAGFLOW_DICT_PATH` points at the cloned `resource` directory above. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `deps/`.
 
 ## 4. Start the frontend
 
