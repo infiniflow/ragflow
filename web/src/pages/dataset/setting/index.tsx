@@ -357,18 +357,23 @@ export default function DatasetSetting() {
                 disabled={readOnly}
                 className="m-0 w-full min-w-0 space-y-5 border-0 p-0 text-text-secondary"
               >
-                <div className="text-base font-medium text-text-primary">
-                  {t('knowledgeConfiguration.baseInfo')}
-                </div>
-                <GeneralForm></GeneralForm>
+                <fieldset
+                  disabled={readOnly}
+                  className="m-0 w-full min-w-0 space-y-5 border-0 p-0"
+                >
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.baseInfo')}
+                  </div>
+                  <GeneralForm></GeneralForm>
 
-                <Divider />
-                <LinkDataSource
-                  data={pipelineDataList}
-                  handleLinkOrEditSubmit={handleLinkOrEditSubmit}
-                  unbindFunc={unbindFunc}
-                  handleAutoParse={handleAutoParse}
-                />
+                  <Divider />
+                  <LinkDataSource
+                    data={pipelineDataList}
+                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                    unbindFunc={unbindFunc}
+                    handleAutoParse={handleAutoParse}
+                  />
+                </fieldset>
 
                 <Divider />
                 <div className="flex items-center justify-between gap-4">
@@ -399,6 +404,7 @@ export default function DatasetSetting() {
                               onChange={handleParserSelect}
                               outdated={savedVersionOutdated}
                               invalid={fieldState.invalid}
+                              disabled={readOnly}
                               accessUserId={knowledgeDetails?.user_id}
                             />
                             <FormMessage />
@@ -422,6 +428,7 @@ export default function DatasetSetting() {
                           | undefined
                       }
                       fixedFileFormats
+                      readOnly={readOnly}
                     />
                   </DatasetParserOptions>
                 )}

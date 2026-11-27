@@ -159,6 +159,10 @@ func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
 func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommitSvc, *FileCommitHandler) {
 	mock := &mockFileCommitSvc{}
 	h := NewFileCommitHandler(mock)
+	// These tests focus on commit routing and response mapping. Source-page
+	// authorization requires a real compiled page index, so inject an allow
+	// result here.
+	h.wikiPageAccessChecker = func(*gin.Context, string, string, string) bool { return true }
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {

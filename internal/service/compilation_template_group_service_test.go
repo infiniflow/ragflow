@@ -89,6 +89,7 @@ func seedLegacyCompilationGroup(t *testing.T, tenantID, groupID string, names ..
 	valid := string(entity.StatusValid)
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID:       groupID,
+		UserID:   tenantID,
 		TenantID: tenantID,
 		Name:     "Legacy " + groupID,
 		Status:   &valid,
