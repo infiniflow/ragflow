@@ -335,7 +335,13 @@ const routeConfigOptions = [
       },
       {
         path: Routes.Files,
-        Component: () => import('@/pages/files'),
+        Component: () => import('@/pages/files/layout'),
+        children: [
+          {
+            index: true,
+            Component: () => import('@/pages/files'),
+          },
+        ],
       },
       {
         path: Routes.Skills,
