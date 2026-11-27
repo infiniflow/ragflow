@@ -745,19 +745,16 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]b
 	if maxType == "Nu" {
 		for ri, row := range rows {
 			cnt, h := 0, 0
-			for ci, cell := range row {
+			for _, cell := range row {
 				t := strings.TrimSpace(cell.Text)
 				if t == "" {
 					continue
 				}
 				cnt++
-				bt := BlockType(t)
-				if bt == "Nu" {
+				if BlockType(t) == "Nu" {
 					continue // numeric cell in a numeric table: ignored
 				}
-				if colHit[ri][ci] {
-					h++
-				}
+				h++ // non-numeric cell: counts whether or not it has H
 			}
 			if cnt > 0 && float64(h)/float64(cnt) > 0.5 {
 				hdrs[ri] = true
