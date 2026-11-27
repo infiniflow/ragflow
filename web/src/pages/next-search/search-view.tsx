@@ -265,8 +265,11 @@ export default function SearchingView({
                               }}
                               className={classNames(
                                 // Keep whitespaces?
-                                'text-wrap break-words whitespace-pre text-base',
+                                'text-wrap break-words whitespace-pre text-base overflow-x-auto',
                                 '[&_em]:text-accent-primary [&_em]:not-italic',
+                                '[&_table]:w-full [&_table]:border-collapse [&_table]:text-sm',
+                                '[&_th]:border [&_th]:border-border-button [&_th]:bg-bg-card [&_th]:px-2 [&_th]:py-1 [&_th]:text-left',
+                                '[&_td]:border [&_td]:border-border-button [&_td]:px-2 [&_td]:py-1 [&_td]:whitespace-nowrap',
                               )}
                             />
                           </div>
