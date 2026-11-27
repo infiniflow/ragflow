@@ -15,6 +15,7 @@
  */
 
 import { PageFrame } from '@/components/page-frame';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -23,7 +24,7 @@ import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { BlueprintSection } from './components/blueprint-section';
-import { CompilationTemplateEditorSidebar } from './components/editor-sidebar';
+import { CompilationTemplateEditorSidebar } from './sidebar';
 import { JsonPreview } from './components/json-preview';
 import { TemplateConfiguration } from './components/template-configuration';
 import { CompilationTemplateEditorView } from './constant';
@@ -99,7 +100,18 @@ export function CompilationTemplateGroupEditor({
 
           <section className="min-h-0 min-w-0 flex-1 pt-3">
             <PageFrame>
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <SettingsFormLayout
+                actions={
+                  <>
+                    <Button type="button" variant="outline" onClick={onCancel}>
+                      {cancelText}
+                    </Button>
+                    <Button type="submit" loading={isLoading}>
+                      {t('common.save')}
+                    </Button>
+                  </>
+                }
+              >
                 {activeView === CompilationTemplateEditorView.Json ? (
                   <JsonPreview value={allFormValues} />
                 ) : (
@@ -118,16 +130,7 @@ export function CompilationTemplateGroupEditor({
                     )}
                   </TemplateConfiguration>
                 )}
-              </div>
-
-              <footer className="shrink-0 px-5 py-4 flex items-center justify-end gap-5">
-                <Button type="button" variant="outline" onClick={onCancel}>
-                  {cancelText}
-                </Button>
-                <Button type="submit" loading={isLoading}>
-                  {t('common.save')}
-                </Button>
-              </footer>
+              </SettingsFormLayout>
             </PageFrame>
           </section>
         </div>

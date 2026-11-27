@@ -1,6 +1,10 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { ConversationList } from '@/components/conversation-list';
-import { SecondarySidebarHeader } from '@/components/sidebar-header';
+import {
+  SecondarySidebar,
+  SecondarySidebarMenu,
+  type SecondarySidebarMenuItem,
+} from '@/components/secondary-sidebar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
@@ -26,13 +30,13 @@ import {
 } from 'lucide-react';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useChatStreamStore } from '../chat-stream/store';
-import { useChatUrlParams } from '../hooks/use-chat-url';
-import { useHandleClickConversationCard } from '../hooks/use-click-card';
-import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
-import { ConversationDropdown } from './conversation-dropdown';
+import { useChatStreamStore } from '../../chat-stream/store';
+import { useChatUrlParams } from '../../hooks/use-chat-url';
+import { useHandleClickConversationCard } from '../../hooks/use-click-card';
+import { useSelectDerivedConversationList } from '../../hooks/use-select-conversation-list';
+import { ConversationDropdown } from '../conversation-dropdown';
 
-type SessionProps = Pick<
+type ChatSidebarProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
   'handleConversationCardClick'
 > & {
@@ -43,14 +47,14 @@ type SessionProps = Pick<
   onShowSingleChat: () => void;
 };
 
-export function Sessions({
+export function ChatSidebar({
   handleConversationCardClick,
   settingsActive,
   multipleModelsActive,
   onOpenSettings,
   onOpenMultipleModels,
   onShowSingleChat,
-}: SessionProps) {
+}: ChatSidebarProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
@@ -257,63 +261,70 @@ export function Sessions({
     setPrimarySidebarCollapsed(true);
   }, [setCollapsed, setPrimarySidebarCollapsed]);
 
+  const menuItems = useMemo<SecondarySidebarMenuItem[]>(() => {
+    if (!canAccessChatSettings) {
+      return [];
+    }
+
+    return [
+      {
+        key: 'settings',
+        icon: <LucideSettings className="size-4 shrink-0" />,
+        label: t('chat.settings'),
+        active: settingsActive,
+        onSelect: onOpenSettings,
+        testId: 'chat-settings',
+      },
+      {
+        key: 'multiple-models',
+        icon: <LucideActivity className="size-4 shrink-0" />,
+        label: t('chat.multipleModels'),
+        active: multipleModelsActive,
+        onSelect: onOpenMultipleModels,
+        testId: 'chat-detail-multimodel-toggle',
+      },
+    ];
+  }, [
+    canAccessChatSettings,
+    multipleModelsActive,
+    onOpenMultipleModels,
+    onOpenSettings,
+    settingsActive,
+    t,
+  ]);
+
   if (collapsed) {
     return null;
   }
 
   return (
-    <aside
-      className="w-[296px] flex flex-col"
+    <SecondarySidebar
+      title={data.name}
+      onCollapse={collapseSidebars}
+      className="w-[296px]"
       role="complementary"
       data-testid="chat-detail-sessions"
     >
-      <SecondarySidebarHeader title={data.name} onCollapse={collapseSidebars} />
-
       <div className="flex min-h-0 flex-1 flex-col px-5 pb-5">
-        <nav className="flex flex-col gap-2 pt-5" aria-label={data.name}>
-          {canCreateSession && (
-            <Button
-              variant="outline"
-              size="lg"
-              block
-              onClick={handleNewConversation}
-              data-testid="chat-detail-session-new"
-            >
-              <LucidePlus />
-              {t('chat.newConversation')}
-            </Button>
-          )}
+        {canCreateSession && (
+          <Button
+            variant="outline"
+            size="lg"
+            block
+            className="mt-5"
+            onClick={handleNewConversation}
+            data-testid="chat-detail-session-new"
+          >
+            <LucidePlus />
+            {t('chat.newConversation')}
+          </Button>
+        )}
 
-          {canAccessChatSettings && (
-            <Button
-              variant={settingsActive ? 'secondary' : 'ghost'}
-              size="lg"
-              block
-              className="justify-start"
-              onClick={onOpenSettings}
-              aria-pressed={settingsActive}
-              data-testid="chat-settings"
-            >
-              <LucideSettings />
-              {t('chat.settings')}
-            </Button>
-          )}
-
-          {canAccessChatSettings && (
-            <Button
-              variant={multipleModelsActive ? 'secondary' : 'ghost'}
-              size="lg"
-              block
-              className="justify-start"
-              onClick={onOpenMultipleModels}
-              aria-pressed={multipleModelsActive}
-              data-testid="chat-detail-multimodel-toggle"
-            >
-              <LucideActivity />
-              {t('chat.multipleModels')}
-            </Button>
-          )}
-        </nav>
+        <SecondarySidebarMenu
+          items={menuItems}
+          navigationLabel={data.name}
+          className="overflow-visible px-0 pb-0 pt-5"
+        />
 
         <div className="flex justify-between items-center mb-4 pt-8">
           <div className="flex items-center gap-3">
@@ -430,6 +441,6 @@ export function Sessions({
           )}
         </div>
       </div>
-    </aside>
+    </SecondarySidebar>
   );
 }

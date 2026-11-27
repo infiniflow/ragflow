@@ -20,7 +20,7 @@ import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/next-multiple-chat-box';
 import { SingleChatBox } from './chat-box/single-chat-box';
-import { Sessions } from './sessions';
+import { ChatSidebar } from './sidebar';
 import { useAddChatBox } from './use-add-box';
 import { useSwitchDebugMode } from './use-switch-debug-mode';
 
@@ -87,14 +87,14 @@ export default function Chat() {
     <RootLayoutContainer>
       <section className="h-full flex flex-col" data-testid="chat-detail">
         <article className="flex flex-1 min-h-0">
-          <Sessions
+          <ChatSidebar
             handleConversationCardClick={handleConversationCardClick}
             settingsActive={settingsVisible}
             multipleModelsActive={isDebugMode}
             onOpenSettings={handleOpenSettings}
             onOpenMultipleModels={handleOpenMultipleModels}
             onShowSingleChat={handleShowSingleChat}
-          ></Sessions>
+          ></ChatSidebar>
 
           <section className="min-h-0 min-w-0 flex-1 pt-2.5">
             <PageFrame>

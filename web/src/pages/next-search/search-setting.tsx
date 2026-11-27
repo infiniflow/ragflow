@@ -15,7 +15,7 @@
  */
 
 import AvatarNameDescription from '@/components/avatar-name-description';
-import { SettingsFormContainer } from '@/components/settings-form-container';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
@@ -206,161 +206,162 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
       setFormSubmitLoading(false);
     }
   };
+
+  const handleFormSubmit = formMethods.handleSubmit(
+    (data) => {
+      onSubmit(data as unknown as IUpdateSearchProps);
+    },
+    (error) => {
+      console.error(error, formMethods.getValues());
+    },
+  );
+
+  const searchActions = (
+    <>
+      <Button type="button" variant="transparent" onClick={handleCancel}>
+        {t('search.cancelText')}
+      </Button>
+      {canEdit && (
+        <Button
+          data-testid="search-settings-save"
+          type="submit"
+          disabled={formSubmitLoading}
+        >
+          {formSubmitLoading && (
+            <div className="size-4">
+              <Spin size="small" />
+            </div>
+          )}
+          {t('search.okText')}
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
       <ModelResourceAccessUserIdContext.Provider value={data?.user_id ?? null}>
-        <SettingsFormContainer
-          className="flex h-full min-h-0 flex-col p-5 text-text-primary"
-          data-testid="search-detail-settings"
-        >
-          <div className="mb-8 shrink-0 text-base text-text-primary">
-            {t('search.searchSettings')}
-          </div>
-          <Form {...formMethods}>
-            <form
-              onSubmit={formMethods.handleSubmit(
-                (data) => {
-                  onSubmit(data as unknown as IUpdateSearchProps);
-                },
-                (error) => {
-                  console.error(error, formMethods.getValues());
-                },
-              )}
-              className="flex min-h-0 flex-1 flex-col"
+        <Form {...formMethods}>
+          <form
+            onSubmit={handleFormSubmit}
+            className="flex h-full min-h-0 flex-col"
+          >
+            <SettingsFormLayout
+              className="text-text-primary"
+              data-testid="search-detail-settings"
+              header={
+                <div className="mb-8 text-base text-text-primary">
+                  {t('search.searchSettings')}
+                </div>
+              }
+              actions={searchActions}
             >
               <fieldset disabled={!canEdit} className="contents">
-                <div className="scrollbar-auto min-h-0 flex-1 overflow-y-auto p-1 text-text-secondary">
-                  <div className="space-y-6">
-                    <AvatarNameDescription avatarField="avatar" />
+                <div className="space-y-6 p-1 text-text-secondary">
+                  <AvatarNameDescription avatarField="avatar" />
 
-                    <KnowledgeBaseFormField
-                      name="search_config.kb_ids"
-                      required
-                      accessUserId={data?.user_id}
-                    ></KnowledgeBaseFormField>
-                    <MetadataFilter prefix="search_config."></MetadataFilter>
-                    <SimilaritySliderFormField
-                      isTooltipShown
-                      similarityName="search_config.similarity_threshold"
-                      similarityWeightName="search_config.keywords_similarity_weight"
-                      numberInputClassName="rounded-sm"
-                    ></SimilaritySliderFormField>
-                    <RerankCandidatesCountFormField
-                      name="search_config.rerank_candidates_count"
-                      defaultValue={100}
-                    ></RerankCandidatesCountFormField>
-                    {/* Rerank Model */}
-                    <FormField
-                      control={formMethods.control}
-                      name="search_config.use_rerank"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel>{t('search.rerankModel')}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    {rerankModelEnabled && (
-                      <>
-                        <RerankFormFields
-                          prefix={'search_config.'}
-                          required
-                        ></RerankFormFields>
-                      </>
+                  <KnowledgeBaseFormField
+                    name="search_config.kb_ids"
+                    required
+                    accessUserId={data?.user_id}
+                  ></KnowledgeBaseFormField>
+                  <MetadataFilter prefix="search_config."></MetadataFilter>
+                  <SimilaritySliderFormField
+                    isTooltipShown
+                    similarityName="search_config.similarity_threshold"
+                    similarityWeightName="search_config.keywords_similarity_weight"
+                    numberInputClassName="rounded-sm"
+                  ></SimilaritySliderFormField>
+                  <RerankCandidatesCountFormField
+                    name="search_config.rerank_candidates_count"
+                    defaultValue={100}
+                  ></RerankCandidatesCountFormField>
+                  {/* Rerank Model */}
+                  <FormField
+                    control={formMethods.control}
+                    name="search_config.use_rerank"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel>{t('search.rerankModel')}</FormLabel>
+                      </FormItem>
                     )}
-                    <LlmSettingFieldItems
-                      prefix="search_config.llm_setting"
-                      showCollapse
-                      llmRequired={llmRequired}
-                      showFields={[
-                        'temperature',
-                        'top_p',
-                        'presence_penalty',
-                        'frequency_penalty',
-                      ]}
-                    ></LlmSettingFieldItems>
-                    {/* AI Summary */}
-                    <FormField
-                      control={formMethods.control}
-                      name="search_config.summary"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel>{t('search.AISummary')}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={formMethods.control}
-                      name="search_config.related_search"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel>
-                            {t('search.enableRelatedSearch')}
-                          </FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={formMethods.control}
-                      name="search_config.query_mindmap"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel>{t('search.showQueryMindmap')}</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  />
+                  {rerankModelEnabled && (
+                    <>
+                      <RerankFormFields
+                        prefix={'search_config.'}
+                        required
+                      ></RerankFormFields>
+                    </>
+                  )}
+                  <LlmSettingFieldItems
+                    prefix="search_config.llm_setting"
+                    showCollapse
+                    llmRequired={llmRequired}
+                    showFields={[
+                      'temperature',
+                      'top_p',
+                      'presence_penalty',
+                      'frequency_penalty',
+                    ]}
+                  ></LlmSettingFieldItems>
+                  {/* AI Summary */}
+                  <FormField
+                    control={formMethods.control}
+                    name="search_config.summary"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel>{t('search.AISummary')}</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={formMethods.control}
+                    name="search_config.related_search"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel>{t('search.enableRelatedSearch')}</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={formMethods.control}
+                    name="search_config.query_mindmap"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel>{t('search.showQueryMindmap')}</FormLabel>
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </fieldset>
-              <div className="flex shrink-0 justify-end gap-2 pt-4">
-                <Button
-                  type="button"
-                  variant="transparent"
-                  onClick={handleCancel}
-                >
-                  {t('search.cancelText')}
-                </Button>
-                {canEdit && (
-                  <Button
-                    data-testid="search-settings-save"
-                    type="submit"
-                    disabled={formSubmitLoading}
-                  >
-                    {formSubmitLoading && (
-                      <div className="size-4">
-                        <Spin size="small" />
-                      </div>
-                    )}
-                    {t('search.okText')}
-                  </Button>
-                )}
-              </div>
-            </form>
-          </Form>
-        </SettingsFormContainer>
+            </SettingsFormLayout>
+          </form>
+        </Form>
       </ModelResourceAccessUserIdContext.Provider>
     </ModelResourceTenantIdContext.Provider>
   );

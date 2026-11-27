@@ -8,6 +8,7 @@ import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
+import { useMemorySidebarCollapse } from '@/hooks/use-memory-sidebar-collapse';
 import { useSearchSidebarCollapse } from '@/hooks/use-search-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -42,6 +43,10 @@ function AppSidebarContent() {
     collapsed: compilationTemplateSidebarCollapsed,
     toggleCollapsed: toggleCompilationTemplateSidebar,
   } = useCompilationTemplateSidebarCollapse();
+  const {
+    collapsed: memorySidebarCollapsed,
+    toggleCollapsed: toggleMemorySidebar,
+  } = useMemorySidebarCollapse();
   const { pathname } = useLocation();
   const visibleNavItems = useVisibleNavItems(NavItems);
   const primaryNavItems = visibleNavItems.filter(
@@ -79,7 +84,8 @@ function AppSidebarContent() {
     },
     {
       route: Routes.Memory,
-      collapsed: false,
+      collapsed: memorySidebarCollapsed,
+      onExpand: toggleMemorySidebar,
     },
   ].find((sidebar) => matchesPath(pathname, sidebar.route));
   const collapsedSecondarySidebar = activeSecondarySidebar?.collapsed
