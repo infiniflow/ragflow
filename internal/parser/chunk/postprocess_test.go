@@ -190,3 +190,22 @@ func TestMergeChunksOversizeUnitStandsAloneCJK(t *testing.T) {
 		t.Fatalf("oversize CJK unit must stand alone: got %q, want %q", got, want)
 	}
 }
+
+// Postprocess re-indexes the chunks it emits. Size is the chunk's length in
+// runes everywhere else in this package: splitByLength fills it with a rune
+// count, merge compares it against a rune budget, and filter applies a rune
+// min_length. Re-indexing used len() on the string, i.e. bytes, so a CJK chunk
+// came back three times longer than it is.
+func TestPostprocessSizeCountsRunes(t *testing.T) {
+	op, err := NewPostprocessOperator(map[string]interface{}{"filter": map[string]interface{}{"min_length": float64(1)}})
+	if err != nil {
+		t.Fatalf("NewPostprocessOperator returned error: %v", err)
+	}
+	ctx := &ChunkContext{SplitChunks: []ChunkData{{Content: "知识点", Index: 0}}}
+	if err := op.Execute(ctx); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got := ctx.ResultChunks[0].Size; got != 3 {
+		t.Errorf("Size = %d, want 3", got)
+	}
+}
