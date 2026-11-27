@@ -143,12 +143,11 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 			return "resume-only-cp:" + itoa(idx)
 		}),
 	})
-	bridge := newParallelBridgeState(nil)
 	// First run: items 0, 1, 2 succeed (item 2 = 7 interrupts
 	// on the first call); item 3 also runs and returns 9+1=10.
 	// My code processes all items in order even if some
 	// interrupt, so calls = 4 after the first run.
-	_, err := runParallelInvoke(ctx, "par", sub, []int{1, 3, 7, 9}, opts, bridge)
+	_, err := runParallelInvoke(ctx, "par", sub, []int{1, 3, 7, 9}, opts)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
@@ -168,12 +167,11 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 	}
 	payload, _ := encodeParallelState(state)
 	resumeCtx := injectResumeState(ctx, payload)
-	resumeBridge := newParallelBridgeState(nil)
 	// The "interrupted" bool is shared across the test, so
 	// the resume's lambda call for in=7 returns 7+1=8. Item 3 is
 	// replayed from scratch because it was not present in
 	// CompletedResults at the interrupt boundary.
-	out, err := runParallelInvoke(resumeCtx, "par", sub, []int{1, 3, 7, 9}, opts, resumeBridge)
+	out, err := runParallelInvoke(resumeCtx, "par", sub, []int{1, 3, 7, 9}, opts)
 	if err != nil {
 		t.Fatalf("resume: %v", err)
 	}
@@ -213,7 +211,7 @@ func TestIntegration_InvokeResume_PreservesCompletedResultsAcrossInterrupts(t *t
 		return in + 10, nil
 	}}
 	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(0), WithParallelEnableSubCheckpoint(false)})
-	_, err = runParallelInvoke(injectResumeState(ctx, first), "par", runner, []int{0, 1}, opts, newParallelBridgeState(nil))
+	_, err = runParallelInvoke(injectResumeState(ctx, first), "par", runner, []int{0, 1}, opts)
 	if err == nil {
 		t.Fatal("first resume: expected second interrupt")
 	}
@@ -237,7 +235,7 @@ func TestIntegration_InvokeResume_PreservesCompletedResultsAcrossInterrupts(t *t
 	}
 
 	interruptAgain = false
-	out, err := runParallelInvoke(injectResumeState(ctx, signal.State), "par", runner, []int{0, 1}, opts, newParallelBridgeState(nil))
+	out, err := runParallelInvoke(injectResumeState(ctx, signal.State), "par", runner, []int{0, 1}, opts)
 	if err != nil {
 		t.Fatalf("second resume: %v", err)
 	}
@@ -409,8 +407,7 @@ func TestIntegration_WithForceNewRun_ResetsState(t *testing.T) {
 		WithParallelEnableSubCheckpoint(false),
 	})
 	// First run: interrupted at item 0.
-	bridge := newParallelBridgeState(nil)
-	if _, err := runParallelInvoke(ctx, "par", makeRunner(), []int{0, 1, 2}, opts, bridge); err == nil {
+	if _, err := runParallelInvoke(ctx, "par", makeRunner(), []int{0, 1, 2}, opts); err == nil {
 		t.Fatal("expected first interrupt, got nil")
 	}
 	if got := interruptCount.Load(); got != 1 {
@@ -419,8 +416,7 @@ func TestIntegration_WithForceNewRun_ResetsState(t *testing.T) {
 	// Simulate WithForceNewRun: a fresh ctx (no prior parallel
 	// state) makes the next runParallelInvoke behave as a
 	// fresh run. Item 0 interrupts again.
-	bridge2 := newParallelBridgeState(nil)
-	if _, err := runParallelInvoke(ctx, "par", makeRunner(), []int{0, 1, 2}, opts, bridge2); err == nil {
+	if _, err := runParallelInvoke(ctx, "par", makeRunner(), []int{0, 1, 2}, opts); err == nil {
 		t.Fatal("expected second interrupt, got nil")
 	}
 	if got := interruptCount.Load(); got != 2 {
