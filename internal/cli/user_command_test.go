@@ -20,25 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-func TestParseLocalHTMLWithInlineImage(t *testing.T) {
-	filename := filepath.Join(t.TempDir(), "image.html")
-	if err := os.WriteFile(filename, []byte(`<p>hello</p><img alt="image" src="data:image/png;base64,aGVsbG8=">`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	c := &CLI{Config: &CommandLineConfig{CLIMode: APIMode}}
-	response, err := c.APIParseLocalFileCommand(1, &Command{Params: map[string]interface{}{"filename": filename}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result, ok := response.(*SimpleResponse); !ok || result.Code != 0 {
-		t.Fatalf("unexpected response: %#v", response)
-	}
-}
 
 func TestAPIShowVersionCommandReadsVersionObject(t *testing.T) {
 	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

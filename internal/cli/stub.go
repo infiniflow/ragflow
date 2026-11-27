@@ -16,9 +16,6 @@
 
 //go:build !ee
 
-// Admin ingestion and per-user inspection commands are enterprise features.
-// The OSS build keeps the parser and dispatcher identical and rejects those
-// commands at runtime.
 package cli
 
 import "errors"
