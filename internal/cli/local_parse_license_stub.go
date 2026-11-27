@@ -18,6 +18,6 @@
 
 package cli
 
-func (c *CLI) refreshLocalParseFeatures(int, string) error {
-	return nil
-}
+import "context"
+
+func (c *CLI) prepareLocalParseContext(ctx context.Context) context.Context { return ctx }

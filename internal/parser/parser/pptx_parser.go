@@ -96,7 +96,7 @@ func normalizePresentationParseMethod(raw string) string {
 // ParseWithResult emits one JSON item per slide with the slide's plain text,
 // tables and media_ref image items. A text-only parser skips images.
 func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	if err := checkWPSLicense(filename); err != nil {
+	if err := checkWPSLicense(ctx, filename); err != nil {
 		return ParseResult{Err: err}
 	}
 	// p == nil guard: the struct is embedded by value in PPTParser and

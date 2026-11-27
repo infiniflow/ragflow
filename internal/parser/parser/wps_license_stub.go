@@ -2,4 +2,6 @@
 
 package parser
 
-func checkWPSLicense(string) error { return nil }
+import "context"
+
+func checkWPSLicense(context.Context, string) error { return nil }
