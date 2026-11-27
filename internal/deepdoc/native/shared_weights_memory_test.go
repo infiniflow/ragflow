@@ -146,7 +146,7 @@ func TestWeightSharingMemory(t *testing.T) {
 	ctx := context.Background()
 	input := make([]float32, prod(inShape))
 	for _, h := range sessions {
-		if _, err := h.Run(ctx, input); err != nil {
+		if _, err := h.Run(ctx, ModelInput{Data: input, Shape: inShape}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	}

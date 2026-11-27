@@ -191,7 +191,7 @@ func resourceJanitor(ctx context.Context, b ResourceBudget, interval time.Durati
 				if lowMB <= 0 || used < lowMB {
 					if doctype.Backpressure() {
 						doctype.SetBackpressure(false)
-						common.Info("resource budget: below low water, backpressure OFF",
+						common.Warn("resource budget: below low water, backpressure OFF",
 							zap.String("resource", b.Name()),
 							zap.Int("used_mb", used), zap.Int("low_mb", lowMB))
 					}

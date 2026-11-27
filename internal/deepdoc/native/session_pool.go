@@ -54,6 +54,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	doctype "ragflow/internal/deepdoc/parser/type"
@@ -88,15 +89,15 @@ type sessionPool[K comparable, V pooledSession] struct {
 	pools   map[K]*sessionKeyPool[V]
 	lru     []K // front = least-recently-used
 	maxKeys int
-	maxFree int
+	maxFree atomic.Int32
 }
 
 func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessionPool[K, V] {
 	p := &sessionPool[K, V]{
 		pools:   make(map[K]*sessionKeyPool[V]),
 		maxKeys: maxKeys,
-		maxFree: maxFree,
 	}
+	p.maxFree.Store(int32(maxFree))
 	// Register this pool with the adaptive idle budget. The callback destroys
 	// idle sessions oldest-first, keeping the newest minIdleKeep. It is a no-op
 	// unless the EE GPU path installed a budget at startup.
@@ -213,7 +214,8 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 		// retained below. Placing it earlier (or adding a noteIdleRemoved() in
 		// the else branch) would either double-count or wrongly decrement the
 		// global counter when kp.live is false and it was never called.
-		if kp.live && (p.maxFree <= 0 || len(kp.free) < p.maxFree) && shouldPoolIdle() {
+		maxFree := p.maxFree.Load()
+		if kp.live && (maxFree <= 0 || int32(len(kp.free)) < maxFree) && shouldPoolIdle() {
 			kp.free = append(kp.free, idleSession[V]{sess: s, at: time.Now()})
 			kp.mu.Unlock()
 		} else {
@@ -230,6 +232,12 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 func isNil[V pooledSession](v V) bool {
 	rv := reflect.ValueOf(v)
 	return rv.IsNil()
+}
+
+// SetMaxFree updates the idle-session retention cap at runtime. Used by the
+// calibrated session budget to apply a measured quota after startup.
+func (p *sessionPool[K, V]) SetMaxFree(n int) {
+	p.maxFree.Store(int32(n))
 }
 
 // KeyCount returns the number of distinct key-pools currently live. Used by
@@ -301,25 +309,32 @@ func shapeKey(s []int64) string {
 	return strings.Join(parts, ",")
 }
 
-// modelSessions is unbounded (maxKeys/maxFree = 0): the fixed-shape key set is
-// tiny, so the degenerate no-eviction case is correct here.
-var modelSessions = newSessionPool[sessKey, *session](0, 0)
+// dlaSessions and tsrSessions are separate fixed-shape pools. DLA and TSR use
+// different models and input sizes (layout.ort 1024x1024 vs tsr.ort 640x640),
+// so they are distinct key-pools with independent idle caps. A single shared
+// pool with one maxFree would give both the same cap, over-retaining one model
+// and ignoring the other's calibrated quota.
+var (
+	dlaSessions = newSessionPool[sessKey, *session](0, 0)
+	tsrSessions = newSessionPool[sessKey, *session](0, 0)
+)
 
-// getModelSession returns a reusable session for the given model signature plus
-// a release func. The caller must call release exactly once.
-func getModelSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*session, func(), error) {
+// getModelSession returns a reusable session from the given fixed-shape pool
+// for the model signature plus a release func. The caller must call release
+// exactly once. The pool is passed explicitly so each model's idle cap is
+// independent.
+func getModelSession(ctx context.Context, pool *sessionPool[sessKey, *session], modelPath, inName string, inShape []int64, outName string) (*session, func(), error) {
 	key := sessKeyOf(modelPath, inName, inShape, outName)
-	return modelSessions.Get(ctx, key, func() (*session, error) {
+	return pool.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, inName, inShape, outName)
 	})
 }
 
 // ---- dynamic-width OCR-rec pool ----
 
-// recKey is the pool key for the dynamic-width OCR-rec model. The session is
-// pinned to one input width (the input tensor is fixed-shape per width), and
-// the output is auto-allocated at the model's true (width-dependent) sequence
-// length, so the key carries the width but no output shape.
+// recKey is the pool key for the OCR-rec model. With shape carried per Run
+// via ModelInput, all input widths/batch sizes share one key; the inShape
+// field retains the sentinel shape used at session creation.
 type recKey struct {
 	modelPath, inName, outName string
 	inShape                    string
@@ -335,40 +350,43 @@ func recKeyOf(modelPath, inName string, inShape []int64, outName string) recKey 
 }
 
 const (
-	// recMaxShapePools caps distinct (modelPath, N, imgW) pools. Unlike the
-	// fixed-shape DLA/TSR models, a long-running server ingesting many
-	// differently-sized text lines would otherwise pin one pooled session (and
-	// its ORT tensors) per distinct shape forever. The shared sessionPool
-	// evicts the least-recently-used shape pool (Destroying its idle sessions)
-	// once the cap is exceeded, bounding memory.
+	// recMaxShapePools bounds distinct key-pools. Since all rec shapes now share
+	// one sentinel key, only one key-pool exists in practice; the bound is kept
+	// as a guard against future key changes.
 	recMaxShapePools = 96
-	// recShapePoolCap caps idle sessions retained per shape; extras are
-	// Destroyed on release instead of pooled.
-	//
-	// 96 * 1 keeps the same native-RSS budget as the prior 64 * 4 config
-	// (~384 pooled sessions) while spreading it across more distinct shapes so
-	// concurrent workers contending on a single width no longer serialize on one
-	// idle session per shape.
-	recShapePoolCap = 1
+	// recShapePoolCap caps idle sessions retained in the (now single-key) rec
+	// pool; extras are Destroyed on release instead of pooled. All shapes share
+	// one sentinel key, so this cap must cover typical concurrent Runs rather
+	// than the old per-shape value of 1 (which only worked because capacity was
+	// spread across up to 96 distinct shape keys).
+	recShapePoolCap = 16
 )
 
-// recSessions is the dynamic-width OCR-rec pool: bounded at recMaxShapePools
-// distinct width-pools, each retaining up to recShapePoolCap idle sessions.
+// recSessions is the dynamic-width OCR-rec pool. All input widths and batch
+// sizes share one sentinel key, so it retains up to recShapePoolCap idle
+// sessions at that key.
 var recSessions = newSessionPool[recKey, *recSession](recMaxShapePools, recShapePoolCap)
 
-// getRecSession returns a reusable dynamic-width OCR-rec session for the given
-// input width plus a release func. The caller must call release exactly once.
-func getRecSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*recSession, func(), error) {
-	key := recKeyOf(modelPath, inName, inShape, outName)
+// recSessionKeyShape is the sentinel shape used as the pool key and the
+// weight-extraction hint. The underlying DynamicAdvancedSession is
+// shape-agnostic; the caller supplies the real shape per Run via ModelInput,
+// so all input widths/batch sizes share one pooled session per model.
+var recSessionKeyShape = []int64{1, 3, 48, 640}
+
+// getRecSession returns a reusable OCR-rec session plus a release func. The
+// caller must call release exactly once. All input shapes share one pooled
+// session key; the real shape is passed to Run via ModelInput.
+func getRecSession(ctx context.Context, modelPath, inName, outName string) (*recSession, func(), error) {
+	key := recKeyOf(modelPath, inName, recSessionKeyShape, outName)
 	return recSessions.Get(ctx, key, func() (*recSession, error) {
 		// Weight sharing is best-effort: a failure here degrades to a normal
 		// (non-shared) session rather than breaking OCR-rec entirely.
-		weights, werr := sharedWeights(modelPath, inName, inShape, outName)
+		weights, werr := sharedWeights(modelPath, inName, recSessionKeyShape, outName)
 		if werr != nil {
 			log.Printf("deepdoc/native: rec weight sharing unavailable for %s: %v",
 				modelPath, werr)
 			weights = nil
 		}
-		return newRecSession(modelPath, inName, inShape, outName, weights)
+		return newRecSession(modelPath, inName, recSessionKeyShape, outName, weights)
 	})
 }

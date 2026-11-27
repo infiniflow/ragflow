@@ -102,7 +102,6 @@ func Initialized() bool { return ortReady }
 type session struct {
 	inName  string
 	outName string
-	inShape []int64
 	sess    *ort.DynamicAdvancedSession
 	// poisoned is set when a Run is cancelled/terminated via context. ONNX
 	// Runtime does not guarantee a session is reusable after a forced
@@ -218,8 +217,9 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 	return ws, nil
 }
 
-// NewSession opens modelPath. inShape describes the fixed input tensor
-// dimensions; output tensors are allocated per Run (their shape is
+// NewSession opens modelPath. inShape is used only as a hint for the one-time
+// shared-weight extraction; the real input shape is supplied per Run via
+// ModelInput. Output tensors are allocated per Run (their shape is
 // model-determined, so no outShape argument is needed). The session runs
 // intraOpThreads intra-op threads (see the constant): one thread per Run, with
 // the process-wide ceiling owned by the inference budget the process owner
@@ -268,8 +268,7 @@ func newRawSession(modelPath, inName string, inShape []int64, outName string, we
 	}
 	return &session{
 		inName: inName, outName: outName,
-		inShape: inShape,
-		sess:    sess,
+		sess: sess,
 	}, nil
 }
 
@@ -346,10 +345,9 @@ func checkOutputLength(model string, got, want int) error {
 // terminated via RunOptions. A terminated session is left in an indeterminate
 // state, so it is marked poisoned and the pool destroys it instead of reusing
 // it.
-func (s *session) Run(ctx context.Context, input []float32) ([]float32, error) {
-	if len(input) != int(prod(s.inShape)) {
-		return nil, fmt.Errorf("session %s: input len %d != expected %d",
-			s.outName, len(input), int(prod(s.inShape)))
+func (s *session) Run(ctx context.Context, in ModelInput) ([]float32, error) {
+	if err := in.validate(); err != nil {
+		return nil, fmt.Errorf("session %s: %w", s.outName, err)
 	}
 	opts, err := ort.NewRunOptions()
 	if err != nil {
@@ -366,7 +364,7 @@ func (s *session) Run(ctx context.Context, input []float32) ([]float32, error) {
 	// steady-state native memory to just its weights (plus ORT's plan cache)
 	// instead of pinning fixed in/out buffers that previously dominated the
 	// ~14 GB of native memory seen across the rec/det/DLA/TSR pools.
-	inT, err := ort.NewTensor(ort.NewShape(s.inShape...), input)
+	inT, err := ort.NewTensor(ort.NewShape(in.Shape...), in.Data)
 	if err != nil {
 		return nil, err
 	}

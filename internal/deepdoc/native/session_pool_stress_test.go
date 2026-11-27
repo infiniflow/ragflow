@@ -43,7 +43,7 @@ func (f *fakeSession) markPoisoned()    { f.poisoned.Store(true) }
 // many goroutines with a rotating key set (forcing LRU eviction) and a poison
 // fraction, under -race. It proves the pool's shared state — the pools map, the
 // lru slice, and each key-pool's free list plus their mutexes — is data-race
-// free. This is the exact code path backing the real modelSessions / recSessions
+// free. This is the exact code path backing the real dlaSessions / tsrSessions / recSessions
 // pools that the DLA/TSR/OCR-rec/Det recognizers rely on.
 //
 // Crucially it needs no ONNX weights, so unlike the MODEL_DIR-gated integration

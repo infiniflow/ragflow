@@ -65,14 +65,15 @@ type TSRResult struct {
 // RunTSR runs table-structure recognition on a cropped table image.
 func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error) {
 	blob, sf := tsrPreprocess(img)
-	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, modelFileTsr), "images",
-		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0")
+	shape := []int64{1, 3, tsrInputSize, tsrInputSize}
+	sess, release, err := getModelSession(ctx, tsrSessions, filepath.Join(modelDir, modelFileTsr), "images",
+		shape, "output0")
 	if err != nil {
 		return TSRResult{}, err
 	}
 	defer release()
 
-	out, err := sess.Run(ctx, blob)
+	out, err := sess.Run(ctx, ModelInput{Data: blob, Shape: shape})
 	if err != nil {
 		return TSRResult{}, err
 	}

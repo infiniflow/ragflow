@@ -83,39 +83,46 @@ type DetResult struct {
 // input/output tensors and frees them before returning, so the constraint is
 // about the session handle, not any pinned buffer.)
 //
-// The set of distinct shapes is BOUNDED (detMaxShapePools). A long-running
-// server ingesting many differently-sized pages would otherwise pin a pool
-// plus cached tensors per unique (modelPath, rh, rw) forever. The shared
-// sessionPool evicts the least-recently-used shape pool (and Destroys its idle
-// sessions) once the cap is exceeded, bounding memory.
+// All page shapes now share one sentinel key, so the pool holds a single
+// key-pool of shape-agnostic sessions; detMaxShapePools bounds distinct keys
+// as a guard against future changes.
 const (
-	// detMaxShapePools caps distinct (modelPath, rh, rw) pools. Pages within a
-	// document share one size, so a modest cap covers realistic concurrency
-	// while bounding memory in long-running servers.
+	// detMaxShapePools bounds distinct key-pools. With the single sentinel key
+	// only one key-pool exists in practice; this is retained as a guard against
+	// future key changes.
 	detMaxShapePools = 24
-	// detShapePoolCap caps idle sessions retained per shape; extras are
-	// Destroyed on release instead of pooled.
-	detShapePoolCap = 4
+	// detShapePoolCap caps idle sessions retained in the (now single-key) det
+	// pool; extras are Destroyed on release instead of pooled. All page shapes
+	// share one sentinel key, so this cap must cover typical concurrent Runs
+	// rather than the old per-shape value of 4.
+	detShapePoolCap = 16
 )
+
+// detSessionKeyShape is the sentinel shape used as the pool key and session
+// creation hint. The underlying DynamicAdvancedSession is shape-agnostic: the
+// real input shape is supplied per Run via ModelInput, so all input sizes
+// share one pooled session per model.
+const detSessionKeyShape int64 = 640
 
 type detSessKey struct {
 	modelPath string
 	rh, rw    int64
 }
 
-// detSessions is the variable-shape detector pool: bounded at detMaxShapePools
-// distinct shape-pools, each retaining up to detShapePoolCap idle sessions.
+// detSessions is the variable-shape detector pool. All page shapes share one
+// sentinel key, so it retains up to detShapePoolCap idle sessions at that key.
 var detSessions = newSessionPool[detSessKey, *session](detMaxShapePools, detShapePoolCap)
 
-// getDetSession returns a reusable detector session for the given resized
-// shape plus a release func. The caller must call release exactly once. On a
-// pool miss a fresh session is created; creation errors are propagated and
-// nothing is cached.
-func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*session, func(), error) {
-	key := detSessKey{modelPath, rh, rw}
+// getDetSession returns a reusable detector session plus a release func. The
+// caller must call release exactly once. All input shapes share one pooled
+// session key (the real shape is supplied per Run via ModelInput). On a pool
+// miss a fresh session is created; creation errors are propagated and nothing
+// is cached.
+func getDetSession(ctx context.Context, modelPath string) (*session, func(), error) {
+	key := detSessKey{modelPath, detSessionKeyShape, detSessionKeyShape}
 	return detSessions.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, "x",
-			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0")
+			[]int64{1, 3, detSessionKeyShape, detSessionKeyShape}, "sigmoid_0.tmp_0")
 	})
 }
 
@@ -124,13 +131,14 @@ func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*sessio
 // extraction uses the pure-Go connected-components backend.
 func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error) {
 	blob, rh, rw, sh, sw := detPreprocess(img)
-	sess, release, e := getDetSession(ctx, filepath.Join(modelDir, modelFileDet), int64(rh), int64(rw))
+	shape := []int64{1, 3, int64(rh), int64(rw)}
+	sess, release, e := getDetSession(ctx, filepath.Join(modelDir, modelFileDet))
 	if e != nil {
 		return DetResult{}, e
 	}
 	defer release()
 
-	out, e := sess.Run(ctx, blob)
+	out, e := sess.Run(ctx, ModelInput{Data: blob, Shape: shape})
 	if e != nil {
 		return DetResult{}, e
 	}
