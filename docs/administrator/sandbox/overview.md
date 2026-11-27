@@ -30,6 +30,7 @@ Choose the provider that matches where you want code to run and who should manag
 | [**Tenki**](./configure_ssh_and_cloud_providers.md#configure-tenki) | A disposable Tenki microVM created for each execution | You want each run to use an isolated, short-lived cloud microVM. |
 | [**UCloud Agent Sandbox**](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) | A disposable UCloud Agent Sandbox | You want a managed cloud sandbox in a supported UCloud region. |
 | [**kosa8**](./configure_ssh_and_cloud_providers.md#configure-kosa8) | A disposable kosa8 microVM, on kosa8 Cloud or your own hosts | You want each run in an isolated microVM with a per-sandbox egress policy, hosted or self-hosted. |
+| [**boxd**](./configure_ssh_and_cloud_providers.md#configure-boxd) | A disposable, isolated boxd machine created for each execution | You want each run in its own cloud microVM, with outbound network closed by default, in Frankfurt or New York. |
 | **Local** | Directly on the current host process | You want to execute code on the RAGFlow host rather than through a remote service or Runner container. |
 
 :::note Before choosing a cloud provider

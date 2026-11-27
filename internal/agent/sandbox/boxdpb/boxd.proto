@@ -1,0 +1,145 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+// The subset of the boxd public gRPC API (service boxd.api.v1.BoxdApi)
+// that the boxd sandbox provider calls. Messages keep the upstream field
+// numbers and leave out the fields the provider does not use. The full
+// definition is proto/api.proto in https://github.com/boxd-sh/sdk and
+// https://docs.boxd.sh/reference/grpc-proto. Regenerate the Go code with
+// `go generate ./internal/agent/sandbox/boxdpb`.
+
+syntax = "proto3";
+
+package boxd.api.v1;
+
+option go_package = "ragflow/internal/agent/sandbox/boxdpb";
+
+service BoxdApi {
+  rpc CreateVm(CreateVmRequest) returns (CreateVmResponse);
+  rpc DestroyVm(DestroyVmRequest) returns (DestroyVmResponse);
+  rpc GetVm(GetVmRequest) returns (GetVmResponse);
+  rpc SetVmEgressAllow(SetVmEgressAllowRequest) returns (SetVmEgressAllowResponse);
+  rpc Exec(stream ExecChunk) returns (stream ExecChunk);
+  rpc Whoami(WhoamiRequest) returns (WhoamiResponse);
+  rpc UploadFileStream(stream UploadFileChunk) returns (UploadFileResponse);
+  rpc DownloadFileStream(DownloadFileRequest) returns (stream DownloadFileChunk);
+}
+
+message CreateVmRequest {
+  string name = 1;
+  VmConfig config = 8;
+  // Org to create the machine in, by name or id. Empty: the caller's.
+  string org = 9;
+  // An isolated machine has no peers on the org's private network and
+  // no credentials of its own.
+  bool isolated = 12;
+  map<string, string> labels = 14;
+  // Delete the machine this many seconds after it is created.
+  optional uint64 delete_after_secs = 16;
+}
+
+message VmConfig {
+  // 0 uses the org's default size.
+  uint32 vcpu = 1;
+  uint64 memory_bytes = 2;
+  SrfConfig srf = 4;
+}
+
+message SrfConfig {
+  // 0 turns idle standby off.
+  optional uint32 auto_suspend_timeout_secs = 1;
+}
+
+message CreateVmResponse {
+  string vm_id = 1;
+  string name = 2;
+  string status = 6;
+}
+
+message DestroyVmRequest {
+  string vm_id = 1;
+}
+
+message DestroyVmResponse {}
+
+message GetVmRequest {
+  // Machine id or name.
+  string vm_id = 1;
+}
+
+message GetVmResponse {
+  string vm_id = 1;
+  string name = 2;
+  string status = 5;
+  repeated string egress_allow = 28;
+  bool isolated = 26;
+  int64 delete_at_ms = 30;
+  map<string, string> labels = 34;
+  string region = 42;
+}
+
+message SetVmEgressAllowRequest {
+  string vm = 1;
+  // Hostnames, wildcards, IPv4 addresses or CIDRs the machine may reach.
+  // ["none"]: nothing.
+  repeated string entries = 2;
+}
+
+message SetVmEgressAllowResponse {
+  repeated string entries = 1;
+}
+
+// The first client chunk carries vm_id and command; the server streams
+// output chunks and ends with one carrying exit_code.
+message ExecChunk {
+  bytes data = 1;
+  bool stdin = 2;
+  bool tty = 3;
+  string command = 4;
+  string vm_id = 5;
+  int32 exit_code = 6;
+  bool is_stderr = 10;
+}
+
+message WhoamiRequest {}
+
+message WhoamiResponse {
+  string user_id = 1;
+}
+
+// The first chunk carries vm_id, path and total_size; later chunks carry
+// bytes only.
+message UploadFileChunk {
+  string vm_id = 1;
+  string path = 2;
+  uint64 total_size = 3;
+  bytes data = 4;
+}
+
+message UploadFileResponse {
+  uint64 bytes_written = 1;
+}
+
+message DownloadFileRequest {
+  string vm_id = 1;
+  string path = 2;
+}
+
+// The first chunk carries total_size; every chunk carries the next bytes.
+message DownloadFileChunk {
+  uint64 total_size = 1;
+  bytes data = 2;
+}

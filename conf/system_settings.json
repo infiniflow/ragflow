@@ -101,6 +101,12 @@
       "source": "variable",
       "data_type": "json",
       "value": "{}"
+    },
+    {
+      "name": "sandbox.boxd",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
     }
   ]
 }

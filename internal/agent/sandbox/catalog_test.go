@@ -26,10 +26,10 @@ import (
 
 func TestCatalogOrderAndFreshSchemas(t *testing.T) {
 	providers := ListProviders()
-	if len(providers) != 8 {
-		t.Fatalf("provider count = %d, want 8", len(providers))
+	if len(providers) != 9 {
+		t.Fatalf("provider count = %d, want 9", len(providers))
 	}
-	for i, want := range []string{"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "local"} {
+	for i, want := range []string{"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "boxd", "local"} {
 		if got := providers[i]["id"]; got != want {
 			t.Errorf("provider %d = %v, want %q", i, got, want)
 		}
@@ -58,6 +58,7 @@ func TestCatalogValidationBoundaries(t *testing.T) {
 		"tenki":                  {"api_key": "key", "timeout": 30, "max_lifetime": 3600, "max_output_bytes": 1024, "max_artifact_bytes": 1024},
 		"ucloud_agent_sandbox":   {"api_key": "key"},
 		"kosa8":                  {"api_key": "key", "timeout": 30, "max_lifetime": 3600},
+		"boxd":                   {"api_key": "key", "timeout": 30, "max_lifetime": 3600},
 	}
 	for provider, base := range baselines {
 		t.Run(provider, func(t *testing.T) {
@@ -195,6 +196,39 @@ func TestValidateConfigTypesRangesAndProviderRules(t *testing.T) {
 	}
 	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "python_template": " "}); err == nil {
 		t.Fatal("empty kosa8 template accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "base_url": "http://boxd.example.com:9443"}); err == nil {
+		t.Fatal("plain-HTTP boxd endpoint accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "vcpu": 3}); err == nil {
+		t.Fatal("boxd vcpu 3 accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "region": "New York"}); err == nil {
+		t.Fatal("invalid boxd region accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "name_prefix": "Bad_Prefix"}); err == nil {
+		t.Fatal("invalid boxd name prefix accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "labels": "boxd/owner=me"}); err == nil {
+		t.Fatal("reserved boxd label accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "base_url": "https://boxd.example.com/api"}); err == nil {
+		t.Fatal("boxd endpoint with a path accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "region": "nyc", "base_url": "https://127.0.0.1:9443"}); err == nil {
+		t.Fatal("boxd region with an IP endpoint accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "base_url": "https://127.0.0.1:9443"}); err != nil {
+		t.Fatalf("boxd IP endpoint without a region rejected: %v", err)
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "timeout": 600, "max_lifetime": 600}); err == nil {
+		t.Fatal("boxd max_lifetime shorter than the timeout plus start accepted")
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "timeout": 600}); err != nil {
+		t.Fatalf("boxd timeout 600 with the default lifetime rejected: %v", err)
+	}
+	if err := ValidateConfig("boxd", map[string]any{"api_key": "key", "region": "NYC", "vcpu": 4, "labels": "team=data", "name_prefix": "rag-"}); err != nil {
+		t.Fatalf("valid boxd config rejected: %v", err)
 	}
 }
 

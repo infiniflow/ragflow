@@ -13,7 +13,7 @@ slug: /sandbox_faq
 
 - Choose **Self-Managed** to run Docker-managed Runners in infrastructure you control.
 - Choose **SSH** to reuse a dedicated Linux execution host with a custom runtime.
-- Choose **Aliyun Code Interpreter**, **E2B**, **Tenki**, **UCloud Agent Sandbox**, or **kosa8** when a managed cloud execution environment fits your region, security, and operational requirements.
+- Choose **Aliyun Code Interpreter**, **E2B**, **Tenki**, **UCloud Agent Sandbox**, **kosa8**, or **boxd** when a managed cloud execution environment fits your region, security, and operational requirements.
 
 See [Choose a sandbox provider](./overview.md#choose-a-sandbox-provider) for a comparison and links to each setup guide.
 
@@ -156,7 +156,7 @@ The configured binary must be available in the non-interactive SSH session. Shel
 
 ## Cloud providers
 
-Return to the detailed configuration for [Aliyun Code Interpreter](./configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter), [E2B](./configure_ssh_and_cloud_providers.md#configure-e2b), [Tenki](./configure_ssh_and_cloud_providers.md#configure-tenki), [UCloud Agent Sandbox](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox), or [kosa8](./configure_ssh_and_cloud_providers.md#configure-kosa8) when checking credentials, regions, endpoints, resource settings, or network access.
+Return to the detailed configuration for [Aliyun Code Interpreter](./configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter), [E2B](./configure_ssh_and_cloud_providers.md#configure-e2b), [Tenki](./configure_ssh_and_cloud_providers.md#configure-tenki), [UCloud Agent Sandbox](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox), [kosa8](./configure_ssh_and_cloud_providers.md#configure-kosa8), or [boxd](./configure_ssh_and_cloud_providers.md#configure-boxd) when checking credentials, regions, endpoints, resource settings, or network access.
 
 ### Why is the API credential rejected?
 
@@ -186,7 +186,7 @@ Use a path under `artifacts/` relative to the execution workspace. Files written
 
 ### What size, count, type, and retention limits apply?
 
-SSH, Tenki, UCloud, and kosa8 expose **Max Artifacts** and **Max Artifact Bytes** settings. Other providers or Executor Manager versions may enforce their own limits. Supported returned extensions are `.csv`, `.html`, `.jpeg`, `.jpg`, `.json`, `.pdf`, `.png`, and `.svg`.
+SSH, Tenki, UCloud, kosa8, and boxd expose **Max Artifacts** and **Max Artifact Bytes** settings. Other providers or Executor Manager versions may enforce their own limits. Supported returned extensions are `.csv`, `.html`, `.jpeg`, `.jpg`, `.json`, `.pdf`, `.png`, and `.svg`.
 
 RAGFlow stores returned files in the bucket selected by `SANDBOX_ARTIFACT_BUCKET`, which defaults to `sandbox-artifacts`. Configure retention and deletion through the object-storage service; RAGFlow does not define a separate Sandbox artifact retention setting here.
 

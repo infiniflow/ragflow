@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
+  LucideBox,
   LucideChevronDown,
   LucideCloud,
   LucideCloudLightning,
@@ -66,6 +67,7 @@ const PROVIDER_ICONS: Record<string, React.ElementType> = {
   tenki: LucideCloudLightning,
   ucloud_agent_sandbox: LucideCloud,
   kosa8: LucideCloudLightning,
+  boxd: LucideBox,
 };
 
 const SandboxKeys = {
