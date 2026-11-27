@@ -1,14 +1,21 @@
-import { DataTable } from '@/components/data-table';
 import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Switch } from '@/components/ui/switch';
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { RunningStatus } from '@/constants/knowledge';
 import { Pagination } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
@@ -26,6 +33,7 @@ import {
   SortingState,
   VisibilityState,
   createColumnHelper,
+  flexRender,
   getCoreRowModel,
   getExpandedRowModel,
   getFilteredRowModel,
@@ -381,16 +389,67 @@ export function MemoryTable({
     rowCount: total,
   });
 
+  const handlePageChange = React.useCallback(
+    (page: number, pageSize: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
+
   return (
-    <div className="w-full">
-      <DataTable
-        table={table}
-        columnsLength={columns.length}
-        rootClassName="max-h-[calc(100vh-292px)]"
-        bodyClassName="relative"
-        rowClassName="group"
-        emptyContent={<Empty type={EmptyType.Data} />}
-      />
+    <>
+      <DatasetTableLayout
+        pagination={
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={handlePageChange}
+          />
+        }
+      >
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id}>
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody className="relative">
+          {table.getRowModel().rows.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && 'selected'}
+                className="group"
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cell.column.columnDef.meta?.cellClassName}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center">
+                <Empty type={EmptyType.Data} />
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </DatasetTableLayout>
       {showDeleteDialog && (
         <ConfirmDeleteDialog
           onOk={handleDeleteMessage}
@@ -482,16 +541,6 @@ export function MemoryTable({
           logInfo={logInfo as unknown as ILogInfo}
         />
       )}
-
-      <div className="flex items-center justify-end  absolute bottom-3 right-3">
-        <RAGFlowPagination
-          {...pick(pagination, 'current', 'pageSize')}
-          total={total}
-          onChange={(page, pageSize) => {
-            setPagination({ page, pageSize });
-          }}
-        />
-      </div>
-    </div>
+    </>
   );
 }

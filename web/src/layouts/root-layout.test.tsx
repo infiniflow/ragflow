@@ -8,6 +8,7 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/ee/layouts/components/header-enterprise', () => ({
   EnterpriseHeaderUpgradeBadge: () => null,
+  EnterpriseSidebarTenantSwitcher: () => null,
 }));
 
 jest.mock('@/ee/layouts/root-layout-shell', () => ({

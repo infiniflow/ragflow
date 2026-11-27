@@ -27,7 +27,7 @@ import './index.less';
 import { SearchEmbedButton } from './search-embed-button';
 import SearchHome from './search-home';
 import { SearchSetting } from './search-setting';
-import { SearchSidebar } from './search-sidebar';
+import { SearchSidebar } from './sidebar';
 import SearchingPage from './searching';
 
 export default function SearchPage() {

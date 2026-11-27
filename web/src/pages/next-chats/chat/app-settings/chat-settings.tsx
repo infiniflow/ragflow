@@ -1,10 +1,9 @@
-import { SettingsFormContainer } from '@/components/settings-form-container';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import { Form } from '@/components/ui/form';
 import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
 } from '@/hooks/use-llm-request';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatasetMetadata } from '@/constants/chat';
 import {
   AgenticRagKeys,
@@ -207,42 +206,38 @@ export function ChatSettings() {
       <ModelResourceAccessUserIdContext.Provider
         value={chatLoading ? null : (data?.user_id ?? null)}
       >
-        <SettingsFormContainer
-          data-testid="chat-detail-settings"
-          className="flex-1 min-h-0 flex flex-col overflow-hidden"
-        >
-          <Form {...form}>
-            <form
-              ref={formContainerRef}
-              onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
-              className="flex-1 flex flex-col min-h-0"
-            >
-              <ScrollArea viewportClassName="[&>div]:!block">
-                <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
-                  <ChatBasicSetting
-                    collapseOpen={modelSettingOpen}
-                    onCollapseOpenChange={onModelSettingOpenChange}
-                    accessUserId={data?.user_id}
-                  ></ChatBasicSetting>
-                  <ChatPromptEngine
-                    advancedSettingOpen={advancedSettingOpen}
-                    onAdvancedSettingOpenChange={onAdvancedSettingOpenChange}
-                    naiveSettingOpen={naiveSettingOpen}
-                    onNaiveSettingOpenChange={onNaiveSettingOpenChange}
-                    agenticSettingOpen={agenticSettingOpen}
-                    onAgenticSettingOpenChange={onAgenticSettingOpenChange}
-                  ></ChatPromptEngine>
-                </section>
-              </ScrollArea>
-
-              {canEditSettings && (
-                <div className="p-5 pt-4 text-right">
+        <Form {...form}>
+          <form
+            ref={formContainerRef}
+            onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <SettingsFormLayout
+              data-testid="chat-detail-settings"
+              actions={
+                canEditSettings ? (
                   <SavingButton loading={loading}></SavingButton>
-                </div>
-              )}
-            </form>
-          </Form>
-        </SettingsFormContainer>
+                ) : undefined
+              }
+            >
+              <section className="space-y-6">
+                <ChatBasicSetting
+                  collapseOpen={modelSettingOpen}
+                  onCollapseOpenChange={onModelSettingOpenChange}
+                  accessUserId={data?.user_id}
+                ></ChatBasicSetting>
+                <ChatPromptEngine
+                  advancedSettingOpen={advancedSettingOpen}
+                  onAdvancedSettingOpenChange={onAdvancedSettingOpenChange}
+                  naiveSettingOpen={naiveSettingOpen}
+                  onNaiveSettingOpenChange={onNaiveSettingOpenChange}
+                  agenticSettingOpen={agenticSettingOpen}
+                  onAgenticSettingOpenChange={onAgenticSettingOpenChange}
+                ></ChatPromptEngine>
+              </section>
+            </SettingsFormLayout>
+          </form>
+        </Form>
       </ModelResourceAccessUserIdContext.Provider>
     </ModelResourceTenantIdContext.Provider>
   );
