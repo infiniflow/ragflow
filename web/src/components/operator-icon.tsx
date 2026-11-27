@@ -18,6 +18,7 @@ import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import queritLogo from '@/assets/querit.png';
 import search1apiLogo from '@/assets/search1api.png';
+import specstreamLogo from '@/assets/svg/specstream.svg';
 import anySearchLogo from '@/assets/anysearch.webp';
 import { cn } from '@/lib/utils';
 import {
@@ -82,6 +83,8 @@ export const SVGIconMap = {
   [Operator.QueritSearch]: 'querit',
   [Operator.Search1APISearch]: 'search1api',
   [Operator.Search1APICrawl]: 'search1api',
+  [Operator.SpecStreamSearch]: 'specstream',
+  [Operator.SpecStreamExtract]: 'specstream',
   [Operator.AnySearchSearch]: 'anysearch',
   [Operator.AnySearchDiscover]: 'anysearch',
   [Operator.AnySearchExtract]: 'anysearch',
@@ -167,6 +170,19 @@ const OperatorIcon = ({ name, className }: IProps) => {
     return (
       <img
         src={search1apiLogo}
+        alt=""
+        className={cn('size-5 object-contain', className)}
+      />
+    );
+  }
+
+  if (
+    name === Operator.SpecStreamSearch ||
+    name === Operator.SpecStreamExtract
+  ) {
+    return (
+      <img
+        src={specstreamLogo}
         alt=""
         className={cn('size-5 object-contain', className)}
       />

@@ -72,6 +72,8 @@ var registry = map[string]Factory{
 	"search1api_crawl":           buildSearch1APICrawlTool,
 	"searxng":                    buildSearXNGTool,
 	"sofya":                      buildSofyaTool,
+	"specstream":                 buildSpecStreamTool,
+	"specstream_extract":         buildSpecStreamExtractTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
 	"tushare":                    buildTushareTool,
@@ -100,6 +102,8 @@ var canvasToolNames = map[string]string{
 	"search1apicrawl":   "search1api_crawl",
 	"search1apisearch":  "search1api",
 	"sofyasearch":       "sofya",
+	"specstreamextract": "specstream_extract",
+	"specstreamsearch":  "specstream",
 	"tavilyextract":     "tavily_extract",
 	"tavilysearch":      "tavily",
 	"yahoofinance":      "yahoo_finance",
@@ -1014,6 +1018,53 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+func buildSpecStreamTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := specstreamDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "specstream")
+		}
+	}
+	if value, ok := params["passages"]; ok {
+		passages, valid := value.(bool)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires boolean node-level param passages", "specstream")
+		}
+		defaults.Passages = passages
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > specstreamMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", "specstream", specstreamMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	return newSpecStreamTool(nil, apiKey, defaults), nil
+}
+
+func buildSpecStreamExtractTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", specstreamExtractToolName)
+		}
+	}
+	defaultURL := ""
+	if value, ok := params["url"]; ok {
+		var valid bool
+		defaultURL, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param url", specstreamExtractToolName)
+		}
+	}
+	return newSpecStreamExtractTool(nil, apiKey, defaultURL), nil
 }
 
 // anySearchAPIKeyParam reads the node-level api_key. AnySearch works without a

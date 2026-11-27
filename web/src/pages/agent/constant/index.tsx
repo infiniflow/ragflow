@@ -384,6 +384,34 @@ export const initialSearch1APICrawlValues = {
   },
 };
 
+export const initialSpecStreamSearchValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  passages: false,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export const initialSpecStreamExtractValues = {
+  api_key: '',
+  url: '',
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export enum AnySearchZone {
   Intl = 'intl',
   Cn = 'cn',
@@ -976,6 +1004,8 @@ export const RestrictedUpstreamMap = {
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APICrawl]: [Operator.Begin],
+  [Operator.SpecStreamSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.SpecStreamExtract]: [Operator.Begin],
   [Operator.AnySearchSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.AnySearchExtract]: [Operator.Begin],
   [Operator.ExeSQL]: [Operator.Begin],
@@ -1039,6 +1069,8 @@ export const NodeMap = {
   [Operator.SofyaSearch]: 'ragNode',
   [Operator.Search1APISearch]: 'ragNode',
   [Operator.Search1APICrawl]: 'ragNode',
+  [Operator.SpecStreamSearch]: 'ragNode',
+  [Operator.SpecStreamExtract]: 'ragNode',
   [Operator.AnySearchSearch]: 'ragNode',
   [Operator.AnySearchExtract]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',

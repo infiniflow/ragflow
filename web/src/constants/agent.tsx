@@ -131,6 +131,8 @@ export enum Operator {
   SofyaSearch = 'SofyaSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
+  SpecStreamSearch = 'SpecStreamSearch',
+  SpecStreamExtract = 'SpecStreamExtract',
   AnySearchSearch = 'AnySearchSearch',
   AnySearchDiscover = 'AnySearchDiscover',
   AnySearchExtract = 'AnySearchExtract',

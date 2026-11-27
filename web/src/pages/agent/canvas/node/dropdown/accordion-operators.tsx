@@ -98,6 +98,8 @@ export function AccordionOperators({
     Operator.SofyaSearch,
     Operator.Search1APISearch,
     Operator.Search1APICrawl,
+    Operator.SpecStreamSearch,
+    Operator.SpecStreamExtract,
     Operator.AnySearchSearch,
     Operator.AnySearchExtract,
     Operator.DocGenerator,

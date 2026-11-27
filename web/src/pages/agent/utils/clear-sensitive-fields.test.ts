@@ -13,6 +13,8 @@ jest.mock('@/constants/agent', () => ({
     Search1APISearch: 'Search1APISearch',
     Search1APICrawl: 'Search1APICrawl',
     Begin: 'Begin',
+    SpecStreamSearch: 'SpecStreamSearch',
+    SpecStreamExtract: 'SpecStreamExtract',
   },
   AgentDialogueMode: { Webhook: 'Webhook' },
 }));
@@ -233,6 +235,85 @@ describe('clearSensitiveFields', () => {
         'search1api-graph-secret',
       );
       expect(dsl.tools[0].params.api_key).toBe('search1api-tool-secret');
+    },
+  );
+
+  it.each([
+    'SpecStreamSearch',
+    'SpecStreamExtract',
+    'specstreamsearch',
+    'specstreamextract',
+    'specstream',
+    'specstream_extract',
+  ])(
+    'clears a %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'specstream-graph-secret',
+                  top_n: 5,
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'specstream-tool-secret',
+              top_n: 5,
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.top_n).toBe(5);
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'specstream-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('specstream-tool-secret');
+    },
+  );
+
+  it.each([
+    ['tool_name', { tool_name: 'SpecStreamSearch' }],
+    ['name', { name: 'specstream_extract' }],
+    [
+      'blank component_name then tool_name',
+      { component_name: '', tool_name: 'SpecStreamSearch' },
+    ],
+    [
+      'blank component_name and tool_name then name',
+      { component_name: '  ', tool_name: '', name: 'specstream' },
+    ],
+  ])(
+    'clears a SpecStream tool record named through %s, like the backend resolves it',
+    (_label, discriminator) => {
+      const dsl = {
+        tools: [
+          {
+            ...discriminator,
+            params: { api_key: 'specstream-tool-secret', top_n: 5 },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(dsl.tools[0].params.api_key).toBe('specstream-tool-secret');
     },
   );
 
