@@ -339,6 +339,35 @@ func buildWikiRefineWriterSystem(example string) string {
 	})
 }
 
+// wikiBlueprintExample returns the page-structure guidance of a template's
+// Custom blueprint (instruction, then example), or "" when the blueprint is not
+// enabled or empty. Only an enabled blueprint (use_blueprint=true) counts: the
+// built-in wiki template also carries instruction/example text that must not
+// replace the default REFINE page structure.
+func wikiBlueprintExample(parserConfig map[string]any, language string) string {
+	if enabled, _ := common.Get(parserConfig, "use_blueprint").(bool); !enabled {
+		return ""
+	}
+	instruction := strings.TrimSpace(common.Localize(common.Get(parserConfig, "instruction"), language))
+	example := strings.TrimSpace(common.Localize(common.Get(parserConfig, "example"), language))
+	switch {
+	case instruction != "" && example != "":
+		return instruction + "\n\n## Example\n" + example
+	case instruction != "":
+		return instruction
+	default:
+		return example
+	}
+}
+
+// wikiSeeAlsoEnabled reports whether the deterministic "See also" section is
+// appended to refined pages. It defaults to true; only an explicit
+// see_also=false turns it off.
+func wikiSeeAlsoEnabled(parserConfig map[string]any) bool {
+	enabled, ok := common.Get(parserConfig, "see_also").(bool)
+	return !ok || enabled
+}
+
 func wikiTemplateCustomRules(parserConfig map[string]any, language string) string {
 	if rules := common.Localize(common.Get(parserConfig, "global_rules"), language); strings.TrimSpace(rules) != "" {
 		return strings.TrimSpace(rules)
