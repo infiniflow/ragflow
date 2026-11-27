@@ -243,7 +243,7 @@ s3:
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 
-For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google Cloud Storage), see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
+For AWS S3, Alibaba Cloud OSS, Azure Blob, and Google Cloud Storage, see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
 
 ### `kvrocks`
 
