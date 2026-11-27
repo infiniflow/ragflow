@@ -452,6 +452,10 @@ func parseHostPort(hostPort string) (string, int, error) {
 		return "", -1, fmt.Errorf("invalid port number: %s", portText)
 	}
 
+	if port < 1 || port > 65535 {
+		return "", -1, fmt.Errorf("port %d is outside the range 1–65535", port)
+	}
+
 	return host, port, nil
 }
 
