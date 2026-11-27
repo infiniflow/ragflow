@@ -83,19 +83,19 @@ type DetResult struct {
 // input/output tensors and frees them before returning, so the constraint is
 // about the session handle, not any pinned buffer.)
 //
-// The set of distinct shapes is BOUNDED (detMaxShapePools). A long-running
-// server ingesting many differently-sized pages would otherwise pin a pool
-// plus cached tensors per unique (modelPath, rh, rw) forever. The shared
-// sessionPool evicts the least-recently-used shape pool (and Destroys its idle
-// sessions) once the cap is exceeded, bounding memory.
+// All page shapes now share one sentinel key, so the pool holds a single
+// key-pool of shape-agnostic sessions; detMaxShapePools bounds distinct keys
+// as a guard against future changes.
 const (
-	// detMaxShapePools caps distinct (modelPath, rh, rw) pools. Pages within a
-	// document share one size, so a modest cap covers realistic concurrency
-	// while bounding memory in long-running servers.
+	// detMaxShapePools bounds distinct key-pools. With the single sentinel key
+	// only one key-pool exists in practice; this is retained as a guard against
+	// future key changes.
 	detMaxShapePools = 24
-	// detShapePoolCap caps idle sessions retained per shape; extras are
-	// Destroyed on release instead of pooled.
-	detShapePoolCap = 4
+	// detShapePoolCap caps idle sessions retained in the (now single-key) det
+	// pool; extras are Destroyed on release instead of pooled. All page shapes
+	// share one sentinel key, so this cap must cover typical concurrent Runs
+	// rather than the old per-shape value of 4.
+	detShapePoolCap = 16
 )
 
 // detSessionKeyShape is the sentinel shape used as the pool key and session
@@ -109,8 +109,8 @@ type detSessKey struct {
 	rh, rw    int64
 }
 
-// detSessions is the variable-shape detector pool: bounded at detMaxShapePools
-// distinct shape-pools, each retaining up to detShapePoolCap idle sessions.
+// detSessions is the variable-shape detector pool. All page shapes share one
+// sentinel key, so it retains up to detShapePoolCap idle sessions at that key.
 var detSessions = newSessionPool[detSessKey, *session](detMaxShapePools, detShapePoolCap)
 
 // getDetSession returns a reusable detector session plus a release func. The

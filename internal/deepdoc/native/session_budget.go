@@ -67,15 +67,14 @@ func (b SessionBudget) TotalSessions() int {
 }
 
 // ApplySessionBudget installs calibrated idle-session caps on the model pools.
-// A zero entry means "not calibrated" and is skipped. DLA and TSR share the
-// fixed-shape pool (modelSessions), so its cap is the larger of the two.
+// A zero entry means "not calibrated" and is skipped. DLA and TSR have separate
+// pools so each receives its own measured quota.
 func ApplySessionBudget(b SessionBudget) {
-	if b.DLA > 0 || b.TSR > 0 {
-		cap := b.DLA
-		if b.TSR > cap {
-			cap = b.TSR
-		}
-		modelSessions.SetMaxFree(cap)
+	if b.DLA > 0 {
+		dlaSessions.SetMaxFree(b.DLA)
+	}
+	if b.TSR > 0 {
+		tsrSessions.SetMaxFree(b.TSR)
 	}
 	if b.DET > 0 {
 		detSessions.SetMaxFree(b.DET)
@@ -88,8 +87,8 @@ func ApplySessionBudget(b SessionBudget) {
 // snapshotPoolMaxFree captures current caps (test helper for restore).
 func snapshotPoolMaxFree() map[string]int {
 	return map[string]int{
-		"dla": int(modelSessions.maxFree.Load()),
-		"tsr": int(modelSessions.maxFree.Load()),
+		"dla": int(dlaSessions.maxFree.Load()),
+		"tsr": int(tsrSessions.maxFree.Load()),
 		"det": int(detSessions.maxFree.Load()),
 		"rec": int(recSessions.maxFree.Load()),
 	}
@@ -99,7 +98,10 @@ func snapshotPoolMaxFree() map[string]int {
 func restorePoolMaxFree(saved map[string]int) func() {
 	return func() {
 		if v, ok := saved["dla"]; ok {
-			modelSessions.SetMaxFree(v)
+			dlaSessions.SetMaxFree(v)
+		}
+		if v, ok := saved["tsr"]; ok {
+			tsrSessions.SetMaxFree(v)
 		}
 		if v, ok := saved["det"]; ok {
 			detSessions.SetMaxFree(v)

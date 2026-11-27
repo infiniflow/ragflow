@@ -49,8 +49,8 @@ func TestApplySessionBudget(t *testing.T) {
 	ApplySessionBudget(budget)
 
 	got := snapshotPoolMaxFree()
-	// DLA and TSR share the fixed-shape pool; its cap is max(dla, tsr).
-	if got["dla"] != 4 || got["tsr"] != 4 || got["det"] != 8 || got["rec"] != 4 {
+	// DLA and TSR now have independent pools and independent caps.
+	if got["dla"] != 4 || got["tsr"] != 2 || got["det"] != 8 || got["rec"] != 4 {
 		t.Fatalf("applied budget %v, got %v", budget, got)
 	}
 }
@@ -76,6 +76,8 @@ func TestApplySessionBudgetZeroKeepsCurrent(t *testing.T) {
 // the cap must be atomic so concurrent read/write is race-free. Under -race
 // this test fails against a plain int field and passes with an atomic one.
 func TestSetMaxFreeConcurrentSnapshot(t *testing.T) {
+	saved := snapshotPoolMaxFree()
+	t.Cleanup(restorePoolMaxFree(saved))
 	const iterations = 2000
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -99,4 +101,46 @@ func TestSetMaxFreeConcurrentSnapshot(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+// TestApplySessionBudgetSeparateDLATSR asserts DLA and TSR get INDEPENDENT
+// idle caps. They use separate pools (different model + shape); a single
+// shared max(DLA,TSR) cap over-retains both and promotes TSR to DLA's quota.
+//
+// Adversarial fixture: DLA != TSR (4 vs 2). A shared-cap implementation gives
+// both 4 and fails the TSR assertion.
+func TestApplySessionBudgetSeparateDLATSR(t *testing.T) {
+	saved := snapshotPoolMaxFree()
+	t.Cleanup(restorePoolMaxFree(saved))
+
+	ApplySessionBudget(SessionBudget{DLA: 4, TSR: 2, DET: 8, REC: 4})
+
+	got := snapshotPoolMaxFree()
+	if got["dla"] != 4 {
+		t.Errorf("DLA cap = %d, want 4", got["dla"])
+	}
+	if got["tsr"] != 2 {
+		t.Errorf("TSR cap = %d, want 2 (must not inherit DLA's 4)", got["tsr"])
+	}
+	if got["det"] != 8 || got["rec"] != 4 {
+		t.Errorf("DET/REC caps = %d/%d, want 8/4", got["det"], got["rec"])
+	}
+}
+
+// TestCollapsedKeyPoolDefaultCapacity asserts that after collapsing all shapes
+// onto one key, the default idle cap is large enough to retain sessions for
+// typical concurrent inference. The old per-shape caps (rec=1, det=4) were
+// totals across 96/24 distinct key-pools; with a single key they cap the whole
+// pool at 1/4, so concurrent Runs past that rebuild sessions on every Get.
+//
+// Adversarial fixture: assert the floor is a real concurrency value (>=16),
+// which fails against the old per-shape defaults regardless of budget file.
+func TestCollapsedKeyPoolDefaultCapacity(t *testing.T) {
+	const minConcurrentIdle = 16
+	if got := int(recSessions.maxFree.Load()); got < minConcurrentIdle {
+		t.Errorf("recSessions default maxFree = %d, want >= %d (single key must retain concurrent sessions)", got, minConcurrentIdle)
+	}
+	if got := int(detSessions.maxFree.Load()); got < minConcurrentIdle {
+		t.Errorf("detSessions default maxFree = %d, want >= %d (single key must retain concurrent sessions)", got, minConcurrentIdle)
+	}
 }

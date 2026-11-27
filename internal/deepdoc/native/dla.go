@@ -84,7 +84,7 @@ var dlaPostprocessFn = dlaPostprocess
 func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error) {
 	blob, sf := dlaPreprocess(img)
 	shape := []int64{1, 3, dlaInputSize, dlaInputSize}
-	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, modelFileLayout), "images",
+	sess, release, err := getModelSession(ctx, dlaSessions, filepath.Join(modelDir, modelFileLayout), "images",
 		shape, "output0")
 	if err != nil {
 		return DLAResult{}, err

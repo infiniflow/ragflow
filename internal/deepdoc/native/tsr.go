@@ -66,7 +66,7 @@ type TSRResult struct {
 func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error) {
 	blob, sf := tsrPreprocess(img)
 	shape := []int64{1, 3, tsrInputSize, tsrInputSize}
-	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, modelFileTsr), "images",
+	sess, release, err := getModelSession(ctx, tsrSessions, filepath.Join(modelDir, modelFileTsr), "images",
 		shape, "output0")
 	if err != nil {
 		return TSRResult{}, err

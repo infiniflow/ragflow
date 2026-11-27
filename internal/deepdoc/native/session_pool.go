@@ -309,15 +309,23 @@ func shapeKey(s []int64) string {
 	return strings.Join(parts, ",")
 }
 
-// modelSessions is unbounded (maxKeys/maxFree = 0): the fixed-shape key set is
-// tiny, so the degenerate no-eviction case is correct here.
-var modelSessions = newSessionPool[sessKey, *session](0, 0)
+// dlaSessions and tsrSessions are separate fixed-shape pools. DLA and TSR use
+// different models and input sizes (layout.ort 1024x1024 vs tsr.ort 640x640),
+// so they are distinct key-pools with independent idle caps. A single shared
+// pool with one maxFree would give both the same cap, over-retaining one model
+// and ignoring the other's calibrated quota.
+var (
+	dlaSessions = newSessionPool[sessKey, *session](0, 0)
+	tsrSessions = newSessionPool[sessKey, *session](0, 0)
+)
 
-// getModelSession returns a reusable session for the given model signature plus
-// a release func. The caller must call release exactly once.
-func getModelSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*session, func(), error) {
+// getModelSession returns a reusable session from the given fixed-shape pool
+// for the model signature plus a release func. The caller must call release
+// exactly once. The pool is passed explicitly so each model's idle cap is
+// independent.
+func getModelSession(ctx context.Context, pool *sessionPool[sessKey, *session], modelPath, inName string, inShape []int64, outName string) (*session, func(), error) {
 	key := sessKeyOf(modelPath, inName, inShape, outName)
-	return modelSessions.Get(ctx, key, func() (*session, error) {
+	return pool.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, inName, inShape, outName)
 	})
 }
@@ -342,25 +350,21 @@ func recKeyOf(modelPath, inName string, inShape []int64, outName string) recKey 
 }
 
 const (
-	// recMaxShapePools caps distinct (modelPath, N, imgW) pools. Unlike the
-	// fixed-shape DLA/TSR models, a long-running server ingesting many
-	// differently-sized text lines would otherwise pin one pooled session (and
-	// its ORT tensors) per distinct shape forever. The shared sessionPool
-	// evicts the least-recently-used shape pool (Destroying its idle sessions)
-	// once the cap is exceeded, bounding memory.
+	// recMaxShapePools bounds distinct key-pools. Since all rec shapes now share
+	// one sentinel key, only one key-pool exists in practice; the bound is kept
+	// as a guard against future key changes.
 	recMaxShapePools = 96
-	// recShapePoolCap caps idle sessions retained per shape; extras are
-	// Destroyed on release instead of pooled.
-	//
-	// 96 * 1 keeps the same native-RSS budget as the prior 64 * 4 config
-	// (~384 pooled sessions) while spreading it across more distinct shapes so
-	// concurrent workers contending on a single width no longer serialize on one
-	// idle session per shape.
-	recShapePoolCap = 1
+	// recShapePoolCap caps idle sessions retained in the (now single-key) rec
+	// pool; extras are Destroyed on release instead of pooled. All shapes share
+	// one sentinel key, so this cap must cover typical concurrent Runs rather
+	// than the old per-shape value of 1 (which only worked because capacity was
+	// spread across up to 96 distinct shape keys).
+	recShapePoolCap = 16
 )
 
-// recSessions is the dynamic-width OCR-rec pool: bounded at recMaxShapePools
-// distinct width-pools, each retaining up to recShapePoolCap idle sessions.
+// recSessions is the dynamic-width OCR-rec pool. All input widths and batch
+// sizes share one sentinel key, so it retains up to recShapePoolCap idle
+// sessions at that key.
 var recSessions = newSessionPool[recKey, *recSession](recMaxShapePools, recShapePoolCap)
 
 // recSessionKeyShape is the sentinel shape used as the pool key and the
