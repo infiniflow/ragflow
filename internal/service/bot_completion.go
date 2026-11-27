@@ -476,8 +476,22 @@ func (s *BotService) streamChatbotTurn(
 		// the client already rendered. fullAnswer additionally tracks
 		// the decorated final answer for error detection and the
 		// no-delta fallback.
-		var rawAnswer, fullAnswer string
+		var rawAnswer, fullAnswer, deliveredAnswer string
 		var finalRef map[string]any
+		finished := false
+		// A turn cut off before its final result keeps the text the client
+		// already received. The request context is usually cancelled by now.
+		defer func() {
+			content := interruptedAnswerText(deliveredAnswer)
+			if finished || content == "" || queuedFinalFailed(results) {
+				return
+			}
+			saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if pErr := s.persistChatbotTurn(saveCtx, session, question, content, messageID, nil, float64(time.Now().UnixNano())/1e9); pErr != nil {
+				common.Error("bot: ChatbotCompletion interrupted turn update failed", pErr, zap.String("dialog_id", session.DialogID), zap.String("session_id", session.ID))
+			}
+		}()
 
 		sendFrame := func(frame ChatbotSSEFrame) bool {
 			if ctx.Err() != nil {
@@ -485,6 +499,7 @@ func (s *BotService) streamChatbotTurn(
 			}
 			select {
 			case out <- frame:
+				deliveredAnswer = rawAnswer
 				return true
 			case <-ctx.Done():
 				return false
@@ -493,6 +508,7 @@ func (s *BotService) streamChatbotTurn(
 
 		for res := range results {
 			if res.Final {
+				finished = true
 				completedAt := float64(time.Now().UnixNano()) / 1e9
 				if res.Answer != "" {
 					// Decorated full answer (citations
@@ -605,7 +621,8 @@ func (s *BotService) streamChatbotTurn(
 // python async_iframe_completion (conversation_service.py:341-356):
 // system turns are dropped and a leading assistant turn (the seeded
 // prologue) is dropped so the first message the LLM sees is a user
-// turn. Tolerates an empty / malformed Message column by starting
+// turn. Questions left unanswered by an interrupted turn are dropped
+// too. Tolerates an empty / malformed Message column by starting
 // from just the new question.
 func buildChatbotPipelineMessages(raw json.RawMessage, question, messageID string) []map[string]interface{} {
 	turns := parseChatbotTurns(raw)
@@ -632,7 +649,7 @@ func buildChatbotPipelineMessages(raw json.RawMessage, question, messageID strin
 		}
 		msg = append(msg, message)
 	}
-	return msg
+	return dropUnansweredQuestions(msg)
 }
 
 // parseChatbotTurns decodes the session.Message JSON array.
