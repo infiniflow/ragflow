@@ -792,8 +792,7 @@ func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.Chunk
 			if pending != nil {
 				separator := ""
 				text := textBuilder.String()
-				if strings.TrimRightFunc(text, unicode.IsSpace) == text &&
-					strings.TrimLeftFunc(piece.Text, unicode.IsSpace) == piece.Text {
+				if !strings.HasSuffix(text, "\n") && !strings.HasPrefix(piece.Text, "\n") {
 					separator = "\n"
 				}
 				if pattern.MatchString(separator) || !mergeChunkMetadata(pending, piece) {
@@ -801,8 +800,12 @@ func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.Chunk
 				} else {
 					textBuilder.WriteString(separator)
 					textBuilder.WriteString(piece.Text)
-					pending.PDFPositions = extendRawJSONArray(pending.PDFPositions, piece.PDFPositions)
-					pending.Positions = extendRawJSONArray(pending.Positions, piece.Positions)
+					if len(piece.PDFPositions) > 0 {
+						pending.PDFPositions = extendRawJSONArray(pending.PDFPositions, piece.PDFPositions)
+					}
+					if len(piece.Positions) > 0 {
+						pending.Positions = extendRawJSONArray(pending.Positions, piece.Positions)
+					}
 					continue
 				}
 			}

@@ -59,6 +59,59 @@ func TestTokenChunkerCustomDelimiterAcrossParserItems(t *testing.T) {
 	}
 }
 
+func TestTokenChunkerCustomNewlineWithParagraphWhitespace(t *testing.T) {
+	for _, paragraphs := range [][]string{{"first ", "second"}, {"first", " second"}, {"first\t", "second"}, {"first", "\tsecond"}, {"first\u3000", "second"}} {
+		t.Run(fmt.Sprint(paragraphs), func(t *testing.T) {
+			params := map[string]any{"delimiters": []string{"`\n`"}}
+			structured := invokeTokenChunks(t, params, map[string]any{
+				"name": "document.docx", "output_format": "json",
+				"json": []map[string]any{{"text": paragraphs[0], "doc_type_kwd": "text"}, {"text": paragraphs[1], "doc_type_kwd": "text"}},
+			})
+			plain := invokeTokenChunks(t, params, map[string]any{"name": "document.txt", "output_format": "text", "text": strings.Join(paragraphs, "\n")})
+			got, want := chunkTexts(structured), chunkTexts(plain)
+			for i := range got {
+				got[i] = strings.TrimSpace(got[i])
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("structured = %q, plain = %q", got, want)
+			}
+		})
+	}
+}
+
+func TestTokenChunkerCustomDelimiterPositionlessItems(t *testing.T) {
+	var items []map[string]any
+	for i := range 100 {
+		item := map[string]any{"text": "paragraph", "doc_type_kwd": "text"}
+		if i%2 == 0 {
+			item["_pdf_positions"] = [][]int{{i, 0, 10, 0, 10}}
+			item["positions"] = [][]int{{i, 0, 10, 0, 10}}
+		}
+		items = append(items, item)
+	}
+	chunks := invokeTokenChunks(t, map[string]any{"delimiters": []string{"`#`"}}, map[string]any{
+		"name": "document.docx", "output_format": "json", "json": items,
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	docs, _, err := schema.ChunkDocsFromAny(chunks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, positions := range []json.RawMessage{docs[0].PDFPositions, docs[0].Positions} {
+		rows := matrixOfRaw(t, positions)
+		if len(rows) != 50 {
+			t.Fatalf("position count = %d, want 50", len(rows))
+		}
+		for i, row := range rows {
+			if row[0] != float64(i*2) {
+				t.Fatalf("position[%d] = %v", i, row)
+			}
+		}
+	}
+}
+
 func TestTokenChunkerCustomDelimiterItemsPreserveMediaAndPositions(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{"delimiters": []string{"`#`"}})
 	if err != nil {
