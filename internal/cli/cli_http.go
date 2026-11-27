@@ -515,8 +515,6 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIListSyncLogsCommand(commandCount, cmd)
 	case "api_remove_task":
 		return c.APIRemoveTaskCommand(commandCount, cmd)
-	case "user_parse_local_file_command":
-		return c.APIParseLocalFileCommand(commandCount, cmd)
 	case "api_show_admin_server":
 		return c.CommonShowAdminServerCommand(commandCount, cmd)
 	case "api_show_api_server":
