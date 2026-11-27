@@ -544,6 +544,7 @@ export default {
           'chunk:tags': '标签提取',
           'chunk:resume': '断点恢复',
           'chunk:remaining': '信息补全',
+          'image:crop': '图片截图',
           'chunk:embed': '向量化',
           'chunk:claim': '观点抽取',
           'batch:generate': '批次生成',

@@ -123,12 +123,14 @@ func TestMergeProgressFallsBackWhenSnapshotMissing(t *testing.T) {
 }
 
 func TestMergeProgressFallsBackWhenSnapshotHasNoActiveUnit(t *testing.T) {
-	// Adversarial: KV key exists but no stage ever reported a position.
-	snap := testSnapshot(progressstore.StatusRunning,
-		progressstore.Stage{Name: "File", Phase: "running", Units: map[string]progressstore.UnitProgress{}})
+	// Adversarial: KV key exists but no stage has been reported at all. A stage
+	// that is running without a unit still carries identity and is surfaced (see
+	// TestMergeProgressPrefersRunningStageWithoutUnit); here there is nothing to
+	// show, so the response must be marked fallback rather than fabricate 0/0.
+	snap := testSnapshot(progressstore.StatusRunning)
 	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
 	if !resp.Fallback {
-		t.Fatal("snapshot without an active unit must mark fallback, not show 0/0")
+		t.Fatal("snapshot with no stage at all must mark fallback, not show 0/0")
 	}
 }
 
@@ -202,5 +204,138 @@ func TestMergeProgressTerminalCarriesChunkCount(t *testing.T) {
 	}
 	if resp.Status != string(entity.TaskStatusDone) {
 		t.Fatalf("status = %q, want authoritative terminal status", resp.Status)
+	}
+}
+
+// Adversarial: a running stage that has not reported its first unit yet must
+// still own the summary. A wrong implementation falls back to the last done
+// stage and shows its stale 100% (the exact freeze reported by users).
+func TestMergeProgressPrefersRunningStageWithoutUnit(t *testing.T) {
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "File", Phase: progressstore.PhaseDone},
+		progressstore.Stage{Name: "Parser:HipSignsRhyme", Phase: progressstore.PhaseDone, Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 3266, Total: 3266},
+		}},
+		progressstore.Stage{Name: "GeneralChunker:SixApplesFall", Phase: progressstore.PhaseRunning},
+	)
+
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
+	if resp.Stage != "GeneralChunker:SixApplesFall" {
+		t.Fatalf("stage = %q, want GeneralChunker:SixApplesFall (running stage without a unit must not fall back to a done stage)", resp.Stage)
+	}
+	// The response's phase is the snapshot STATUS (uppercase), not the stage's
+	// lifecycle label; mixing the two breaks the API contract.
+	if resp.Phase != progressstore.StatusRunning {
+		t.Errorf("phase = %q, want %q", resp.Phase, progressstore.StatusRunning)
+	}
+	// No unit has been reported yet, so there is no position to display. The
+	// response must not fabricate 0/0; mark fallback while keeping Stage set.
+	if !resp.Fallback {
+		t.Error("running stage without a unit must be marked fallback (no fabricated 0/0)")
+	}
+}
+
+// Guard: a running stage that DOES carry a unit keeps the established status
+// phase and is not marked fallback.
+func TestMergeProgressRunningStageWithUnitKeepsStatusPhase(t *testing.T) {
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Tokenizer", Phase: progressstore.PhaseRunning, Active: "chunk:embed", Units: map[string]progressstore.UnitProgress{
+			"chunk:embed": {Current: 20, Total: 100},
+		}},
+	)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
+	if resp.Phase != progressstore.StatusRunning {
+		t.Errorf("phase = %q, want %q", resp.Phase, progressstore.StatusRunning)
+	}
+	if resp.Fallback {
+		t.Error("running stage with a unit must not be marked fallback")
+	}
+}
+
+// With a running stage that does carry an active unit, the existing behaviour
+// (that stage's unit wins) must be preserved.
+func TestMergeProgressRunningStageWithUnitStillWins(t *testing.T) {
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: progressstore.PhaseDone, Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 10},
+		}},
+		progressstore.Stage{Name: "GeneralChunker", Phase: progressstore.PhaseRunning, Active: "image:crop", Units: map[string]progressstore.UnitProgress{
+			"image:crop": {Current: 120, Total: 800},
+		}},
+	)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0, nil)
+	if resp.Stage != "GeneralChunker" || resp.Unit != "image:crop" {
+		t.Fatalf("stage/unit = %q/%q, want GeneralChunker/image:crop", resp.Stage, resp.Unit)
+	}
+	if resp.Current != 120 || resp.Total != 800 {
+		t.Fatalf("position = %d/%d, want 120/800", resp.Current, resp.Total)
+	}
+}
+
+// A running run must report a live elapsed time derived from its begin time;
+// ProcessDuration is only written at settlement and stays 0 while running.
+func TestMergeProgressRunningUsesLiveElapsed(t *testing.T) {
+	run := testRun(string(entity.TaskStatusRunning))
+	run.ProcessDuration = 0
+	begin := time.Now().Add(-90 * time.Second)
+	run.ProcessBeginAt = &begin
+
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: progressstore.PhaseRunning, Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 100},
+		}})
+	resp := mergeProgressSnapshot(run, snap, 0, nil)
+
+	if resp.DurationS < 89 || resp.DurationS > 91 {
+		t.Fatalf("running duration = %v, want ~90s (live elapsed), got %+v", resp.DurationS, resp)
+	}
+}
+
+// Adversarial: a terminal run keeps its persisted duration even though its
+// begin time is old. Recomputing from begin time here would misreport the
+// settled duration.
+func TestMergeProgressTerminalKeepsPersistedDuration(t *testing.T) {
+	for _, status := range []string{
+		string(entity.TaskStatusDone),
+		string(entity.TaskStatusFail),
+		string(entity.TaskStatusCancel),
+		"DONE", "FAIL", "CANCEL",
+	} {
+		run := testRun(status)
+		run.ProcessDuration = 42
+		begin := time.Now().Add(-90 * time.Second)
+		run.ProcessBeginAt = &begin
+
+		resp := mergeProgressSnapshot(run, testSnapshot(progressstore.StatusCompleted), 0, nil)
+		if resp.DurationS != 42 {
+			t.Errorf("status %q duration = %v, want persisted 42", status, resp.DurationS)
+		}
+	}
+}
+
+// Adversarial: a running run with no begin time cannot compute elapsed; it
+// must stay at 0 and not panic.
+func TestMergeProgressRunningWithoutBeginStaysZero(t *testing.T) {
+	run := testRun(string(entity.TaskStatusRunning))
+	run.ProcessDuration = 0
+	run.ProcessBeginAt = nil
+
+	resp := mergeProgressSnapshot(run, testSnapshot(progressstore.StatusRunning), 0, nil)
+	if resp.DurationS != 0 {
+		t.Fatalf("duration = %v, want 0 when begin time is missing", resp.DurationS)
+	}
+}
+
+// Adversarial: a begin time in the future (clock skew / bad data) must not
+// produce a negative elapsed, which the UI renders as "—".
+func TestMergeProgressFutureBeginNeverNegative(t *testing.T) {
+	run := testRun(string(entity.TaskStatusRunning))
+	run.ProcessDuration = 0
+	begin := time.Now().Add(30 * time.Second)
+	run.ProcessBeginAt = &begin
+
+	resp := mergeProgressSnapshot(run, testSnapshot(progressstore.StatusRunning), 0, nil)
+	if resp.DurationS < 0 {
+		t.Fatalf("duration = %v, want non-negative", resp.DurationS)
 	}
 }

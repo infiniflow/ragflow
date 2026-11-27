@@ -94,6 +94,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -632,6 +633,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
 	}
 	embedTotal := cacheHits + len(texts)
+	// One counter drives both the document fraction and the chunk:embed detail.
+	// It establishes 0/embedTotal before the first (slow) encode and pins the
+	// terminal position via Finish, replacing the special-case all-cached branch.
+	embedCounter := progress.NewCounter(ctx, progress.UnitChunkEmbed, uint32(embedTotal), progress.Window{Span: 1})
 	for start := 0; start < len(texts); start += batchSize {
 		end := start + batchSize
 		if end > len(texts) {
@@ -652,17 +657,9 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			tokenCount += result.TokenCount
 		}
 		contentResults = append(contentResults, batchResults...)
-		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
-		runtime.ReportProgressDetail(ctx, "chunk:embed", uint32(cacheHits+end), uint32(embedTotal))
+		embedCounter.Report(uint32(cacheHits+end), uint32(embedTotal))
 	}
-	if len(texts) == 0 && embedTotal > 0 {
-		// With no cache misses the batch loop never runs, so the phase would
-		// otherwise report nothing at all; every content embedding is already
-		// resolved, which is the loop's completion value. Emit the terminal
-		// detail too so the progress log records the finished position (finding ④).
-		runtime.ReportComponentFraction(ctx, 1)
-		runtime.ReportProgressDetail(ctx, "chunk:embed", uint32(embedTotal), uint32(embedTotal))
-	}
+	embedCounter.Finish()
 
 	titleWeight := c.param.FilenameEmbdWeight
 	// Wire freshly embedded content into the resolved slice; cache hits already

@@ -876,3 +876,46 @@ func TestTokenizerComponent_Embedding_ReportsChunkDetail(t *testing.T) {
 		}
 	}
 }
+
+// The embedding counter must establish 0/N before the first batch settles, so
+// the progress snapshot has an Active unit while the first (slow) encode runs.
+func TestTokenizerComponent_Embedding_ReportsInitialPosition(t *testing.T) {
+	requireTokenizerPool(t)
+	c, _ := withStubEmbedder(t, 2)
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "2")
+
+	type rec struct {
+		unit    string
+		current uint32
+		total   uint32
+	}
+	var mu sync.Mutex
+	var details []rec
+	ctx := runtime.WithProgressDetailCallback(context.Background(), func(_ string, d runtime.ProgressDetail) {
+		mu.Lock()
+		defer mu.Unlock()
+		details = append(details, rec{d.Unit, d.Current, d.Total})
+	})
+	ctx = runtime.BindComponentDetail(ctx, "Tokenizer")
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{
+		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "one"}, {"text": "two"}, {"text": "three"}, {"text": "four"},
+		},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(details) == 0 {
+		t.Fatal("expected chunk detail events, got none")
+	}
+	first := details[0]
+	if first.unit != "chunk:embed" || first.current != 0 || first.total != 4 {
+		t.Fatalf("first detail = %+v, want chunk:embed 0/4", first)
+	}
+}

@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -175,6 +176,13 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	}
 
 	total := int64(len(candidateIndices))
+	// Establish the crop unit up front so the progress snapshot has an Active
+	// position while the (potentially slow) render/upload loop runs. One counter
+	// drives both the fraction and detail channels; a cancelled run reports none.
+	var cropCounter *progress.Counter
+	if ctx.Err() == nil {
+		cropCounter = progress.NewCounter(ctx, progress.UnitImageCrop, uint32(total), progress.Window{Span: 1})
+	}
 	var settled atomic.Int64
 	pool := cropWorkerPool()
 	futs := make([]utility.WorkerPoolFuture[cropJob, struct{}], 0, len(candidateIndices))
@@ -190,7 +198,9 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			defer func() {
 				if jobCtx.Err() == nil {
 					done := settled.Add(1)
-					agentruntime.ReportComponentFraction(jobCtx, float64(done)/float64(total))
+					if cropCounter != nil {
+						cropCounter.Report(uint32(done), uint32(total))
+					}
 				}
 			}()
 

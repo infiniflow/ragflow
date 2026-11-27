@@ -136,6 +136,25 @@ describe('IngestionProgressSummary', () => {
     view.unmount();
   });
 
+  it('shows the running stage in the fallback branch without fabricating a position', () => {
+    // Adversarial: a stage that has entered but reported no unit yet has no
+    // position to show. The summary must still name that stage, but must not
+    // print a fake 0/0 progress bar.
+    const view = renderSummary(
+      summary({
+        status: '1',
+        stage: 'GeneralChunker',
+        fallback: true,
+        current: 0,
+        total: 0,
+        percent: 0,
+      }),
+    );
+    expect(screen.getByText(/GeneralChunker/)).toBeTruthy();
+    expect(screen.queryByText(/0 \/ 0/)).toBeNull();
+    view.unmount();
+  });
+
   it('constrains server-returned stage and unit text', () => {
     renderSummary(
       summary({

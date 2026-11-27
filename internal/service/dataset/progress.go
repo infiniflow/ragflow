@@ -68,6 +68,18 @@ func latestActiveStage(snap *progressstore.Snapshot, skipTerminal bool) *progres
 	return nil
 }
 
+// latestRunningStage returns the newest stage that is still running, even when
+// it has no Active unit yet. It lets the summary identify the current component
+// without borrowing a completed stage's position.
+func latestRunningStage(snap *progressstore.Snapshot) *progressstore.Stage {
+	for i := len(snap.Stages) - 1; i >= 0; i-- {
+		if snap.Stages[i].Phase == progressstore.PhaseRunning {
+			return &snap.Stages[i]
+		}
+	}
+	return nil
+}
+
 // mergeProgressSnapshot combines the authoritative run state with the latest
 // running-state snapshot. A missing snapshot — or one with no active unit —
 // marks fallback instead of presenting a fabricated 0/0 position.
@@ -77,6 +89,12 @@ func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore
 		resp.Status = run.OperationStatus
 		resp.StartedAt = run.ProcessBeginAt
 		resp.DurationS = run.ProcessDuration
+		// ProcessDuration is written only at settlement, so it stays 0 for a
+		// running run and the UI would show "—". Derive a live elapsed from the
+		// immutable begin time; terminal runs keep their persisted duration.
+		if !isTerminalIngestionLogStatus(run.OperationStatus) && run.ProcessBeginAt != nil {
+			resp.DurationS = max(0, time.Since(*run.ProcessBeginAt).Seconds())
+		}
 	}
 	if snap == nil {
 		resp.Fallback = true
@@ -101,6 +119,19 @@ func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore
 	// the summary on a finished stage and hide the one actually in progress.
 	active := latestActiveStage(snap, true)
 	if active == nil {
+		// A stage can be running before it reports its first unit (e.g. a
+		// component has just entered). Surface that stage's identity instead
+		// of falling back to a completed stage's stale position, which would
+		// read as a frozen 100% bar.
+		if running := latestRunningStage(snap); running != nil {
+			resp.Stage = running.Name
+			// No unit position exists yet: mark fallback instead of fabricating
+			// 0/0. Stage stays set so the UI can still name the current phase.
+			// Keep resp.Phase as the snapshot status (uppercase) — never overwrite
+			// it with the stage's lowercase lifecycle label.
+			resp.Fallback = true
+			return resp
+		}
 		// At settlement no stage is running; still surface the latest position
 		// so consumers do not see a fabricated 0/0.
 		active = latestActiveStage(snap, false)

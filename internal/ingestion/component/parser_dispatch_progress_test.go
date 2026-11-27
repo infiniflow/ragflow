@@ -239,3 +239,34 @@ func TestAttachPDFPageProgress_NoDetailForUnknownTotal(t *testing.T) {
 		t.Errorf("total=0 should emit nothing, got details=%v fracs=%v", details, fracs)
 	}
 }
+
+// Adversarial: the parser backend stops calling OnPageDone before the final
+// page (a trailing callback racing the component exit is common). The finish
+// hook returned by the wiring must still leave the detail channel at N/N.
+func TestAttachPDFPageProgressFinishReportsTerminalDetail(t *testing.T) {
+	var fracs []fractionObservation
+	var details []detailObservation
+	ctx := boundDetailContext(t, "Parser:pdf", &fracs, &details)
+
+	pdfParser := parser.NewPDFParser()
+	finish := attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0, Span: 1})
+	if pdfParser.OnPageDone == nil {
+		t.Fatal("page callback was not wired")
+	}
+	pdfParser.OnPageDone(1, 3)
+	pdfParser.OnPageDone(2, 3)
+	finish() // last callback never arrives
+
+	if len(details) == 0 {
+		t.Fatal("expected page detail reports, got none")
+	}
+	last := details[len(details)-1]
+	if last.current != 3 || last.total != 3 {
+		t.Fatalf("final detail = %d/%d, want 3/3 (details %v)", last.current, last.total, details)
+	}
+	for _, d := range details {
+		if d.total != 3 {
+			t.Errorf("detail total = %d, want 3", d.total)
+		}
+	}
+}
