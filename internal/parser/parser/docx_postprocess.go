@@ -26,7 +26,35 @@ var dotPageNumberPattern = regexp.MustCompile(`(\.{2,}|…{2,}|·{2,}|[ ]{2,})\s
 var (
 	docxTOCEntryStylePattern = regexp.MustCompile(`(?i)^toc\s*\d+$`)
 	docxTOCTitleStylePattern = regexp.MustCompile(`(?i)^toc\s*heading$`)
-	docxTOCPageNumberPattern = regexp.MustCompile(`\t *\d+\s*$`)
+	docxTOCPageNumberPattern = regexp.MustCompile(`\t *(?:\d+|(?i:[ivxlcdm]+))\s*package parser
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
+	"encoding/xml"
+	"io"
+	"regexp"
+	"strings"
+)
+
+// docxOutline is a heading outline entry extracted from the
+// office_oxide IR. Mirrors Python (title, level, None) tuples from
+// rag/flow/parser/utils.py:77-89 extract_word_outlines.
+type docxOutline struct {
+	Title string `json:"title"`
+	Level int    `json:"level"`
+}
+
+// dotPageNumberPattern matches ".... 123" / "·····5" style TOC
+// leader lines. Mirrors Python utils.py:285 regex
+// (\.{2,}|…{2,}|·{2,}|[ ]{2,})\s*\d+\s*$.
+var dotPageNumberPattern = regexp.MustCompile(`(\.{2,}|…{2,}|·{2,}|[ ]{2,})\s*\d+\s*$`)
+
+var (
+	docxTOCEntryStylePattern = regexp.MustCompile(`(?i)^toc\s*\d+$`)
+	docxTOCTitleStylePattern = regexp.MustCompile(`(?i)^toc\s*heading$`)
+	)
 )
 
 func (ir docxIRDocument) hasTOCEntries() bool {

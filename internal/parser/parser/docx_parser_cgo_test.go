@@ -132,7 +132,11 @@ func TestDOCXParserRemoveTOC(t *testing.T) {
       <w:p><w:pPr><w:pStyle w:val="TOC3"/></w:pPr><w:r><w:t>Style only</w:t></w:r></w:p>
       <w:p><w:pPr><w:pStyle w:val="CustomTOC"/></w:pPr>
         <w:hyperlink w:anchor="_Toc3"><w:r><w:t>Appendix</w:t></w:r></w:hyperlink>
-        <w:r><w:tab/><w:t>12</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>
+        <w:r><w:tab/><w:t>12</w:t></w:r>
+      </w:p>
+      <w:p><w:pPr><w:pStyle w:val="CustomTOC"/></w:pPr>
+        <w:hyperlink w:anchor="_Toc4"><w:r><w:t>Preface</w:t></w:r></w:hyperlink>
+        <w:r><w:tab/><w:t>iv</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>
       </w:p>
       <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
         <w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>Introduction</w:t></w:r><w:bookmarkEnd w:id="1"/>
@@ -157,7 +161,7 @@ func TestDOCXParserRemoveTOC(t *testing.T) {
 			name: "generated",
 			body: generatedTOC,
 			before: []string{"Contents", "Table of Contents", "Introduction\t1", "Details\t2",
-				"Style only", "Appendix\t12", "Introduction", "Introduction\t1", "See Introduction", "Body text", "目录"},
+				"Style only", "Appendix\t12", "Preface\tiv", "Introduction", "Introduction\t1", "See Introduction", "Body text", "目录"},
 			after: []string{"Contents", "Introduction", "Introduction\t1", "See Introduction", "Body text", "目录"},
 		},
 		{
