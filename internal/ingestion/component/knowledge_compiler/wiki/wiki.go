@@ -733,7 +733,7 @@ func (p *wikiPipeline) runPlan() (wikiPlan, error) {
 	return p.runLegacyPlan()
 }
 
-// runEntityPlan builds one page for every reduced entity or concept. Entity
+// runEntityPlan builds pages from the selected reduced identities. Entity
 // mode already has a canonical identity from MAP/REDUCE, so a PLAN LLM call
 // would only repeat fields that the compiler can derive deterministically.
 func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
@@ -741,7 +741,20 @@ func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
 		return wikiPlan{}, err
 	}
 
-	plan := wikiPlan{Pages: buildWikiEntityPlanPages(p.reduced)}
+	var entityTypes map[string]struct{}
+	if onlyConfigured, _ := p.param.TemplateConfig["configured_entity_pages_only"].(bool); onlyConfigured {
+		var names []string
+		for _, raw := range wikiTemplateFields(p.param.TemplateConfig, "entity") {
+			if field, ok := raw.(map[string]any); ok {
+				names = append(names, firstString(field["type"]))
+			}
+		}
+		entityTypes = normalizedStringSet(names)
+	}
+	plan := wikiPlan{Pages: buildWikiEntityPlanPages(p.reduced, entityTypes)}
+	if entityTypes != nil && len(plan.Pages) == 0 {
+		return plan, nil
+	}
 	plan.Pages = assembleWikiPlanRelatedPages(plan.Pages, p.reduced.Relations)
 	plan.Pages = normalizeWikiPlanPages(plan.Pages, p.reduced)
 	plan.Pages = normalizeWikiPlanPageLinks(plan.Pages)
@@ -756,9 +769,14 @@ func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
 // buildWikiEntityPlanPages projects MAP/REDUCE identities into deterministic
 // page metadata. Topic assignment uses source-chunk overlap with MAP topics;
 // the page itself remains one-to-one with the extracted entity or concept.
-func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
+func buildWikiEntityPlanPages(reduced wikiExtract, entityTypes map[string]struct{}) []wikiPlanPage {
 	pages := make([]wikiPlanPage, 0, len(reduced.Entities)+len(reduced.Concepts))
 	for _, entity := range reduced.Entities {
+		if entityTypes != nil {
+			if _, ok := entityTypes[normKey(entity.Type)]; !ok {
+				continue
+			}
+		}
 		name := strings.TrimSpace(entity.Name)
 		if name == "" {
 			continue
@@ -772,6 +790,9 @@ func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
 			EntityNames: appcommon.DeduplicateTrimmed(append([]string{name}, entity.Aliases...)),
 			Priority:    len(pages) + 1,
 		})
+	}
+	if entityTypes != nil {
+		return pages
 	}
 	for _, concept := range reduced.Concepts {
 		term := strings.TrimSpace(concept.Term)
@@ -907,10 +928,10 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 // order regardless of completion order (no concurrent append to a shared slice).
 // When no submitter is wired, jobs run serially (historic default).
 func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
-	allPages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
-	if len(allPages) == 0 {
+	if len(p.plan.Pages) == 0 {
 		return nil, nil
 	}
+	allPages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
 	pages := allPages
 	if p.incremental {
 		pages = pages[:0:0]

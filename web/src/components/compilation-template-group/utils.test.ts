@@ -14,7 +14,13 @@
  *  limitations under the License.
  */
 
-import { sortSectionNames } from './utils';
+import { CompilationTemplateKind } from '@/constants/compilation';
+import {
+  buildConfigFromBuiltin,
+  sortSectionNames,
+  transformDetailToForm,
+  transformTemplateToPayload,
+} from './utils';
 
 describe('sortSectionNames', () => {
   it('prioritizes known sections and preserves remaining order and duplicates', () => {
@@ -28,5 +34,48 @@ describe('sortSectionNames', () => {
         'claim',
       ]),
     ).toEqual(['entity', 'relation', 'claim', 'claim', 'concept', 'claim']);
+  });
+});
+
+describe('entity-mode page selection', () => {
+  const template = {
+    id: 'brands',
+    name: 'Brand wiki',
+    description: '',
+    kind: CompilationTemplateKind.Artifacts,
+    config: {
+      mode: 'entity' as const,
+      entity: { fields: [{ type: 'brand' }] },
+    },
+  };
+
+  it('round-trips the setting through both builtin and saved templates', () => {
+    const config = { ...template.config, configured_entity_pages_only: true };
+    const builtin = buildConfigFromBuiltin(
+      { ...template, display_name: template.name, config },
+      template.kind,
+    );
+    const saved = transformDetailToForm({ ...template, config });
+    for (const formConfig of [builtin, saved.config]) {
+      const payload = transformTemplateToPayload({
+        ...saved,
+        config: formConfig,
+      });
+      expect(payload.config.configured_entity_pages_only).toBe(true);
+      expect(payload.config.entity?.fields).toEqual([{ type: 'brand' }]);
+    }
+  });
+
+  it('omits the restriction for existing templates, topic mode and an unchecked switch', () => {
+    const form = transformDetailToForm(template);
+    for (const config of [
+      form.config,
+      { ...form.config, configured_entity_pages_only: false },
+      { ...form.config, mode: 'topic', configured_entity_pages_only: true },
+    ]) {
+      expect(
+        transformTemplateToPayload({ ...form, config }).config,
+      ).not.toHaveProperty('configured_entity_pages_only');
+    }
   });
 });

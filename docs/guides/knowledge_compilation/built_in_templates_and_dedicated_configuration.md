@@ -443,6 +443,7 @@ Users can adjust rules based on business requirements, such as limiting the enti
 Specifies how Wiki pages are organized.
 
 - **Entity mode**: Generates Wiki pages by entity or concept. Each identified entity or concept is organized into a separate Wiki page. This mode is suitable for exploring information about individual entities or concepts.
+  Enable **Only create pages for configured entity types** to create pages for the types listed in **Entity specification**. Other extracted entities and concepts remain available as evidence. A document with no matching entity produces no pages in this mode.
 
 - **Topic mode**: Organizes Wiki pages by topic. The LLM groups related entities or concepts into the same Wiki page based on their relationships and context. This mode is suitable for organizing and exploring knowledge at the topic level.
 

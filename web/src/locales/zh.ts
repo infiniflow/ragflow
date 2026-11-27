@@ -2270,6 +2270,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       globalRulesPlaceholder: '请输入全局编译规则',
       wikiMode: 'Wiki 模式',
       entityMode: '实体模式',
+      configuredEntityPagesOnly: '仅为指定的实体类型生成页面',
+      configuredEntityPagesOnlyTip:
+        '使用实体规范中列出的类型。其他实体和概念仍会被提取，作为页面的参考依据。',
       topicMode: '主题模式',
       wikiModeRequired: '请选择 Wiki 模式',
       wikiModeTip:

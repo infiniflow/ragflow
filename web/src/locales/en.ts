@@ -2692,6 +2692,10 @@ Example: Virtual Hosted Style`,
       globalRulesPlaceholder: 'Input global compilation rules',
       wikiMode: 'Wiki mode',
       entityMode: 'Entity mode',
+      configuredEntityPagesOnly:
+        'Only create pages for configured entity types',
+      configuredEntityPagesOnlyTip:
+        'Use the types listed in Entity specification. Other entities and concepts are still extracted as evidence.',
       topicMode: 'Topic mode',
       wikiModeRequired: 'Please select a Wiki mode',
       wikiModeTip:
