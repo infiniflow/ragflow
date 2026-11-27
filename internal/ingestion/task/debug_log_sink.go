@@ -22,13 +22,15 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/utility"
 )
 
 // DebugLogTTL is the Redis expiry for a debug-run log. It mirrors the
 // pipeline's 30-minute update TTL ( callback: set_obj(
-// 60*30)); the Go side writes the log once at the end of the synchronous run.
+// 60*30)); the Go side writes the timeline and result payload once at the end
+// of the synchronous run.
 const DebugLogTTL = 30 * time.Minute
 
 // DebugLogStore is the minimal Redis surface the debug log sink needs. In
@@ -38,13 +40,6 @@ const DebugLogTTL = 30 * time.Minute
 type DebugLogStore interface {
 	Set(ctx context.Context, key, value string, ttl time.Duration) bool
 }
-
-// funcStore adapts a plain function to DebugLogStore so tests (and callers that
-// already hold a go-redis client) can wire a sink without a named type.
-type funcStore func(key, value string, ttl time.Duration) bool
-
-// Set implements DebugLogStore.
-func (f funcStore) Set(key, value string, ttl time.Duration) bool { return f(key, value, ttl) }
 
 // component phases mirror runtime.ProgressPhase (Enter=0, Exit=1, Error=2).
 // They are copied locally so the sink stays decoupled from the agent runtime
@@ -65,29 +60,32 @@ const (
 	maxLogEntries    = 1000    // distinct components recorded per run
 	maxTracePerEntry = 200     // progress events kept per component
 	maxMessageRunes  = 1024    // rune length cap for a single trace message
-	maxPayloadBytes  = 1 << 20 // hard ceiling on the JSON written to Redis (1 MiB)
+	maxPayloadBytes  = 1 << 20 // hard ceiling on the timeline JSON written to Redis (1 MiB)
+	// maxResultBytes is the separate ceiling for the run-result DSL stored
+	// under DebugResultKey. It is independent from the timeline budget because
+	// the result carries business data (chunks, inline images) while the
+	// timeline is polled every few seconds and must stay small.
+	maxResultBytes = 32 << 20
 )
+
+const debugRunCompletedMessage = "Debug run completed"
 
 // debugLogEntry is one component's row in the front-end Log box: a component id
 // plus an ordered list of trace lines. It matches the pipeline callback
-// shape exactly so GetAgentLogs can return it verbatim
-// and the front-end (useFetchMessageTrace) can read it unchanged.
+// shape exactly so GetAgentLogs can return the timeline verbatim (the separate
+// result payload is merged into the END marker on read).
 type debugLogEntry struct {
 	ComponentID string       `json:"component_id"`
 	Trace       []debugTrace `json:"trace"`
 }
 
+// debugTrace is one line in a component's timeline entry.
 type debugTrace struct {
 	Progress    float64 `json:"progress"`
 	Message     string  `json:"message"`
 	Datetime    string  `json:"datetime"`
 	Timestamp   float64 `json:"timestamp"`
 	ElapsedTime float64 `json:"elapsed_time"`
-	// Dsl carries the debug-run result (per-component outputs) on the END
-	// marker's single trace entry, so the front-end "View result" page can
-	// render parsed chunks. It mirrors the END marker `dsl`. Nil/empty when
-	// unset, in which case encoding/json omits it (json:"omitempty").
-	Dsl json.RawMessage `json:"dsl,omitempty"`
 }
 
 // DebugLogSink implements pipeline.ProgressSink by accumulating component
@@ -107,8 +105,9 @@ type DebugLogSink struct {
 	entries []debugLogEntry
 	lastTS  float64
 	// resultDSL is the debug-run result built by BuildDebugResultDSL and handed
-	// to the sink via SetResult (the ResultSink capability). It is written onto
-	// the END marker's trace entry in Flush. Empty until SetResult is called.
+	// to the sink via SetResult (the ResultSink capability). Flush persists it
+	// under DebugResultKey, separate from the operator timeline. Empty until
+	// SetResult is called.
 	resultDSL json.RawMessage
 	// runOutput is the raw pipeline run output map (output["state"][<id>] is
 	// each component's outputs), handed over together with resultDSL. Flush
@@ -117,7 +116,8 @@ type DebugLogSink struct {
 	runOutput map[string]any
 }
 
-// NewDebugLogSink builds a sink that writes to "{canvasID}-{messageID}-logs".
+// NewDebugLogSink builds a sink that writes the operator timeline to
+// DebugLogKey and the run-result payload to DebugResultKey.
 func NewDebugLogSink(canvasID, messageID string, store DebugLogStore) *DebugLogSink {
 	return &DebugLogSink{
 		canvasID:  canvasID,
@@ -133,8 +133,8 @@ func NewDebugLogSink(canvasID, messageID string, store DebugLogStore) *DebugLogS
 func (s *DebugLogSink) OnComponentTotal(_ context.Context, _ string, _ int) {}
 
 // SetResult receives the debug-run result DSL (built by BuildDebugResultDSL)
-// plus the raw pipeline run output, and stores them for the END marker. It
-// implements the optional ResultSink capability the executor probes for, so
+// plus the raw pipeline run output. Flush persists them under DebugResultKey.
+// It implements the optional ResultSink capability the executor probes for, so
 // the sink stays decoupled from how the DSL is produced. Safe to call at most
 // once per run; a later call replaces the previous value.
 func (s *DebugLogSink) SetResult(dsl map[string]any, output map[string]any) {
@@ -214,9 +214,16 @@ func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.Progre
 // message so a failed run is still reported and detectable as complete. All
 // Redis I/O is best-effort: a store failure is swallowed (the run must not
 // abort because the log could not be written).
+//
+// The operator timeline and the run-result payload are written under separate
+// keys with independent size budgets. The result carries business data (parsed
+// chunks, inline images) that can exceed the timeline budget by orders of
+// magnitude; keeping it in the timeline made the size guard drop middle
+// component entries, so the Log box showed only the first operator and END.
 func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 	s.mu.Lock()
 	entries := append([]debugLogEntry(nil), s.entries...)
+	resultDSL := append(json.RawMessage(nil), s.resultDSL...)
 
 	now := time.Now()
 	endTS := float64(now.UnixMicro())
@@ -226,7 +233,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 		// (see OnComponentProgress for the matching conversion).
 		elapsed = (endTS - s.lastTS) / 1e6
 	}
-	endMsg := "Debug run completed"
+	endMsg := debugRunCompletedMessage
 	if finalErr != nil {
 		endMsg = "[ERROR] " + finalErr.Error()
 	} else if msg := endOutputMessage(entries, s.runOutput); msg != "" {
@@ -237,6 +244,19 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 		// would leave the button permanently disabled.
 		endMsg = msg
 	}
+	s.mu.Unlock()
+
+	// Persist the result DSL separately: it carries business data (parsed
+	// chunks, inline images) that can exceed the timeline budget by orders of
+	// magnitude. Only the DSL moves; the END output message stays in the
+	// timeline so the front-end's completion predicate and Export JSON keep
+	// working without an extra round-trip.
+	if len(resultDSL) > 0 {
+		if payload, ok := buildDebugResultPayload(resultDSL, maxResultBytes); ok {
+			s.store.Set(ctx, DebugResultKey(s.canvasID, s.messageID), string(payload), s.ttl)
+		}
+	}
+
 	entries = append(entries, debugLogEntry{
 		ComponentID: "END",
 		Trace: []debugTrace{{
@@ -245,25 +265,120 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 			Datetime:    now.Format("15:04:05"),
 			Timestamp:   float64(now.UnixNano()) / 1e9,
 			ElapsedTime: elapsed,
-			Dsl:         s.resultDSL,
 		}},
 	})
-	s.mu.Unlock()
 
 	payload, err := json.Marshal(entries)
 	if err != nil {
 		return
 	}
-	// Hard ceiling: if a buggy/abusive run still exceeds it, drop the middle
-	// entries (keeping the first few and the END marker) until under budget.
+	// Hard ceiling: shrink trace detail, never component identity. A
+	// pathological run must not evict operators from the timeline.
 	if len(payload) > maxPayloadBytes {
-		entries = trimToPayloadBudget(entries, maxPayloadBytes)
+		entries = trimTracesToBudget(entries, maxPayloadBytes)
 		if payload, err = json.Marshal(entries); err != nil {
 			return
 		}
 	}
-	key := s.canvasID + "-" + s.messageID + "-logs"
-	s.store.Set(ctx, key, string(payload), s.ttl)
+	s.store.Set(ctx, DebugLogKey(s.canvasID, s.messageID), string(payload), s.ttl)
+}
+
+// DebugLogKey returns the Redis key holding the operator timeline for a run.
+func DebugLogKey(canvasID, messageID string) string {
+	return canvasID + "-" + messageID + "-logs"
+}
+
+// DebugResultKey returns the Redis key holding the run-result DSL for a run.
+// It is separate from the timeline so large business data cannot evict
+// component entries.
+func DebugResultKey(canvasID, messageID string) string {
+	return canvasID + "-" + messageID + "-result"
+}
+
+// buildDebugResultPayload applies the result-specific size cap to the DSL.
+// When the full DSL is too large, component outputs are dropped; when even
+// that does not fit, the result preview is omitted. The operator timeline is
+// unaffected either way.
+func buildDebugResultPayload(dsl json.RawMessage, budget int) ([]byte, bool) {
+	if len(dsl) == 0 {
+		return nil, false
+	}
+	if len(dsl) <= budget {
+		return dsl, true
+	}
+	compact := compactDebugResultDSL(dsl)
+	if len(compact) == 0 {
+		common.Warn("debug log: result dsl exceeds the size cap; result preview omitted")
+		return nil, false
+	}
+	if len(compact) <= budget {
+		return compact, true
+	}
+	common.Warn("debug log: result dsl exceeds the size cap after compaction; result preview omitted")
+	return nil, false
+}
+
+// compactDebugResultDSL returns the result DSL with each component's runtime
+// outputs removed. It preserves the component/topology structure so the
+// "View result" page can still render the steps when the full outputs are too
+// large for the result budget.
+func compactDebugResultDSL(dsl json.RawMessage) json.RawMessage {
+	if len(dsl) == 0 {
+		return nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(dsl, &doc); err != nil {
+		return nil
+	}
+	components, _ := doc["components"].(map[string]any)
+	for _, raw := range components {
+		comp, _ := raw.(map[string]any)
+		obj, _ := comp["obj"].(map[string]any)
+		params, _ := obj["params"].(map[string]any)
+		if params != nil {
+			delete(params, "outputs")
+		}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// MergeDebugResultPayload attaches the DSL stored under DebugResultKey to the
+// END marker of a decoded debug log. It is a no-op when the log lacks an END
+// marker or the payload is empty/corrupt, so old logs that still carry the
+// DSL inline keep working. The handler calls this before returning the log to
+// the front-end, preserving the existing END trace contract (`dsl` on the
+// first END trace entry).
+func MergeDebugResultPayload(logs any, resultPayload string) {
+	if resultPayload == "" || !json.Valid([]byte(resultPayload)) {
+		return
+	}
+	dsl := json.RawMessage(resultPayload)
+
+	mergeIntoEnd := func(last map[string]any) {
+		if last == nil || last["component_id"] != "END" {
+			return
+		}
+		traces, _ := last["trace"].([]any)
+		if len(traces) == 0 {
+			return
+		}
+		first, _ := traces[0].(map[string]any)
+		if first == nil {
+			return
+		}
+		// encoding/json embeds RawMessage verbatim, so the parsed result is
+		// not decoded and re-encoded on every poll.
+		first["dsl"] = dsl
+	}
+
+	if entries, ok := logs.([]any); ok && len(entries) > 0 {
+		last, _ := entries[len(entries)-1].(map[string]any)
+		mergeIntoEnd(last)
+	}
 }
 
 // endOutputMessage builds the END marker's message for a successful run: the
@@ -271,7 +386,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 // `json.dumps(self.get_component_obj(self.path[-1]).output())`
 // (the last executed component's output). The last executed component is the sink's final
 // entry (path[-1] always emits its exit progress last). Raw embedding vectors
-// are stripped (deepCopy(out, true)) so the Redis log stays at -scale size
+// are stripped (deepCopy(out, true)) so the stored result payload stays smaller.
 // Returns "" when no output is available; the caller then keeps the
 // plain-text fallback and the front-end export button stays disabled (empty
 // output, matching isEmpty check)
@@ -291,21 +406,27 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 	return string(b)
 }
 
-// trimToPayloadBudget collapses the middle of the log (keeping the first few
-// entries plus the END marker at the tail) until the marshaled size fits the
-// byte budget. The END marker is always the last element, so it is preserved.
-// The loop terminates because each pass shrinks the slice; once only the head
-// and END remain the payload is tiny.
-func trimToPayloadBudget(entries []debugLogEntry, budget int) []debugLogEntry {
-	for len(entries) > 2 {
-		if b, err := json.Marshal(entries); err == nil && len(b) <= budget {
-			return entries
+// trimTracesToBudget reduces a timeline over budget without dropping any
+// component entry. The operator list is the log's primary contract, so detail
+// is discarded first: keep only each component's start/terminal trace and
+// shorten the remaining messages. With the component cap (maxLogEntries) this
+// leaves a small payload even for a pathological run.
+func trimTracesToBudget(entries []debugLogEntry, budget int) []debugLogEntry {
+	if payloadFits(entries, budget) {
+		return entries
+	}
+	for i := range entries {
+		if n := len(entries[i].Trace); n > 2 {
+			entries[i].Trace = []debugTrace{entries[i].Trace[0], entries[i].Trace[n-1]}
 		}
-		keep := len(entries) / 4
-		if keep < 1 {
-			keep = 1
+		for j := range entries[i].Trace {
+			entries[i].Trace[j].Message = utility.TruncateRunes(entries[i].Trace[j].Message, 128)
 		}
-		entries = append(append([]debugLogEntry{}, entries[:keep]...), entries[len(entries)-1])
 	}
 	return entries
+}
+
+func payloadFits(entries []debugLogEntry, budget int) bool {
+	b, err := json.Marshal(entries)
+	return err == nil && len(b) <= budget
 }

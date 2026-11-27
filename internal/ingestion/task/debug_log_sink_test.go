@@ -362,9 +362,10 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 }
 
 // TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL locks the end-to-end
-// contract the front-end "View result" depends on: the debug log's END marker
-// trace[0] MUST carry a `dsl` (built by BuildDebugResultDSL) whose `components`
-// map mirrors the canvas. The front-end `useFetchPipelineResult` picks
+// contract the front-end "View result" depends on: the result payload stored
+// under DebugResultKey MUST carry a `dsl` (built by BuildDebugResultDSL) whose
+// `components` map mirrors the canvas, and MergeDebugResultPayload MUST attach
+// it to the END marker. The front-end `useFetchPipelineResult` picks
 // `latest.trace.at(0)` where `latest.component_id == "END"` and reads
 // `dsl.components[<id>].obj` to render parsed chunks (parser.tsx:41). Without
 // this, "View result" shows only the file preview — the bug this change fixes.
@@ -411,6 +412,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	sink.SetResult(resultDSL, output)
 	sink.Flush(ctx, nil)
 
+	// The operator timeline is stored under the log key; the result payload
+	// (END output + DSL) is stored separately so large business data cannot
+	// evict component entries from the timeline.
 	raw := store.Get(ctx, "c-dsl-m-dsl-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c-dsl-m-dsl-logs")
@@ -426,40 +430,52 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 		t.Fatalf("END trace is empty: %s", raw)
 	}
 	endFirst, _ := endTrace[0].(map[string]any)
-	dslVal := endFirst["dsl"]
-	if dslVal == nil {
-		t.Fatalf("END marker trace[0] must carry a non-empty dsl: %s", raw)
+	if msg, _ := endFirst["message"].(string); msg == "" {
+		t.Fatalf("timeline END message must stay non-empty")
+	}
+	if _, exists := endFirst["dsl"]; exists {
+		t.Fatalf("timeline END must not carry the result dsl; it belongs to %s", DebugResultKey("c-dsl", "m-dsl"))
 	}
 
-	// json.RawMessage decodes into a generic map as map[string]any (not a
-	// string), so accept either form.
+	resultRaw := store.Get(ctx, DebugResultKey("c-dsl", "m-dsl"))
+	if resultRaw == "" {
+		t.Fatalf("expected result dsl written to %s", DebugResultKey("c-dsl", "m-dsl"))
+	}
 	var dslDoc map[string]any
-	switch v := dslVal.(type) {
-	case string:
-		if err := json.Unmarshal([]byte(v), &dslDoc); err != nil {
-			t.Fatalf("END dsl is not valid JSON: %v body=%s", err, v)
-		}
-	case map[string]any:
-		dslDoc = v
-	default:
-		t.Fatalf("END dsl unexpected type %T: %s", v, raw)
+	if err := json.Unmarshal([]byte(resultRaw), &dslDoc); err != nil {
+		t.Fatalf("result dsl is not valid JSON: %v body=%s", err, resultRaw)
 	}
 	components, ok := dslDoc["components"].(map[string]any)
 	if !ok || len(components) == 0 {
-		t.Fatalf("END dsl.components missing or empty: %s", raw)
+		t.Fatalf("result dsl.components missing or empty: %s", resultRaw)
 	}
 	// The dsl must mirror every component in the canvas (begin, c, d).
 	for _, id := range []string{"begin", "c", "d"} {
 		if _, exists := components[id]; !exists {
-			t.Errorf("END dsl.components missing component %q: %s", id, raw)
+			t.Errorf("result dsl.components missing component %q: %s", id, resultRaw)
 		}
+	}
+
+	// The GET handler merges the DSL back into the END marker, so the
+	// front-end contract (dsl on END trace[0]) stays intact.
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("stored timeline is not valid JSON: %v", err)
+	}
+	MergeDebugResultPayload(parsed, resultRaw)
+	entries, _ := parsed.([]any)
+	lastEntry, _ := entries[len(entries)-1].(map[string]any)
+	mergedTraces, _ := lastEntry["trace"].([]any)
+	mergedFirst, _ := mergedTraces[0].(map[string]any)
+	if _, exists := mergedFirst["dsl"]; !exists {
+		t.Fatalf("merged END must carry the result dsl")
 	}
 }
 
 // TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks is the strongest
 // regression guard for the nested-state bug: it drives a REAL pipeline whose
-// component "c" emits actual `chunks`, then asserts the END-marker DSL carries
-// a non-empty params.outputs for that component. With the bug (reading
+// component "c" emits actual `chunks`, then asserts the result payload's DSL
+// carries a non-empty params.outputs for that component. With the bug (reading
 // output[id] at the top level instead of output["state"][id]), the run output
 // is nested and params.outputs stays empty — the front-end "View result" shows
 // blank tabs. The companion TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL
@@ -517,19 +533,14 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	if arr[len(arr)-1]["component_id"] != "END" {
 		t.Fatalf("last element must be END marker: %s", raw)
 	}
-	endTrace, _ := arr[len(arr)-1]["trace"].([]any)
-	endFirst, _ := endTrace[0].(map[string]any)
 
+	resultRaw := store.Get(ctx, DebugResultKey("c-chunk", "m-chunk"))
+	if resultRaw == "" {
+		t.Fatalf("expected result dsl written")
+	}
 	var dslDoc map[string]any
-	switch v := endFirst["dsl"].(type) {
-	case string:
-		if err = json.Unmarshal([]byte(v), &dslDoc); err != nil {
-			t.Fatalf("END dsl not valid JSON: %v", err)
-		}
-	case map[string]any:
-		dslDoc = v
-	default:
-		t.Fatalf("END dsl unexpected type %T", v)
+	if err := json.Unmarshal([]byte(resultRaw), &dslDoc); err != nil {
+		t.Fatalf("result dsl not valid JSON: %v", err)
 	}
 	components, _ := dslDoc["components"].(map[string]any)
 
@@ -573,10 +584,13 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Errorf("d outputs._elapsed_time must be carried: %#v", dOutputs)
 	}
 
-	// The END marker MESSAGE must be the JSON dump of the LAST component's
-	// ("d") raw output — the contract the front-end "Export JSON" button
-	// relies on (use-download-output.ts findEndOutput JSON.parses it). A
-	// plain-text sentinel leaves the button permanently disabled.
+	// The END marker MESSAGE stays in the timeline and must be the JSON dump
+	// of the LAST component's ("d") raw output — the contract the front-end
+	// "Export JSON" button relies on (use-download-output.ts findEndOutput
+	// JSON.parses it). A plain-text sentinel leaves the button permanently
+	// disabled.
+	endTrace, _ := arr[len(arr)-1]["trace"].([]any)
+	endFirst, _ := endTrace[0].(map[string]any)
 	endMsg, _ := endFirst["message"].(string)
 	var endOutput map[string]any
 	if err := json.Unmarshal([]byte(endMsg), &endOutput); err != nil {
@@ -801,10 +815,13 @@ func TestDebugLogSink_RespectsCaps(t *testing.T) {
 	}
 }
 
-// TestDebugLogSink_PayloadHardCap pins the absolute byte ceiling on the JSON
-// written to Redis. It fills to the per-entry caps (maxLogEntries components x
-// maxTracePerEntry traces) — which pre-trim is ~16 MiB — and asserts the stored
-// value never exceeds maxPayloadBytes, and still ends with the END marker.
+// TestDebugLogSink_PayloadHardCap pins the absolute byte ceiling on the
+// timeline JSON written to Redis. It fills to the per-entry caps
+// (maxLogEntries components x maxTracePerEntry traces) — which pre-trim is
+// ~16 MiB — and asserts the stored value never exceeds maxPayloadBytes, still
+// ends with the END marker, and still lists every component. The size guard
+// must discard trace detail, never component identity: dropping the operators
+// is exactly the bug that made the Log box show only the first one.
 func TestDebugLogSink_PayloadHardCap(t *testing.T) {
 	store := &capturedStore{}
 	sink := NewDebugLogSink("c1", "m1", store)
@@ -832,5 +849,116 @@ func TestDebugLogSink_PayloadHardCap(t *testing.T) {
 	arr := loadArray(t, raw)
 	if !clientConsidersComplete(arr) {
 		t.Errorf("hard-capped log must still satisfy completion predicate; arr=%s", raw)
+	}
+	seen := make(map[string]bool, len(arr))
+	for _, el := range arr {
+		id, _ := el["component_id"].(string)
+		seen[id] = true
+	}
+	for i := 0; i < maxLogEntries; i++ {
+		if id := fmt.Sprintf("Comp-%d", i); !seen[id] {
+			t.Fatalf("component %q dropped by payload trimming; raw=%s", id, raw)
+		}
+	}
+}
+
+// TestBuildDebugResultPayloadCompactsOversizedDSL covers both cap branches:
+// the compact DSL (without outputs) is returned when it fits, and the result is
+// omitted when even the compact form cannot fit.
+func TestBuildDebugResultPayloadCompactsOversizedDSL(t *testing.T) {
+	raw := json.RawMessage(`{"components":{"Parser":{"obj":{"params":{"setups":{"pdf":{}},"outputs":{"json":{"value":"` + strings.Repeat("x", 512) + `"}}}}}}}`)
+	compacted, ok := buildDebugResultPayload(raw, len(raw)-1)
+	if !ok {
+		t.Fatalf("compacted result should fit its budget")
+	}
+	if strings.Contains(string(compacted), `"outputs"`) {
+		t.Errorf("compacted result must drop outputs: %s", compacted)
+	}
+	if !json.Valid(compacted) {
+		t.Errorf("compacted result is not valid JSON: %s", compacted)
+	}
+	if !strings.Contains(string(compacted), `"setups"`) {
+		t.Errorf("compacted result must keep static params: %s", compacted)
+	}
+	if _, ok := buildDebugResultPayload(raw, 1); ok {
+		t.Errorf("result must be omitted when even the compact form exceeds the budget")
+	}
+}
+
+// TestDebugLogSink_LargeResultDoesNotDropComponents is the regression test for
+// the ingestion-pipeline Log box showing only the first operator and END.
+// A debug run over an image document put a >1 MiB base64 image into the
+// result DSL; because the DSL shared the timeline's 1 MiB budget, the old
+// trimmer kept entries[:len/4] (just File) plus END and dropped Parser,
+// Chunker, Compiler and Tokenizer. The result must now live under its own key
+// with its own budget, leaving every component entry in the timeline.
+func TestDebugLogSink_LargeResultDoesNotDropComponents(t *testing.T) {
+	ctx := t.Context()
+	store := &capturedStore{}
+	sink := NewDebugLogSink("c-big", "m-big", store)
+
+	components := []string{"File", "Parser", "Chunker", "Compiler", "Tokenizer"}
+	for _, comp := range components {
+		sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+			Component: comp, Message: comp + " Started", Phase: phaseEnter,
+		})
+		sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+			Component: comp, Message: comp + " Done", Phase: phaseExit,
+		})
+	}
+	// Simulate a parser result carrying an inline image. 2 MiB is well above
+	// the timeline budget but below the result budget, so the result must be
+	// stored intact under DebugResultKey.
+	largeImage := "data:image/png;base64," + strings.Repeat("A", 2<<20)
+	sink.SetResult(map[string]any{
+		"components": map[string]any{
+			"Parser": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"outputs": map[string]any{
+							"json": map[string]any{"value": largeImage},
+						},
+					},
+				},
+			},
+		},
+	}, map[string]any{"state": map[string]any{}})
+	sink.Flush(ctx, nil)
+
+	raw := store.Get(ctx, DebugLogKey("c-big", "m-big"))
+	if raw == "" {
+		t.Fatalf("timeline not written")
+	}
+	if len(raw) > maxPayloadBytes {
+		t.Fatalf("timeline bytes=%d want <= %d", len(raw), maxPayloadBytes)
+	}
+	arr := loadArray(t, raw)
+	seen := make(map[string]bool, len(arr))
+	for _, el := range arr {
+		id, _ := el["component_id"].(string)
+		seen[id] = true
+	}
+	for _, comp := range components {
+		if !seen[comp] {
+			t.Fatalf("component %q dropped from timeline; raw=%s", comp, raw)
+		}
+	}
+	if !seen["END"] {
+		t.Fatalf("END marker missing from timeline")
+	}
+
+	resultRaw := store.Get(ctx, DebugResultKey("c-big", "m-big"))
+	if resultRaw == "" {
+		t.Fatalf("result dsl not written to %s", DebugResultKey("c-big", "m-big"))
+	}
+	if len(resultRaw) > maxResultBytes {
+		t.Fatalf("result dsl bytes=%d want <= %d", len(resultRaw), maxResultBytes)
+	}
+	if !json.Valid([]byte(resultRaw)) {
+		t.Fatalf("result dsl is not valid JSON")
+	}
+	if !strings.Contains(resultRaw, "data:image/png;base64,") {
+		t.Errorf("result dsl lost the inline image output")
 	}
 }
