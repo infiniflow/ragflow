@@ -5,6 +5,7 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,6 +111,117 @@ func TestDOCXParserHeaderFooterSetting(t *testing.T) {
 	}
 	if got := joinItemTexts(ItemsToMaps(res.JSON)); len(res.JSON) != 2 || got != "Body text\nApproval" {
 		t.Errorf("got %d items with text %q, want both body paragraphs", len(res.JSON), got)
+	}
+}
+
+func TestDOCXParserRemoveTOC(t *testing.T) {
+	const wordNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+	const relNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+	const generatedTOC = `
+      <w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p>
+      <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText xml:space="preserve"> TOC \o "1-3" \h </w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:hyperlink w:anchor="_Toc1"><w:r><w:t>Introduction</w:t></w:r></w:hyperlink>
+        <w:r><w:tab/><w:t>1</w:t></w:r>
+      </w:p>
+      <w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr>
+        <w:hyperlink w:anchor="_Toc2"><w:r><w:t>Details</w:t></w:r><w:r><w:tab/><w:t>2</w:t></w:r></w:hyperlink>
+      </w:p>
+      <w:p><w:pPr><w:pStyle w:val="TOC3"/></w:pPr><w:r><w:t>Style only</w:t></w:r></w:p>
+      <w:p><w:pPr><w:pStyle w:val="CustomTOC"/></w:pPr>
+        <w:hyperlink w:anchor="_Toc3"><w:r><w:t>Appendix</w:t></w:r></w:hyperlink>
+        <w:r><w:tab/><w:t>12</w:t></w:r>
+      </w:p>
+      <w:p><w:pPr><w:pStyle w:val="CustomTOC"/></w:pPr>
+        <w:hyperlink w:anchor="_Toc4"><w:r><w:t>Preface</w:t></w:r></w:hyperlink>
+        <w:r><w:tab/><w:t>iv</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+      <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+        <w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>Introduction</w:t></w:r><w:bookmarkEnd w:id="1"/>
+      </w:p>
+      <w:p><w:r><w:t>Introduction</w:t><w:tab/><w:t>1</w:t></w:r></w:p>
+      <w:p><w:hyperlink w:anchor="_Toc1"><w:r><w:t>See Introduction</w:t></w:r></w:hyperlink></w:p>
+      <w:p><w:r><w:t>Body text</w:t></w:r></w:p>`
+	const staticTOC = `
+      <w:p><w:r><w:t>Preface text</w:t></w:r></w:p>
+      <w:p><w:r><w:t>Table of Contents</w:t></w:r></w:p>
+      <w:p><w:r><w:t>Introduction .... 1</w:t></w:r></w:p>
+      <w:p><w:r><w:t>Details .... 2</w:t></w:r></w:p>
+      <w:p><w:r><w:t>Body starts here</w:t></w:r></w:p>
+      <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Introduction</w:t></w:r></w:p>`
+	for _, tc := range []struct {
+		name   string
+		body   string
+		before []string
+		after  []string
+	}{
+		{
+			name: "generated",
+			body: generatedTOC,
+			before: []string{"Contents", "Table of Contents", "Introduction\t1", "Details\t2",
+				"Style only", "Appendix\t12", "Preface\tiv", "Introduction", "Introduction\t1", "See Introduction", "Body text", "目录"},
+			after: []string{"Contents", "Introduction", "Introduction\t1", "See Introduction", "Body text", "目录"},
+		},
+		{
+			name:   "static",
+			body:   staticTOC,
+			before: []string{"Contents", "Preface text", "Table of Contents", "Introduction .... 1", "Details .... 2", "Body starts here", "Introduction", "目录"},
+			after:  []string{"Contents", "Preface text", "Body starts here", "Introduction", "目录"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := writeDOCX(t, tc.body+`
+      <w:sectPr xmlns:r="`+relNS+`">
+        <w:headerReference w:type="default" r:id="rId1"/>
+        <w:footerReference w:type="default" r:id="rId2"/>
+      </w:sectPr>`, map[string]string{
+				"word/_rels/document.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="` + relNS + `/header" Target="header1.xml"/>
+        <Relationship Id="rId2" Type="` + relNS + `/footer" Target="footer1.xml"/>
+        <Relationship Id="rId3" Type="` + relNS + `/styles" Target="styles.xml"/>
+      </Relationships>`,
+				"word/header1.xml": `<w:hdr xmlns:w="` + wordNS + `"><w:p><w:r><w:t>Contents</w:t></w:r></w:p></w:hdr>`,
+				"word/footer1.xml": `<w:ftr xmlns:w="` + wordNS + `"><w:p><w:r><w:t>目录</w:t></w:r></w:p></w:ftr>`,
+				"word/styles.xml": `<w:styles xmlns:w="` + wordNS + `">
+        <w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/></w:style>
+        <w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/></w:style>
+        <w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="TOC2"/></w:style>
+        <w:style w:type="paragraph" w:styleId="TOC3"><w:name w:val="Toc 3"/></w:style>
+        <w:style w:type="paragraph" w:styleId="CustomTOC"><w:name w:val="Entry style"/></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+      </w:styles>`,
+			})
+
+			parser := NewDOCXParser()
+			for _, removeTOC := range []bool{false, true} {
+				parser.ConfigureFromSetup(map[string]any{"remove_toc": removeTOC})
+				result := parser.ParseWithResult(t.Context(), "test.docx", data)
+				if result.Err != nil {
+					t.Fatal(result.Err)
+				}
+				items := ItemsToMaps(result.JSON)
+				got := make([]string, 0, len(items))
+				var headings []string
+				for _, item := range items {
+					got = append(got, itemText(item))
+					if item["layout"] == "heading" {
+						headings = append(headings, itemText(item))
+					}
+				}
+				want := tc.before
+				if removeTOC {
+					want = tc.after
+				}
+				if !slices.Equal(got, want) {
+					t.Errorf("remove_toc=%t: text items = %q, want %q", removeTOC, got, want)
+				}
+				if !slices.Equal(headings, []string{"Introduction"}) {
+					t.Errorf("remove_toc=%t: headings = %q, want [Introduction]", removeTOC, headings)
+				}
+			}
+		})
 	}
 }
 
