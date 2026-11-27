@@ -63,14 +63,13 @@ type embedder struct {
 	limiterErr error
 
 	// Group failover state. tenantID/modelRef/db/resolve are set by the
-	// embedder resolver; failedOver marks the single flip + re-resolve + retry
-	// a gp- reference earns per embedder run. A non-group reference leaves the
+	// embedder resolver; embedWithFailover cascades through the group's
+	// members on repeated terminal failures. A non-group reference leaves the
 	// fields zero and embedWithFailover is a plain pass-through.
-	tenantID   string
-	modelRef   string
-	db         *gorm.DB
-	resolve    func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error)
-	failedOver bool
+	tenantID string
+	modelRef string
+	db       *gorm.DB
+	resolve  func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error)
 }
 
 func (e *embedder) MaxTokens() int {
@@ -289,58 +288,61 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 	return nil, 0, err
 }
 
-// embedWithFailover wraps embedWithRetry with a single group failover: when
+// embedWithFailover wraps embedWithRetry with cascading group failover: when
 // the current member fails terminally (retryable errors are already exhausted
 // by embedWithRetry's own backoff loop) and the dataset's embd_id is a gp-
 // reference, that member flips inactive in the group and the batch is retried
-// once on the next member. The flip happens at most once per embedder run:
-// the over-limit ladder and encodeIsolating may reach the failover path many
-// times per document, and a second flip would deactivate the replacement
-// member too.
+// on the next member. Every member that fails terminally is flipped too, so
+// the cascade walks the group until a member serves the batch, the context
+// ends, or the group runs out of members - exhaustion returns an error
+// joining the per-member failures. Over-limit errors are never a failover
+// trigger: they belong to Encode's shrinking ladder.
 func (e *embedder) embedWithFailover(ctx context.Context, texts []string) ([]models.EmbeddingData, int, error) {
-	embeds, usage, err := e.embedWithRetry(ctx, texts)
-	if err == nil || ctx.Err() != nil {
-		return embeds, usage, err
+	for {
+		embeds, usage, err := e.embedWithRetry(ctx, texts)
+		if err == nil || ctx.Err() != nil {
+			return embeds, usage, err
+		}
+		if isOverLimitErr(err) {
+			// Over-limit is a property of the input batch, not of the member:
+			// Encode's shrinking ladder owns it and will call back with a
+			// smaller batch, so hand it back instead of flipping a healthy
+			// group member.
+			return embeds, usage, err
+		}
+		groupID, ok := common.ParseGroupModelRef(e.modelRef)
+		if !ok || e.resolve == nil || e.db == nil || strings.TrimSpace(e.tenantID) == "" {
+			return embeds, usage, err
+		}
+		flipped, ferr := dao.MarkGroupMemberInactive(ctx, e.db, e.tenantID, groupID, entity.ModelTypeEmbedding)
+		if ferr != nil {
+			common.Warn("embedder: model group failover could not mark member inactive",
+				zap.String("embd_id", e.modelRef), zap.Error(ferr))
+			return embeds, usage, exhaustedEmbedderError(e.modelRef, err, ferr)
+		}
+		if !flipped {
+			return embeds, usage, exhaustedEmbedderError(e.modelRef, err, nil)
+		}
+		fresh, rerr := e.resolve(ctx, e.tenantID, e.modelRef)
+		if rerr != nil {
+			common.Warn("embedder: model group failover re-resolve failed, no member left to try",
+				zap.String("embd_id", e.modelRef), zap.Error(rerr))
+			return embeds, usage, exhaustedEmbedderError(e.modelRef, err, nil)
+		}
+		e.swapModel(fresh)
+		common.Warn("embedder: model group failover retrying on the next member",
+			zap.String("embd_id", e.modelRef), zap.Error(err))
 	}
-	if isOverLimitErr(err) {
-		// Over-limit is a property of the input batch, not of the member:
-		// Encode's shrinking ladder owns it and will call back with a smaller
-		// batch, so hand it back instead of flipping a healthy group member.
-		return embeds, usage, err
-	}
-	groupID, ok := common.ParseGroupModelRef(e.modelRef)
-	if !ok || e.resolve == nil || e.db == nil || strings.TrimSpace(e.tenantID) == "" {
-		return embeds, usage, err
-	}
+}
 
-	e.mu.Lock()
-	if e.failedOver {
-		e.mu.Unlock()
-		return embeds, usage, err
+// exhaustedEmbedderError reports that a gp- embedding group ran out of
+// members: the last member failure (and, when known, the flip failure) are
+// joined so errors.Is matches either cause.
+func exhaustedEmbedderError(modelRef string, lastErr, flipErr error) error {
+	if flipErr != nil {
+		return fmt.Errorf("embedding model group %s exhausted: %w (flip failed: %w)", modelRef, lastErr, flipErr)
 	}
-	e.failedOver = true
-	tenantID := e.tenantID
-	e.mu.Unlock()
-
-	flipped, ferr := dao.MarkGroupMemberInactive(ctx, e.db, tenantID, groupID, entity.ModelTypeEmbedding)
-	if ferr != nil {
-		common.Warn("embedder: model group failover could not mark member inactive",
-			zap.String("embd_id", e.modelRef), zap.Error(ferr))
-		return embeds, usage, err
-	}
-	if !flipped {
-		return embeds, usage, err
-	}
-	fresh, rerr := e.resolve(ctx, tenantID, e.modelRef)
-	if rerr != nil {
-		common.Warn("embedder: model group failover re-resolve failed",
-			zap.String("embd_id", e.modelRef), zap.Error(rerr))
-		return embeds, usage, err
-	}
-	e.swapModel(fresh)
-	common.Warn("embedder: model group failover retrying on the next member",
-		zap.String("embd_id", e.modelRef), zap.Error(err))
-	return e.embedWithRetry(ctx, texts)
+	return fmt.Errorf("embedding model group %s exhausted: %w", modelRef, lastErr)
 }
 
 // swapModel replaces the embedded model (a group failover re-resolution) and
