@@ -1623,7 +1623,7 @@ func (h *AgentHandler) persistAgentToolInvocations(ctx context.Context, canvasID
 	if json.Unmarshal([]byte(ev.Data), &event) != nil || len(event.Outputs.Invocations) == 0 {
 		return
 	}
-	key := fmt.Sprintf("%s-%s-logs", canvasID, ev.MessageID)
+	key := task.DebugLogKey(canvasID, ev.MessageID)
 	var entries []map[string]any
 	if h.redisGet != nil {
 		if payload, err := h.redisGet(ctx, key); err == nil {
@@ -1671,14 +1671,15 @@ func (h *AgentHandler) persistAgentToolInvocations(ctx context.Context, canvasID
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
 //
-// Reads "{agent_id}-{message_id}-logs" from Redis (same key format
-// used by the Python agent API in api/apps/restful_apis/agent_api.py) and
-// returns it as-is. Because runCanvasPipelineDebug flushes the ENTIRE log (including
-// the END marker) before returning the run response, this endpoint returns a
-// completed snapshot on the first poll — it is a replay/fetch of an already
-// finished debug log, not a streaming subscription. Missing key returns an
-// empty dict so the test contract `data is dict` and `code == 0` are both
-// satisfied when nothing has been written yet.
+// Reads the operator timeline from DebugLogKey (the same key format used by
+// the Python agent API) and merges the separately stored run-result DSL
+// from DebugResultKey into the END marker. Because runCanvasPipelineDebug
+// flushes the ENTIRE log (including the END marker) before returning the run
+// response, this endpoint returns a completed snapshot on the first poll — it
+// is a replay/fetch of an already finished debug log, not a streaming
+// subscription. Missing key returns an empty dict so the test contract
+// `data is dict` and `code == 0` are both satisfied when nothing has been
+// written yet.
 func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	messageID := c.Param("message_id")
@@ -1688,11 +1689,16 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 		return
 	}
 
-	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
-	payload, rerr := h.redisGet(c.Request.Context(), key)
+	payload, rerr := h.redisGet(c.Request.Context(), task.DebugLogKey(canvasID, messageID))
 	var data interface{} = map[string]interface{}{}
 	if rerr == nil {
 		data = parseAgentLogs(payload)
+		// The result payload lives under its own key so a large result DSL
+		// cannot evict component entries from the timeline. Merge it into the
+		// END marker to preserve the existing front-end contract.
+		if resultPayload, rerr := h.redisGet(c.Request.Context(), task.DebugResultKey(canvasID, messageID)); rerr == nil {
+			task.MergeDebugResultPayload(data, resultPayload)
+		}
 	}
 	common.RespondSuccess(c, data, "success")
 }
