@@ -328,6 +328,7 @@ func (s *ChatPipelineService) AsyncChat(
 ) (results <-chan AsyncChatResult, runErr error) {
 	defer func() {
 		if runErr == nil && results != nil {
+			results = s.filterChatOutput(ctx, chat, stream, results)
 			results = logChatCompletion(ctx, chat, messages, stream, results)
 		}
 	}()
@@ -352,6 +353,15 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 	question, err := NormalizeOpenAIMessageContent(lastMsg["content"])
 	if err != nil {
+		return nil, err
+	}
+	ctx, err = compliance.WithOutputFilter(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			out := make(chan AsyncChatResult)
+			close(out)
+			return out, nil
+		}
 		return nil, err
 	}
 	if err := compliance.ValidateQuestion(ctx, question); err != nil {
@@ -2805,6 +2815,11 @@ func stripTTSTags(text string) string {
 
 // synthesizeTTS calls the TTS model to convert text to audio.
 func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
+	// Filtered turns synthesize the sanitized final answer in filterChatOutput;
+	// per-delta synthesis could speak a word before its remaining chunks arrive.
+	if compliance.OutputFilterEnabled(ctx) {
+		return nil
+	}
 	if ttsModel == nil || text == "" {
 		return nil
 	}

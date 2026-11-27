@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/clickhouse"
@@ -1081,6 +1082,9 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 }
 
 func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	if err := compliance.ValidateSetting(varName, varValue); err != nil {
+		return err
+	}
 	if strings.EqualFold(varName, "api_key.max_count") {
 		if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
 			return err

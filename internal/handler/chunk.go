@@ -24,6 +24,7 @@ import (
 	"math"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -93,7 +94,12 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, resp.Chunk, "success")
+	data, err := filterChunkResponse(ctx, resp.Chunk)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, data, "success")
 }
 
 // Parse reparse the datasets' files
@@ -181,7 +187,12 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		resp.Doc["operator_permission"] = permissionMask
 	}
 
-	common.RespondSuccess(c, resp, "success")
+	data, err := filterChunkResponse(ctx, resp)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, data, "success")
 }
 
 func queryStringList(c *gin.Context, name string) []string {
@@ -714,6 +725,13 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		ImageBase64:       imageBase64,
 	}
 
+	// Pin the policy before writing so a missing dictionary cannot fail after insertion.
+	ctx, err = compliance.WithOutputFilter(ctx)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+
 	resp, err := h.chunkService.AddChunk(ctx, &req)
 	if err != nil {
 		var codedErr service.ErrorCoder
@@ -730,5 +748,10 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 			common.SetOperationResource(c, "chunk_id", id)
 		}
 	}
-	common.RespondSuccess(c, resp, "success")
+	data, err := filterChunkResponse(ctx, resp)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, data, "success")
 }
