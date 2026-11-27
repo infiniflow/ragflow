@@ -20,14 +20,16 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"fmt"
 	"regexp"
 	"testing"
 
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/server/config"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
+
+const testVastbaseKBID = "11111111-1111-1111-1111-111111111111"
 
 // txOptionsConnector opens the sqlmock connection under its registered DSN
 // and wraps it so tests can observe the driver.TxOptions database/sql hands
@@ -59,16 +61,11 @@ func (c txOptionsConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driv
 	return c.Conn.(driver.ConnBeginTx).BeginTx(ctx, opts)
 }
 
-// QueryContext delegates so database/sql keeps using the query path instead
-// of falling back to Prepare on the wrapper.
 func (c txOptionsConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	return c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
 }
 
-// newRunSQLEngine wires an Engine around a sqlmock database that records the
-// transaction options in got, so tests can prove RunSQL opens its
-// transaction READ ONLY.
-func newRunSQLEngine(t *testing.T) (*Engine, sqlmock.Sqlmock, *driver.TxOptions) {
+func newTableQueryEngine(t *testing.T) (*Engine, sqlmock.Sqlmock, *driver.TxOptions) {
 	t.Helper()
 	db, mock, err := sqlmock.NewWithDSN(t.Name())
 	if err != nil {
@@ -80,59 +77,45 @@ func newRunSQLEngine(t *testing.T) (*Engine, sqlmock.Sqlmock, *driver.TxOptions)
 	return newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, recDB), mock, got
 }
 
-// TestRunSQLExecutesInReadOnlyRolledBackTransaction checks the admin SQL
-// console's read-only, always-rolled-back execution envelope.
-func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
-	engine, mock, gotTxOptions := newRunSQLEngine(t)
+func TestExecuteTableQueryInReadOnlyRolledBackTransaction(t *testing.T) {
+	engine, mock, gotTxOptions := newTableQueryEngine(t)
+
+	vq, err := tablequery.Validate(tablequery.Scope{
+		TenantID:  "t1",
+		TableName: "ragflow_t1",
+		KBIDs:     []string{testVastbaseKBID},
+		Fields:    tablequery.FieldsFromFieldMap(map[string]interface{}{"title": "Title"}),
+	}, tablequery.Query{
+		Select: []string{"title"},
+		Where:  &tablequery.FilterNode{Field: "title", Op: tablequery.OpEq, Value: "hello"},
+	}, true)
+	if err != nil {
+		t.Fatalf("tablequery.Validate: %v", err)
+	}
 
 	mock.ExpectBegin()
-	// No LIMIT in the input: the engine must append one.
 	mock.ExpectQuery(regexp.QuoteMeta(
-		`SELECT "id" FROM "t1" WHERE kb_id = 'kb-1' LIMIT 1024`)).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("c1"))
+		`SELECT "doc_id", "docnm_kwd", "title" FROM "ragflow_t1" WHERE ("title" = $1) AND ("kb_id" = $2) LIMIT 1024`)).
+		WithArgs("hello", testVastbaseKBID).
+		WillReturnRows(sqlmock.NewRows([]string{"doc_id", "docnm_kwd", "title"}).AddRow("d1", "doc.xlsx", "hello"))
 	mock.ExpectRollback()
 
-	rows, err := engine.RunSQL(context.Background(), `SELECT "id" FROM "t1" WHERE kb_id = 'kb-1'`, "")
+	rows, err := engine.ExecuteTableQuery(context.Background(), vq)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0]["id"] != "c1" {
+	if len(rows) != 1 || rows[0]["doc_id"] != "d1" || rows[0]["title"] != "hello" {
 		t.Fatalf("rows = %#v", rows)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 	if !gotTxOptions.ReadOnly {
-		t.Fatal("RunSQL must open its transaction READ ONLY")
+		t.Fatal("ExecuteTableQuery must open its transaction READ ONLY")
 	}
 }
 
-// TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction checks that even
-// data-modifying CTEs fail under the read-only envelope.
-func TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction(t *testing.T) {
-	engine, mock, gotTxOptions := newRunSQLEngine(t)
-
-	// The CTE passes the SELECT/WITH prefix checks; only the READ ONLY
-	// transaction stops it, with the server rejecting the write.
-	mock.ExpectBegin()
-	mock.ExpectQuery("WITH d AS").
-		WillReturnError(fmt.Errorf("cannot execute DELETE in a read-only transaction"))
-	mock.ExpectRollback()
-
-	if _, err := engine.RunSQL(context.Background(), `WITH d AS (DELETE FROM "t1" RETURNING *) SELECT * FROM d`, ""); err == nil {
-		t.Fatal("data-modifying CTE must fail inside the read-only transaction")
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
-	if !gotTxOptions.ReadOnly {
-		t.Fatal("RunSQL must open its transaction READ ONLY")
-	}
-}
-
-// TestRunSQLRejectsMalformedInputBeforeTouchingTheDatabase checks statement
-// validation happens before any connection is made.
-func TestRunSQLRejectsMalformedInputBeforeTouchingTheDatabase(t *testing.T) {
+func TestExecuteTableQueryRejectsNilQueryBeforeTouchingDatabase(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -140,14 +123,8 @@ func TestRunSQLRejectsMalformedInputBeforeTouchingTheDatabase(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
 
-	for _, bad := range []string{
-		"DELETE FROM t1",
-		"UPDATE t1 SET x = 1",
-		"SELECT 1; DELETE FROM t1",
-	} {
-		if _, err := engine.RunSQL(context.Background(), bad, ""); err == nil {
-			t.Fatalf("must reject %q", bad)
-		}
+	if _, err := engine.ExecuteTableQuery(context.Background(), nil); err == nil {
+		t.Fatal("must reject nil ValidatedQuery")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

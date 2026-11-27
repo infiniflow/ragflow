@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -960,7 +961,7 @@ func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, 
 	e.highlightCalls++
 	return e.highlights
 }
-func (e *retrievalCountEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
+func (e *retrievalCountEngine) ExecuteTableQuery(context.Context, *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {

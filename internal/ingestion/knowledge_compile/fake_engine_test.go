@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 
 	"gorm.io/gorm"
@@ -201,7 +202,7 @@ func (f *fakeEngine) GetAggregation([]map[string]interface{}, string) []map[stri
 func (f *fakeEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (f *fakeEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
+func (f *fakeEngine) ExecuteTableQuery(context.Context, *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (f *fakeEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }

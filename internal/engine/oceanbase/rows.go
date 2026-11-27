@@ -32,6 +32,19 @@ func (e *Engine) queryRows(ctx context.Context, query string, args ...interface{
 		return nil, err
 	}
 	defer rows.Close()
+	return scanRows(rows)
+}
+
+func queryRowsTx(ctx context.Context, tx *sql.Tx, query string, args ...interface{}) ([]map[string]interface{}, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRows(rows)
+}
+
+func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, err

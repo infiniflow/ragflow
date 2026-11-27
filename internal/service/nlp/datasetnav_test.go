@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
 
@@ -176,7 +177,7 @@ func (m *memNavEngine) GetAggregation([]map[string]interface{}, string) []map[st
 func (m *memNavEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (m *memNavEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
+func (m *memNavEngine) ExecuteTableQuery(context.Context, *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (m *memNavEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }

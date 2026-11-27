@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
 )
@@ -270,18 +271,35 @@ func TestOpenSearchSQL(t *testing.T) {
 		_ = eng.DropChunkStore(context.Background(), osTestIndex, osTestKBID)
 	})
 
-	if _, err := eng.InsertChunks(t.Context(), osTestChunks(), osTestIndex, osTestKBID, "zh"); err != nil {
+	const osSQLTestKBID = "11111111-1111-1111-1111-111111111111"
+	chunks := osTestChunks()
+	for _, c := range chunks {
+		c["kb_id"] = osSQLTestKBID
+	}
+	if _, err := eng.InsertChunks(t.Context(), chunks, osTestIndex, osSQLTestKBID, "zh"); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 
-	// The shared caller always passes ES's "json" format; the engine must
-	// translate it to the JDBC format OpenSearch's SQL plugin decodes.
-	rows, err := eng.RunSQL(t.Context(), "SELECT id, title_tks FROM "+osTestIndex, "json")
+	vq, err := tablequery.Validate(tablequery.Scope{
+		TenantID:  "os_it",
+		TableName: osTestIndex,
+		KBIDs:     []string{osSQLTestKBID},
+		Fields: tablequery.FieldsFromFieldMap(map[string]interface{}{
+			"id":        "ID",
+			"title_tks": "Title",
+		}),
+	}, tablequery.Query{
+		Select: []string{"id", "title_tks"},
+	}, false)
 	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
+		t.Fatalf("tablequery.Validate: %v", err)
+	}
+	rows, err := eng.ExecuteTableQuery(t.Context(), vq)
+	if err != nil {
+		t.Fatalf("ExecuteTableQuery: %v", err)
 	}
 	if len(rows) != 2 {
-		t.Fatalf("RunSQL returned %d rows, want 2", len(rows))
+		t.Fatalf("ExecuteTableQuery returned %d rows, want 2", len(rows))
 	}
 }
 

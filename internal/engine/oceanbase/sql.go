@@ -18,29 +18,27 @@ package oceanbase
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"regexp"
-	"strings"
+
+	"ragflow/internal/engine/tablequery"
 )
 
-var (
-	jsonExtractStringPattern = regexp.MustCompile(`(?i)json_extract_string\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)`)
-	jsonExtractNullPattern   = regexp.MustCompile(`(?i)json_extract_isnull\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)`)
-	limitPattern             = regexp.MustCompile(`(?i)\blimit\b`)
-)
-
-// RunSQL executes the read-only SQL produced by the chat SQL-retrieval flow.
-func (e *Engine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
-	normalized := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
-	normalized = strings.ReplaceAll(normalized, "`", "")
-	normalized = jsonExtractStringPattern.ReplaceAllString(normalized, "JSON_UNQUOTE(JSON_EXTRACT($1, $2))")
-	normalized = jsonExtractNullPattern.ReplaceAllString(normalized, "(JSON_EXTRACT($1, $2) IS NULL)")
-	lower := strings.ToLower(strings.TrimSpace(normalized))
-	if !strings.HasPrefix(lower, "select ") && !strings.HasPrefix(lower, "with ") {
-		return nil, fmt.Errorf("only SELECT and WITH statements are allowed")
+// ExecuteTableQuery compiles a validated TableQuery into parameterized MySQL /
+// OceanBase SQL and executes it inside a READ ONLY transaction that is always
+// rolled back.
+func (e *Engine) ExecuteTableQuery(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+	if e == nil || e.db == nil {
+		return nil, fmt.Errorf("oceanbase: execute table query: database not initialized")
 	}
-	if !limitPattern.MatchString(normalized) {
-		normalized += " LIMIT 1024"
+	compiled, err := tablequery.Compile(query, tablequery.DialectOceanBase)
+	if err != nil {
+		return nil, fmt.Errorf("oceanbase: execute table query: %w", err)
 	}
-	return e.queryRows(ctx, normalized)
+	tx, err := e.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("oceanbase: begin read-only transaction: %w", err)
+	}
+	defer tx.Rollback()
+	return queryRowsTx(ctx, tx, compiled.SQL, compiled.Args...)
 }

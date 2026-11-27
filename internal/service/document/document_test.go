@@ -37,6 +37,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -232,7 +233,7 @@ func (fakeChatDocEngine) GetAggregation([]map[string]interface{}, string) []map[
 func (fakeChatDocEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (fakeChatDocEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
+func (fakeChatDocEngine) ExecuteTableQuery(context.Context, *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (fakeChatDocEngine) GetChunkIDs([]map[string]interface{}) []string {

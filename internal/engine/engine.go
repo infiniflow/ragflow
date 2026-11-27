@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/engine/types"
 
 	"gorm.io/gorm"
@@ -77,8 +78,9 @@ type DocEngine interface {
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 
-	// RunSQL runs a SQL query
-	RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error)
+	// ExecuteTableQuery compiles and executes a validated single-table query
+	// within its authorized table and dataset scope.
+	ExecuteTableQuery(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error)
 
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)

@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/internal/esoscommon"
+	"ragflow/internal/engine/tablequery"
 
 	"go.uber.org/zap"
 )
@@ -42,24 +43,25 @@ const (
 const osSQLRetryAttempts = 2
 const osSQLRetryDelay = 3 * time.Second
 
-// RunSQL posts SQL to `/_plugins/_sql`, translates the response into
-// chunk-shaped maps. Returns (nil, nil) on empty rows; (nil, error) when
-// retries exhausted.
-//
-// The caller's format is ignored: OpenSearch only decodes SQL responses in
-// JDBC format (`schema`/`datarows`) and only paginates cursors in that format,
-// while the shared caller passes ES's "json". Sending it through would make
-// the plugin reject the request with "unknown response format: json".
-func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[string]interface{}, error) {
+// ExecuteTableQuery compiles a validated TableQuery into read-only OpenSearch
+// SQL, posts it to `/_plugins/_sql`, and translates the response into row maps.
+// Returns (nil, nil) on empty rows; (nil, error) on validation or query failure.
+func (e *Engine) ExecuteTableQuery(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
-		return nil, fmt.Errorf("OpenSearch RunSQL: client not initialized")
+		return nil, fmt.Errorf("OpenSearch ExecuteTableQuery: client not initialized")
 	}
+	compiled, err := tablequery.Compile(query, tablequery.DialectOpenSearch)
+	if err != nil {
+		return nil, fmt.Errorf("OpenSearch ExecuteTableQuery: %w", err)
+	}
+	return e.runCompiledSQL(ctx, compiled.SQL)
+}
+
+func (e *Engine) runCompiledSQL(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
 	if sqlText == "" {
-		return nil, fmt.Errorf("OpenSearch RunSQL: empty SQL")
+		return nil, fmt.Errorf("OpenSearch ExecuteTableQuery: empty SQL")
 	}
 
-	common.Debug("OSConnection.sql get sql", zap.String("sql", sqlText))
-	sqlText = esoscommon.PreprocessSQL(sqlText)
 	common.Debug("OSConnection.sql to os", zap.String("sql", sqlText))
 
 	var lastErr error
@@ -88,7 +90,7 @@ func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[st
 		}
 	}
 	common.Error(fmt.Sprintf("OSConnection.sql timeout after %d attempts. SQL: %s", osSQLRetryAttempts, sqlText), lastErr)
-	return nil, fmt.Errorf("OpenSearch RunSQL: timeout after %d attempts: %w", osSQLRetryAttempts, lastErr)
+	return nil, fmt.Errorf("OpenSearch ExecuteTableQuery: timeout after %d attempts: %w", osSQLRetryAttempts, lastErr)
 }
 
 func (e *Engine) runSQLOnce(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
