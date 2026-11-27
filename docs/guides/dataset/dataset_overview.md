@@ -33,7 +33,7 @@ The configuration page allows you to manage the core settings of a Dataset. Basi
 The following briefly introduces the main entries on the dataset detail page and helps you quickly understand the purpose of each page. The specific operations, configuration items, and usage methods for each feature are described in detail in later sections.
 
 - **File list**: The default entry on the dataset detail page. It is used to manage documents, parsing status, enabled status, chunk count, metadata field count, and document-level operations in the dataset.
-- **Retrieval Testing**: Used to enter test questions and adjust retrieval parameters to verify the recall effect of the current dataset. Test parameter adjustments are not saved automatically and must be applied separately in **Chat Assistant** or the **Retrieval Agent** component.
+- **Retrieval**: Used to enter test questions and adjust retrieval parameters to verify the recall effect of the current dataset. Test parameter adjustments are not saved automatically and must be applied separately in **Chat Assistant** or the **Retrieval Agent** component.
 - **Artifacts**: Used to view entries for knowledge artifacts related to the current dataset, such as **Wiki**, **Navigation**, and **Graph**. This dataset manual only introduces the entry and viewing method. For generation and updates, see **Knowledge Compilation**.
 - **Logs**: Used to view document parsing and dataset-level task records, including document logs, dataset-level logs, and data source synchronization logs.
 - **Configuration**: Used to maintain the dataset's basic information, embedding model, parsing method, data source associations, and other configurations.

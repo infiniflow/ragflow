@@ -409,13 +409,13 @@ Document indexing processes 32 chunks per batch. The embedding request size come
 
 Successful parsing only means that the document has been parsed and chunked. It does not guarantee that relevant content can be retrieved.
 
-First, use **Retrieval testing** to check whether the expected chunks can be retrieved. If not, check the chunking results, embedding model, similarity threshold, and reranker settings. If the expected chunks are retrieved but Chat still gives an incorrect answer, check the Chat retrieval settings, system prompt, and LLM.
+First, use **Retrieval** to check whether the expected chunks can be retrieved. If not, check the chunking results, embedding model, similarity threshold, and reranker settings. If the expected chunks are retrieved but Chat still gives an incorrect answer, check the Chat retrieval settings, system prompt, and LLM.
 
 ---
 
-### Why does the same query produce different results in Retrieval testing, Search, and Chat?
+### Why does the same query produce different results in Retrieval, Search, and Chat?
 
-**Retrieval testing** is mainly used to evaluate whether relevant chunks can be retrieved from a dataset. **Search** further filters and ranks retrieved content according to its configuration, while **Chat** uses the retrieved content as context for an LLM to generate an answer.
+**Retrieval** is mainly used to evaluate whether relevant chunks can be retrieved from a dataset. **Search** further filters and ranks retrieved content according to its configuration, while **Chat** uses the retrieved content as context for an LLM to generate an answer.
 
 Therefore, even when using the same dataset, differences in retrieval settings, reranking, and answer generation can lead to different results.
 
@@ -427,7 +427,7 @@ Check the RAG pipeline step by step:
 
 1. Verify that the document has been parsed correctly.
 2. Check whether the resulting chunks contain the expected content.
-3. Use **Retrieval testing** to verify that the relevant chunks can be retrieved.
+3. Use **Retrieval** to verify that the relevant chunks can be retrieved.
 4. If retrieval works correctly but Chat or Agent produces an unexpected answer, check the application settings, system prompt, and LLM.
 
 This helps identify which stage of the pipeline is causing the problem.
@@ -444,7 +444,7 @@ The dataset manages and indexes the underlying knowledge, while Search, Chat, an
 
 ### Should I adjust chunking, retrieval settings, or models first?
 
-Start by verifying that the document is parsed and chunked correctly. Then use **Retrieval testing** to evaluate retrieval quality.
+Start by verifying that the document is parsed and chunked correctly. Then use **Retrieval** to evaluate retrieval quality.
 
 If retrieval needs improvement, adjust settings such as the similarity threshold, vector similarity weight, or reranker. If retrieval results are already relevant but the generated answer is still unsatisfactory, consider adjusting the prompt or changing the LLM.
 

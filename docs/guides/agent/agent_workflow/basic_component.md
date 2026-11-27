@@ -197,7 +197,7 @@ Enabling a **Rerank model** usually improves the sorting of knowledge retrieval 
 
 ### Configuration Suggestions
 
-Similarity threshold values below use the UI percentage scale: enter `20`, `50`, or `80` for 20%, 50%, or 80%. The following values are only initial configuration references. Actual results are affected by the embedding model, document quality, chunking method, and business questions. Adjust them based on knowledge retrieval test results.
+Similarity threshold values below use the UI percentage scale: enter `20`, `50`, or `80` for 20%, 50%, or 80%. The following values are only initial configuration references. Actual results are affected by the embedding model, document quality, chunking method, and business questions. Adjust them based on knowledge retrieval results.
 
 Retrieval parameters directly affect answer coverage, accuracy, and response time. You can start with the settings in the following table, and then optimize them based on real questions.
 

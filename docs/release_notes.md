@@ -103,7 +103,7 @@ Released on Sep 10, 2026.
 
 ### Improvements
 - New RERANK_TOKEN_LIMIT_MODE configuration ([#19404](https://github.com/infiniflow/ragflow/pull/19404))
-- Highlight in retrieval testing and search ([#18981](https://github.com/infiniflow/ragflow/pull/18981))
+- Highlight in retrieval and search ([#18981](https://github.com/infiniflow/ragflow/pull/18981))
 - Similarity threshold displayed as a percentage ([#18974](https://github.com/infiniflow/ragflow/pull/18974))
 
 ### UI/UX
@@ -993,7 +993,7 @@ Released on May 26, 2025.
 
 - Cross-language search is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English datasets.
 - Agent component: A new Code component supports Python and JavaScript scripts, enabling developers to handle more complex tasks like dynamic data processing.
-- Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
+- Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval can retrieve images directly, instead of texts extracted from images.
 - Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
 
 > The following features have been contributed by our community:
@@ -1142,7 +1142,7 @@ Adds a key option `"meta_fields"` to the [Update document](./references/python_a
 
 #### Added documents
 
-- [Run retrieval test](./guides/dataset/retrieval_testing.md)
+- [Run retrieval](./guides/dataset/retrieval_testing.md)
 
 ## v0.16.0
 

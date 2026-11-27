@@ -576,9 +576,9 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       chunkMethodTab: 'Parçalama yöntemi',
       testResults: 'Sonuçlar',
       testSetting: 'Ayar',
-      retrievalTesting: 'Alım testi',
+      retrievalTesting: 'Alım',
       retrievalTestingDescription:
-        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
+        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için alım yapın.",
       Parse: 'Ayrıştır',
       dataset: 'Dataset',
       testing: 'Alım',
@@ -614,7 +614,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       noTestResultsForNotRuned:
         'Henüz test çalıştırılmadı. Sonuçlar burada görünecek.',
       testingDescription:
-        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
+        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için alım yapın.",
       similarityThreshold: 'Benzerlik eşiği',
       similarityThresholdTip:
         'RAGFlow, getirme sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin bir kombinasyonunu veya bir yeniden sıralayıcı model seçildiğinde ağırlıklı anahtar kelime benzerliği ile ağırlıklı yeniden sıralama puanının bir kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Benzerlik puanı bu eşiğin altında olan parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır. Bu, yalnızca hibrit benzerlik puanı 20 veya daha yüksek olan parçaların getirileceği anlamına gelir. Vektör benzerliği ağırlığı 0 olarak ayarlanırsa bu eşik uygulanmaz.',

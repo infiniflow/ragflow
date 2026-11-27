@@ -395,7 +395,7 @@ export default {
       processDuration: 'Durée',
       progressMsg: 'Progression',
       testingDescription:
-        'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
+        'Effectuez une récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
         'Lors de la récupération, RAGFlow utilise soit une combinaison de similarité pondérée par mots-clés et de similarité cosinus vectorielle pondérée, soit, lorsqu’un modèle de reranking est sélectionné, une combinaison de similarité pondérée par mots-clés et de score de reranking pondéré. Ce paramètre définit le seuil de similarité entre la requête de l’utilisateur et les segments. Tout segment dont le score de similarité est inférieur à ce seuil sera exclu des résultats. Par défaut, le seuil est défini sur 20. Cela signifie que seuls les segments dont le score de similarité hybride est supérieur ou égal à 20 seront récupérés. Si le poids de la similarité vectorielle est défini sur 0, ce seuil ne s’applique pas.',
@@ -562,9 +562,9 @@ export default {
       chunkMethodTab: 'Méthode de segmentation',
       testResults: 'Résultats',
       testSetting: 'Paramètres',
-      retrievalTesting: 'Test de récupération',
+      retrievalTesting: 'Récupération',
       retrievalTestingDescription:
-        'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM.',
+        'Effectuez une récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM.',
       Parse: 'Analyser',
       noTestResultsForRuned:
         "Aucun résultat pertinent trouvé. Essayez d'ajuster votre requête ou les paramètres.",

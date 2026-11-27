@@ -560,9 +560,9 @@ export default {
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
       testSetting: '测试设置',
-      retrievalTesting: '知识检索测试',
+      retrievalTesting: '检索',
       retrievalTestingDescription:
-        '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
+        '进行检索，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
       Parse: '解析',
       dataset: '知识库',
       testing: '检索',
@@ -598,7 +598,7 @@ export default {
       noTestResultsForRuned: '未找到相关结果，请尝试调整查询语句或参数',
       noTestResultsForNotRuned: '尚未运行测试，结果会显示在这里',
       testingDescription:
-        '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
+        '请执行检索：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',

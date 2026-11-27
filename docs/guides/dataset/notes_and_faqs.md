@@ -35,7 +35,7 @@ The message alone does not establish that disk space is the cause. Check the fre
 
 After resolving any storage issues, upload the missing file again and retry parsing. Retrying parsing alone does not restore a missing file.
 
-## What Should I Do If Retrieval Testing Cannot Retrieve Content?
+## What Should I Do If Retrieval Cannot Retrieve Content?
 
 It is recommended to troubleshoot in the order of **document status -> chunk -> metadata -> retrieval parameters**. First confirm that the document has been parsed successfully and generated usable chunks. Then check whether metadata has filter conditions that exclude related chunks. Finally, check retrieval parameters such as **Similarity threshold**, **Keyword similarity weight**, and **Top N**.
 
@@ -45,20 +45,20 @@ Common causes include documents not yet parsed, no usable chunks generated, meta
 
 Artifacts are related to knowledge compilation results. If the dataset has no usable chunks or knowledge compilation has not been completed, expected artifacts may not appear. First confirm that documents have been parsed successfully, then refer to **Knowledge Compilation** to generate or update artifacts.
 
-## Run Retrieval Testing
+## Run Retrieval
 
-Run retrieval testing on your dataset to check whether the expected chunks can be retrieved.
+Run retrieval on your dataset to check whether the expected chunks can be retrieved.
 
-After files are uploaded and parsed, it is recommended to run retrieval testing before configuring a chat assistant. Running retrieval testing is never unnecessary or redundant. Like fine-tuning a precision instrument, RAGFlow requires careful adjustment to deliver the best Q&A performance. Your dataset settings, chat assistant configuration, and specified small and large models all significantly affect the final result. Running retrieval testing can verify whether expected chunks can be retrieved, allowing you to quickly identify areas that need improvement or locate issues that need to be resolved. For example, when debugging a Q&A system, if you know that the correct chunks can be retrieved, you can focus elsewhere. In issue #5627, the issue was found to be caused by LLM limitations.
+After files are uploaded and parsed, it is recommended to run retrieval before configuring a chat assistant. Running retrieval is never unnecessary or redundant. Like fine-tuning a precision instrument, RAGFlow requires careful adjustment to deliver the best Q&A performance. Your dataset settings, chat assistant configuration, and specified small and large models all significantly affect the final result. Running retrieval can verify whether expected chunks can be retrieved, allowing you to quickly identify areas that need improvement or locate issues that need to be resolved. For example, when debugging a Q&A system, if you know that the correct chunks can be retrieved, you can focus elsewhere. In issue #5627, the issue was found to be caused by LLM limitations.
 
-During retrieval testing, hybrid search is used to retrieve chunks created by the chunking method you specified. This search combines weighted keyword similarity with weighted vector cosine similarity or weighted rerank score, depending on your settings:
+During retrieval, hybrid search is used to retrieve chunks created by the chunking method you specified. This search combines weighted keyword similarity with weighted vector cosine similarity or weighted rerank score, depending on your settings:
 
 - If no rerank model is selected, weighted keyword similarity is combined with weighted vector cosine similarity.
 - If a rerank model is selected, weighted keyword similarity is combined with weighted vector rerank score.
 
 ### Prerequisites
 
-- Your files have been uploaded and successfully parsed before running retrieval testing.
+- Your files have been uploaded and successfully parsed before running retrieval.
 
 ### Configuration
 
@@ -79,7 +79,7 @@ This setting controls the keyword similarity weight in hybrid retrieval. The def
 
 #### Use Knowledge Graph
 
-In dataset retrieval testing, **Use Knowledge Graph** (`use_kg`) does not currently enable graph-based retrieval. Setting `use_kg` to `true` does not add graph traversal, entity or relationship retrieval, or community-report retrieval. The request continues through the ordinary hybrid retrieval path.
+In dataset retrieval, **Use Knowledge Graph** (`use_kg`) does not currently enable graph-based retrieval. Setting `use_kg` to `true` does not add graph traversal, entity or relationship retrieval, or community-report retrieval. The request continues through the ordinary hybrid retrieval path.
 
 Knowledge graph generation and viewing are separate capabilities. You can still generate and view graph artifacts through Knowledge Compilation. Searchable compilation chunks may participate in ordinary retrieval according to the knowledge-compilation inclusion and scope settings; `use_kg` does not control their inclusion. See the [retrieval API reference](../../references/http_api_reference.md#retrieve-chunks) for these settings.
 
@@ -95,7 +95,7 @@ This field is used to enter your test query.
 
 ### Operation Steps
 
-1. Navigate to the dataset's **Retrieval Testing** page, enter your query in **Test text**, and click **Test** to run the test.
+1. Navigate to the dataset's **Retrieval** page, enter your query in **Test text**, and click **Test** to run the test.
 2. If the results are unsatisfactory, adjust the options listed in the configuration section and run the test again.
 
 For example, hybrid retrieval combines weighted keyword similarity and weighted vector cosine similarity. A term similarity score of `25.17` multiplied by `0.7` plus a vector similarity score of `36.49` multiplied by `0.3` gives an overall score of approximately `28.57`.
@@ -106,7 +106,7 @@ For example, hybrid retrieval combines weighted keyword similarity and weighted 
 
 #### Is an LLM Used When the Use Knowledge Graph Switch Is Enabled?
 
-In dataset retrieval testing, `use_kg` does not trigger graph retrieval or additional LLM calls for that step, even when set to `true`. Other enabled features, such as cross-language search or keyword extraction, may still call an LLM independently.
+In dataset retrieval, `use_kg` does not trigger graph retrieval or additional LLM calls for that step, even when set to `true`. Other enabled features, such as cross-language search or keyword extraction, may still call an LLM independently.
 
 #### Why does it take longer for RAGFlow to parse a document than LangChain?
 
