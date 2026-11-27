@@ -267,7 +267,7 @@ func (s *S3Storage) deleteObjects(ctx context.Context, bucket string, objects []
 	return nil
 }
 
-// isNotFound checks if the error is a not found error
+// isS3NotFound checks if the error is an S3 not-found error
 func isS3NotFound(err error) bool {
 	if err == nil {
 		return false

@@ -33,13 +33,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestAsyncDeleteSpaceOutlivesTheRequestContext pins the cleanup goroutine to a
-// context that survives the request. Gin cancels c.Request.Context() as soon as
-// the handler returns, so inheriting it left the space at status "2" forever:
-// the delete endpoint answers with the idempotent "already deleting" success on
-// every retry and space creation refuses the same name.
-// UpdateSpace must reject a supplied name that becomes empty after trimming,
-// while an omitted name remains a no-op for the other fields.
+// TestUpdateSpaceRejectsWhitespaceOnlyName checks that UpdateSpace rejects a
+// supplied name that becomes empty after trimming, while an omitted name
+// leaves the name unchanged and still applies the other fields.
 func TestUpdateSpaceRejectsWhitespaceOnlyName(t *testing.T) {
 	db := setupServiceTestDB(t)
 	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
@@ -94,6 +90,11 @@ func TestUpdateSpaceRejectsWhitespaceOnlyName(t *testing.T) {
 	}
 }
 
+// TestAsyncDeleteSpaceOutlivesTheRequestContext pins the cleanup goroutine to a
+// context that survives request cancellation. Inheriting the request context
+// could leave the space at status "2". A repeat delete restarts the cleanup and
+// returns success, while space creation refuses the same name as long as the
+// space remains at status "2".
 func TestAsyncDeleteSpaceOutlivesTheRequestContext(t *testing.T) {
 	db := setupServiceTestDB(t)
 	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
