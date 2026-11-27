@@ -2,7 +2,8 @@ import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
-import { DatasetTableLayout } from '@/components/dataset-table-layout';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
+import { ResourceMetadata } from '@/components/resource-metadata';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
@@ -64,6 +65,7 @@ export type MemoryTableProps = {
   setPagination: (params: { page: number; pageSize: number }) => void;
   operatorPermission: number;
   hasRoleWrite: boolean;
+  createTime?: string;
 };
 
 const columnHelper = createColumnHelper<IMessageInfo>();
@@ -129,6 +131,7 @@ export function MemoryTable({
   setPagination,
   operatorPermission,
   hasRoleWrite,
+  createTime,
 }: MemoryTableProps) {
   const canWrite = hasRoleWrite && canWriteMemory(operatorPermission);
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -398,7 +401,8 @@ export function MemoryTable({
 
   return (
     <>
-      <DatasetTableLayout
+      <PaginatedTableLayout
+        footerLeading={<ResourceMetadata createTime={createTime} />}
         pagination={
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}
@@ -449,7 +453,7 @@ export function MemoryTable({
             </TableRow>
           )}
         </TableBody>
-      </DatasetTableLayout>
+      </PaginatedTableLayout>
       {showDeleteDialog && (
         <ConfirmDeleteDialog
           onOk={handleDeleteMessage}

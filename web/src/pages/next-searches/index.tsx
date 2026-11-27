@@ -120,9 +120,13 @@ export default function SearchList() {
             onChange={handleFilterSubmit}
             filters={owners}
           >
-            <Button data-testid="create-search" onClick={openCreateModalFun}>
-              <Plus className="size-[1em]" />
-              {t('createSearch')}
+            <Button
+              data-testid="create-search"
+              size="icon"
+              onClick={openCreateModalFun}
+              aria-label={t('createSearch')}
+            >
+              <Plus />
             </Button>
           </NavGroupListFilterBar>
         </header>

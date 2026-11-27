@@ -28,6 +28,7 @@ export default {
       descriptionMaxLength: '描述最多 {{max}} 个字符。',
       next: '下一步',
       create: '创建',
+      createdAt: '创建时间',
       edit: '编辑',
       upload: '上传',
       english: '英文',

@@ -136,9 +136,13 @@ export default function ChatList() {
             value={filterValue}
             onChange={handleFilterSubmit}
           >
-            <Button data-testid="create-chat" onClick={handleShowCreateModal}>
-              <Plus className="size-[1em]" />
-              {t('chat.createChat')}
+            <Button
+              data-testid="create-chat"
+              size="icon"
+              onClick={handleShowCreateModal}
+              aria-label={t('chat.createChat')}
+            >
+              <Plus />
             </Button>
           </NavGroupListFilterBar>
         </header>

@@ -138,9 +138,8 @@ export default function Files() {
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button>
+              <Button size="icon" aria-label={t('knowledgeDetails.addFile')}>
                 <LucidePlus />
-                {t('knowledgeDetails.addFile')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56">
