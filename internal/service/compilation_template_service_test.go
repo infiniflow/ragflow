@@ -103,6 +103,50 @@ func TestValidateTemplatePayloadCountsTextLimitsByRune(t *testing.T) {
 	}
 }
 
+func TestValidateTemplatePayloadChecksSectionShapes(t *testing.T) {
+	for _, section := range []string{"entity", "relation", "claim", "concept"} {
+		for _, tc := range []struct {
+			name, value, message string
+		}{
+			{"string", `"not-an-object"`, capitalizeTitle(section) + " must be an object"},
+			{"null", `null`, capitalizeTitle(section) + " must be an object"},
+			{"array", `[]`, capitalizeTitle(section) + " must be an object"},
+			{"fields_object", `{"fields":{}}`, capitalizeTitle(section) + " fields must be a list"},
+			{"fields_string", `{"fields":"not-a-list"}`, capitalizeTitle(section) + " fields must be a list"},
+			{"fields_null", `{"fields":null}`, capitalizeTitle(section) + " fields must be a list"},
+		} {
+			t.Run(section+"/"+tc.name, func(t *testing.T) {
+				var config map[string]interface{}
+				if err := json.Unmarshal([]byte(`{"`+section+`":`+tc.value+`}`), &config); err != nil {
+					t.Fatal(err)
+				}
+				payload := map[string]interface{}{"name": "Template", "kind": "wiki", "config": config}
+				if err := ValidateTemplatePayload(payload, true); err == nil || err.Error() != tc.message {
+					t.Fatalf("validation = %v, want %q", err, tc.message)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateTemplatePayloadAllowsOptionalAndEmptySections(t *testing.T) {
+	for _, raw := range []string{
+		`{}`,
+		`{"entity":{},"relation":{},"claim":{},"concept":{}}`,
+		`{"entity":{"fields":[]},"relation":{"fields":[]},"claim":{"fields":[]},"concept":{"fields":[]}}`,
+		`{"entity":{"description":"Free-form extraction"},"relation":{"description":"Free-form relationships"},"synthesis":{"enabled":true}}`,
+	} {
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &config); err != nil {
+			t.Fatal(err)
+		}
+		payload := map[string]interface{}{"name": "Template", "kind": "wiki", "config": config}
+		if err := ValidateTemplatePayload(payload, true); err != nil {
+			t.Fatalf("valid config %s rejected: %v", raw, err)
+		}
+	}
+}
+
 // TestLoadWikiPresets_FrontendContract pins the Python API contract of
 // /v1/compilation-templates/wiki-presets: every preset must expose the
 // "example" JSON key filled from the yaml "example" key. The Go port once
