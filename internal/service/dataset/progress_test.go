@@ -271,3 +271,71 @@ func TestMergeProgressRunningStageWithUnitStillWins(t *testing.T) {
 		t.Fatalf("position = %d/%d, want 120/800", resp.Current, resp.Total)
 	}
 }
+
+// A running run must report a live elapsed time derived from its begin time;
+// ProcessDuration is only written at settlement and stays 0 while running.
+func TestMergeProgressRunningUsesLiveElapsed(t *testing.T) {
+	run := testRun(string(entity.TaskStatusRunning))
+	run.ProcessDuration = 0
+	begin := time.Now().Add(-90 * time.Second)
+	run.ProcessBeginAt = &begin
+
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: progressstore.PhaseRunning, Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 100},
+		}})
+	resp := mergeProgressSnapshot(run, snap, 0, nil)
+
+	if resp.DurationS < 89 || resp.DurationS > 91 {
+		t.Fatalf("running duration = %v, want ~90s (live elapsed), got %+v", resp.DurationS, resp)
+	}
+}
+
+// Adversarial: a terminal run keeps its persisted duration even though its
+// begin time is old. Recomputing from begin time here would misreport the
+// settled duration.
+func TestMergeProgressTerminalKeepsPersistedDuration(t *testing.T) {
+	for _, status := range []string{
+		string(entity.TaskStatusDone),
+		string(entity.TaskStatusFail),
+		string(entity.TaskStatusCancel),
+		"DONE", "FAIL", "CANCEL",
+	} {
+		run := testRun(status)
+		run.ProcessDuration = 42
+		begin := time.Now().Add(-90 * time.Second)
+		run.ProcessBeginAt = &begin
+
+		resp := mergeProgressSnapshot(run, testSnapshot(progressstore.StatusCompleted), 0, nil)
+		if resp.DurationS != 42 {
+			t.Errorf("status %q duration = %v, want persisted 42", status, resp.DurationS)
+		}
+	}
+}
+
+// Adversarial: a running run with no begin time cannot compute elapsed; it
+// must stay at 0 and not panic.
+func TestMergeProgressRunningWithoutBeginStaysZero(t *testing.T) {
+	run := testRun(string(entity.TaskStatusRunning))
+	run.ProcessDuration = 0
+	run.ProcessBeginAt = nil
+
+	resp := mergeProgressSnapshot(run, testSnapshot(progressstore.StatusRunning), 0, nil)
+	if resp.DurationS != 0 {
+		t.Fatalf("duration = %v, want 0 when begin time is missing", resp.DurationS)
+	}
+}
+
+// Adversarial: a begin time in the future (clock skew / bad data) must not
+// produce a negative elapsed, which the UI renders as "—".
+func TestMergeProgressFutureBeginNeverNegative(t *testing.T) {
+	run := testRun(string(entity.TaskStatusRunning))
+	run.ProcessDuration = 0
+	begin := time.Now().Add(30 * time.Second)
+	run.ProcessBeginAt = &begin
+
+	resp := mergeProgressSnapshot(run, testSnapshot(progressstore.StatusRunning), 0, nil)
+	if resp.DurationS < 0 {
+		t.Fatalf("duration = %v, want non-negative", resp.DurationS)
+	}
+}

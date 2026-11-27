@@ -89,6 +89,12 @@ func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore
 		resp.Status = run.OperationStatus
 		resp.StartedAt = run.ProcessBeginAt
 		resp.DurationS = run.ProcessDuration
+		// ProcessDuration is written only at settlement, so it stays 0 for a
+		// running run and the UI would show "—". Derive a live elapsed from the
+		// immutable begin time; terminal runs keep their persisted duration.
+		if !isTerminalIngestionLogStatus(run.OperationStatus) && run.ProcessBeginAt != nil {
+			resp.DurationS = max(0, time.Since(*run.ProcessBeginAt).Seconds())
+		}
 	}
 	if snap == nil {
 		resp.Fallback = true
