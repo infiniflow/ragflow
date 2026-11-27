@@ -391,17 +391,17 @@ func TestAuthorizeBedrockRequestAPIKey(t *testing.T) {
 		t.Fatalf("parse key: %v", err)
 	}
 	for _, tc := range []struct {
-		name    string
-		method  string
-		url     string
-		service string
+		name   string
+		method string
+		url    string
+		plane  string
 	}{
-		{name: "runtime", method: http.MethodPost, url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/test/converse", service: bedrockRuntimeService},
-		{name: "control", method: http.MethodGet, url: "https://bedrock.us-east-1.amazonaws.com/foundation-models", service: bedrockControlService},
+		{name: "runtime", method: http.MethodPost, url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/test/converse", plane: bedrockPlaneRuntime},
+		{name: "control", method: http.MethodGet, url: "https://bedrock.us-east-1.amazonaws.com/foundation-models", plane: bedrockPlaneControl},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, _ := http.NewRequest(tc.method, tc.url, nil)
-			if err = authorizeBedrockRequest(t.Context(), req, nil, key, tc.service, "us-east-1"); err != nil {
+			if err = authorizeBedrockRequest(t.Context(), req, nil, key, tc.plane, "us-east-1"); err != nil {
 				t.Fatalf("authorize request: %v", err)
 			}
 			if got := req.Header.Get("Authorization"); got != "Bearer bedrock-test-key" {
@@ -411,8 +411,40 @@ func TestAuthorizeBedrockRequestAPIKey(t *testing.T) {
 	}
 
 	untrusted, _ := http.NewRequest(http.MethodPost, "https://attacker.example.com/model/test/converse", nil)
-	if err = authorizeBedrockRequest(t.Context(), untrusted, nil, key, bedrockRuntimeService, "us-east-1"); err == nil {
+	if err = authorizeBedrockRequest(t.Context(), untrusted, nil, key, bedrockPlaneRuntime, "us-east-1"); err == nil {
 		t.Fatal("expected an untrusted endpoint to be rejected")
+	}
+}
+
+// TestBedrockRuntimeSignsWithBedrockService guards the SigV4 service
+// name regression fixed for issue #22428: the runtime plane
+// (Converse / Converse-Stream / embedding) must sign against the
+// "bedrock" service, not "bedrock-runtime". "bedrock-runtime" is only
+// the endpoint host prefix; signing with it makes Bedrock reject the
+// request with "Credential should be scoped to correct service".
+func TestBedrockRuntimeSignsWithBedrockService(t *testing.T) {
+	key, err := parseBedrockKey(validBedrockKey())
+	if err != nil {
+		t.Fatalf("parse key: %v", err)
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, "https://bedrock-runtime.us-east-1.amazonaws.com/model/test/converse", nil)
+	if err = authorizeBedrockRequest(t.Context(), req, nil, key, bedrockPlaneRuntime, "us-east-1"); err != nil {
+		t.Fatalf("authorize request: %v", err)
+	}
+
+	auth := req.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "AWS4-HMAC-SHA256 Credential=") {
+		t.Fatalf("Authorization=%q, want SigV4 credential header", auth)
+	}
+	// The credential scope is <key>/<date>/<region>/<service>/aws4_request.
+	// The service MUST be "bedrock"; the previous code signed the runtime
+	// plane as "bedrock-runtime", which AWS rejects.
+	if !strings.Contains(auth, "/bedrock/aws4_request") {
+		t.Errorf("Authorization=%q, want service scope /bedrock/aws4_request", auth)
+	}
+	if strings.Contains(auth, "/bedrock-runtime/aws4_request") {
+		t.Errorf("Authorization=%q, must not scope to /bedrock-runtime/aws4_request", auth)
 	}
 }
 
