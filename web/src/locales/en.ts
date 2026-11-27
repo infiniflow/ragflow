@@ -28,6 +28,7 @@ export default {
       descriptionMaxLength: 'Description must be at most {{max}} characters.',
       next: 'Next',
       create: 'Create',
+      createdAt: 'Created at',
       edit: 'Edit',
       upload: 'Upload',
       english: 'English',

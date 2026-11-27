@@ -5,6 +5,7 @@ import { useFetchMemoryMessageList } from './hook';
 import { MemoryTable } from './message-table';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import { useCanWriteMemoryRole } from '@/ee/pages/memories/memory-dropdown-guard';
+import { formatDate } from '@/utils/date';
 
 export default function MemoryMessage() {
   const { data: memory } = useFetchMemoryBaseConfiguration();
@@ -37,6 +38,7 @@ export default function MemoryMessage() {
           total={data?.messages?.total_count ?? 0}
           operatorPermission={memory?.operator_permission ?? 0}
           hasRoleWrite={hasRoleWrite}
+          createTime={formatDate(memory?.create_time)}
         ></MemoryTable>
       </CardContent>
     </>

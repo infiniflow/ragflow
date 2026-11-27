@@ -30,11 +30,11 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { DatasetTableLayout } from '@/components/dataset-table-layout';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
 import { useLogListDataSource } from '../hooks';
 import { getDataSourceLogsTableColumns } from '../log-columns';
 
@@ -43,6 +43,7 @@ export const DataSourceLogsTable = ({
 }: {
   autoRefresh: boolean;
 }) => {
+  const { t } = useTranslation();
   const { data, pagination, setPagination } = useLogListDataSource(autoRefresh);
   const { navigateToDataset } = useNavigatePage();
   const [now, setNow] = useState(() => Date.now());
@@ -87,7 +88,7 @@ export const DataSourceLogsTable = ({
   });
 
   return (
-    <DatasetTableLayout
+    <PaginatedTableLayout
       tableClassName="table-fixed"
       pagination={
         <RAGFlowPagination
@@ -142,6 +143,6 @@ export const DataSourceLogsTable = ({
           </TableRow>
         )}
       </TableBody>
-    </DatasetTableLayout>
+    </PaginatedTableLayout>
   );
 };

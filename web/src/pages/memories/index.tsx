@@ -111,9 +111,12 @@ export default function MemoryList() {
             value={filterValue}
           >
             {canCreateMemory && (
-              <Button onClick={openCreateModalFun}>
-                <Plus className="size-[1em]" />
-                {t('createMemory')}
+              <Button
+                size="icon"
+                onClick={openCreateModalFun}
+                aria-label={t('createMemory')}
+              >
+                <Plus />
               </Button>
             )}
           </NavGroupListFilterBar>
