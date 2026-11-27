@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+	"regexp"
 	"strings"
 	"time"
 
@@ -67,6 +68,8 @@ var DB *gorm.DB
 // usually surfacing as a runtime panic mid-migration.
 type migrationAwareDialector struct {
 	*mysql.Dialector
+	datetimeColumn string
+	datetimeType   string
 }
 
 // The capabilities gorm discovers by type assertion on db.Dialector.
@@ -92,16 +95,50 @@ func (d migrationAwareDialector) Migrator(db *gorm.DB) gorm.Migrator {
 		// back, which is what shipped before this wrapper existed.
 		return d.Dialector.Migrator(db)
 	}
+	// Keep this dialector's scoped type mapping when the driver builds DDL.
+	migrator.Migrator.Config.Dialector = d
 	return namedIndexMigrator{Migrator: migrator}
 }
 
-// namedIndexMigrator leaves uniqueness to the named indexes declared with
-// uniqueIndex tags and created by the manual migrations.
+func (d migrationAwareDialector) DataTypeOf(field *schema.Field) string {
+	if d.datetimeType != "" && field.DBName == d.datetimeColumn {
+		return d.datetimeType
+	}
+	return d.Dialector.DataTypeOf(field)
+}
+
+// namedIndexMigrator preserves stored datetime precision and leaves uniqueness
+// to the named indexes declared with uniqueIndex tags and manual migrations.
 type namedIndexMigrator struct {
 	mysql.Migrator
 }
 
 var _ migrator.BuildIndexOptionsInterface = namedIndexMigrator{}
+
+var mysqlDatetimeType = regexp.MustCompile(`(?i)^datetime(?:\([0-6]\))?$`)
+
+// MigrateColumn keeps a datetime column's stored precision. A precision change
+// rebuilds MySQL tables even when the application can already use the column.
+// Scope the stored type to this column's migration so other schema changes can
+// proceed without changing precision or mutating GORM's cached schema fields.
+func (m namedIndexMigrator) MigrateColumn(dst interface{}, field *schema.Field, columnType gorm.ColumnType) error {
+	storedType, ok := columnType.ColumnType()
+	if !field.IgnoreMigration && ok && mysqlDatetimeType.MatchString(storedType) {
+		fieldCopy := *field
+		if mysqlDatetimeType.MatchString(strings.TrimSuffix(m.Migrator.Migrator.DataTypeOf(&fieldCopy), " NULL")) {
+			dialector := migrationAwareDialector{
+				Dialector:      &m.Dialector,
+				datetimeColumn: field.DBName,
+				datetimeType:   storedType,
+			}
+			db := m.DB.Session(&gorm.Session{})
+			db.Dialector = dialector
+			m.Migrator.Migrator.Config.DB = db
+			m.Migrator.Migrator.Config.Dialector = dialector
+		}
+	}
+	return m.Migrator.MigrateColumn(dst, field, columnType)
+}
 
 // MigrateColumnUnique drops a unique constraint only once it exists. The stock
 // implementation equates "this column carries some single-column UNIQUE index"

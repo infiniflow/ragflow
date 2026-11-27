@@ -31,7 +31,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. This includes `migrateColumnWidths`, which widens `pipeline_operation_log.pipeline_title`, `tenant.name`, and the `tenant_*id` model-reference columns only when the existing column is narrower. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
 3. `migrateUserTenantDuplicates` — deduplicates memberships before `AutoMigrate` creates their unique index.
-4. `AutoMigrate` — converges every ORM model, including the compilation queue tables.
+4. `AutoMigrate` — converges every ORM model, including the compilation queue tables. Existing MySQL `datetime` columns retain their stored fractional-second precision.
 5. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
 6. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
 7. `migrateTenantModelMaxTokens` — backfills model context windows before advancing the marker to its target.
@@ -66,6 +66,7 @@ Normal startup also runs `SeedCanvasTemplates` without a version gate. It seeds 
 | `v1.0.0-rc3.dev7` | Store conversation references in each assistant message | `conversationReferenceTargetVersion` |
 | `v1.0.0.1` | Backfill resource-owner `user_id` values from `created_by` or `tenant_id` | `resourceUserIDMigrationTargetVersion` |
 | `v1.0.0.2` | Normalize legacy Extractor / TitleChunker / TokenChunker params in `knowledgebase`, `document`, `user_canvas`, and `user_canvas_version` | `ingestionLegacyConfigTargetVersion` |
+| Unversioned | Preserve the precision of existing MySQL `datetime` columns during automatic and manual schema alignment | Stored column type checked on each run; no version marker |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -410,6 +411,15 @@ A skipped `user_canvas_version` row is a historical snapshot; the live `user_can
 ## Version-less steps
 
 These steps are not gated by the version marker. They use schema or data checks to make repeated execution safe. Steps in `RunMigrations` run during `ragflow_server --migrate`; ingestion helpers also run during server startup.
+
+MySQL schema alignment preserves the precision of existing `datetime`,
+`datetime(3)`, and `datetime(6)` columns (and the other valid precisions). A
+precision difference alone issues no `ALTER TABLE`; changes to defaults,
+nullability, or comments retain the stored precision. This also applies to the
+manual task-finish column specifications on `knowledgebase`. New tables and
+columns still use the model's declared type or the driver's default
+`datetime(3)`. Changing an existing column's precision requires an explicit SQL
+migration, including when a model's precision tag changes.
 
 ### Schema changes
 
