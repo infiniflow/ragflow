@@ -259,7 +259,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		}
 		joinSep := "\n"
 		if !customDelimiter {
-			body = separateGeneralTextBlocks(body)
+			body = separateGeneralTextBlocks(body, true)
 			body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
 			joinSep = ""
 		}
@@ -457,7 +457,7 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	}
 	if !customDelimiter && !recordGrouped {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
-		units = separateGeneralTextBlocks(units)
+		units = separateGeneralTextBlocks(units, true)
 	}
 	if recordGrouped {
 		units = splitGeneralUnitsDroppingRecordPrefix(units, splitPattern, recordPrefixes)
@@ -483,11 +483,16 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 
 // separateGeneralTextBlocks retains parser block boundaries in the text before
 // delimiter splitting. Sentence fragments can then be concatenated directly.
-func separateGeneralTextBlocks(units []schema.ChunkDoc) []schema.ChunkDoc {
+// acrossMedia also separates text blocks on either side of a table or image,
+// for merges that carry a text chunk past intervening media (DOCX).
+func separateGeneralTextBlocks(units []schema.ChunkDoc, acrossMedia bool) []schema.ChunkDoc {
 	units = append([]schema.ChunkDoc(nil), units...)
 	previousText := -1
 	for i := range units {
 		if itemDocType(units[i]) != "text" {
+			if !acrossMedia {
+				previousText = -1
+			}
 			continue
 		}
 		if strings.TrimSpace(units[i].Text) == "" {
@@ -627,7 +632,7 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 			break
 		}
 		text, ok := generalContextSourceText(units[cursor])
-		if !ok {
+		if !ok || strings.TrimSpace(text) == "" {
 			continue
 		}
 		text = normalizeGeneralNewlines(text)
@@ -1196,9 +1201,14 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
-	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
-	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	if !customDelimiter {
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
+		units = separateGeneralTextBlocks(units, false)
+	}
+	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
+	if customDelimiter {
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
+	} else {
 		units = mergeGeneralUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "")
 	}
 	units = finalizeGeneralChunks(units, childrenPattern)
