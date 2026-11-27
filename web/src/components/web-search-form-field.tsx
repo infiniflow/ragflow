@@ -16,6 +16,7 @@
 
 import anysearchLogo from '@/assets/anysearch.webp';
 import braveLogo from '@/assets/svg/brave.svg';
+import contextDevLogo from '@/assets/context-dev.png';
 import exaLogo from '@/assets/exa.png';
 import firecrawlLogo from '@/assets/firecrawl.png';
 import keirolabsLogo from '@/assets/keirolabs.png';
@@ -54,6 +55,11 @@ const webSearchProviderCatalog = [
     name: 'Brave Search',
     logo: braveLogo,
     value: WebSearchProvider.Brave,
+  },
+  {
+    name: 'Context.dev',
+    logo: contextDevLogo,
+    value: WebSearchProvider.ContextDev,
   },
   {
     name: 'Exa',
@@ -159,6 +165,12 @@ const providerKeyConfig = {
     tip: 'braveApiKeyTip',
     placeholder: 'braveApiKeyMessage',
     helpUrl: 'https://brave.com/search/api/',
+  },
+  [WebSearchProvider.ContextDev]: {
+    name: 'prompt_config.context_dev_api_key',
+    tip: 'contextDevApiKeyTip',
+    placeholder: 'contextDevApiKeyMessage',
+    helpUrl: 'https://context.dev',
   },
   [WebSearchProvider.Exa]: {
     name: 'prompt_config.exa_api_key',

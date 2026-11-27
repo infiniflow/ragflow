@@ -64,6 +64,7 @@ export enum DatasetMetadata {
 export enum WebSearchProvider {
   AnySearch = 'anysearch',
   Brave = 'brave',
+  ContextDev = 'context',
   Exa = 'exa',
   Firecrawl = 'firecrawl',
   Keirolabs = 'keirolabs',

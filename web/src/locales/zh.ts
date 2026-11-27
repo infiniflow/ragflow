@@ -1268,6 +1268,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       braveApiKeyTip:
         '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
       braveApiKeyMessage: '请输入你的 Brave Search API Key',
+      contextDevApiKeyTip:
+        '必填。Context.dev 使用搜索 Highlights 补充知识库检索，请求将消耗你的 Context.dev 账户额度。',
+      contextDevApiKeyMessage: '请输入你的 Context.dev API Key',
       exaApiKeyTip:
         '必填。选择 Exa 后，将使用其搜索结果补充知识库检索。即使是每月 1,000 次的免费额度，也仍然需要 Key。',
       exaApiKeyMessage: '请输入你的 Exa API Key',

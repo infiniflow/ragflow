@@ -506,3 +506,36 @@ describe('missingWebSearchApiKeyField', () => {
     ).toBeUndefined();
   });
 });
+describe('Context.dev configuration', () => {
+  const provider = 'context' as WebSearchProvider;
+
+  it('keeps the selected provider and its own trimmed key across save/reload', () => {
+    const saved = JSON.parse(
+      JSON.stringify({
+        web_search_provider: provider,
+        context_dev_api_key: '  context-test  ',
+        tavily_api_key: 'unrelated-provider-key',
+      }),
+    );
+    expect(getWebSearchProvider(saved)).toBe(provider);
+    expect(getWebSearchApiKeyField(provider)).toBe('context_dev_api_key');
+    expect(getWebSearchApiKey(saved)).toBe('context-test');
+    expect(hasWebSearchProvider(saved)).toBe(true);
+    expect(isWebSearchApiKeyRequired(provider)).toBe(true);
+  });
+
+  it.each([undefined, '', '   '])(
+    'never falls back to a retained Tavily key with Context key %p',
+    (key) => {
+      const saved = JSON.parse(
+        JSON.stringify({
+          web_search_provider: provider,
+          context_dev_api_key: key,
+          tavily_api_key: 'unrelated-provider-key',
+        }),
+      );
+      expect(hasWebSearchProvider(saved)).toBe(false);
+      expect(missingWebSearchApiKeyField(saved)).toBe('context_dev_api_key');
+    },
+  );
+});

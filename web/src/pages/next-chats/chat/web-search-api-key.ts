@@ -55,6 +55,7 @@ export function getWebSearchProvider(promptConfig?: WebSearchKeyConfig) {
 const webSearchApiKeyFields: Record<WebSearchProvider, string> = {
   [WebSearchProvider.AnySearch]: 'anysearch_api_key',
   [WebSearchProvider.Brave]: 'brave_api_key',
+  [WebSearchProvider.ContextDev]: 'context_dev_api_key',
   [WebSearchProvider.Exa]: 'exa_api_key',
   [WebSearchProvider.Firecrawl]: 'firecrawl_api_key',
   [WebSearchProvider.Keirolabs]: 'keirolabs_api_key',

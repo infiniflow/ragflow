@@ -1382,6 +1382,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       braveApiKeyTip:
         'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
       braveApiKeyMessage: 'Please enter your Brave Search API Key',
+      contextDevApiKeyTip:
+        'Required. Context.dev supplements dataset retrieval with search Highlights. Requests use your Context.dev account credits.',
+      contextDevApiKeyMessage: 'Please enter your Context.dev API Key',
       exaApiKeyTip:
         'Required. When Exa is selected, its web results supplement dataset retrieval. A key is needed even on the free tier of 1,000 requests/month.',
       exaApiKeyMessage: 'Please enter your Exa API Key',
