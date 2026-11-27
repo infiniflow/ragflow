@@ -1023,6 +1023,8 @@ func (p *wikiPipeline) runRefinePage(
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
 		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
 	}
+	parserConfig, _ := p.inputs.VariantSpecific["parser_config"].(map[string]any)
+	blueprint := wikiBlueprintExample(parserConfig, p.param.Language)
 	request := func(source, draft string) common.ChatRequest {
 		fields["source_context"] = source
 		fields["existing_section"] = ""
@@ -1030,7 +1032,7 @@ func (p *wikiPipeline) runRefinePage(
 			fields["existing_section"] = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + draft + "\n"
 		}
 		return common.ChatRequest{
-			LLMID: p.llmID, SystemPrompt: buildWikiRefineWriterSystem(""),
+			LLMID: p.llmID, SystemPrompt: buildWikiRefineWriterSystem(blueprint),
 			UserPrompt: renderWikiRefineTemplate(wikiRefineWriterUserTemplate, fields),
 		}
 	}
@@ -1106,7 +1108,12 @@ func (p *wikiPipeline) runRefinePage(
 	// AFTER transformWikiLinks and do NOT re-run the resolver, so dead links are
 	// bypassed and the missing target does not drop the edge — each RelatedKB
 	// full-slug is linked once, only if not already present in Outlinks.
-	contentRendered, outlinks = appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
+	// see_also=false keeps the RelatedKB edges in outlinks (page metadata) but
+	// leaves the rendered content untouched.
+	seeAlsoContent, outlinks := appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
+	if wikiSeeAlsoEnabled(parserConfig) {
+		contentRendered = seeAlsoContent
+	}
 	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
 	topic := common.FirstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
 	return wikiPageResult{

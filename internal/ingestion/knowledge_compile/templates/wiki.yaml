@@ -12,6 +12,7 @@ config:
       - 5. End with a "## See also" section listing wikilinks to highly related pages (less than 12).
   example: |
       - Page structure could be as following: (Not provided)
+  see_also: true
   entity:
     description: >-
       You are a robust graph entity extractor for knowledge graphs.
