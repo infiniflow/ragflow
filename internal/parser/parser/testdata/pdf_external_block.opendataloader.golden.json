@@ -1,0 +1,370 @@
+{
+  "page_count": 4,
+  "items": [
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          400,
+          62,
+          92
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          400,
+          62,
+          92
+        ]
+      ],
+      "text": "Quarterly Report"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          400,
+          102,
+          132
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          400,
+          102,
+          132
+        ]
+      ],
+      "text": "Overview"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          540,
+          142,
+          192
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          540,
+          142,
+          192
+        ]
+      ],
+      "text": "Body text on page one."
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          540,
+          202,
+          232
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          540,
+          202,
+          232
+        ]
+      ],
+      "text": "Uses the text key."
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          72,
+          500,
+          192,
+          392
+        ]
+      ],
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          72,
+          500,
+          192,
+          392
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "Item",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "Value",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "A",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "42",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 2
+      }
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          72,
+          500,
+          412,
+          592
+        ]
+      ],
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          72,
+          500,
+          412,
+          592
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "k",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "v",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "a",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "1",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 2
+      }
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          72,
+          500,
+          612,
+          692
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "table",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          72,
+          500,
+          612,
+          692
+        ]
+      ],
+      "text": "Item | Value"
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          72,
+          300,
+          702,
+          772
+        ]
+      ],
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          72,
+          300,
+          702,
+          772
+        ]
+      ],
+      "text": "[Image]"
+    },
+    {
+      "_pdf_positions": [
+        [
+          3,
+          72,
+          300,
+          92,
+          292
+        ]
+      ],
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 3,
+      "positions": [
+        [
+          3,
+          72,
+          300,
+          92,
+          292
+        ]
+      ],
+      "text": "Figure 1: pipeline"
+    },
+    {
+      "_pdf_positions": [
+        [
+          3,
+          72,
+          300,
+          312,
+          352
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "equation",
+      "page_number": 3,
+      "positions": [
+        [
+          3,
+          72,
+          300,
+          312,
+          352
+        ]
+      ],
+      "text": "E = mc^2"
+    },
+    {
+      "_pdf_positions": [
+        [
+          3,
+          0,
+          612,
+          372,
+          412
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "positions": [
+        [
+          3,
+          0,
+          612,
+          372,
+          412
+        ]
+      ],
+      "text": "bleeds within tolerance"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "foreign pixel space"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "inverted box"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "zero width"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "no box"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "text": "no page"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 9,
+      "text": "uncovered page"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "text": "- one"
+    }
+  ],
+  "warnings": [
+    "OpenDataLoader page 3: element box [150 1351 550 1400] does not fit page size 612x792; positions omitted because the service coordinates do not match the PDF point space"
+  ]
+}

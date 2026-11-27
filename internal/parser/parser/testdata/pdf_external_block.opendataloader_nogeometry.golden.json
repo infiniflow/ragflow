@@ -1,0 +1,170 @@
+{
+  "page_count": 4,
+  "items": [
+    {
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "text": "Quarterly Report"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "text": "Overview"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "Body text on page one."
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "Uses the text key."
+    },
+    {
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 2,
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "Item",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "Value",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "A",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "42",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 2
+      }
+    },
+    {
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 2,
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "k",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "v",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "a",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "1",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 2
+      }
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "table",
+      "page_number": 2,
+      "text": "Item | Value"
+    },
+    {
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 2,
+      "text": "[Image]"
+    },
+    {
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 3,
+      "text": "Figure 1: pipeline"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "equation",
+      "page_number": 3,
+      "text": "E = mc^2"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "bleeds within tolerance"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "foreign pixel space"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "inverted box"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "zero width"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "no box"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "text": "no page"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 9,
+      "text": "uncovered page"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "text": "- one"
+    }
+  ],
+  "warnings": []
+}
