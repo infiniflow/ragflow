@@ -1311,7 +1311,15 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		for i, v := range req.ImportantKwd {
 			impKwd[i] = v
 		}
+		importantTks, err := s.tokenize(strings.Join(req.ImportantKwd, " "), language)
+		if err != nil {
+			return updateChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}
+		}
 		d["important_kwd"] = impKwd
+		// Full-text search reads important_tks; refresh it alongside
+		// important_kwd using the same space join as AddChunk (Python
+		// chunk_api.update_chunk does the same).
+		d["important_tks"] = importantTks
 	}
 
 	// Questions
@@ -1324,7 +1332,15 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 				filteredQuestions = append(filteredQuestions, q)
 			}
 		}
+		questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"), language)
+		if err != nil {
+			return updateChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize questions: %v", err)}
+		}
 		d["question_kwd"] = filteredQuestions
+		// question_tks carries the question boost in full-text search
+		// (question_tks^20) and feeds the reranker; Python chunk_api.update_chunk
+		// and AddChunk tokenize the raw list joined with "\n".
+		d["question_tks"] = questionTks
 	}
 
 	// Available
