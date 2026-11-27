@@ -910,6 +910,9 @@ build_cpp() {
     if [ "$(uname -s)" = "Darwin" ]; then
         local goarch
         goarch="$(go env GOARCH 2>/dev/null)"
+        # CMake spells Go's amd64 as x86_64; lipo -archs reports the CMake
+        # spelling, so passing amd64 through makes the PCRE2 arch check fail.
+        [ "$goarch" = "amd64" ] && goarch="x86_64"
         [ -n "$goarch" ] && cmake_args+=("-DCMAKE_OSX_ARCHITECTURES=${goarch}")
     fi
     # Extra arguments for the C++ configure step, e.g. to point pcre2 at a
