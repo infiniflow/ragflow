@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -155,3 +156,45 @@ func TestCohereEmbedInputTypeFollowsQuery(t *testing.T) {
 
 // TestVoyageEmbedInputTypeFollowsQuery pins Python VoyageEmbed: encode sends
 // input_type="document", encode_queries sends "query".
+
+func TestCohereListModelsFollowsPagination(t *testing.T) {
+	withSSRFBypass(t)
+	var tokens []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		tokens = append(tokens, q.Get("page_token"))
+		if q.Get("page_size") != "1000" {
+			t.Errorf("page_size=%q, want 1000", q.Get("page_size"))
+		}
+		if q.Get("page_token") == "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"models":          []map[string]any{{"name": "command-a"}, {"name": "embed-v4"}},
+				"next_page_token": "tok2",
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"models": []map[string]any{{"name": "rerank-v3.5"}},
+		})
+	}))
+	defer srv.Close()
+
+	m := NewCoHereModel(
+		map[string]string{"default": srv.URL},
+		URLSuffix{Chat: "v2/chat", Models: "v1/models"},
+	)
+	key := "k"
+	got, err := m.ListModels(context.Background(), &APIConfig{ApiKey: &key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d models (%v), want 3 across both pages", len(got), got)
+	}
+	if len(tokens) != 2 || tokens[1] != "tok2" {
+		t.Fatalf("page tokens requested = %v", tokens)
+	}
+}
