@@ -446,6 +446,8 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			}
 		}
 
+		createDocumentLowerNameIndex(ctx, DB)
+
 		if err = migrateBillingSchemaEE(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate billing schema: %w", err)
 		}

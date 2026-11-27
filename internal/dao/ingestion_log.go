@@ -73,12 +73,20 @@ func (dao *IngestionTaskLogDAO) LatestEventsByPipelineLogIDs(ctx context.Context
 	if len(pipelineLogIDs) == 0 {
 		return map[string]*entity.IngestionTaskLog{}, nil
 	}
-	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
-		Select("MAX(id)").
+	// Two statements on purpose: MySQL cannot semijoin a GROUP BY subquery, so
+	// "id IN (SELECT MAX(id) ... GROUP BY ...)" scans the whole table.
+	var latestIDs []int
+	if err := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
 		Where("pipeline_log_id IN ?", pipelineLogIDs).
-		Group("pipeline_log_id")
+		Group("pipeline_log_id").
+		Pluck("MAX(id)", &latestIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(latestIDs) == 0 {
+		return map[string]*entity.IngestionTaskLog{}, nil
+	}
 	var events []*entity.IngestionTaskLog
-	if err := db.WithContext(ctx).Where("id IN (?)", latestIDs).Find(&events).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id IN ?", latestIDs).Find(&events).Error; err != nil {
 		return nil, err
 	}
 	result := make(map[string]*entity.IngestionTaskLog, len(events))

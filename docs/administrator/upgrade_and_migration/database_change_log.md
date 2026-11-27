@@ -31,7 +31,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. This includes `migrateColumnWidths`, which widens `pipeline_operation_log.pipeline_title`, `tenant.name`, and the `tenant_*id` model-reference columns only when the existing column is narrower. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
 3. `migrateUserTenantDuplicates` — deduplicates memberships before `AutoMigrate` creates their unique index.
-4. `AutoMigrate` — converges every ORM model, including the compilation queue tables.
+4. `AutoMigrate` — converges every ORM model, including the compilation queue tables. `createDocumentLowerNameIndex` then adds `idx_document_kb_lower_name`, logging a warning instead of failing when the server rejects it.
 5. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
 6. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
 7. `migrateTenantModelMaxTokens` — backfills model context windows before advancing the marker to its target.
@@ -431,6 +431,7 @@ These steps are not gated by the version marker. They use schema or data checks 
 | `conversation`, `api_4_conversation`                                                       | Index `idx_<table>_dialog_updated (dialog_id, update_time, id)` for conversation list queries.                                                                                                                                                                                                                                                |
 | `knowledgebase` | Adds `pipeline_version_id varchar(32) NULL` (dataflow canvas version binding; design section 5/B4). |
 | `document` | Adds `pipeline_version_id varchar(32) NULL` (inherits the dataset pinned version at upload; design section 5). |
+| `document` | Index `idx_document_kb_lower_name (kb_id, (LOWER(name)))` for the case-insensitive duplicate-name check on upload, created by `createDocumentLowerNameIndex` right after `AutoMigrate`. The functional key part requires MySQL 8.0.13 or later; a server that rejects it logs a warning and starts without the index. |
 | `user_canvas_version` | Adds `alias varchar(255) NULL` (free-text version alias for the version list filter; design A2/F1). |
 
 `migrateColumnWidths` performs the width changes above. It reads

@@ -313,3 +313,46 @@ func TestFileDAO_GetByIDAndTenant(t *testing.T) {
 		t.Fatalf("unscoped GetByID should still see the row: %v", err)
 	}
 }
+
+func TestFileDAO_GetRootFolderFindsOrCreatesTenantRoot(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFileTree(t, db) // t1 has a root and a self-parented "other" folder; t2 has none
+	d := NewFileDAO()
+
+	got, err := d.GetRootFolder(t.Context(), db, "t1")
+	if err != nil {
+		t.Fatalf("GetRootFolder(t1): %v", err)
+	}
+	if got.ID != "root" {
+		t.Fatalf("root id = %q, want root", got.ID)
+	}
+
+	created, err := d.GetRootFolder(t.Context(), db, "t2")
+	if err != nil {
+		t.Fatalf("GetRootFolder(t2): %v", err)
+	}
+	if created.ParentID != created.ID || created.Name != RootFolderName || created.TenantID != "t2" {
+		t.Fatalf("created root = %+v, want a self-parented %q folder of t2", created, RootFolderName)
+	}
+	again, err := d.GetRootFolder(t.Context(), db, "t2")
+	if err != nil || again.ID != created.ID {
+		t.Fatalf("second GetRootFolder(t2) = %+v, %v; want the created root %q", again, err, created.ID)
+	}
+}
+
+func TestFileDAO_GetRootFolderFindsRenamedLegacyRoot(t *testing.T) {
+	db := setupFileTestDB(t)
+	testFile(t, db, "legacy-root", "legacy-root", "t1", "renamed", "folder")
+
+	got, err := NewFileDAO().GetRootFolder(t.Context(), db, "t1")
+	if err != nil {
+		t.Fatalf("GetRootFolder(t1): %v", err)
+	}
+	if got.ID != "legacy-root" {
+		t.Fatalf("root id = %q, want legacy-root", got.ID)
+	}
+	var roots int64
+	if err := db.Model(&entity.File{}).Where("tenant_id = ? AND parent_id = id", "t1").Count(&roots).Error; err != nil || roots != 1 {
+		t.Fatalf("t1 roots = %d, %v; want 1", roots, err)
+	}
+}

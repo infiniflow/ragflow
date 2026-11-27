@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/permission"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -660,8 +661,28 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB,
 	return result, nil
 }
 
+// documentLowerNameIndex serves NameExistsInKB.
+const documentLowerNameIndex = "idx_document_kb_lower_name"
+
+// createDocumentLowerNameIndex adds documentLowerNameIndex. Functional key
+// parts need MySQL 8.0.13 or later; without the index NameExistsInKB stays
+// correct but reads the whole dataset, so a server that rejects the DDL logs a
+// warning instead of failing startup.
+func createDocumentLowerNameIndex(ctx context.Context, db *gorm.DB) {
+	db = db.WithContext(ctx)
+	if db.Migrator().HasIndex(&entity.Document{}, documentLowerNameIndex) {
+		return
+	}
+	if err := db.Exec("CREATE INDEX " + documentLowerNameIndex + " ON document (kb_id, (LOWER(name)))").Error; err != nil {
+		common.Warn("Failed to create document name index, duplicate-name checks will scan the dataset",
+			zap.String("index", documentLowerNameIndex), zap.Error(err))
+	}
+}
+
 // NameExistsInKB reports whether a document with the given name already
-// exists in the dataset, comparing names case-insensitively.
+// exists in the dataset, comparing names case-insensitively. The predicate
+// must keep the exact LOWER(name) form of idx_document_kb_lower_name, or every
+// call reads all documents of the dataset.
 func (dao *DocumentDAO) NameExistsInKB(ctx context.Context, db *gorm.DB, kbID, name string) (bool, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.Document{}).

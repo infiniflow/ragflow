@@ -782,3 +782,22 @@ func TestMoveFilesSingleFolderWithSubtreeStillMoves(t *testing.T) {
 	movedA := childByName(t, "D", "A")
 	childByName(t, movedA.ID, "B")
 }
+
+func TestMoveFilesRejectsRootFolder(t *testing.T) {
+	setupFolderTestDB(t)
+	root := &entity.File{ID: "root-1", ParentID: "root-1", TenantID: "tenant-1", Name: dao.RootFolderName, Type: FileTypeFolder}
+	if err := dao.DB.Create(root).Error; err != nil {
+		t.Fatalf("seed root: %v", err)
+	}
+
+	svc := testFileService()
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
+	err := svc.MoveFiles(ctx, []string{"root-1"}, "", "renamed")
+	if err == nil || !strings.Contains(err.Error(), "root folder cannot be moved or renamed") {
+		t.Fatalf("MoveFiles root rename error = %v, want root folder error", err)
+	}
+	var stored entity.File
+	if err := dao.DB.Take(&stored, "id = ?", "root-1").Error; err != nil || stored.Name != dao.RootFolderName {
+		t.Fatalf("root after rejected rename = %+v, %v; want name %q", stored, err, dao.RootFolderName)
+	}
+}
