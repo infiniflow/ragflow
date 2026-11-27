@@ -54,6 +54,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	doctype "ragflow/internal/deepdoc/parser/type"
@@ -88,15 +89,15 @@ type sessionPool[K comparable, V pooledSession] struct {
 	pools   map[K]*sessionKeyPool[V]
 	lru     []K // front = least-recently-used
 	maxKeys int
-	maxFree int
+	maxFree atomic.Int32
 }
 
 func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessionPool[K, V] {
 	p := &sessionPool[K, V]{
 		pools:   make(map[K]*sessionKeyPool[V]),
 		maxKeys: maxKeys,
-		maxFree: maxFree,
 	}
+	p.maxFree.Store(int32(maxFree))
 	// Register this pool with the adaptive idle budget. The callback destroys
 	// idle sessions oldest-first, keeping the newest minIdleKeep. It is a no-op
 	// unless the EE GPU path installed a budget at startup.
@@ -213,7 +214,8 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 		// retained below. Placing it earlier (or adding a noteIdleRemoved() in
 		// the else branch) would either double-count or wrongly decrement the
 		// global counter when kp.live is false and it was never called.
-		if kp.live && (p.maxFree <= 0 || len(kp.free) < p.maxFree) && shouldPoolIdle() {
+		maxFree := p.maxFree.Load()
+		if kp.live && (maxFree <= 0 || int32(len(kp.free)) < maxFree) && shouldPoolIdle() {
 			kp.free = append(kp.free, idleSession[V]{sess: s, at: time.Now()})
 			kp.mu.Unlock()
 		} else {
@@ -235,9 +237,7 @@ func isNil[V pooledSession](v V) bool {
 // SetMaxFree updates the idle-session retention cap at runtime. Used by the
 // calibrated session budget to apply a measured quota after startup.
 func (p *sessionPool[K, V]) SetMaxFree(n int) {
-	p.mu.Lock()
-	p.maxFree = n
-	p.mu.Unlock()
+	p.maxFree.Store(int32(n))
 }
 
 // KeyCount returns the number of distinct key-pools currently live. Used by

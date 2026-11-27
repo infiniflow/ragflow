@@ -18,20 +18,23 @@
 
 package native
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestSessionPoolSetMaxFree(t *testing.T) {
 	p := newSessionPool[string, *fakePooledSession](0, 4)
-	if p.maxFree != 4 {
-		t.Fatalf("initial maxFree = %d, want 4", p.maxFree)
+	if p.maxFree.Load() != 4 {
+		t.Fatalf("initial maxFree = %d, want 4", p.maxFree.Load())
 	}
 	p.SetMaxFree(8)
-	if p.maxFree != 8 {
-		t.Fatalf("after SetMaxFree(8): maxFree = %d, want 8", p.maxFree)
+	if p.maxFree.Load() != 8 {
+		t.Fatalf("after SetMaxFree(8): maxFree = %d, want 8", p.maxFree.Load())
 	}
 	p.SetMaxFree(2)
-	if p.maxFree != 2 {
-		t.Fatalf("after SetMaxFree(2): maxFree = %d, want 2", p.maxFree)
+	if p.maxFree.Load() != 2 {
+		t.Fatalf("after SetMaxFree(2): maxFree = %d, want 2", p.maxFree.Load())
 	}
 }
 
@@ -66,4 +69,34 @@ func TestApplySessionBudgetZeroKeepsCurrent(t *testing.T) {
 			t.Errorf("zero budget changed %s: %d -> %d", k, v, got[k])
 		}
 	}
+}
+
+// TestSetMaxFreeConcurrentSnapshot is a race-detector regression guard. The
+// production release path reads the idle cap while SetMaxFree may update it;
+// the cap must be atomic so concurrent read/write is race-free. Under -race
+// this test fails against a plain int field and passes with an atomic one.
+func TestSetMaxFreeConcurrentSnapshot(t *testing.T) {
+	const iterations = 2000
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			detSessions.SetMaxFree(i%8 + 1)
+		}
+		close(stop)
+	}()
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				snapshotPoolMaxFree()
+			}
+		}
+	}()
+	wg.Wait()
 }

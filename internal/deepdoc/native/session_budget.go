@@ -88,10 +88,10 @@ func ApplySessionBudget(b SessionBudget) {
 // snapshotPoolMaxFree captures current caps (test helper for restore).
 func snapshotPoolMaxFree() map[string]int {
 	return map[string]int{
-		"dla": modelSessions.maxFree,
-		"tsr": modelSessions.maxFree,
-		"det": detSessions.maxFree,
-		"rec": recSessions.maxFree,
+		"dla": int(modelSessions.maxFree.Load()),
+		"tsr": int(modelSessions.maxFree.Load()),
+		"det": int(detSessions.maxFree.Load()),
+		"rec": int(recSessions.maxFree.Load()),
 	}
 }
 
