@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -110,6 +111,67 @@ func TestDeleteDatasetContinuesWhenStorageIsMissing(t *testing.T) {
 	var count int64
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("dataset retained after missing storage: count=%d, err=%v", count, err)
+	}
+}
+
+func TestDeleteDatasetRemovesIngestionTasks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	ensureDatasetTestMembership(t, "tenant-1", "tenant-1", "owner")
+	// DeleteDatasets normalizes ids via uuid.Parse then strips dashes.
+	kbID := "11111111111111111111111111111111"
+	insertDatasetUpdateKB(t, kbID, "tenant-1", "Dataset")
+	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Other")
+	for _, row := range [][2]string{{"doc-1", kbID}, {"doc-2", "kb-2"}, {"doc-3", kbID}} {
+		if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row[0], row[1], row[0], "general", "{}", "pdf", "tenant-1", "pdf", "").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	tasks := []entity.IngestionTask{
+		{ID: "task-1", UserID: "tenant-1", DocumentID: "doc-1", DatasetID: kbID, Status: common.SCHEDULED},
+		{ID: "task-2", UserID: "tenant-1", DocumentID: "doc-2", DatasetID: "kb-2", Status: common.SCHEDULED},
+		{ID: "task-3", UserID: "tenant-1", DocumentID: "doc-3", DatasetID: kbID, Status: common.RUNNING},
+	}
+	if err := db.Create(&tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	logs := []entity.IngestionTaskLog{
+		{TaskID: "task-1", Checkpoint: entity.JSONMap{}},
+		{TaskID: "task-2", Checkpoint: entity.JSONMap{}},
+		{TaskID: "task-3", Checkpoint: entity.JSONMap{}},
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(storage.NewMemoryStorage())
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	svc := testDatasetUpdateService(t)
+	svc.taskStopWait = 600 * time.Millisecond
+	svc.docEngine = &countingDeleteEngine{}
+	start := time.Now()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.DeleteDatasets(ctx, []string{kbID}, false); err != nil || code != common.CodeSuccess {
+		t.Fatalf("delete datasets: code=%v err=%v", code, err)
+	}
+	if elapsed := time.Since(start); elapsed < svc.taskStopWait {
+		t.Fatalf("DeleteDatasets returned after %v, want it to wait %v for the active task", elapsed, svc.taskStopWait)
+	}
+	var remaining []string
+	if err := db.Model(&entity.IngestionTask{}).Order("id").Pluck("id", &remaining).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || remaining[0] != "task-2" {
+		t.Fatalf("ingestion tasks after deleting the dataset = %v, want [task-2] (RUNNING task cancelled after the bounded wait)", remaining)
+	}
+	var logTasks []string
+	if err := db.Model(&entity.IngestionTaskLog{}).Pluck("task_id", &logTasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logTasks) != 1 || logTasks[0] != "task-2" {
+		t.Fatalf("ingestion task logs after deleting the dataset = %v, want the log of task-2 only", logTasks)
 	}
 }
 

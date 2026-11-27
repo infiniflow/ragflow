@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"context"
+	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -21,6 +22,10 @@ type DatasetService struct {
 	taskDAO          *dao.TaskDAO
 	syncTaskDAO      *dao.SyncTaskDAO
 	searchService    *service.SearchService
+	ingestionTaskSvc *service.IngestionTaskService
+	// taskStopWait bounds how long DeleteDatasets waits for active ingestion
+	// workers to observe the stop request. Zero means defaultTaskStopWait.
+	taskStopWait     time.Duration
 	docEngine        engine.DocEngine
 	embeddingCache   *utility.EmbeddingLRU
 	checkpointLoader syncCheckpointLoader
@@ -38,18 +43,19 @@ type DatasetService struct {
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
 	datasetService := &DatasetService{
-		kbDAO:          dao.NewKnowledgebaseDAO(),
-		documentDAO:    dao.NewDocumentDAO(),
-		connectorDAO:   dao.NewConnectorDAO(),
-		tenantDAO:      dao.NewTenantDAO(),
-		pipelineLogDAO: dao.NewPipelineOperationLogDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
-		taskDAO:        dao.NewTaskDAO(),
-		syncTaskDAO:    dao.NewSyncTaskDAO(nil),
-		searchService:  service.NewSearchService(),
-		docEngine:      engine.Get(),
-		embeddingCache: utility.NewEmbeddingLRU(1000),
-		progressReader: progressstore.Default(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		documentDAO:      dao.NewDocumentDAO(),
+		connectorDAO:     dao.NewConnectorDAO(),
+		tenantDAO:        dao.NewTenantDAO(),
+		pipelineLogDAO:   dao.NewPipelineOperationLogDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		taskDAO:          dao.NewTaskDAO(),
+		syncTaskDAO:      dao.NewSyncTaskDAO(nil),
+		searchService:    service.NewSearchService(),
+		ingestionTaskSvc: service.NewIngestionTaskService(),
+		docEngine:        engine.Get(),
+		embeddingCache:   utility.NewEmbeddingLRU(1000),
+		progressReader:   progressstore.Default(),
 	}
 	if loader, ok := engine.GetMessageQueueEngine().(syncCheckpointLoader); ok {
 		datasetService.checkpointLoader = loader

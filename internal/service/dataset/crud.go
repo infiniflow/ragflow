@@ -483,6 +483,9 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 
 	successCount := 0
 	for _, kb := range kbs {
+		// Stop in-flight ingestion before removing the rows and objects it uses.
+		// This waits, so it stays outside the delete transaction.
+		d.stopDatasetIngestionTasks(ctx, kb, datasetNameAndID(kb))
 		plan, err := d.DeleteDatasetTx(ctx, dao.DB, kb)
 		if err != nil {
 			common.Warn("DeleteDatasetTx failed", zap.String("dataset", datasetNameAndID(kb)), zap.String("kb_id", kb.ID), zap.Error(err))
@@ -543,6 +546,17 @@ func (d *DatasetService) DeleteDatasetTx(ctx context.Context, db *gorm.DB, kb *e
 	docIDs := plan.DocIDs
 
 	if err := db.Transaction(func(tx *gorm.DB) error {
+		// Delete every ingestion task (and its log) belonging to this KB.
+		// Active tasks are asked to stop and waited for by the caller before
+		// the transaction (stopDatasetIngestionTasks), so none is left orphaned.
+		ingestionTaskIDs := tx.Model(&entity.IngestionTask{}).Select("id").Where("dataset_id = ?", kb.ID)
+		if err := tx.Where("task_id IN (?)", ingestionTaskIDs).Delete(&entity.IngestionTaskLog{}).Error; err != nil {
+			return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
+		}
+		if err := tx.Where("dataset_id = ?", kb.ID).Delete(&entity.IngestionTask{}).Error; err != nil {
+			return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
+		}
+
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
@@ -962,4 +976,61 @@ func extractUniqueFileIDs(mappings []entity.File2Document) []string {
 		ids = append(ids, *m.FileID)
 	}
 	return common.Deduplicate(ids)
+}
+
+// defaultTaskStopWait is how long DeleteDatasets waits for ingestion workers to
+// honour a stop request before deleting the dataset anyway.
+const defaultTaskStopWait = 30 * time.Second
+
+// stopDatasetIngestionTasks asks every active ingestion task of the dataset to
+// stop (the worker polls the cancel flag every 500 ms) and waits up to
+// taskStopWait for them to leave RUNNING/STOPPING. Tasks still active after the
+// wait are marked STOPPED and a warning is logged; DeleteDatasetTx then removes
+// every task row of the dataset.
+func (d *DatasetService) stopDatasetIngestionTasks(ctx context.Context, kb *entity.Knowledgebase, datasetNameID string) {
+	var tasks []entity.IngestionTask
+	if err := dao.DB.Where("dataset_id = ? AND status IN ?", kb.ID, common.ActiveTaskStatuses).Find(&tasks).Error; err != nil {
+		common.Warn("Failed to list active ingestion tasks", zap.String("dataset", datasetNameID), zap.Error(err))
+		return
+	}
+	if len(tasks) == 0 {
+		return
+	}
+	svc := d.ingestionTaskSvc
+	if svc == nil {
+		svc = service.NewIngestionTaskService()
+	}
+	for _, task := range tasks {
+		if _, err := svc.RequestStop(ctx, task.ID); err != nil {
+			common.Warn("Failed to request stop of ingestion task", zap.String("dataset", datasetNameID), zap.String("task", task.ID), zap.Error(err))
+		}
+	}
+	wait := d.taskStopWait
+	if wait <= 0 {
+		wait = defaultTaskStopWait
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		var running int64
+		if err := dao.DB.Model(&entity.IngestionTask{}).
+			Where("dataset_id = ? AND status IN ?", kb.ID, []string{common.RUNNING, common.STOPPING}).
+			Count(&running).Error; err != nil || running == 0 {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			common.Warn("Ingestion tasks did not stop in time; cancelling them and deleting the dataset anyway",
+				zap.String("dataset", datasetNameID), zap.Int64("active_tasks", running), zap.Duration("waited", wait))
+			if err := dao.DB.Model(&entity.IngestionTask{}).
+				Where("dataset_id = ? AND status IN ?", kb.ID, []string{common.RUNNING, common.STOPPING}).
+				Update("status", common.STOPPED).Error; err != nil {
+				common.Warn("Failed to mark ingestion tasks stopped", zap.String("dataset", datasetNameID), zap.Error(err))
+			}
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
