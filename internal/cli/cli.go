@@ -184,7 +184,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		ShowVersion:       false,
 		Verbose:           false,
 		Interactive:       false,
-		OutputFormat:      OutputFormatPlain,
 		Command:           nil,
 	}
 	for i := 0; i < len(args); i++ {
@@ -210,23 +209,18 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		case "--api":
 			commandLineConfig.CLIMode = APIMode
 			commandLineConfig.Interactive = true
-			commandLineConfig.OutputFormat = OutputFormatTable
 		case "--admin":
 			commandLineConfig.CLIMode = AdminMode
 			commandLineConfig.Interactive = true
-			commandLineConfig.OutputFormat = OutputFormatTable
 		case "--ingestor":
 			commandLineConfig.CLIMode = IngestorMode
 			commandLineConfig.Interactive = true
-			commandLineConfig.OutputFormat = OutputFormatTable
 		case "--chatter":
 			commandLineConfig.CLIMode = ChatterMode
 			commandLineConfig.Interactive = true
-			commandLineConfig.OutputFormat = OutputFormatTable
 		case "--syncer":
 			commandLineConfig.CLIMode = SyncerMode
 			commandLineConfig.Interactive = true
-			commandLineConfig.OutputFormat = OutputFormatTable
 		case "--help", "-help":
 			commandLineConfig.ShowHelp = true
 		case "--version", "-V":
@@ -235,6 +229,13 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			if !strings.HasPrefix(arg, "-") {
 				commandLineConfig.Interactive = false
 			}
+		}
+	}
+
+	if commandLineConfig.OutputFormat == "" {
+		commandLineConfig.OutputFormat = OutputFormatTable
+		if commandLineConfig.CLIMode == CommandMode {
+			commandLineConfig.OutputFormat = OutputFormatPlain
 		}
 	}
 
