@@ -13,6 +13,7 @@ import { VersionHistorySheet } from './version-history-sheet';
 
 type WikiDetailToolbarProps = {
   isDirty: boolean;
+  canEdit: boolean;
   selectedArtifact: IArtifact | null;
   selectedVersion: IWikiCommit | null;
   onCancelEdit: () => void;
@@ -23,6 +24,7 @@ type WikiDetailToolbarProps = {
 
 export function WikiDetailToolbar({
   isDirty,
+  canEdit,
   selectedArtifact,
   selectedVersion,
   onCancelEdit,
@@ -32,7 +34,7 @@ export function WikiDetailToolbar({
 }: WikiDetailToolbarProps) {
   const { t } = useTranslation();
 
-  if (isDirty) {
+  if (isDirty && canEdit) {
     return (
       <div className="flex items-center gap-2">
         <Button

@@ -1,6 +1,6 @@
 import { PageFrame } from '@/components/page-frame';
 import { useFetchSessionManually } from '@/hooks/use-agent-request';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { SessionChat } from './components/session-chat';
 import { SessionList } from './components/session-list';
 import { useExploreUrlParams } from './hooks/use-explore-url-params';
@@ -9,12 +9,21 @@ export default function AgentExplore() {
   const { sessionId, setSessionId } = useExploreUrlParams();
   const { fetchSessionManually, data: session } = useFetchSessionManually();
 
+  useEffect(() => {
+    if (!sessionId || session?.id === sessionId) {
+      return;
+    }
+
+    void fetchSessionManually(sessionId).catch((error) => {
+      console.error('Failed to load agent session:', error);
+    });
+  }, [fetchSessionManually, session?.id, sessionId]);
+
   const handleSessionSelect = useCallback(
     (id: string, isNew?: boolean) => {
       setSessionId(id, isNew);
-      fetchSessionManually(id);
     },
-    [fetchSessionManually, setSessionId],
+    [setSessionId],
   );
 
   return (
