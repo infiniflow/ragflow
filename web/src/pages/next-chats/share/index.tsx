@@ -65,7 +65,7 @@ const ChatContainer = () => {
         handleReset={removeAllMessagesExceptFirst}
         hideReset={sendLoading}
       >
-        <div className="flex flex-1 flex-col p-2.5 h-[90vh] m-3">
+        <div className="flex flex-1 flex-col p-2.5 min-h-0 md:h-[90vh] md:m-3">
           <div
             className={
               'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-full md:w-5/6'

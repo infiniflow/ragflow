@@ -37,9 +37,9 @@ export function EmbedContainer({
   const appConf = useFetchAppConf();
 
   return (
-    <section className="h-[100vh] flex justify-center items-center">
-      <div className="w-full h-full md:w-[80vw] md:h-auto border-0 md:border rounded-none md:rounded-lg">
-        <div className="flex justify-between items-center border-b p-3 relative">
+    <section className="h-[100dvh] flex justify-center items-center">
+      <div className="w-full h-full md:w-[80vw] md:h-auto border-0 md:border rounded-none md:rounded-lg flex flex-col md:block">
+        <div className="flex justify-between items-center border-b p-3 relative min-h-[calc(3.5rem+1px)] md:min-h-0">
           <div className="flex gap-2 items-center min-w-0 max-w-[60%] md:max-w-none absolute left-1/2 -translate-x-1/2 md:static md:left-auto md:translate-x-0">
             <RAGFlowAvatar
               avatar={avatar}
