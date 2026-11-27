@@ -40,6 +40,62 @@ func TestGeneralChunkerPreservesBareDelimiters(t *testing.T) {
 	}
 }
 
+// TestGeneralChunkerSpreadsheetTextCRLFNormalized covers the reviewer-flagged
+// sibling of compileDelimPattern's delimiter normalization: chunkSpreadsheet
+// forwarded raw text items to child splitting, so a normalized (LF) child
+// pattern no longer matched a CRLF item. Text items must be normalized before
+// the split; non-text items keep their bytes.
+func TestGeneralChunkerSpreadsheetTextCRLFNormalized(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"children_delimiters": []string{"`\r\n\r\n`"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke := func(text string) []string {
+		out, err := component.Invoke(t.Context(), nil, map[string]any{
+			"name":          "sheet.xlsx",
+			"file_type":     "xlsx",
+			"output_format": "json",
+			"json":          []map[string]any{{"text": text, "doc_type_kwd": "text"}},
+		})
+		if err != nil {
+			t.Fatalf("Invoke: %v", err)
+		}
+		return outputTexts(t, out)
+	}
+	crlf := invoke("Alpha\r\n\r\nBeta")
+	lf := invoke("Alpha\n\nBeta")
+
+	if len(crlf) != 2 {
+		t.Fatalf("spreadsheet text path: want 2 chunks, got %d (%q)", len(crlf), crlf)
+	}
+	for i, s := range crlf {
+		if strings.Contains(s, "\r") {
+			t.Errorf("chunk[%d] carries carriage return: %q", i, s)
+		}
+	}
+	if !reflect.DeepEqual(crlf, lf) {
+		t.Errorf("CRLF/LF divergence:\n crlf=%q\n lf  =%q", crlf, lf)
+	}
+
+	// Non-text spreadsheet items are not normalized.
+	const imageText = "img\r\nline"
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "sheet.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": imageText, "doc_type_kwd": "image"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke image: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 || chunks[0]["text"] != imageText {
+		t.Fatalf("non-text item text changed: %#v", chunks)
+	}
+}
+
 func TestGeneralChunkerPreservesDelimitersAcrossChunks(t *testing.T) {
 	const source = "Alpha one.\nBeta two; Gamma three!\nDelta four? Epsilon five。Zeta six；Eta seven！Theta eight？Iota nine."
 	for _, fileType := range []string{"txt", "docx", "pdf", "md"} {

@@ -100,8 +100,25 @@ func stringListFromAny(in []any) []string {
 // Legacy single-string parsing is performed by GeneralChunker at its
 // configuration boundary; the shared regex helper only consumes canonical
 // delimiter lists.
+//
+// Line endings are normalized on every entry before compilation because input
+// text is normalized the same way before matching. A delimiter configured on a
+// CRLF client (e.g. "`\r\n\r\n`") therefore still matches the CRLF document it
+// was written for, instead of looking for bytes the normalized input no longer
+// contains.
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	return chunk.CompileDelimiterPatternList(delims, true)
+	normalized := make([]string, len(delims))
+	for i, d := range delims {
+		normalized[i] = normalizeLineEndings(d)
+	}
+	return chunk.CompileDelimiterPatternList(normalized, true)
+}
+
+// normalizeLineEndings converts CRLF and lone CR to LF, mirroring Python's
+// text.replace("\r\n", "\n").replace("\r", "\n"). Idempotent: normalizing
+// already-normalized text returns it unchanged.
+func normalizeLineEndings(text string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 }
 
 // splitByDelim splits text on every match of pattern.

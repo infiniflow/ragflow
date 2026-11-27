@@ -386,6 +386,9 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 // delimiter set is retained losslessly (see mergeByTokenSize) — a backtick
 // delimiter is an explicit split instruction, not text to preserve.
 func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
+	// naive_merge normalizes line endings before any delimiter match, so a
+	// CRLF document splits like its LF twin and no chunk keeps a "\r".
+	text = normalizeLineEndings(text)
 	parts := splitByDelim(text, delimPattern, false)
 	cleaned := make([]string, 0, len(parts))
 	for _, p := range parts {
@@ -485,7 +488,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 	// Normalize line endings to LF before any splitting.
 	// naive_merge runs text.replace("\r\n", "\n").replace("\r", "\n"),
 	// then treats the input string as one section.
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	text = normalizeLineEndings(text)
 
 	// Build the merge units.
 	//
@@ -732,7 +735,10 @@ func isTextParserSentenceFallback(fileType string, delimiters []string, item sch
 }
 
 func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
-	text := itemTextOrFallback(item)
+	// This path bypasses chunkFromItem, so it must normalize here too:
+	// child delimiters are compiled from normalized entries, and a raw CRLF
+	// item would no longer match them.
+	text := normalizeLineEndings(itemTextOrFallback(item))
 	if !sentenceDelimiter.MatchString(text) {
 		return []schema.ChunkDoc{buildChunkDoc(item, "text", text, "", "")}
 	}
@@ -793,6 +799,10 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	if ckType != "text" {
 		return []schema.ChunkDoc{buildChunkDoc(it, ckType, txt, "", "")}
 	}
+	// Normalize before delimiter matching, position slicing and slicing by
+	// UTF-8 rune counts so a CRLF item splits like its LF twin. Non-text
+	// items (table/image) keep their bytes untouched.
+	txt = normalizeLineEndings(txt)
 	if !hasActiveDelimiter(delimPattern) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}

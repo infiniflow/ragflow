@@ -278,7 +278,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		} else {
 			flushBody()
 			media := cloneChunkDoc(unit)
-			media.Text = normalizeGeneralNewlines(media.Text)
+			media.Text = normalizeLineEndings(media.Text)
 			media.DocType = itemDocType(media)
 			chunks = append(chunks, media)
 			if unitSources != nil {
@@ -630,7 +630,7 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		if !ok {
 			continue
 		}
-		text = normalizeGeneralNewlines(text)
+		text = normalizeLineEndings(text)
 		tokens := tokenizeStr(text)
 		if tokens >= remaining {
 			piece := takeContextSentences(text, remaining, above, pattern)
@@ -791,7 +791,7 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 	}
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
-		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
+		unit.Text = normalizeLineEndings(itemTextOrFallback(unit))
 		if !keepDelimiter || isHeadingLayout(unit.Layout) {
 			unit.Text = strings.TrimSpace(unit.Text)
 		}
@@ -1092,7 +1092,14 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 			chunks = append(chunks, c.splitSpreadsheetTable(unit, upstream.DocID)...)
 			continue
 		}
-		chunks = append(chunks, cloneChunkDoc(unit))
+		cloned := cloneChunkDoc(unit)
+		// Children delimiters are compiled from normalized entries, so a
+		// raw CRLF text item would no longer match them. Non-text items
+		// keep their bytes untouched.
+		if itemDocType(cloned) == "text" {
+			cloned.Text = normalizeLineEndings(itemTextOrFallback(cloned))
+		}
+		chunks = append(chunks, cloned)
 	}
 	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	chunks = finalizeGeneralChunks(chunks, childrenPattern)
@@ -1430,7 +1437,7 @@ func splitGeneralUnitsDroppingRecordPrefix(units []schema.ChunkDoc, pattern *reg
 	result := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
-		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
+		unit.Text = normalizeLineEndings(itemTextOrFallback(unit))
 		unit.DocType = itemDocType(unit)
 		clearStructuralLayout(&unit)
 		if unit.DocType != "text" {
@@ -1488,7 +1495,7 @@ func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDeli
 	result := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
-		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
+		unit.Text = normalizeLineEndings(itemTextOrFallback(unit))
 		unit.DocType = itemDocType(unit)
 		clearStructuralLayout(&unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
@@ -1513,11 +1520,6 @@ func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDeli
 		}
 	}
 	return result
-}
-
-func normalizeGeneralNewlines(text string) string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	return strings.ReplaceAll(text, "\r", "\n")
 }
 
 // sliceGeneralSplitPieces builds one output piece per text part, slicing the
