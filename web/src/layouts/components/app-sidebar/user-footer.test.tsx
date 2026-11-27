@@ -4,6 +4,8 @@ import { UserFooter } from './user-footer';
 
 const mockTogglePrimarySidebar = jest.fn();
 let mockPrimarySidebarCollapsed = false;
+let mockExposeApi = true;
+let mockExposeApiLoading = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -11,6 +13,13 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/ragflow-avatar', () => ({
   RAGFlowAvatar: () => <div data-testid="user-avatar" />,
+}));
+
+jest.mock('@/ee/hooks/use-private-llm-request', () => ({
+  useFetchExposeApi: () => ({
+    data: mockExposeApi,
+    loading: mockExposeApiLoading,
+  }),
 }));
 
 jest.mock('@/ee/layouts/components/header-enterprise', () => ({
@@ -68,6 +77,8 @@ describe('UserFooter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPrimarySidebarCollapsed = false;
+    mockExposeApi = true;
+    mockExposeApiLoading = false;
   });
 
   it('collapses the primary sidebar from the bottom bar', () => {
@@ -104,6 +115,29 @@ describe('UserFooter', () => {
     expect(screen.queryByText('header.discord')).not.toBeInTheDocument();
     expect(screen.queryByText('sidebar.version')).not.toBeInTheDocument();
   });
+
+  it.each([
+    { exposeApi: false, loading: false },
+    { exposeApi: true, loading: true },
+  ])(
+    'hides the API item with exposure $exposeApi and loading $loading',
+    ({ exposeApi, loading }) => {
+      mockExposeApi = exposeApi;
+      mockExposeApiLoading = loading;
+      renderUserFooter();
+
+      fireEvent.keyDown(screen.getByTestId('settings-entrypoint'), {
+        key: 'ArrowDown',
+      });
+
+      expect(
+        screen.getByRole('menuitem', { name: 'setting.profile' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'setting.api' }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it('expands from the bottom bar and hides Upgrade when collapsed', () => {
     mockPrimarySidebarCollapsed = true;

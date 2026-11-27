@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useFetchExposeApi } from '@/ee/hooks/use-private-llm-request';
 import {
   EnterpriseHeaderPlanBadge,
   EnterpriseHeaderTicketsLink,
@@ -34,6 +35,30 @@ import { BellButton } from '../bell-button';
 import { HelpMenu } from './help-menu';
 import { ThemeOptions } from './theme-options';
 import { useSidebarCollapse } from './use-sidebar-collapse';
+
+function AccountApiMenuItem({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  const { data: exposeApi, loading } = useFetchExposeApi();
+  if (loading || !exposeApi) {
+    return null;
+  }
+
+  return (
+    <DropdownMenuItem
+      justifyBetween={false}
+      className="px-3 py-2.5 [&_svg]:size-3.5"
+      onClick={onClick}
+    >
+      <LucideUnplug />
+      {label}
+    </DropdownMenuItem>
+  );
+}
 
 export function UserFooter() {
   const { t } = useTranslation();
@@ -140,14 +165,10 @@ export function UserFooter() {
               <LucideUser />
               {t('setting.profile')}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              justifyBetween={false}
-              className="px-3 py-2.5 [&_svg]:size-3.5"
+            <AccountApiMenuItem
+              label={t('setting.api')}
               onClick={navigateToUserSettingApi}
-            >
-              <LucideUnplug />
-              {t('setting.api')}
-            </DropdownMenuItem>
+            />
 
             <DropdownMenuSeparator />
             <ThemeOptions />

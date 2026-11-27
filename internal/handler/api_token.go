@@ -58,6 +58,9 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 		respondAPIKeyContextError(c, code, err)
 		return
 	}
+	if !allowAPIKeyCreation(c) {
+		return
+	}
 
 	// Parse request. An empty body is valid (all fields are optional);
 	// ShouldBind reports io.EOF for it.
