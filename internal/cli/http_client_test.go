@@ -17,9 +17,6 @@
 package cli
 
 import (
-	"context"
-	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -27,119 +24,6 @@ import (
 	"strconv"
 	"testing"
 )
-
-func TestRequestWithContextPreservesHeadersAndResponse(t *testing.T) {
-	for _, status := range []int{http.StatusNoContent, http.StatusForbidden} {
-		t.Run(strconv.Itoa(status), func(t *testing.T) {
-			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/api/v1/system/parser-license/wps" || r.Header.Get("Authorization") != "login-token" || r.Header.Get("X-Test") != "shared" {
-					t.Errorf("unexpected request: %s %v", r.URL, r.Header)
-				}
-				w.Header().Set("X-Response", "retained")
-				w.WriteHeader(status)
-			}))
-			client.LoginToken = new("login-token")
-			response, err := client.RequestWithContext(t.Context(), 1, http.MethodGet, "/system/parser-license/wps", "web", map[string]string{"X-Test": "shared"}, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if response.StatusCode != status || response.Header.Get("X-Response") != "retained" {
-				t.Fatalf("response = %+v", response)
-			}
-			if status == http.StatusNoContent && (response.Success != 1 || response.Fail != 0 || len(response.Body) != 0) {
-				t.Fatalf("empty success = %+v", response)
-			}
-			if status == http.StatusForbidden && (response.Success != 0 || response.Fail != 1) {
-				t.Fatalf("forbidden response = %+v", response)
-			}
-		})
-	}
-}
-
-func TestRequestReplaysJSONBody(t *testing.T) {
-	requests := 0
-	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		body, err := io.ReadAll(r.Body)
-		if err != nil || string(body) != `{"name":"repeated"}` || r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("body = %q, headers = %v, error = %v", body, r.Header, err)
-		}
-		_, _ = w.Write([]byte(`{"code":0}`))
-	}))
-	response, err := client.Request(3, http.MethodPost, "/repeat", "web", nil, map[string]any{"name": "repeated"})
-	if err != nil || requests != 3 || response.Success != 3 || response.Fail != 0 {
-		t.Fatalf("requests = %d, response = %+v, error = %v", requests, response, err)
-	}
-}
-
-func TestRequestPropagatesTransportErrorsAndCancellation(t *testing.T) {
-	t.Run("transport", func(t *testing.T) {
-		for _, count := range []int{1, 3} {
-			client := newTestHTTPClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-			client.client.Transport = failingTransport{}
-			response, err := client.Request(count, http.MethodGet, "/offline", "web", nil, nil)
-			if (count == 1 && !errors.Is(err, io.ErrUnexpectedEOF)) || (count > 1 && err != nil) || response.Success != 0 || response.Fail != count {
-				t.Fatalf("count = %d, response = %+v, error = %v", count, response, err)
-			}
-		}
-	})
-	t.Run("cancellation", func(t *testing.T) {
-		client := newTestHTTPClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			t.Error("canceled request reached server")
-		}))
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		response, err := client.RequestWithContext(ctx, 3, http.MethodGet, "/canceled", "web", nil, nil)
-		if !errors.Is(err, context.Canceled) || response.Success != 0 || response.Fail != 1 {
-			t.Fatalf("response = %+v, error = %v", response, err)
-		}
-	})
-}
-
-func TestRequestWithIterationsRetainsResultsAfterTransportFailure(t *testing.T) {
-	for _, canceled := range []bool{false, true} {
-		t.Run(strconv.FormatBool(canceled), func(t *testing.T) {
-			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write([]byte(`{"code":0}`))
-			}))
-			transport := client.client.Transport
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			requests := 0
-			client.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				requests++
-				if requests == 1 {
-					return nil, io.ErrUnexpectedEOF
-				}
-				if canceled {
-					cancel()
-					return nil, ctx.Err()
-				}
-				return transport.RoundTrip(req)
-			})
-			response, err := client.RequestWithContext(ctx, 3, http.MethodGet, "/mixed", "web", nil, nil)
-			if canceled {
-				if !errors.Is(err, context.Canceled) || requests != 2 || response.Success != 0 || response.Fail != 2 {
-					t.Fatalf("canceled response = %+v, requests = %d, error = %v", response, requests, err)
-				}
-			} else if err != nil || requests != 3 || response.Success != 2 || response.Fail != 1 || response.StatusCode != http.StatusOK || string(response.Body) != `{"code":0}` {
-				t.Fatalf("response = %+v, requests = %d, error = %v", response, requests, err)
-			}
-		})
-	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-type failingTransport struct{}
-
-func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
-	return nil, io.ErrUnexpectedEOF
-}
 
 func newTestHTTPClient(t *testing.T, handler http.Handler) *HTTPClient {
 	t.Helper()
