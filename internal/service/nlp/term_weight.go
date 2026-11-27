@@ -429,7 +429,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool, lang string) [
 						minVal = v
 					}
 				}
-				return minVal / 6.0
+				return math.Max(minVal/6.0, 10)
 			}
 
 			// Default frequency
