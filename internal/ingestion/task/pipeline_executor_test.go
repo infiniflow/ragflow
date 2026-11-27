@@ -261,19 +261,6 @@ func TestNewPipelineExecutor_RejectsIncompleteTaskContext(t *testing.T) {
 	}
 }
 
-// TestNewPipelineExecutor_AcceptsDebugTaskContext verifies the canvas-debug
-// (dry-run) contract: a TaskContext with an empty KB.ID is valid because debug
-// mode carries no knowledgebase. KB.ID == "" never occurs in production
-// ingestion, which always supplies a KB.
-func TestNewPipelineExecutor_AcceptsDebugTaskContext(t *testing.T) {
-	ctx := makeTaskCtx()
-	ctx.KB = entity.Knowledgebase{ID: ""}
-	ctx.Doc.KbID = ""
-	if _, err := NewPipelineExecutor(ctx, "flow-1", 0, testPipelineDeps()); err != nil {
-		t.Fatalf("debug TaskContext rejected: %v", err)
-	}
-}
-
 func TestNewPipelineExecutor_DocBulkSize(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 128)
 	if svc.docBulkSize != 128 {
@@ -1513,47 +1500,6 @@ func TestBuildLogDSL_PersistStripsOutputs(t *testing.T) {
 	}
 	if _, ok := parsed["path"]; !ok {
 		t.Error("persisted log DSL must keep path")
-	}
-}
-
-// TestBuildLogDSL_PreviewKeepsOutputs locks the dry-run (ResultSink) branch:
-// buildLogDSL calls ResultSink.SetResult with the FULL result DSL (business
-// data in obj.params.outputs), while the DSL it returns for persistence still
-// carries no business data. Dry-run never persists (IsDebug() early-return),
-// so the outputs only travel to Redis via SetResult.
-func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
-	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {}}, "downstream": ["b"]}}}`
-	output := map[string]any{
-		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
-	}
-
-	cap := &capturingSink{}
-	exec := &PipelineExecutor{progressSink: cap}
-	logDSL := exec.buildLogDSL(dsl, output)
-
-	// The ResultSink preview must carry the full outputs (business data).
-	if cap.got == nil {
-		t.Fatal("buildLogDSL must call ResultSink.SetResult for a dry-run (ResultSink) sink")
-	}
-	caps, _ := cap.got["components"].(map[string]any)
-	ca, _ := caps["a"].(map[string]any)
-	caObj, _ := ca["obj"].(map[string]any)
-	caParams, _ := caObj["params"].(map[string]any)
-	if _, ok := caParams["outputs"]; !ok {
-		t.Error("dry-run preview DSL must carry obj.params.outputs (business data)")
-	}
-
-	// Persisted copy returned by buildLogDSL still must NOT carry business data.
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
-		t.Fatalf("persisted log DSL must be valid JSON: %v", err)
-	}
-	pc, _ := parsed["components"].(map[string]any)
-	pa, _ := pc["a"].(map[string]any)
-	paObj, _ := pa["obj"].(map[string]any)
-	paParams, _ := paObj["params"].(map[string]any)
-	if _, ok := paParams["outputs"]; ok {
-		t.Error("persisted log DSL must NOT carry business data even when a ResultSink preview exists")
 	}
 }
 

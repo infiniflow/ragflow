@@ -65,7 +65,6 @@ func TestFeatureDisabledResponses(t *testing.T) {
 	cause := fmt.Errorf("WPS is not enabled: %w", utility.ErrFeatureDisabled)
 	for name, respond := range map[string]func(*gin.Context, error){
 		"internal error": jsonInternalError,
-		"debug parse":    func(c *gin.Context, err error) { respondWithDebugResult(c, nil, err) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

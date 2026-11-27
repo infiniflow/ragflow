@@ -10,9 +10,3 @@
  * for choosing between private and team ownership.
  */
 export const showPermissionField = true;
-
-/**
- * Whether the ingestion (dataflow) canvas exposes the Run (debug) entry.
- * The agent canvas is unaffected and always keeps its Run button.
- */
-export const showPipelineRunButton = false;

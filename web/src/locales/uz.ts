@@ -3175,8 +3175,6 @@ export default {
       optional: 'Ixtiyoriy',
       pasteFileLink: 'Fayl havolasini joylash',
       testRun: 'Sinov ishga tushirish',
-      debugRunLimits:
-        'Sinov ishga tushirish oqim xatosiz bajarilishini tekshiradi: PDF faqat birinchi 2 sahifani tahlil qiladi (boshqa formatlar barcha sahifalarni); bo‘laklagich tugun mavjud bo‘lsa, faqat birinchi 3 bo‘lak ko‘rsatiladi; bilim kompilyatori tuguni mavjud bo‘lsa, u faqat lokal ishlaydi va to‘plamni qayta qurish yoki bildirishnomani ishga tushirmaydi.',
       template: 'Shablon',
       templateDescription:
         'Boshqa komponentlar chiqishini formatlaydigan komponent.1. Jinja2 shablonlarini qo‘llab-quvvatlaydi, avval kirishni obyektga aylantiradi va so‘ngra shablonni render qiladi, 2. Shu bilan birga {parameter} satr almashtirishning original usulini saqlaydi',
@@ -3410,7 +3408,6 @@ export default {
       parserDescription:
         'Pastdagi qayta ishlash uchun fayllardan xom matn va struktura ajratib oladi.',
       tokenizer: 'Indekslashchi',
-      tokenizerRequired: 'Iltimos, avval Indekslashchi tugunini qo‘shing',
       nodeFormInvalid: 'Noto‘g‘ri sozlamalar, iltimos, avval tuzating',
       agentModelMissing: 'Model tanlanmagan, iltimos, avval birini tanlang',
       extractorModelMissing: 'Model tanlanmagan, iltimos, avval birini tanlang',
@@ -3492,8 +3489,6 @@ export default {
       markdownImageResponseType: 'Markdown rasm javob turi',
       systemPromptPlaceholder:
         'Rasm tahlili uchun tizim promptini kiriting, bo‘sh bo‘lsa tizim standart qiymati ishlatiladi',
-      exportJson: 'JSON eksport',
-      viewResult: 'Natijani ko‘rish',
       running: 'Bajarilmoqda',
       summary: 'Xulosa',
       keywords: 'Avto kalit so‘zlar',

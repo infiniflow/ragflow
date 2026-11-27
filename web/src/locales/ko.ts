@@ -3608,8 +3608,6 @@ export default {
       noModelInputs: '이번 실행에서 기록된 모델 호출이 없습니다.',
       modelInputsUnavailable: '이번 실행의 모델 입력을 사용할 수 없습니다.',
       testRunError: '테스트 실행 실패({{code}}): {{message}}',
-      debugRunLimits:
-        '디버그 실행은 플로우가 오류 없이 실행되는지 확인합니다. PDF는 처음 2페이지만 파싱하며(다른 형식은 모든 페이지를 파싱), Chunker 노드가 있으면 처음 3개 chunk만 미리 보여 주고, Knowledge Compiler 노드가 있으면 로컬에서만 실행되어 데이터셋 재구성이나 알림을 트리거하지 않습니다.',
       template: '템플릿',
       templateDescription:
         '다른 구성 요소의 출력을 형식화하는 구성 요소입니다. 1. Jinja2 템플릿을 지원하며, 입력을 객체로 변환한 후 템플릿을 렌더링합니다. 2. {parameter} 문자열 치환 방법도 동시에 지원합니다.',
@@ -3867,7 +3865,6 @@ export default {
       parserDescription:
         '파일에서 원시 텍스트와 구조를 추출하여 다운스트림 처리에 사용합니다.',
       tokenizer: '인덱서',
-      tokenizerRequired: '인덱서 노드를 먼저 추가해 주세요',
       nodeFormInvalid: '설정이 올바르지 않습니다. 먼저 수정해 주세요',
       apiKeyRequired: 'API Key를 입력해 주세요',
       apiKeyMissing: '설정된 API Key가 없습니다. 먼저 입력해 주세요',
@@ -3959,8 +3956,6 @@ export default {
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         '이미지 분석용 시스템 프롬프트를 입력하세요. 비워두면 시스템 기본값이 사용됩니다.',
-      exportJson: 'JSON 내보내기',
-      viewResult: '결과 보기',
       running: '실행 중',
       summary: '요약',
       keywords: '키워드',

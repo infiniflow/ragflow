@@ -2742,7 +2742,6 @@ export default {
       parserDescription:
         '後続処理のために、ファイルから生のテキストと構造を抽出します。',
       tokenizer: 'インデクサー',
-      tokenizerRequired: '先にインデクサーノードを追加してください',
       tokenizerDescription:
         '選択した検索方法に応じて、テキストを必要なデータ構造(埋め込み検索の場合はベクトル埋め込みなど)に変換します。',
       tokenChunker: 'トークンチャンカー',
@@ -2792,8 +2791,6 @@ export default {
       markdownImageResponseType: 'Markdown画像レスポンスタイプ',
       systemPromptPlaceholder:
         '画像解析用のシステムプロンプトを入力してください。空欄の場合はシステムのデフォルト値が使用されます',
-      exportJson: 'JSONをエクスポート',
-      viewResult: '結果を表示',
       running: '実行中',
       summary: '要約',
       keywords: 'キーワード',

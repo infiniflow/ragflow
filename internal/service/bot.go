@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/utility"
 )
 
 // BotService coordinates chatbot + agentbot reads and the matching
@@ -173,8 +174,12 @@ func (s *BotService) AgentbotCompletion(
 // Access is scoped to the caller's accessible tenants, matching the Python
 // agent_bot_logs endpoint.
 func (s *BotService) AgentbotLogs(ctx context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
-	if _, err := s.loadCanvas(ctx, agentID, permission.OperationRead); err != nil {
+	cv, err := s.loadCanvas(ctx, agentID, permission.OperationRead)
+	if err != nil {
 		return nil, common.CodeDataError, err
+	}
+	if IsIngestionCanvas(cv) && !IngestionPipelinePreviewEnabled() {
+		return nil, common.CodeForbidden, utility.ErrFeatureDisabled
 	}
 	payload, err := kvrocks.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
 	if err != nil {

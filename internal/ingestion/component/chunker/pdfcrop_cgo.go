@@ -222,9 +222,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			// chunk's image until the later batch upload pass
 			// (imageUploadDecorator). The batch pass is idempotent: it skips
 			// any chunk whose img_id is already set, so an upload that fails
-			// here simply falls through to that retry path. kb_id is empty
-			// only in canvas debug (dry-run) mode, where no persist stage
-			// runs and the decorator's debug branch drops the raw bytes.
+			// here simply falls through to that retry path.
 			if kbID, docID := resolveImageUploadContext(jobCtx, nil); kbID != "" {
 				if rawBytes, derr := base64.StdEncoding.DecodeString(img); derr == nil {
 					// Key the streamed upload under the chunk's canonical id,

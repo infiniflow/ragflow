@@ -2196,7 +2196,6 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       parserDescription:
         'Extrahiert Rohtext und Struktur aus Dateien für die nachgelagerte Verarbeitung.',
       tokenizer: 'Indexer',
-      tokenizerRequired: 'Bitte fügen Sie zuerst den Indexer-Knoten hinzu',
       tokenizerDescription:
         'Transformiert Text in die erforderliche Datenstruktur (z.B. Vektoreinbettungen für die Embedding-Suche) abhängig von der gewählten Suchmethode.',
       tokenChunkerDescription:
@@ -2234,8 +2233,6 @@ Der Indexer speichert den Inhalt in den entsprechenden Datenstrukturen für die 
       markdownImageResponseType: 'Markdown-Bildantworttyp',
       systemPromptPlaceholder:
         'System-Prompt für Bildanalyse eingeben, wenn leer, wird der Systemstandardwert verwendet',
-      exportJson: 'JSON exportieren',
-      viewResult: 'Ergebnis anzeigen',
       running: 'Läuft',
       summary: 'Zusammenfassung',
       keywords: 'Schlüsselwörter',

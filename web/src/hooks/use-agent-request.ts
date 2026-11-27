@@ -92,7 +92,6 @@ export const enum AgentApiAction {
   FetchExternalAgentInputs = 'fetchExternalAgentInputs',
   SetAgentSetting = 'setAgentSetting',
   FetchPrompt = 'fetchPrompt',
-  CancelDataflow = 'cancelDataflow',
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
   CreateWebhookCredential = 'createWebhookCredential',
@@ -1188,27 +1187,6 @@ export const useFetchBuiltinPipelines = () => {
     })) ?? [];
 
   return { data, loading, isError, options };
-};
-
-export const useCancelDataflow = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [AgentApiAction.CancelDataflow],
-    mutationFn: async (taskId: string) => {
-      const ret = await agentService.cancelDataflow(taskId);
-      if (ret?.data?.code === 0) {
-        message.success('success');
-      } else {
-        message.error(ret?.data?.message);
-      }
-      return ret?.data?.code;
-    },
-  });
-
-  return { data, loading, cancelDataflow: mutateAsync };
 };
 
 // export const useFetchKnowledgeList = () => {

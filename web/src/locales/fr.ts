@@ -2622,7 +2622,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       parserDescription:
         'Extrait le texte brut et la structure des fichiers pour le traitement en aval.',
       tokenizer: 'Indexeur',
-      tokenizerRequired: "Veuillez d'abord ajouter le nœud Indexeur",
       tokenizerDescription:
         "Transforme le texte en structure de données requise (ex. : vecteurs d'embedding pour la recherche vectorielle) selon la méthode de recherche choisie.",
       tokenChunker: 'Découpeur par tokens',
@@ -2667,8 +2666,6 @@ L'indexeur stockera le contenu dans les structures de données correspondantes p
       markdownImageResponseType: "Type de réponse d'image Markdown",
       systemPromptPlaceholder:
         "Saisissez l'invite système pour l'analyse d'image ; si vide, la valeur système par défaut sera utilisée",
-      exportJson: 'Exporter JSON',
-      viewResult: 'Voir le résultat',
       running: 'En cours',
       summary: 'Résumé',
       keywords: 'Mots-clés',

@@ -743,6 +743,6 @@ func parseRunKey(ctx context.Context) string {
 	if taskID := globals.TaskID(ctx); taskID != "" {
 		return "task:" + taskID
 	}
-	// No task scope means a debug/dry-run preview: nothing is metered.
+	// Metering requires a stable ingestion-task identity.
 	return ""
 }

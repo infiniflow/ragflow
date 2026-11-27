@@ -148,7 +148,7 @@ func Get(ctx context.Context, s Store, key string) (string, bool) {
 //
 // The manifest entry is only recorded once the value write succeeded, so the
 // manifest never lists a key that does not exist. When the run carries no task
-// id (canvas debug preview, headless test) the value is still cached but
+// id the value is still cached but
 // nothing is recorded: no persist stage will ever reclaim it, so TTL is the
 // only reclaim path and a manifest would simply leak.
 func Set(ctx context.Context, s Store, key, value string) {

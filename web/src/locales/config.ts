@@ -1,3 +1,4 @@
+import { PipelinePreviewTranslations } from '@/ee/locales/pipeline-preview';
 import { CompilationTranslations } from '@/ee/locales/compilation';
 import { LanguageAbbreviation } from '@/constants/common';
 import storage from '@/utils/authorization-util';
@@ -64,14 +65,26 @@ import translation_zh_traditional_private from '@/ee/locales/zh-traditional-priv
 
 const resources = {
   [LanguageAbbreviation.En]: merge(translation_en, translation_en_private, {
-    translation: CompilationTranslations[LanguageAbbreviation.En],
+    translation: merge(
+      {},
+      CompilationTranslations[LanguageAbbreviation.En],
+      PipelinePreviewTranslations[LanguageAbbreviation.En],
+    ),
   }),
   [LanguageAbbreviation.Zh]: merge(translation_zh, translation_zh_private, {
-    translation: CompilationTranslations[LanguageAbbreviation.Zh],
+    translation: merge(
+      {},
+      CompilationTranslations[LanguageAbbreviation.Zh],
+      PipelinePreviewTranslations[LanguageAbbreviation.Zh],
+    ),
   }),
   [LanguageAbbreviation.ZhTraditional]: merge(
     translation_zh_traditional,
     translation_zh_traditional_private,
+    {
+      translation:
+        PipelinePreviewTranslations[LanguageAbbreviation.ZhTraditional],
+    },
   ),
 };
 
@@ -117,7 +130,11 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
     i18n.addResourceBundle(
       normalizedLng,
       'translation',
-      merge(translationData, CompilationTranslations[normalizedLng]),
+      merge(
+        translationData,
+        CompilationTranslations[normalizedLng],
+        PipelinePreviewTranslations[normalizedLng],
+      ),
     );
   } catch (error) {
     console.error(`Failed to load language ${lng}:`, error);

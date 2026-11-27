@@ -33,7 +33,6 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
@@ -104,18 +103,8 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		return out, nil
 	}
 
-	// Canvas-debug (dry-run) chunk cap: when set (>=1), keep only the leading
-	// N chunks for preview. This is the single choke point every chunker
-	// variant flows through, so the cap applies regardless of variant, and it
-	// also limits downstream compiler/tokenizer work in the debug run — the
-	// intended cost saving. Truncation happens FIRST, before any per-chunk
-	// work below: dropped chunks get no id computation and no image upload /
-	// byte dropping, so a chunk can never be persisted to storage and then
-	// discarded by this cap. No chunker node (or cap == 0) → untouched.
-	if chunkCap := globals.DebugChunkCap(ctx); chunkCap > 0 && len(chunks) > chunkCap {
-		chunks = chunks[:chunkCap]
-		out["chunks"] = chunks
-	}
+	chunks = previewChunks(ctx, chunks)
+	out["chunks"] = chunks
 
 	kbID, docID := resolveImageUploadContext(ctx, inputs)
 
@@ -158,21 +147,12 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
-	// kb_id is empty only in canvas debug (dry-run) mode; production ingestion
-	// always supplies a KB, so kb_id == "" never occurs in normal operation.
-	// Image bytes are uploaded to MinIO only when a KB is present (i.e. a
-	// persist run); in debug we drop the raw bytes so they are not held in
-	// memory until a persist stage that will never run.
-	if kbID != "" {
+	if !skipPreviewMedia(kbID, chunks) && kbID != "" {
 		if _, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID); err != nil {
 			return nil, err
 		}
-	} else {
-		for _, ck := range chunks {
-			delete(ck, "image")
-			delete(ck, "media_ref")
-		}
 	}
+
 	return out, nil
 }
 

@@ -1,58 +1,25 @@
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-//  This file builds the run-result DSL attached to the dataflow debug-log END
-//  marker and persisted as the pipeline operation-log DSL; the front-end "View result" page reads
-//  `dsl.components[<id>].obj` to render each component's parsed output.
-//  BuildDebugResultDSL combines the STATIC DSL structure (component_name /
-//  downstream / params / graph.nodes) with the RUN output map (state.go:284
-//  `out[<componentID>] = <outputs>`). Every non-`components` top-level key
-//  (graph / path / task_id / …) is carried verbatim; each rebuilt obj keeps
-//  the UI-relevant fields, so the front-end renders chunks at a smaller
-//  payload.
-
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package task
 
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 
 	"ragflow/internal/common"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
-
-// ResultSink is an OPTIONAL capability a ProgressSink may implement to receive
-// the debug-run result DSL plus the raw pipeline run output (output["state"]
-// [<id>] is each component's outputs map). The pipeline executor probes for it
-// via a type assertion, so the ProgressSink contract stays unchanged and
-// non-debug (DB-backed) sinks simply ignore it — keeping the coupling
-// one-directional.
-type ResultSink interface {
-	SetResult(dsl map[string]any, output map[string]any)
-}
-
-// outputFormats is the priority order used to pick a component's payload key,
-// mirroring NormalizeChunks (chunk_utils.go:27).
-var outputFormats = []string{"chunks", "json", "text", "html", "markdown"}
-
-// bookkeepingKeys are the TrackElapsed stamps every component's run output
-// carries. They are copied into the outputs wrapper (as plain {value, type}
-// entries) so the front-end timeline can render per-node elapsed times even
-// for components with no recognized payload format (e.g. File).
-var bookkeepingKeys = []string{"_elapsed_time", "_created_time"}
 
 // vectorKeys are dropped from payloads while copying: the front-end never
 // renders raw vectors, and the serialized component obj excludes them, so
@@ -80,16 +47,11 @@ func IsVectorKey(k string) bool {
 	return common.IsVectorColumn(k)
 }
 
-// BuildDebugResultDSL builds the `dsl` object the debug-log END marker carries
-// so the front-end "View result" page can render each component's output.
-//
-// dsl is the raw canvas DSL JSON (optionally wrapped as {"dsl": {...}}). output
-// is the pipeline run output keyed by component id (output[<id>] is that
-// component's outputs map, which may carry chunks/json/text/html/markdown).
-func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool) (map[string]any, error) {
+// buildPipelineLogDSL normalizes the canvas definition for operation-log storage.
+func buildPipelineLogDSL(dsl string) (map[string]any, error) {
 	var tpl map[string]any
 	if err := json.Unmarshal([]byte(dsl), &tpl); err != nil {
-		return nil, fmt.Errorf("BuildDebugResultDSL: unmarshal dsl: %w", err)
+		return nil, fmt.Errorf("buildPipelineLogDSL: unmarshal dsl: %w", err)
 	}
 	// Unwrap the canvas envelope via the shared helper so envelope handling
 	// lives in exactly one place (pipeline.UnwrapCanvasDSL).
@@ -100,7 +62,7 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 
 	components, ok := root["components"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("BuildDebugResultDSL: dsl missing components map")
+		return nil, fmt.Errorf("buildPipelineLogDSL: dsl missing components map")
 	}
 
 	built := make(map[string]any, len(components))
@@ -135,45 +97,8 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 		// Never forward a pre-existing outputs wrapper from the input DSL into
 		// the rebuilt params: the input can be an output-bearing copy (e.g. a
 		// stale pipeline_operation_log row loaded back as a canvas), and the
-		// persisted log must carry the DSL definition ONLY. The preview path
-		// re-attaches the fresh runtime outputs below when includeOutputs is
-		// true, so deleting here does not affect that branch.
+		// persisted log must carry the DSL definition ONLY.
 		delete(mergedParams, "outputs")
-		if includeOutputs {
-			// Build the runtime outputs wrapper (business data) only when the
-			// caller needs it — the dry-run live preview (ResultSink/Redis). The
-			// persisted pipeline operation-log DSL must carry the DSL definition
-			// ONLY (no chunks/json/text/... business data), so the real-parse
-			// persist path passes includeOutputs=false and this block is skipped
-			// entirely: the outputs are never even constructed, not stripped after.
-			runOut, _ := lookupComponentOutput(output, id).(map[string]any)
-			outputsWrapper := map[string]any{}
-			if format, payload := detectFormat(runOut); format != "" {
-				value := deepCopy(payload, true)
-				outputsWrapper[format] = map[string]any{
-					"value": value,
-					"type":  pythonTypeName(value),
-				}
-				outputsWrapper["output_format"] = map[string]any{
-					"value": format,
-					"type":  pythonTypeName(format),
-				}
-			}
-			// TrackElapsed stamps the bookkeeping pair into every component's run
-			// output (internal/agent/canvas/node_body.go). Carry them into the
-			// outputs wrapper as plain {value, type} entries so the front-end
-			// timeline renders per-node elapsed times — it reads exactly
-			// params.outputs._elapsed_time.value, the same key shape the front-end
-			// hook (web/src/pages/dataflow-result/hooks.ts) and set_output use.
-			for _, k := range bookkeepingKeys {
-				if v, ok := runOut[k]; ok && v != nil {
-					outputsWrapper[k] = map[string]any{"value": v, "type": pythonTypeName(v)}
-				}
-			}
-			if len(outputsWrapper) > 0 {
-				mergedParams["outputs"] = outputsWrapper
-			}
-		}
 
 		built[id] = map[string]any{
 			"obj": map[string]any{
@@ -198,84 +123,6 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 	}
 	result["components"] = built
 	return result, nil
-}
-
-// lookupComponentOutput resolves a single component's runtime output map from
-// the pipeline run result.
-//
-// The production `pipe.Run` return value nests every component's outputs under
-// output["state"][<componentID>] — finalizeResult (pipeline.go:636) attaches
-// runState.Snapshot() (state.go:296, map[string]map[string]any keyed by cpn
-// id), and statePost (scheduler.go:229) writes each component's top-level
-// output keys there via SetVar(cpnID, k, v). So the canonical lookup is
-// output["state"][id].
-//
-// A flat keyed-by-id shape (output[id] directly) is accepted as a fallback so
-// this builder stays usable for hand-built outputs in tests and any
-// non-Snapshot callers; it is never produced by the real pipeline.
-func lookupComponentOutput(output map[string]any, id string) any {
-	// The production run output nests each component under
-	// output["state"][<id>] (finalizeResult → runState.Snapshot(), state.go:296).
-	// Snapshot returns map[string]map[string]any, but some callers build a
-	// map[string]any-shaped state, so accept BOTH concrete types — a
-	// single-type assertion would silently fail the real shape and fall through
-	// to the (usually empty) top-level lookup.
-	var found any
-	var ok bool
-	switch state := output["state"].(type) {
-	case map[string]map[string]any:
-		found, ok = state[id]
-	case map[string]any:
-		found, ok = state[id]
-	}
-	if ok {
-		return found
-	}
-	// Fallback: flat shape (tests / non-Snapshot producers).
-	return output[id]
-}
-
-// detectFormat returns the output key (chunks/json/text/html/markdown) present
-// in a component's output map, by priority, plus the raw payload under it.
-// Returns ("", nil) when the component produced no recognized output — the
-// front-end then renders that step empty (matching empty obj)
-func detectFormat(out any) (string, any) {
-	m, ok := out.(map[string]any)
-	if !ok || m == nil {
-		return "", nil
-	}
-	for _, f := range outputFormats {
-		if v, exists := m[f]; exists && v != nil {
-			return f, v
-		}
-	}
-	return "", nil
-}
-
-// pythonTypeName returns the type string recorded next to every output value —
-// str(type(value)) — for the values a Go run
-// output carries. Every sequence reports "list" and every mapping "dict",
-// regardless of the Go element type.
-func pythonTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "<class 'NoneType'>"
-	case bool:
-		return "<class 'bool'>"
-	case string:
-		return "<class 'str'>"
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return "<class 'int'>"
-	case float32, float64:
-		return "<class 'float'>"
-	}
-	switch reflect.TypeOf(v).Kind() {
-	case reflect.Slice, reflect.Array:
-		return "<class 'list'>"
-	case reflect.Map:
-		return "<class 'dict'>"
-	}
-	return fmt.Sprintf("<class '%T'>", v)
 }
 
 // deepCopy returns a JSON-compatible deep copy of v (maps/slices/primitives),

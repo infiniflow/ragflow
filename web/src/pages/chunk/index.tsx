@@ -97,7 +97,7 @@ function Chunk() {
   const handleBack = navigateToDataFile(
     getQueryString(QueryStringMap.id) as string,
   );
-  const fileUrl = useGetDocumentUrl(false);
+  const fileUrl = useGetDocumentUrl();
 
   // Entering the chunk page collapses the primary sidebar to the icon rail
   // (same persisted preference the dataset pages write). The rail's expand
