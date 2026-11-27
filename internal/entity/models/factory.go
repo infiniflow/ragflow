@@ -246,6 +246,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewTeamoRouterModel(baseURL, urlSuffix), nil
 	case "straitly":
 		return NewStraitlyModel(baseURL, urlSuffix), nil
+	case "sarvam":
+		return NewSarvamModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
