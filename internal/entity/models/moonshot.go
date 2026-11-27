@@ -142,6 +142,9 @@ func (m *MoonshotModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	// Request token usage in the streaming response; without
+	// stream_options.include_usage the final chunk carries no top-level usage.
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Thinking != nil {
