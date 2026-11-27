@@ -23,6 +23,7 @@ export const enum DocumentApiAction {
   SaveDocumentName = 'saveDocumentName',
   SetDocumentParser = 'setDocumentParser',
   FetchDocumentFilter = 'fetchDocumentFilter',
+  FetchDocumentStatusCounts = 'fetchDocumentStatusCounts',
   CreateDocument = 'createDocument',
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',
   ParseDocument = 'parseDocument',
@@ -48,8 +49,14 @@ export const DocumentKeys = {
       filter,
     ] as const,
   allFilters: () => [DocumentApiAction.FetchDocumentFilter] as const,
-  filter: (searchString: string, knowledgeId?: string) =>
-    [...DocumentKeys.allFilters(), searchString, knowledgeId] as const,
+  // The counts cover the whole dataset and ignore the list's search text.
+  filter: (datasetId?: string) =>
+    [...DocumentKeys.allFilters(), datasetId] as const,
+  // Per-status counts for the whole dataset, kept apart from the filter's key
+  // so refreshing them never refetches the filter's facets.
+  allStatusCounts: () => [DocumentApiAction.FetchDocumentStatusCounts] as const,
+  statusCounts: (datasetId?: string) =>
+    [...DocumentKeys.allStatusCounts(), datasetId] as const,
   thumbnails: (ids: string[]) =>
     [DocumentApiAction.FetchDocumentThumbnails, ids] as const,
   byIds: (ids: string[]) =>

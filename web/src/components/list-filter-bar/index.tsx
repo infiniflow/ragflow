@@ -74,6 +74,7 @@ export default function ListFilterBar({
   onChange,
   onOpenChange,
   filters,
+  filtersLoading,
   className,
   icon,
   iconClassName,
@@ -145,6 +146,7 @@ export default function ListFilterBar({
             value={value}
             onChange={onChange}
             filters={filters}
+            filtersLoading={filtersLoading}
             filterGroup={filterGroup}
             onOpenChange={onOpenChange}
           >

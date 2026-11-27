@@ -205,6 +205,9 @@ type fakeDocumentService struct {
 	filterOpts             dao.DocumentListOptions
 	filterResult           map[string]interface{}
 	filterTotal            int64
+	filterCalls            int
+	counterOpts            *dao.DocumentListOptions
+	counterResult          map[string]interface{}
 	listIDs                []string
 	documentList           []*entity.DocumentListItem
 	documentListTotal      int64
@@ -349,7 +352,12 @@ func (f *fakeDocumentService) ListDocumentIDsByDatasetIDWithOptions(ctx context.
 	f.listOpts = opts
 	return f.listIDs, nil
 }
+func (f *fakeDocumentService) GetDocumentCountersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	f.counterOpts = &opts
+	return f.counterResult, f.filterTotal, nil
+}
 func (f *fakeDocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	f.filterCalls++
 	f.filterOpts = opts
 	if f.filterResult != nil {
 		return f.filterResult, f.filterTotal, nil
@@ -1461,6 +1469,53 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["total"] != float64(2) {
 		t.Fatalf("expected total 2, got %v", data["total"])
+	}
+}
+
+func TestListDocumentsHandler_CountersRequestSkipsTheMetadataFacet(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		counterResult: map[string]interface{}{
+			"suffix":           map[string]int64{"pdf": 3},
+			"ingestion_status": map[string]int64{common.RUNNING: 2, common.SCHEDULED: 1},
+			"metadata":         map[string]interface{}{},
+		},
+		filterTotal: 3,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?type=counters", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if fake.filterCalls != 0 {
+		t.Fatalf("type=counters computed the full filter %d times, want 0", fake.filterCalls)
+	}
+	if fake.counterOpts == nil || fake.counterOpts.KbID != "ds-1" {
+		t.Fatalf("expected the counters for ds-1, got %#v", fake.counterOpts)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid json response: %v", err)
+	}
+	data := resp["data"].(map[string]interface{})
+	status := data["filter"].(map[string]interface{})["ingestion_status"].(map[string]interface{})
+	if status[common.RUNNING] != float64(2) || status[common.SCHEDULED] != float64(1) {
+		t.Fatalf("unexpected status counters %v", status)
 	}
 }
 

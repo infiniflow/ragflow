@@ -329,6 +329,8 @@ const apiEndpoints = {
   documentInfoUpload: `${restAPIv1}/documents/upload`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
+  getDatasetCounters: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents?type=counters`,
 
   // chat
   createChat: `${restAPIv1}/chats`,

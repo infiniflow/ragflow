@@ -2,7 +2,7 @@ import message from '@/components/ui/message';
 import { useSaveBuiltinMetadata } from '@/ee/pages/dataset/components/metedata/hooks/use-save-builtin-metadata';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
-import { DocumentApiAction } from '@/hooks/use-document-request';
+import { DocumentApiAction, DocumentKeys } from '@/hooks/document-query-keys';
 import {
   getMetaDataService,
   kbUpdateMetaData,
@@ -409,6 +409,12 @@ export const useManageMetaDataModal = (
         if (res.code === 0) {
           queryClient.invalidateQueries({
             queryKey: [DocumentApiAction.FetchDocumentList],
+          });
+          // The metadata facet moved; the filter's counts reload on its next
+          // open.
+          queryClient.invalidateQueries({
+            queryKey: DocumentKeys.allFilters(),
+            refetchType: 'none',
           });
           resetOperations();
           message.success(t('message.operated'));
