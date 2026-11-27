@@ -218,11 +218,32 @@ s3:
 - `addressing_style`: Must be `virtual`.
 - `bucket` / `prefix_path`: Optional. Enables single-bucket mode. Before changing the storage layout, create a recovery point by following [Backup and Restore (v1.x)](../upgrade_and_migration/backup_and_restore_v1.md).
 
+### `S3` (other S3-compatible services)
+
+For an S3-compatible service with regional endpoints (for example, Backblaze B2, DigitalOcean Spaces, or Wasabi), use the same `general.storage_engine: s3` and `STORAGE_IMPL=AWS_S3` settings, and set `region_name` to the region of the endpoint:
+
+```yaml
+s3:
+  access_key: 'YOUR_ACCESS_KEY'
+  secret_key: 'YOUR_SECRET_KEY'
+  region_name: 'example-region'
+  endpoint_url: 'https://s3.example-region.example.com'
+  bucket: 'ragflow'
+  prefix_path: 'ragflow'
+  signature_version: 'v4'
+  addressing_style: 'path'
+```
+
+- `region_name`: The region that matches `endpoint_url`. Requests are signed for this region.
+- `addressing_style`: `path` (the default) or `virtual`, whichever the service supports.
+- `bucket` / `prefix_path`: Optional, as for Tigris above.
+- If the service rejects the checksums that the AWS SDK adds to requests by default, set `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` and `AWS_RESPONSE_CHECKSUM_VALIDATION=when_required` in `.env`.
+
 `STORAGE_IMPL` must match `general.storage_engine`. Go refuses a mismatch because selecting another backend does not migrate existing object keys. For an existing deployment, copy and verify its stored objects in the target backend before changing `general.storage_engine`.
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 
-For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google Cloud Storage), see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
+For AWS S3, Alibaba Cloud OSS, Azure Blob, and Google Cloud Storage, see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
 
 ### `kvrocks`
 
