@@ -43,7 +43,7 @@ The corresponding settings are under **Chat setting > Advanced settings > Naive*
 
 ## Use Web Search
 
-When a web search provider is configured, the message box shows a globe-shaped web search control. Enable it before sending a question that needs public web information; turn it off when web search is not needed.
+New chats use Parallel for web search. Open the **+** menu in the message box and select **Web search** before sending a question that needs public web information. Remove the **Web search** chip to turn it off.
 
 If the control is missing, open **Chat setting > Advanced settings > Web search provider**, select a provider, complete its required API key field, and click **Save**. Providers that require no key only need to be selected and saved. See [Configure Web Search](./chat_configuration.md#configure-web-search).
 

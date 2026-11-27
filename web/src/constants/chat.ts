@@ -84,6 +84,7 @@ export enum WebSearchProvider {
  *
  * AnySearch accepts anonymous requests on the same search endpoint. A saved
  * key is sent as Authorization: Bearer and is not retried anonymously.
+ * Parallel uses its public Search MCP when the API key is blank.
  *
  * You.com serves a dedicated keyless ENDPOINT: a different path from the keyed
  * one, the same response shape, rate-limited per source IP. Adding a key
@@ -95,5 +96,6 @@ export enum WebSearchProvider {
  */
 export const KEYLESS_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = [
   WebSearchProvider.AnySearch,
+  WebSearchProvider.Parallel,
   WebSearchProvider.YouCom,
 ];

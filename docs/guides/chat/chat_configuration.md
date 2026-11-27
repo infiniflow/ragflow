@@ -46,19 +46,23 @@ The groups configure how each mode works. To choose the mode for a question, use
 
 ### Configure Web Search
 
+New chats use Parallel by default. Open the **+** menu in the message box and select **Web search** before sending a question. Search starts off, and RAGFlow sends search queries to the selected provider only when you turn it on.
+
+Parallel works without an API key through its [rate-limited public MCP service](https://docs.parallel.ai/integrations/mcp/quickstart). Add a Parallel API key to use the authenticated Search API. To disable web search for the chat, clear **Web search provider** and save.
+
+To use a different provider, change it in Chat settings.
+
 1. Open **Chat setting > Advanced settings**.
 2. In **Web search provider**, select the provider you want to use.
 3. Complete the API key field displayed for that provider. Fields marked as required must be filled in. Use the help link below the field if you need to obtain a key; providers that do not require a key can be used without one.
 4. Click **Save**.
-5. Return to the message box. Enable the globe-shaped web search control before sending a question that needs public web information. Turn it off when you want to ask without web search.
+5. Return to the message box and select **Web search** from the **+** menu.
 
 <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_augmentation_options_1.jpg" alt="Select a web search provider, enter its required API key, and save the Chat settings" width="520" />
 
 The screenshot uses Querit as an example. Select your own provider and complete the fields displayed for it.
 
-The web search control is shown only when a provider is configured and its required key is present. If the control is missing, reopen **Advanced settings**, check the provider and its required fields, and save again. A visible control means the configuration is present; a failed search can still require checking the key, provider quota, or network access.
-
-Web search supplements the datasets selected for the Chat. Select a provider, complete its required fields, and save the configuration to make the web search control available. For providers that require an API key, the key must be nonblank. Users can then enable web search when asking a question.
+Web search works with or without a dataset. If the globe is missing, check the selected provider and any required key. If a search fails, check the provider's quota and the server's outbound network access.
 
 ## Naive Settings
 

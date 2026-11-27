@@ -8,6 +8,15 @@ jest.mock('@/hooks/use-chat-request', () => ({
 }));
 
 describe('saved provider Internet visibility', () => {
+  it('offers Internet on a new chat with the default Parallel provider', () => {
+    mockFetchChat.mockReturnValue({
+      data: {
+        prompt_config: { web_search_provider: WebSearchProvider.Parallel },
+      },
+    });
+    expect(renderHook(useShowInternet).result.current).toBe(true);
+  });
+
   it('follows reloaded keyless AnySearch settings and a cleared selection', () => {
     mockFetchChat.mockReturnValue({
       data: {

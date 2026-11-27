@@ -290,7 +290,7 @@ type TurnUsage struct {
 //	│    refine_multiturn → cross_languages →               │
 //	│    meta_data_filter → keyword extraction              │
 //	├───────────────────────────────────────────────────────┤
-//	│ 9. Retrieval (if hasKnowledgeParam):                  │
+//	│ 9. Dataset and web retrieval:                         │
 //	│                                                       │
 //	│  reasoning=true?                                      │
 //	│   YES → DeepResearcher (recursive, maxDepth=3)        │
@@ -708,11 +708,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// objects declaring which placeholder variables the system prompt
 		// template expects to be substituted.
 		//
-		// hasKnowledgeParam gates the entire RAG retrieval phase below.
-		// When true: vector / DeepResearcher / TOC / Tavily / KG retrieval
+		// hasKnowledgeParam gates dataset retrieval. Web search is gated separately.
+		// When true: vector and knowledge graph retrieval
 		// populates kbinfos (from which knowledges is derived afterward).
-		// When false: skip retrieval and rely on caller-supplied
-		// kwargs["knowledge"] or LLM-only.
+		// When false: skip dataset retrieval.
 		var parameters []interface{}
 		if paramsRaw, ok := promptConfig["parameters"]; ok {
 			if p, ok := paramsRaw.([]interface{}); ok {
@@ -872,10 +871,8 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// When hasKnowledgeParam is true, runs standard retrieval, then:
 		//   - Child chunk retrieval.
-		//   - Web search provider (if internet is enabled).
 		//   - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
-		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			// Regular RAG mirroring Python's async_chat — native docStore
 			// retrieval, then the child chunk / web search / KG
@@ -954,27 +951,6 @@ func (s *ChatPipelineService) AsyncChat(
 				kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
 			}
 
-			// Web search
-			if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-				provider := resolveWebSearchProvider(chat.PromptConfig)
-				webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
-				if webErr != nil {
-					common.Warn("Web search failed", zap.Error(webErr))
-				} else {
-					// Extend chunks and doc_aggs with web search results.
-					if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-						if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
-							kbinfos["chunks"] = append(existingChunks, newChunks...)
-						}
-					}
-					if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-						if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
-							kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
-						}
-					}
-				}
-			}
-
 			// Knowledge Graph retrieval
 			if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
 				kgIDs := kbIDStrings(kbs)
@@ -999,6 +975,27 @@ func (s *ChatPipelineService) AsyncChat(
 									zap.Int("total_chunks", len(newChunks)))
 							}
 						}
+					}
+				}
+			}
+		}
+
+		// Web search is independent of the dataset prompt parameters.
+		if useWebSearch {
+			provider := resolveWebSearchProvider(chat.PromptConfig)
+			webResult, webErr := s.retrieveWebSearch(ctx, provider, strings.Join(questions, " "))
+			if webErr != nil {
+				common.Warn("Web search failed", zap.Error(webErr))
+			} else {
+				// Extend chunks and doc_aggs with web search results.
+				if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
+					if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
+						kbinfos["chunks"] = append(existingChunks, newChunks...)
+					}
+				}
+				if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
+					if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
+						kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
 					}
 				}
 			}

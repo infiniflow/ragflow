@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"ragflow/internal/agentic_rag"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/service/youcom"
 )
 
@@ -60,15 +61,16 @@ const (
 	braveWebSearchEndpoint     = "https://api.search.brave.com/res/v1/web/search"
 	exaWebSearchEndpoint       = "https://api.exa.ai/search"
 	// v2 is Firecrawl's current search shape; the v1 endpoint is deprecated.
-	firecrawlWebSearchEndpoint  = "https://api.firecrawl.dev/v2/search"
-	keirolabsWebSearchEndpoint  = "https://api.keirolabs.cloud/api/v2/search/lite"
-	linkupWebSearchEndpoint     = "https://api.linkup.so/v1/search"
-	parallelWebSearchEndpoint   = "https://api.parallel.ai/v1/search"
-	perplexityWebSearchEndpoint = "https://api.perplexity.ai/search"
-	queritWebSearchEndpoint     = "https://api.querit.ai/v1/search"
-	search1apiWebSearchEndpoint = "https://api.search1api.com/search"
-	searchapiWebSearchEndpoint  = "https://www.searchapi.io/api/v1/search"
-	serplyWebSearchEndpoint     = "https://api.serply.io/v1/search/"
+	firecrawlWebSearchEndpoint   = "https://api.firecrawl.dev/v2/search"
+	keirolabsWebSearchEndpoint   = "https://api.keirolabs.cloud/api/v2/search/lite"
+	linkupWebSearchEndpoint      = "https://api.linkup.so/v1/search"
+	parallelWebSearchEndpoint    = "https://api.parallel.ai/v1/search"
+	parallelWebSearchMCPEndpoint = "https://mcp.parallel.ai/mcp"
+	perplexityWebSearchEndpoint  = "https://api.perplexity.ai/search"
+	queritWebSearchEndpoint      = "https://api.querit.ai/v1/search"
+	search1apiWebSearchEndpoint  = "https://api.search1api.com/search"
+	searchapiWebSearchEndpoint   = "https://www.searchapi.io/api/v1/search"
+	serplyWebSearchEndpoint      = "https://api.serply.io/v1/search/"
 	// webSearchResultCount is how many hits every provider is asked for. Six
 	// keeps the web block in a prompt the size of one corpus chunk set — the
 	// point is to give the model something to cite, not to mirror a full SERP.
@@ -95,6 +97,7 @@ var (
 	keirolabsWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	linkupWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	parallelWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
+	parallelWebSearchMCPCall      = mcpclient.CallTool
 	perplexityWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 	queritWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	search1apiWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
@@ -133,6 +136,7 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 	// keyOptional marks providers usable with no key.
 	// AnySearch accepts anonymous requests on the same search endpoint and
 	// sends Authorization only when a key is saved.
+	// Parallel uses public Search MCP when the API key is blank.
 	// You.com serves a dedicated keyless endpoint (a different path, same
 	// response shape, rate limited per source IP, and it rejects an X-API-Key
 	// header; see youcom.EndpointFor). A key moves to the keyed endpoint and
@@ -157,6 +161,7 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "linkup_api_key"
 	case webSearchProviderParallel:
 		apiKeyField = "parallel_api_key"
+		keyOptional = true
 	case webSearchProviderPerplexity:
 		apiKeyField = "perplexity_api_key"
 	case webSearchProviderQuerit:
@@ -271,6 +276,9 @@ func retrieveWebSearchWithTavily(
 			question,
 		)
 	case webSearchProviderParallel:
+		if provider.APIKey == "" {
+			return retrieveAnonymousParallelWebSearch(ctx, question)
+		}
 		return retrieveParallelWebSearch(
 			ctx,
 			parallelWebSearchHTTPClient,
@@ -949,6 +957,35 @@ func parallelContent(result parallelWebSearchResult) string {
 	return strings.Join(passages, "\n")
 }
 
+func parallelWebSearchArguments(query string) ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"search_queries": []string{query},
+		"objective":      query,
+	})
+}
+
+func retrieveAnonymousParallelWebSearch(ctx context.Context, query string) (map[string]interface{}, error) {
+	requestBody, err := parallelWebSearchArguments(query)
+	if err != nil {
+		return nil, fmt.Errorf("parallel: marshal request: %w", err)
+	}
+	result, err := parallelWebSearchMCPCall(ctx, mcpclient.CallOptions{
+		URL:        parallelWebSearchMCPEndpoint,
+		ServerType: mcpclient.TransportStreamableHTTP,
+		Headers:    map[string]string{"User-Agent": "ragflow"},
+		ToolName:   "web_search",
+		Arguments:  requestBody,
+		Timeout:    10 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("parallel: MCP search: %w", err)
+	}
+	if result.IsError {
+		return nil, errors.New("parallel: MCP search returned a tool error")
+	}
+	return parallelWebSearchPayload([]byte(result.Text))
+}
+
 func retrieveParallelWebSearch(
 	ctx context.Context,
 	client *http.Client,
@@ -956,12 +993,7 @@ func retrieveParallelWebSearch(
 	apiKey string,
 	query string,
 ) (map[string]interface{}, error) {
-	// search_queries carries the literal terms; objective is the same question
-	// in natural language and steers which of the matched pages come back.
-	requestBody, err := json.Marshal(map[string]interface{}{
-		"search_queries": []string{query},
-		"objective":      query,
-	})
+	requestBody, err := parallelWebSearchArguments(query)
 	if err != nil {
 		return nil, fmt.Errorf("parallel: marshal request: %w", err)
 	}
@@ -974,6 +1006,10 @@ func retrieveParallelWebSearch(
 	if err != nil {
 		return nil, fmt.Errorf("parallel: %w", err)
 	}
+	return parallelWebSearchPayload(responseBody)
+}
+
+func parallelWebSearchPayload(responseBody []byte) (map[string]interface{}, error) {
 	results, err := decodeParallelWebSearchResults(responseBody)
 	if err != nil {
 		return nil, err

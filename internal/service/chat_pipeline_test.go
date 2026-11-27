@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sort"
 	"strings"
@@ -35,6 +37,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/permission"
 	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/graph"
@@ -980,6 +983,121 @@ func TestShouldUseWebSearch_RequiresTavilyAndTruthyInternet(t *testing.T) {
 			if got := svc.shouldUseWebSearch(tc.dialog, tc.flag); got != tc.want {
 				t.Fatalf("dialog=%+v flag=%#v: want %v, got %v",
 					tc.dialog.PromptConfig, tc.flag, tc.want, got)
+			}
+		})
+	}
+}
+
+func TestNewChatSearchesParallelWithoutDataset(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "true")
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Content string } `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode model request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		answer := "Local answer"
+		for _, message := range body.Messages {
+			if strings.Contains(message.Content, "Example search excerpt") {
+				answer = "Cited answer [ID:0]"
+				break
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"choices":[{"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5}}`, answer)
+	}))
+	t.Cleanup(modelServer.Close)
+
+	db := setupChatRESTUpdateServiceTestDB(t)
+	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "instance-a").
+		Update("extra", fmt.Sprintf(`{"base_url":%q}`, modelServer.URL+"/v1")).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	chatService := NewChatService()
+	previous := parallelWebSearchMCPCall
+	t.Cleanup(func() { parallelWebSearchMCPCall = previous })
+
+	for _, tc := range []struct {
+		name         string
+		internet     bool
+		customPrompt bool
+		cleared      bool
+		toolFail     bool
+		calls        int
+		answer       string
+	}{
+		{name: "web search selected", internet: true, calls: 1, answer: "Cited answer"},
+		{name: "custom prompt without knowledge variable", internet: true, customPrompt: true, calls: 1, answer: "Cited answer"},
+		{name: "internet off", answer: "Local answer"},
+		{name: "web search unavailable", internet: true, toolFail: true, calls: 1, answer: "Local answer"},
+		{name: "saved opt-out", internet: true, cleared: true, answer: "Local answer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// New Chat in the browser sends these variables even without a dataset.
+			promptConfig := map[string]interface{}{
+				"system":         "Answer based on this dataset: {knowledge}",
+				"empty_response": "",
+				"quote":          true,
+				"parameters": []interface{}{
+					map[string]interface{}{"key": "knowledge", "optional": false},
+					map[string]interface{}{"key": "date", "optional": true},
+				},
+			}
+			if tc.customPrompt {
+				promptConfig["system"] = "Answer the question."
+				promptConfig["parameters"] = []interface{}{}
+			}
+			created, code, err := chatService.Create(ctx, map[string]interface{}{
+				"name":          tc.name,
+				"dataset_ids":   []interface{}{},
+				"prompt_config": promptConfig,
+			})
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("Create: code=%v, err=%v", code, err)
+			}
+			chatID := created["id"].(string)
+			if tc.cleared {
+				_, err := chatService.PatchChat(ctx, chatID, map[string]interface{}{
+					"prompt_config": map[string]interface{}{"web_search_provider": ""},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			chat, err := chatService.GetChat(ctx, chatID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			parallelWebSearchMCPCall = func(context.Context, mcpclient.CallOptions) (*mcpclient.CallResult, error) {
+				calls++
+				return &mcpclient.CallResult{
+					IsError: tc.toolFail,
+					Text:    `{"results":[{"url":"https://example.com/ragflow","title":"Example","excerpts":["Example search excerpt"]}]}`,
+				}, nil
+			}
+			results, err := NewChatPipelineService().AsyncChat(ctx, chat.Chat,
+				[]map[string]interface{}{{"role": "user", "content": "What is RAGFlow?"}}, false,
+				map[string]interface{}{"internet": tc.internet})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var final AsyncChatResult
+			for result := range results {
+				if result.Final {
+					final = result
+				}
+			}
+			if !strings.Contains(final.Answer, tc.answer) || calls != tc.calls {
+				t.Fatalf("answer = %q, MCP calls = %d, want %q and %d calls", final.Answer, calls, tc.answer, tc.calls)
+			}
+			ref, err := json.Marshal(final.Reference)
+			if err != nil || strings.Contains(string(ref), "https://example.com/ragflow") != (tc.calls > 0 && !tc.toolFail) {
+				t.Fatalf("reference = %s, err = %v", ref, err)
 			}
 		})
 	}

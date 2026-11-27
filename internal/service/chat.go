@@ -509,6 +509,9 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 	if promptConfig == nil {
 		promptConfig = map[string]interface{}{}
 	}
+	if _, selected := promptConfig["web_search_provider"]; !selected && resolveWebSearchProvider(promptConfig) == nil {
+		promptConfig["web_search_provider"] = webSearchProviderParallel
+	}
 	kbIDs, _ := listFromValue(req["kb_ids"])
 	if system, ok := promptConfig["system"]; !ok || !isTruthy(system) {
 		if len(kbIDs) > 0 {

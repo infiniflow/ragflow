@@ -1278,8 +1278,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       keirolabsApiKeyMessage: '请输入你的 Keirolabs API Key',
       linkupApiKeyTip: '选择 Linkup 后，将使用其搜索结果补充知识库检索。',
       linkupApiKeyMessage: '请输入你的 Linkup API Key',
-      parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
-      parallelApiKeyMessage: '请输入你的 Parallel API Key',
+      parallelApiKeyTip:
+        '可选。开启联网搜索后，RAGFlow 会将搜索查询发送给 Parallel。留空可使用有频率限制的公开搜索。',
+      parallelApiKeyMessage: '输入 Parallel API 密钥（可选）',
       perplexityApiKeyTip:
         '选择 Perplexity 后，将使用 Perplexity Search API 的搜索结果补充知识库检索。',
       perplexityApiKeyMessage: '请输入你的 Perplexity API Key',
