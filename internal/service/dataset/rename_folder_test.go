@@ -242,7 +242,7 @@ func TestDatasetRenameFolderSurvivesDeletingReusedName(t *testing.T) {
 					t.Fatal(err)
 				}
 				t.Cleanup(func() { _ = req.MultipartForm.RemoveAll() })
-				results, errs := documents.UploadLocalDocuments(ctx, kb, req.MultipartForm.File["file"], "", nil)
+				results, errs := documents.UploadLocalDocuments(ctx, kb, req.MultipartForm.File["file"], "", nil, "")
 				if len(errs) != 0 || len(results) != 1 {
 					t.Fatalf("upload %s: results=%v errors=%v", name, results, errs)
 				}

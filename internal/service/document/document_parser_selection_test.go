@@ -408,7 +408,7 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			}
 			base := cloneParserConfigForDocument(tc.kbConfig)
 
-			selection, gotConfig := resolveDocumentParser(t.Context(), kb, tc.filename, tc.filetype, base)
+			selection, gotConfig := resolveDocumentParser(t.Context(), kb, tc.filename, tc.filetype, base, "")
 
 			gotParser, gotPipelinePtr := parserSelectionColumns(selection)
 			gotPipeline := ""
@@ -484,7 +484,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		makeTestFileHeader(t, "file", "talk.mp3", []byte("mp3-bytes")),
 		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
 	}
-	got, errs := svc.UploadLocalDocuments(ctx, kb, files, "", nil)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, files, "", nil, "")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -575,7 +575,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	got, errs := svc.UploadLocalDocuments(ctx, presentationKB, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
 		makeTestFileHeader(t, "file", "deck.pptx", []byte("pptx-bytes")),
-	}, "", nil)
+	}, "", nil, "")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -604,7 +604,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	got, errs = svc.UploadLocalDocuments(ctx, canvasKB, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "report.pdf", []byte("%PDF-1.4")),
 		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
-	}, "", nil)
+	}, "", nil, "")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -663,7 +663,7 @@ func TestUploadLocalDocuments_SwitchesVideoToPicture(t *testing.T) {
 		makeTestFileHeader(t, "file", "movie.mp4", []byte("mp4-bytes")),
 		makeTestFileHeader(t, "file", "legacy.rmvb", []byte("rmvb-bytes")),
 		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
-	}, "", nil)
+	}, "", nil, "")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -761,4 +761,70 @@ func parserFamilySetup(t *testing.T, doc map[string]interface{}, family string) 
 	}
 	t.Fatalf("%v parser_config has no %q setup on a Parser node: %#v", doc["name"], family, cfg)
 	return nil
+}
+
+// TestUploadLocalDocuments_ParserOverride pins the per-document parser_id
+// override on upload: a parser_id supplied to UploadLocalDocuments seeds the
+// selection, so a text file uploaded to a general dataset lands on the
+// overridden built-in parser when the dataset config already governs the file's
+// family. An empty override keeps the dataset default. Filetype correction and
+// config reseeding still apply on top of the seeded selection: the override
+// only chooses the starting parser, it does not bypass family routing.
+func TestUploadLocalDocuments_ParserOverride(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
+
+	kbConfig := entity.JSONMap{
+		"Parser:HipSignsRhyme": map[string]any{
+			"pdf":       map[string]any{},
+			"text&code": map[string]any{},
+		},
+	}
+	kb := &entity.Knowledgebase{
+		ID:           "kb-override",
+		TenantID:     "tenant-1",
+		Name:         "kb-override",
+		CreatedBy:    "user-1",
+		ParserID:     "general",
+		ParserConfig: kbConfig,
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	svc := testDocumentService(t)
+
+	// No override: the text file keeps the dataset default parser.
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
+	}, "", nil, "")
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if parserID, _ := got[0]["parser_id"].(string); parserID != "general" {
+		t.Fatalf("default parser_id = %q, want general", parserID)
+	}
+
+	// An explicit parser_id seeds the selection. The dataset config still
+	// governs text&code, so the override is kept instead of falling back to the
+	// dataset default; the document carries the dataset's parser_config.
+	got, errs = svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "rules.txt", []byte("plain text")),
+	}, "", nil, "manual")
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if parserID, _ := got[0]["parser_id"].(string); parserID != "manual" {
+		t.Fatalf("override parser_id = %q, want manual", parserID)
+	}
+	parserFamilySetup(t, got[0], "text&code")
 }

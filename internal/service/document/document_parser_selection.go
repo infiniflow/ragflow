@@ -160,8 +160,18 @@ func parserSelectionColumns(sel *service.ParserSelection) (string, *string) {
 // config, and on a DSL failure the selection and config are kept: a registry
 // lookup must not fail an upload, and a half-switched row (new parser, old
 // config) is the inconsistent state this function exists to avoid.
-func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filename string, filetype utility.FileType, base entity.JSONMap) (*service.ParserSelection, entity.JSONMap) {
-	selection := service.CurrentSelection(kb.ParserID, kb.PipelineID)
+func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filename string, filetype utility.FileType, base entity.JSONMap, parserID string) (*service.ParserSelection, entity.JSONMap) {
+	// An upload may seed the selection with a caller-chosen parser_id, overriding
+	// the dataset default. An empty value keeps the dataset default; the caller
+	// validates the value against the built-in pipeline registry, so the seed is
+	// always a known built-in parser. Filetype correction and config reseeding
+	// still apply on top of the seeded selection, so an override never bypasses
+	// the family routing or config consistency this function enforces.
+	startParserID := kb.ParserID
+	if parserID != "" {
+		startParserID = parserID
+	}
+	selection := service.CurrentSelection(startParserID, kb.PipelineID)
 	family := componentpkg.ParserFileFamily(utility.GetFileExtension(filename))
 	if family != "" && selectionGovernsFamily(ctx, selection, kb.ParserConfig, family) {
 		return selection, base

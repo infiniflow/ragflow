@@ -86,6 +86,17 @@ func validateParserID(parserID string) error {
 	return err
 }
 
+// CanonicalParserID resolves a parser ID to its canonical built-in ID and
+// reports an error when the ID is not a registered built-in parser. Exported
+// so callers outside the dataset package — for example a per-document parser
+// override supplied on document upload — validate and normalize a
+// caller-supplied parser_id the same way dataset create/update does: a legacy
+// alias such as "naive" maps to its canonical ID, and an unknown value is
+// rejected up front instead of silently falling back to the dataset default.
+func CanonicalParserID(parserID string) (string, error) {
+	return canonicalDatasetParserID(parserID)
+}
+
 // datasetParserIDForResponse returns the canonical parser ID when a legacy
 // persisted value remains resolvable. Unknown stored values are preserved.
 func datasetParserIDForResponse(parserID string) string {

@@ -32,7 +32,7 @@ import (
 //
 // Gaps vs Python (documented, not yet ported): thumbnail generation and
 // read_potential_broken_pdf repair.
-func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}, parserID string) ([]map[string]interface{}, []string) {
 	userID := permission.UserIDFromContext(ctx)
 	if userID == "" {
 		return nil, []string{permission.ErrUnauthenticated.Error()}
@@ -104,7 +104,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
+		selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged, parserID)
 		doc := s.newDatasetDocument(kb, userID, filename, location, string(filetype), selection, parserConfig, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(ctx, doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
@@ -392,7 +392,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, err
 	}
 
-	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig)
+	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig, "")
 	doc := s.newDatasetDocument(kb, userID, filename, location, string(filetype), selection, parserConfig, "web", int64(len(blob)), blob)
 	if err = s.InsertDocument(ctx, doc); err != nil {
 		rmErr := storage.RemoveBlob(ctx, storageImpl, kb.ID, location)

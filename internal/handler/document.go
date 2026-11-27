@@ -72,7 +72,7 @@ type documentServiceIface interface {
 	GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
-	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
+	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}, parserID string) ([]map[string]interface{}, []string)
 	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
@@ -1097,7 +1097,22 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 	ctx := c.Request.Context()
-	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, files, c.PostForm("parent_path"), override)
+	// Optional per-document parser override: an explicit parser_id form field
+	// seeds the parser selection for this upload, overriding the dataset's
+	// default parser. An empty value keeps the dataset default. The value is
+	// validated and canonicalized against the built-in pipeline registry, so a
+	// typo or an unknown parser is rejected up front rather than silently
+	// falling back to the dataset default.
+	parserIDOverride := strings.TrimSpace(c.PostForm("parser_id"))
+	if parserIDOverride != "" {
+		canonical, err := dataset.CanonicalParserID(parserIDOverride)
+		if err != nil {
+			common.RespondError(c, common.CodeArgumentError, err.Error())
+			return
+		}
+		parserIDOverride = canonical
+	}
+	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, files, c.PostForm("parent_path"), override, parserIDOverride)
 	if len(data) == 0 {
 		if len(errMsgs) > 0 {
 			common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))

@@ -1425,7 +1425,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
 	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
 		"table_column_mode": "assist",
-	})
+	}, "")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1491,7 +1491,7 @@ func TestUploadLocalDocumentsKeepsStorageKeyWithinByteLimit(t *testing.T) {
 	svc := testDocumentService(t)
 	filename := strings.Repeat("界", 100) + ".pdf"
 	fh := makeTestFileHeader(t, "file", filename, []byte("%PDF-1.7"))
-	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{fh}, "", nil)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{fh}, "", nil, "")
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
