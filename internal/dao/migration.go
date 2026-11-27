@@ -1401,11 +1401,6 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 	if !exists {
 		return nil
 	}
-	if mysqlDatetimeType.MatchString(currentType) && mysqlDatetimeType.MatchString(spec.columnType) {
-		// Keep precision when another attribute, such as nullability, needs DDL.
-		spec.definition = strings.Replace(spec.definition, spec.columnType, currentType, 1)
-		spec.columnType = currentType
-	}
 	if normalizeColumnType(currentType) == normalizeColumnType(spec.columnType) && nullable == spec.nullable {
 		return nil
 	}

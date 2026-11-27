@@ -127,37 +127,3 @@ func TestMySQLMigrateColumnConvertsOtherTypesAndReturnsErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestApplyColumnSpecPreservesDatetimePrecision(t *testing.T) {
-	for _, nullable := range []bool{true, false} {
-		t.Run(fmt.Sprintf("nullable_%v", nullable), func(t *testing.T) {
-			db, mock := openMySQLSpecMock(t)
-			isNullable := "NO"
-			if nullable {
-				isNullable = "YES"
-			}
-			expectSchemaLookups(mock, "knowledgebase", "raptor_task_finish_at", "datetime(6)", isNullable)
-			if !nullable {
-				mock.ExpectExec(regexp.QuoteMeta("ALTER TABLE knowledgebase MODIFY COLUMN raptor_task_finish_at datetime(6) NULL")).WillReturnResult(sqlmock.NewResult(0, 0))
-			}
-			var statements int
-			if err := db.Callback().Raw().Before("gorm:raw").Register("count_datetime_ddl", func(tx *gorm.DB) {
-				statements++
-			}); err != nil {
-				t.Fatal(err)
-			}
-			if err := applyColumnSpec(t.Context(), db, columnSpec{
-				table: "knowledgebase", column: "raptor_task_finish_at",
-				columnType: "datetime", nullable: true, definition: "datetime NULL", strict: true,
-			}); err != nil {
-				t.Fatal(err)
-			}
-			if nullable && statements != 0 {
-				t.Fatalf("precision-only difference issued %d DDL statements", statements)
-			}
-			if err := mock.ExpectationsWereMet(); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}

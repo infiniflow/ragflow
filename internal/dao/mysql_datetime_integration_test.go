@@ -140,24 +140,4 @@ func TestMySQLDatetimePrecision_Integration(t *testing.T) {
 		assertType(t, table, "value", "datetime(3)")
 	})
 
-	t.Run("manual_spec", func(t *testing.T) {
-		const table = "mysql_datetime_manual"
-		createTable(t, table, "CREATE TABLE "+table+" (value datetime(6) NOT NULL)")
-		spec := columnSpec{table: table, column: "value", columnType: "datetime", nullable: true, definition: "datetime NULL", strict: true}
-		if err := applyColumnSpec(t.Context(), db, spec); err != nil {
-			t.Fatal(err)
-		}
-		assertType(t, table, "value", "datetime(6)")
-		_, nullable, _, err := columnDefinition(t.Context(), db, table, "value")
-		if err != nil || !nullable {
-			t.Fatalf("nullable change was lost: nullable %v, error %v", nullable, err)
-		}
-		beforeModifies := modifies
-		if err := applyColumnSpec(t.Context(), db, spec); err != nil {
-			t.Fatal(err)
-		}
-		if modifies != beforeModifies {
-			t.Fatal("converged manual datetime specification was altered again")
-		}
-	})
 }
