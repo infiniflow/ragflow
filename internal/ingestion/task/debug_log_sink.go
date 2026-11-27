@@ -61,14 +61,17 @@ const (
 	maxTracePerEntry = 200     // progress events kept per component
 	maxMessageRunes  = 1024    // rune length cap for a single trace message
 	maxPayloadBytes  = 1 << 20 // hard ceiling on the timeline JSON written to Redis (1 MiB)
-	// maxResultBytes is the separate ceiling for the run-result DSL stored
-	// under DebugResultKey. It is independent from the timeline budget because
-	// the result carries business data (chunks, inline images) while the
-	// timeline is polled every few seconds and must stay small.
+	// maxResultBytes is the separate ceiling for the run-result payload stored
+	// under DebugResultKey: the complete END output plus the optional preview
+	// DSL. The END output is preserved for Export JSON even when it alone
+	// exceeds this budget; the budget bounds the optional DSL.
 	maxResultBytes = 32 << 20
 )
 
-const debugRunCompletedMessage = "Debug run completed"
+const (
+	debugEndComponentID      = "END"
+	debugRunCompletedMessage = "Debug run completed"
+)
 
 // debugLogEntry is one component's row in the front-end Log box: a component id
 // plus an ordered list of trace lines. It matches the pipeline callback
@@ -86,6 +89,15 @@ type debugTrace struct {
 	Datetime    string  `json:"datetime"`
 	Timestamp   float64 `json:"timestamp"`
 	ElapsedTime float64 `json:"elapsed_time"`
+}
+
+// debugResultPayload is persisted under DebugResultKey, separate from the
+// timeline. Message is the complete END output JSON used by the front-end
+// Export JSON button; DSL is the optional result preview. Keeping the message
+// out of the timeline means the size guard can never truncate export data.
+type debugResultPayload struct {
+	Message string          `json:"message,omitempty"`
+	DSL     json.RawMessage `json:"dsl,omitempty"`
 }
 
 // DebugLogSink implements pipeline.ProgressSink by accumulating component
@@ -234,31 +246,35 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 		elapsed = (endTS - s.lastTS) / 1e6
 	}
 	endMsg := debugRunCompletedMessage
+	hasOutput := false
 	if finalErr != nil {
 		endMsg = "[ERROR] " + finalErr.Error()
 	} else if msg := endOutputMessage(entries, s.runOutput); msg != "" {
-		// Mirror END marker message: a JSON dump of the last
-		// component's output. The front-end
-		// "Export JSON" button JSON.parses this message
-		// (use-download-output.ts findEndOutput), so a plain-text sentinel
-		// would leave the button permanently disabled.
 		endMsg = msg
+		hasOutput = true
 	}
 	s.mu.Unlock()
 
-	// Persist the result DSL separately: it carries business data (parsed
-	// chunks, inline images) that can exceed the timeline budget by orders of
-	// magnitude. Only the DSL moves; the END output message stays in the
-	// timeline so the front-end's completion predicate and Export JSON keep
-	// working without an extra round-trip.
-	if len(resultDSL) > 0 {
-		if payload, ok := buildDebugResultPayload(resultDSL, maxResultBytes); ok {
-			s.store.Set(ctx, DebugResultKey(s.canvasID, s.messageID), string(payload), s.ttl)
+	// The complete END output is persisted separately from the timeline: the
+	// timeline is polled frequently and capped at 1 MiB, while Export JSON must
+	// never receive a truncated document. The timeline only carries a short
+	// completion message; GetAgentLogs restores the full output on read.
+	resultStored := false
+	if hasOutput || len(resultDSL) > 0 {
+		resultMsg := ""
+		if hasOutput {
+			resultMsg = endMsg
 		}
+		if payload, ok := buildDebugResultPayload(resultMsg, resultDSL, maxResultBytes); ok {
+			resultStored = s.store.Set(ctx, DebugResultKey(s.canvasID, s.messageID), string(payload), s.ttl)
+		}
+	}
+	if hasOutput && resultStored {
+		endMsg = debugRunCompletedMessage
 	}
 
 	entries = append(entries, debugLogEntry{
-		ComponentID: "END",
+		ComponentID: debugEndComponentID,
 		Trace: []debugTrace{{
 			Progress:    1.0,
 			Message:     endMsg,
@@ -272,12 +288,16 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 	if err != nil {
 		return
 	}
-	// Hard ceiling: shrink trace detail, never component identity. A
-	// pathological run must not evict operators from the timeline.
+	// Hard ceiling: shrink trace detail, never component identity. Recheck the
+	// encoded size after every reduction so JSON escaping (e.g. '<' -> six
+	// bytes) cannot leave the stored timeline over budget.
 	if len(payload) > maxPayloadBytes {
 		entries = trimTracesToBudget(entries, maxPayloadBytes)
 		if payload, err = json.Marshal(entries); err != nil {
 			return
+		}
+		if len(payload) > maxPayloadBytes {
+			common.Warn("debug log: timeline still exceeds the payload budget after trimming")
 		}
 	}
 	s.store.Set(ctx, DebugLogKey(s.canvasID, s.messageID), string(payload), s.ttl)
@@ -288,33 +308,53 @@ func DebugLogKey(canvasID, messageID string) string {
 	return canvasID + "-" + messageID + "-logs"
 }
 
-// DebugResultKey returns the Redis key holding the run-result DSL for a run.
-// It is separate from the timeline so large business data cannot evict
-// component entries.
+// DebugResultKey returns the Redis key holding the complete END output and the
+// optional result DSL for a run. It is separate from the timeline so large
+// business data cannot evict component entries or be truncated by the timeline
+// size guard.
 func DebugResultKey(canvasID, messageID string) string {
 	return canvasID + "-" + messageID + "-result"
 }
 
-// buildDebugResultPayload applies the result-specific size cap to the DSL.
-// When the full DSL is too large, component outputs are dropped; when even
-// that does not fit, the result preview is omitted. The operator timeline is
-// unaffected either way.
-func buildDebugResultPayload(dsl json.RawMessage, budget int) ([]byte, bool) {
-	if len(dsl) == 0 {
-		return nil, false
+// buildDebugResultPayload serialises the result payload under the result
+// budget. Priority is deliberate:
+//  1. full END output + full DSL;
+//  2. full END output + compact DSL (outputs removed);
+//  3. full END output only — Export JSON must never receive a truncated
+//     document, so the message is preserved even when it alone exceeds the
+//     budget;
+//  4. compact DSL only when there is no END output;
+//  5. omit the result preview.
+func buildDebugResultPayload(message string, dsl json.RawMessage, budget int) ([]byte, bool) {
+	full := debugResultPayload{Message: message, DSL: dsl}
+	if payload, err := json.Marshal(full); err == nil && len(payload) <= budget {
+		return payload, true
 	}
-	if len(dsl) <= budget {
-		return dsl, true
-	}
+
 	compact := compactDebugResultDSL(dsl)
-	if len(compact) == 0 {
-		common.Warn("debug log: result dsl exceeds the size cap; result preview omitted")
-		return nil, false
+	if len(compact) > 0 {
+		if payload, err := json.Marshal(debugResultPayload{Message: message, DSL: compact}); err == nil && len(payload) <= budget {
+			return payload, true
+		}
 	}
-	if len(compact) <= budget {
-		return compact, true
+
+	if message != "" {
+		payload, err := json.Marshal(debugResultPayload{Message: message})
+		if err == nil {
+			if len(payload) > budget {
+				common.Warn("debug log: END output exceeds the result budget; preserving it for export")
+			}
+			return payload, true
+		}
 	}
-	common.Warn("debug log: result dsl exceeds the size cap after compaction; result preview omitted")
+
+	if len(compact) > 0 {
+		if payload, err := json.Marshal(debugResultPayload{DSL: compact}); err == nil && len(payload) <= budget {
+			return payload, true
+		}
+	}
+
+	common.Warn("debug log: result payload exceeds the size cap; result preview omitted")
 	return nil, false
 }
 
@@ -346,23 +386,33 @@ func compactDebugResultDSL(dsl json.RawMessage) json.RawMessage {
 	return out
 }
 
-// MergeDebugResultPayload attaches the DSL stored under DebugResultKey to the
-// END marker of a decoded debug log. It is a no-op when the log lacks an END
-// marker or the payload is empty/corrupt, so old logs that still carry the
-// DSL inline keep working. The handler calls this before returning the log to
-// the front-end, preserving the existing END trace contract (`dsl` on the
-// first END trace entry).
+// MergeDebugResultPayload attaches the separately stored END output and result
+// DSL to the END marker of a decoded debug log. It locates END by component id
+// rather than by position, so the read path does not depend on where a writer
+// placed it. It is a no-op when the log lacks an END marker or the payload is
+// empty/corrupt, so old logs that still carry the DSL inline keep working.
 func MergeDebugResultPayload(logs any, resultPayload string) {
-	if resultPayload == "" || !json.Valid([]byte(resultPayload)) {
+	if resultPayload == "" {
 		return
 	}
-	dsl := json.RawMessage(resultPayload)
+	var result debugResultPayload
+	if err := json.Unmarshal([]byte(resultPayload), &result); err != nil {
+		return
+	}
+	if result.Message == "" && len(result.DSL) == 0 {
+		return
+	}
 
-	mergeIntoEnd := func(last map[string]any) {
-		if last == nil || last["component_id"] != "END" {
-			return
+	entries, ok := logs.([]any)
+	if !ok || len(entries) == 0 {
+		return
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry, _ := entries[i].(map[string]any)
+		if entry == nil || entry["component_id"] != debugEndComponentID {
+			continue
 		}
-		traces, _ := last["trace"].([]any)
+		traces, _ := entry["trace"].([]any)
 		if len(traces) == 0 {
 			return
 		}
@@ -370,14 +420,15 @@ func MergeDebugResultPayload(logs any, resultPayload string) {
 		if first == nil {
 			return
 		}
-		// encoding/json embeds RawMessage verbatim, so the parsed result is
-		// not decoded and re-encoded on every poll.
-		first["dsl"] = dsl
-	}
-
-	if entries, ok := logs.([]any); ok && len(entries) > 0 {
-		last, _ := entries[len(entries)-1].(map[string]any)
-		mergeIntoEnd(last)
+		if result.Message != "" {
+			first["message"] = result.Message
+		}
+		if len(result.DSL) > 0 && json.Valid(result.DSL) {
+			// encoding/json embeds RawMessage verbatim, so the parsed result is
+			// not decoded and re-encoded on every poll.
+			first["dsl"] = result.DSL
+		}
+		return
 	}
 }
 
@@ -408,9 +459,11 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 
 // trimTracesToBudget reduces a timeline over budget without dropping any
 // component entry. The operator list is the log's primary contract, so detail
-// is discarded first: keep only each component's start/terminal trace and
-// shorten the remaining messages. With the component cap (maxLogEntries) this
-// leaves a small payload even for a pathological run.
+// is discarded in stages and the encoded size is rechecked after each stage:
+// keep start/terminal traces, then only the terminal trace, then shrink
+// messages progressively. JSON escaping can make a short rune count expensive
+// (e.g. '<' encodes to six bytes), so the loop must verify the marshaled bytes,
+// not the rune count.
 func trimTracesToBudget(entries []debugLogEntry, budget int) []debugLogEntry {
 	if payloadFits(entries, budget) {
 		return entries
@@ -419,8 +472,26 @@ func trimTracesToBudget(entries []debugLogEntry, budget int) []debugLogEntry {
 		if n := len(entries[i].Trace); n > 2 {
 			entries[i].Trace = []debugTrace{entries[i].Trace[0], entries[i].Trace[n-1]}
 		}
-		for j := range entries[i].Trace {
-			entries[i].Trace[j].Message = utility.TruncateRunes(entries[i].Trace[j].Message, 128)
+	}
+	if payloadFits(entries, budget) {
+		return entries
+	}
+	for i := range entries {
+		if n := len(entries[i].Trace); n > 1 {
+			entries[i].Trace = entries[i].Trace[n-1:]
+		}
+	}
+	if payloadFits(entries, budget) {
+		return entries
+	}
+	for _, limit := range []int{256, 128, 64, 32, 16, 8, 4, 2, 1} {
+		for i := range entries {
+			for j := range entries[i].Trace {
+				entries[i].Trace[j].Message = utility.TruncateRunes(entries[i].Trace[j].Message, limit)
+			}
+		}
+		if payloadFits(entries, budget) {
+			return entries
 		}
 	}
 	return entries

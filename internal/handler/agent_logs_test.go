@@ -336,10 +336,10 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 }
 
 // TestGetAgentLogs_MergesSeparateResultPayload locks the read-side half of the
-// split storage contract: the timeline key holds a small END message and the
-// result key holds the result DSL. GetAgentLogs must merge the DSL back into
-// the END marker so the front-end sees the same shape it always did, while the
-// END output message stays in the timeline for the Export JSON button.
+// split storage contract: the timeline key holds a short completion message
+// and the result key holds the complete END output plus the result DSL.
+// GetAgentLogs must merge both back into the END marker so the front-end sees
+// the original shape.
 func TestGetAgentLogs_MergesSeparateResultPayload(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := t.Context()
@@ -367,12 +367,12 @@ func TestGetAgentLogs_MergesSeparateResultPayload(t *testing.T) {
 		`{"component_id":"File","trace":[{"progress":1,"message":"File Done","datetime":"10:00:00","timestamp":1.0,"elapsed_time":0}]},` +
 		`{"component_id":"END","trace":[{"progress":1,"message":"Debug run completed","datetime":"10:00:01","timestamp":2.0,"elapsed_time":1.0}]}` +
 		`]`
-	resultPayload := `{"components":{"File":{"obj":{"component_name":"File"}}}}`
+	resultPayload := `{"message":"{\"ok\":true}","dsl":{"components":{"File":{"obj":{"component_name":"File"}}}}}`
 	if err = rdb.Set(ctx, task.DebugLogKey("c1", messageID), timeline, 0).Err(); err != nil {
 		t.Fatalf("seed timeline: %v", err)
 	}
 	if err := rdb.Set(ctx, task.DebugResultKey("c1", messageID), resultPayload, 0).Err(); err != nil {
-		t.Fatalf("seed result dsl: %v", err)
+		t.Fatalf("seed result payload: %v", err)
 	}
 
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
@@ -405,8 +405,8 @@ func TestGetAgentLogs_MergesSeparateResultPayload(t *testing.T) {
 		t.Fatalf("END marker missing after merge: %s", string(dataRaw))
 	}
 	trace := arr[len(arr)-1]["trace"].([]interface{})[0].(map[string]interface{})
-	if trace["message"] != "Debug run completed" {
-		t.Errorf("END message=%v must stay in the timeline unchanged", trace["message"])
+	if trace["message"] != `{"ok":true}` {
+		t.Errorf("merged END message=%v want the complete result output", trace["message"])
 	}
 	dsl, ok := trace["dsl"].(map[string]interface{})
 	if !ok {

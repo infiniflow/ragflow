@@ -66,7 +66,7 @@ func clientConsidersComplete(arr []map[string]any) bool {
 		return false
 	}
 	last := arr[len(arr)-1]
-	if last["component_id"] != "END" {
+	if last["component_id"] != debugEndComponentID {
 		return false
 	}
 	trace, ok := last["trace"].([]any)
@@ -79,6 +79,21 @@ func clientConsidersComplete(arr []map[string]any) bool {
 	}
 	msg, _ := first["message"].(string)
 	return strings.TrimSpace(msg) != ""
+}
+
+// endEntry returns the END marker and asserts the writer's convention: END is
+// always the last timeline entry. MergeDebugResultPayload locates END by id,
+// but the front-end completion predicate still requires it last.
+func endEntry(t *testing.T, arr []map[string]any) map[string]any {
+	t.Helper()
+	if len(arr) == 0 {
+		t.Fatalf("timeline is empty")
+	}
+	last := arr[len(arr)-1]
+	if last["component_id"] != debugEndComponentID {
+		t.Fatalf("END marker must be the last entry, got %v", last["component_id"])
+	}
+	return last
 }
 
 func loadArray(t *testing.T, raw string) []map[string]any {
@@ -168,7 +183,7 @@ func TestDebugLogSink_ErrorPrefix(t *testing.T) {
 	}
 
 	// Last element is END with the error surfaced, so the run still completes.
-	lastTrace, _ := arr[len(arr)-1]["trace"].([]any)
+	lastTrace, _ := endEntry(t, arr)["trace"].([]any)
 	lastFirst, _ := lastTrace[0].(map[string]any)
 	if !strings.HasPrefix(lastFirst["message"].(string), "[ERROR] ") {
 		t.Errorf("END message on failure should be prefixed [ERROR] , got %q", lastFirst["message"])
@@ -238,9 +253,7 @@ func TestPipelineExecutor_DebugRunWritesLogViaSink(t *testing.T) {
 		t.Fatalf("expected debug log written to c1-m1-logs")
 	}
 	arr := loadArray(t, raw)
-	if arr[len(arr)-1]["component_id"] != "END" {
-		t.Errorf("last element must be END marker, got %s", raw)
-	}
+	endEntry(t, arr)
 	if !clientConsidersComplete(arr) {
 		t.Errorf("client would not consider run complete: %s", raw)
 	}
@@ -323,9 +336,7 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 	arr := loadArray(t, raw)
 
 	// Completion predicate must hold: END is last with a non-empty message.
-	if arr[len(arr)-1]["component_id"] != "END" {
-		t.Fatalf("last element must be END marker: %s", raw)
-	}
+	endEntry(t, arr)
 	if !clientConsidersComplete(arr) {
 		t.Fatalf("client would not consider run complete: %s", raw)
 	}
@@ -421,17 +432,16 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	}
 	arr := loadArray(t, raw)
 
-	// END must be the last element.
-	if arr[len(arr)-1]["component_id"] != "END" {
-		t.Fatalf("last element must be END marker: %s", raw)
-	}
-	endTrace, _ := arr[len(arr)-1]["trace"].([]any)
+	// END is the last entry; its message is only the completion sentinel
+	// because the full output is stored in the result payload.
+	end := endEntry(t, arr)
+	endTrace, _ := end["trace"].([]any)
 	if len(endTrace) == 0 {
 		t.Fatalf("END trace is empty: %s", raw)
 	}
 	endFirst, _ := endTrace[0].(map[string]any)
-	if msg, _ := endFirst["message"].(string); msg == "" {
-		t.Fatalf("timeline END message must stay non-empty")
+	if msg, _ := endFirst["message"].(string); msg != debugRunCompletedMessage {
+		t.Fatalf("timeline END message=%q want %q", msg, debugRunCompletedMessage)
 	}
 	if _, exists := endFirst["dsl"]; exists {
 		t.Fatalf("timeline END must not carry the result dsl; it belongs to %s", DebugResultKey("c-dsl", "m-dsl"))
@@ -439,11 +449,25 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 
 	resultRaw := store.Get(ctx, DebugResultKey("c-dsl", "m-dsl"))
 	if resultRaw == "" {
-		t.Fatalf("expected result dsl written to %s", DebugResultKey("c-dsl", "m-dsl"))
+		t.Fatalf("expected result payload written to %s", DebugResultKey("c-dsl", "m-dsl"))
+	}
+	var result debugResultPayload
+	if err := json.Unmarshal([]byte(resultRaw), &result); err != nil {
+		t.Fatalf("result payload is not valid JSON: %v body=%s", err, resultRaw)
+	}
+	if result.Message == "" {
+		t.Fatalf("result payload must carry the complete END output message")
+	}
+	var endOutput map[string]any
+	if err := json.Unmarshal([]byte(result.Message), &endOutput); err != nil {
+		t.Fatalf("result message must be the last component's output JSON, got %q", result.Message)
+	}
+	if endOutput["ok"] != true {
+		t.Errorf("result message output=%#v want d's raw output {ok:true}", endOutput)
 	}
 	var dslDoc map[string]any
-	if err := json.Unmarshal([]byte(resultRaw), &dslDoc); err != nil {
-		t.Fatalf("result dsl is not valid JSON: %v body=%s", err, resultRaw)
+	if err := json.Unmarshal(result.DSL, &dslDoc); err != nil {
+		t.Fatalf("result dsl is not valid JSON: %v body=%s", err, result.DSL)
 	}
 	components, ok := dslDoc["components"].(map[string]any)
 	if !ok || len(components) == 0 {
@@ -456,8 +480,8 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 		}
 	}
 
-	// The GET handler merges the DSL back into the END marker, so the
-	// front-end contract (dsl on END trace[0]) stays intact.
+	// The GET handler restores both the full output message and the DSL into
+	// the END marker, so the front-end contract stays intact.
 	var parsed any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		t.Fatalf("stored timeline is not valid JSON: %v", err)
@@ -469,6 +493,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	mergedFirst, _ := mergedTraces[0].(map[string]any)
 	if _, exists := mergedFirst["dsl"]; !exists {
 		t.Fatalf("merged END must carry the result dsl")
+	}
+	if msg, _ := mergedFirst["message"].(string); msg != result.Message {
+		t.Fatalf("merged END message=%q want the complete result message", msg)
 	}
 }
 
@@ -530,16 +557,18 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Fatalf("expected debug log written")
 	}
 	arr := loadArray(t, raw)
-	if arr[len(arr)-1]["component_id"] != "END" {
-		t.Fatalf("last element must be END marker: %s", raw)
-	}
+	endEntry(t, arr)
 
 	resultRaw := store.Get(ctx, DebugResultKey("c-chunk", "m-chunk"))
 	if resultRaw == "" {
-		t.Fatalf("expected result dsl written")
+		t.Fatalf("expected result payload written")
+	}
+	var result debugResultPayload
+	if err := json.Unmarshal([]byte(resultRaw), &result); err != nil {
+		t.Fatalf("result payload is not valid JSON: %v body=%s", err, resultRaw)
 	}
 	var dslDoc map[string]any
-	if err := json.Unmarshal([]byte(resultRaw), &dslDoc); err != nil {
+	if err := json.Unmarshal(result.DSL, &dslDoc); err != nil {
 		t.Fatalf("result dsl not valid JSON: %v", err)
 	}
 	components, _ := dslDoc["components"].(map[string]any)
@@ -584,20 +613,24 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Errorf("d outputs._elapsed_time must be carried: %#v", dOutputs)
 	}
 
-	// The END marker MESSAGE stays in the timeline and must be the JSON dump
-	// of the LAST component's ("d") raw output — the contract the front-end
-	// "Export JSON" button relies on (use-download-output.ts findEndOutput
-	// JSON.parses it). A plain-text sentinel leaves the button permanently
-	// disabled.
-	endTrace, _ := arr[len(arr)-1]["trace"].([]any)
-	endFirst, _ := endTrace[0].(map[string]any)
-	endMsg, _ := endFirst["message"].(string)
+	// The complete END output is stored in the result payload (not the
+	// timeline) and must be the JSON dump of the LAST component's ("d") raw
+	// output — the contract the front-end "Export JSON" button relies on
+	// (use-download-output.ts findEndOutput JSON.parses it).
 	var endOutput map[string]any
-	if err := json.Unmarshal([]byte(endMsg), &endOutput); err != nil {
-		t.Fatalf("END message must be the last component's output JSON, got %q", endMsg)
+	if err := json.Unmarshal([]byte(result.Message), &endOutput); err != nil {
+		t.Fatalf("result message must be the last component's output JSON, got %q", result.Message)
 	}
 	if endOutput["ok"] != true {
-		t.Errorf("END message output=%#v want d's raw output {ok:true}", endOutput)
+		t.Errorf("result message output=%#v want d's raw output {ok:true}", endOutput)
+	}
+
+	// The timeline carries only the completion sentinel; the full message is
+	// restored by GetAgentLogs.
+	endTrace, _ := endEntry(t, arr)["trace"].([]any)
+	endFirst, _ := endTrace[0].(map[string]any)
+	if msg, _ := endFirst["message"].(string); msg != debugRunCompletedMessage {
+		t.Errorf("timeline END message=%q want %q", msg, debugRunCompletedMessage)
 	}
 }
 
@@ -618,9 +651,12 @@ func TestDebugLogSink_EndMessageFallsBackWithoutRunOutput(t *testing.T) {
 	})
 	sink.Flush(ctx, nil)
 	arr := loadArray(t, store.Get(ctx, "c-nores-m-nores-logs"))
-	endFirst, _ := arr[len(arr)-1]["trace"].([]any)[0].(map[string]any)
-	if msg, _ := endFirst["message"].(string); msg != "Debug run completed" {
-		t.Errorf("END message without run output=%q want %q", msg, "Debug run completed")
+	endFirst, _ := endEntry(t, arr)["trace"].([]any)[0].(map[string]any)
+	if msg, _ := endFirst["message"].(string); msg != debugRunCompletedMessage {
+		t.Errorf("END message without run output=%q want %q", msg, debugRunCompletedMessage)
+	}
+	if raw := store.Get(ctx, DebugResultKey("c-nores", "m-nores")); raw != "" {
+		t.Errorf("result payload must not be written without output: %s", raw)
 	}
 
 	// Case 2: run output IS available but the run failed -> error wins.
@@ -633,10 +669,21 @@ func TestDebugLogSink_EndMessageFallsBackWithoutRunOutput(t *testing.T) {
 		map[string]any{"state": map[string]any{"A": map[string]any{"ok": true}}})
 	sink2.Flush(ctx, errors.New("boom"))
 	arr2 := loadArray(t, store2.Get(ctx, "c-fail-m-fail-logs"))
-	endFirst2, _ := arr2[len(arr2)-1]["trace"].([]any)[0].(map[string]any)
+	endFirst2, _ := endEntry(t, arr2)["trace"].([]any)[0].(map[string]any)
 	msg2, _ := endFirst2["message"].(string)
 	if !strings.HasPrefix(msg2, "[ERROR] ") {
 		t.Errorf("END message on failure must stay [ERROR]-prefixed, got %q", msg2)
+	}
+	// The result payload may still carry the DSL, but must not carry an output
+	// message that would overwrite the error on read.
+	var result debugResultPayload
+	if raw := store2.Get(ctx, DebugResultKey("c-fail", "m-fail")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &result); err != nil {
+			t.Fatalf("result payload not valid JSON: %v", err)
+		}
+		if result.Message != "" {
+			t.Errorf("failed run result message=%q want empty", result.Message)
+		}
 	}
 }
 
@@ -764,7 +811,7 @@ func TestDebugLogSink_RespectsCaps(t *testing.T) {
 	// Flush always appends the terminal END marker, so count only real components.
 	var compCountA int
 	for _, el := range arrA {
-		if el["component_id"] == "END" {
+		if el["component_id"] == debugEndComponentID {
 			continue
 		}
 		compCountA++
@@ -862,26 +909,165 @@ func TestDebugLogSink_PayloadHardCap(t *testing.T) {
 	}
 }
 
-// TestBuildDebugResultPayloadCompactsOversizedDSL covers both cap branches:
-// the compact DSL (without outputs) is returned when it fits, and the result is
-// omitted when even the compact form cannot fit.
+// TestDebugLogSink_PayloadHardCapEscapedMessages reproduces the review finding
+// that a 128-rune message can still be expensive: json.Marshal encodes '<' as
+// six bytes, so 1000 components x 2 traces x 128 '<' is >1 MiB before trim.
+// The trimmer must recheck the encoded payload after reducing trace detail and
+// keep every component identity.
+func TestDebugLogSink_PayloadHardCapEscapedMessages(t *testing.T) {
+	store := &capturedStore{}
+	sink := NewDebugLogSink("c1", "m-escaped", store)
+	ctx := t.Context()
+	message := strings.Repeat("<", 128)
+
+	for i := 0; i < maxLogEntries; i++ {
+		comp := fmt.Sprintf("Comp-%d", i)
+		for j := 0; j < 2; j++ {
+			sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+				Component: comp,
+				Message:   message,
+				Phase:     phaseExit,
+			})
+		}
+	}
+	sink.Flush(ctx, nil)
+
+	raw := store.Get(ctx, DebugLogKey("c1", "m-escaped"))
+	if raw == "" {
+		t.Fatalf("expected debug log written")
+	}
+	if len(raw) > maxPayloadBytes {
+		t.Fatalf("stored payload bytes=%d want <= %d", len(raw), maxPayloadBytes)
+	}
+	arr := loadArray(t, raw)
+	endEntry(t, arr)
+	if !clientConsidersComplete(arr) {
+		t.Errorf("hard-capped log must still satisfy completion predicate")
+	}
+	seen := make(map[string]bool, len(arr))
+	for _, el := range arr {
+		id, _ := el["component_id"].(string)
+		seen[id] = true
+	}
+	for i := 0; i < maxLogEntries; i++ {
+		if id := fmt.Sprintf("Comp-%d", i); !seen[id] {
+			t.Fatalf("component %q dropped by escaped-message trimming", id)
+		}
+	}
+}
+
+// TestDebugLogSink_EndOutputSurvivesTimelineTrim guards the Export JSON
+// regression: a 2 MiB END output must leave the 1 MiB timeline and still be
+// restored in full by the read path.
+func TestDebugLogSink_EndOutputSurvivesTimelineTrim(t *testing.T) {
+	store := &capturedStore{}
+	sink := NewDebugLogSink("c-end", "m-end", store)
+	ctx := t.Context()
+
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		Component: "Tokenizer", Message: "Tokenizer Done", Phase: phaseExit,
+	})
+	big := strings.Repeat("x", 2<<20)
+	sink.SetResult(map[string]any{"components": map[string]any{}},
+		map[string]any{"state": map[string]any{"Tokenizer": map[string]any{"text": big}}})
+	sink.Flush(ctx, nil)
+
+	timelineRaw := store.Get(ctx, DebugLogKey("c-end", "m-end"))
+	if timelineRaw == "" {
+		t.Fatalf("expected timeline written")
+	}
+	if len(timelineRaw) > maxPayloadBytes {
+		t.Fatalf("timeline bytes=%d want <= %d", len(timelineRaw), maxPayloadBytes)
+	}
+	arr := loadArray(t, timelineRaw)
+	end := endEntry(t, arr)
+	endTrace, _ := end["trace"].([]any)
+	endFirst, _ := endTrace[0].(map[string]any)
+	if msg, _ := endFirst["message"].(string); msg != debugRunCompletedMessage {
+		t.Fatalf("timeline END message=%q want the completion sentinel", msg)
+	}
+
+	resultRaw := store.Get(ctx, DebugResultKey("c-end", "m-end"))
+	if resultRaw == "" {
+		t.Fatalf("expected result payload written")
+	}
+	var result debugResultPayload
+	if err := json.Unmarshal([]byte(resultRaw), &result); err != nil {
+		t.Fatalf("result payload not valid JSON: %v", err)
+	}
+	if !strings.Contains(result.Message, big) {
+		t.Fatalf("END output was truncated in the result payload")
+	}
+
+	var parsed any
+	if err := json.Unmarshal([]byte(timelineRaw), &parsed); err != nil {
+		t.Fatalf("timeline not valid JSON: %v", err)
+	}
+	MergeDebugResultPayload(parsed, resultRaw)
+	entries, _ := parsed.([]any)
+	lastEntry, _ := entries[len(entries)-1].(map[string]any)
+	mergedTraces, _ := lastEntry["trace"].([]any)
+	mergedFirst, _ := mergedTraces[0].(map[string]any)
+	msg, _ := mergedFirst["message"].(string)
+	if msg != result.Message {
+		t.Fatalf("merged END message was not restored in full")
+	}
+	var output map[string]any
+	if err := json.Unmarshal([]byte(msg), &output); err != nil {
+		t.Fatalf("restored END message is not valid JSON: %v", err)
+	}
+	if output["text"] != big {
+		t.Fatalf("restored END output does not match the original")
+	}
+}
+
+// TestBuildDebugResultPayloadCompactsOversizedDSL covers the compact-DSL
+// branch: when the full DSL is too large, component outputs are dropped, and
+// the compact form is stored if it fits. It also covers omitting the preview
+// when even the compact form cannot fit.
 func TestBuildDebugResultPayloadCompactsOversizedDSL(t *testing.T) {
 	raw := json.RawMessage(`{"components":{"Parser":{"obj":{"params":{"setups":{"pdf":{}},"outputs":{"json":{"value":"` + strings.Repeat("x", 512) + `"}}}}}}}`)
-	compacted, ok := buildDebugResultPayload(raw, len(raw)-1)
+	payload, ok := buildDebugResultPayload("", raw, len(raw)-1)
 	if !ok {
 		t.Fatalf("compacted result should fit its budget")
 	}
-	if strings.Contains(string(compacted), `"outputs"`) {
-		t.Errorf("compacted result must drop outputs: %s", compacted)
+	var result debugResultPayload
+	if err := json.Unmarshal(payload, &result); err != nil {
+		t.Fatalf("result payload not valid JSON: %v", err)
 	}
-	if !json.Valid(compacted) {
-		t.Errorf("compacted result is not valid JSON: %s", compacted)
+	if strings.Contains(string(result.DSL), `"outputs"`) {
+		t.Errorf("compacted result must drop outputs: %s", result.DSL)
 	}
-	if !strings.Contains(string(compacted), `"setups"`) {
-		t.Errorf("compacted result must keep static params: %s", compacted)
+	if !json.Valid(result.DSL) {
+		t.Errorf("compacted result dsl is not valid JSON: %s", result.DSL)
 	}
-	if _, ok := buildDebugResultPayload(raw, 1); ok {
+	if !strings.Contains(string(result.DSL), `"setups"`) {
+		t.Errorf("compacted result must keep static params: %s", result.DSL)
+	}
+	if _, ok := buildDebugResultPayload("", raw, 1); ok {
 		t.Errorf("result must be omitted when even the compact form exceeds the budget")
+	}
+}
+
+// TestBuildDebugResultPayloadPreservesLargeEndMessage pins the Export JSON
+// contract: the END output message is stored in full even when the result
+// budget cannot also hold the preview DSL.
+func TestBuildDebugResultPayloadPreservesLargeEndMessage(t *testing.T) {
+	big := `{"text":"` + strings.Repeat("x", 2<<20) + `"}`
+	dsl := json.RawMessage(`{"components":{"Parser":{"obj":{"params":{"outputs":{"json":{"value":"` + strings.Repeat("y", 1024) + `"}}}}}}}`)
+	payload, ok := buildDebugResultPayload(big, dsl, 1024)
+	if !ok {
+		t.Fatalf("result payload must be written to preserve the END output")
+	}
+	var result debugResultPayload
+	if err := json.Unmarshal(payload, &result); err != nil {
+		t.Fatalf("result payload not valid JSON: %v", err)
+	}
+	if result.Message != big {
+		t.Fatalf("END output was truncated: got %d bytes want %d", len(result.Message), len(big))
+	}
+	if len(result.DSL) != 0 {
+		t.Errorf("preview DSL must yield to the END output budget, got %d bytes", len(result.DSL))
 	}
 }
 
@@ -944,21 +1130,20 @@ func TestDebugLogSink_LargeResultDoesNotDropComponents(t *testing.T) {
 			t.Fatalf("component %q dropped from timeline; raw=%s", comp, raw)
 		}
 	}
-	if !seen["END"] {
-		t.Fatalf("END marker missing from timeline")
-	}
+	endEntry(t, arr)
 
 	resultRaw := store.Get(ctx, DebugResultKey("c-big", "m-big"))
 	if resultRaw == "" {
-		t.Fatalf("result dsl not written to %s", DebugResultKey("c-big", "m-big"))
+		t.Fatalf("result payload not written to %s", DebugResultKey("c-big", "m-big"))
 	}
 	if len(resultRaw) > maxResultBytes {
-		t.Fatalf("result dsl bytes=%d want <= %d", len(resultRaw), maxResultBytes)
+		t.Fatalf("result payload bytes=%d want <= %d", len(resultRaw), maxResultBytes)
 	}
-	if !json.Valid([]byte(resultRaw)) {
-		t.Fatalf("result dsl is not valid JSON")
+	var result debugResultPayload
+	if err := json.Unmarshal([]byte(resultRaw), &result); err != nil {
+		t.Fatalf("result payload not valid JSON: %v", err)
 	}
-	if !strings.Contains(resultRaw, "data:image/png;base64,") {
-		t.Errorf("result dsl lost the inline image output")
+	if !strings.Contains(string(result.DSL), "data:image/png;base64,") {
+		t.Errorf("result payload lost the inline image output")
 	}
 }
