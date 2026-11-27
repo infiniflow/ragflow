@@ -137,6 +137,7 @@ export enum LLMFactory {
   Morse = 'Morse',
   TeamoRouter = 'TeamoRouter',
   Straitly = 'Straitly',
+  Sarvam = 'Sarvam',
 }
 
 // Please lowercase the file name
@@ -255,6 +256,7 @@ export const IconMap = {
   [LLMFactory.Morse]: 'morse',
   [LLMFactory.TeamoRouter]: 'teamorouter',
   [LLMFactory.Straitly]: 'straitly',
+  [LLMFactory.Sarvam]: 'sarvam',
 };
 
 /**
@@ -322,6 +324,7 @@ export const APIMapUrl = {
   [LLMFactory.Morse]: 'https://console.trymorse.ai',
   [LLMFactory.TeamoRouter]: 'https://teamorouter.com/dashboard?tab=api-keys',
   [LLMFactory.Straitly]: 'https://straitly.ai/app/keys',
+  [LLMFactory.Sarvam]: 'https://dashboard.sarvam.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
