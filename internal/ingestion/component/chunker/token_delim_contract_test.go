@@ -1,10 +1,96 @@
 package chunker
 
 import (
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestTokenChunkerCustomDelimiterMetadata(t *testing.T) {
+	refA := &entity.MediaRef{Format: "html", Kind: entity.MediaKindKV, SHA256: strings.Repeat("a", 64)}
+	refB := &entity.MediaRef{Format: "html", Kind: entity.MediaKindKV, SHA256: strings.Repeat("b", 64)}
+	for _, tt := range []struct {
+		name   string
+		first  schema.ChunkDoc
+		second schema.ChunkDoc
+		want   []schema.ChunkDoc
+	}{
+		{
+			name:  "different parents",
+			first: schema.ChunkDoc{Mom: "parent-A"}, second: schema.ChunkDoc{Mom: "parent-B"},
+			want: []schema.ChunkDoc{{Text: "A", Mom: "parent-A"}, {Text: "B", Mom: "parent-B"}},
+		},
+		{
+			name:   "missing parent",
+			second: schema.ChunkDoc{Mom: "parent-B"},
+			want:   []schema.ChunkDoc{{Text: "A\nB", Mom: "parent-B"}},
+		},
+		{
+			name:  "same parent",
+			first: schema.ChunkDoc{Mom: "parent-A"}, second: schema.ChunkDoc{Mom: "parent-A"},
+			want: []schema.ChunkDoc{{Text: "A\nB", Mom: "parent-A"}},
+		},
+		{
+			name:  "different image IDs",
+			first: schema.ChunkDoc{ImgID: "image-A"}, second: schema.ChunkDoc{ImgID: "image-B"},
+			want: []schema.ChunkDoc{{Text: "A", ImgID: "image-A"}, {Text: "B", ImgID: "image-B"}},
+		},
+		{
+			name:   "missing image ID",
+			second: schema.ChunkDoc{ImgID: "image-B"},
+			want:   []schema.ChunkDoc{{Text: "A\nB", ImgID: "image-B"}},
+		},
+		{
+			name:  "different images",
+			first: schema.ChunkDoc{Image: "image-A"}, second: schema.ChunkDoc{Image: "image-B"},
+			want: []schema.ChunkDoc{{Text: "A", Image: "image-A"}, {Text: "B", Image: "image-B"}},
+		},
+		{
+			name:   "missing image",
+			second: schema.ChunkDoc{Image: "image-B"},
+			want:   []schema.ChunkDoc{{Text: "A\nB", Image: "image-B"}},
+		},
+		{
+			name:  "different media references",
+			first: schema.ChunkDoc{MediaRef: refA}, second: schema.ChunkDoc{MediaRef: refB},
+			want: []schema.ChunkDoc{{Text: "A", MediaRef: refA}, {Text: "B", MediaRef: refB}},
+		},
+		{
+			name:   "missing media reference",
+			second: schema.ChunkDoc{MediaRef: refB},
+			want:   []schema.ChunkDoc{{Text: "A\nB", MediaRef: refB}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := NewTokenChunker(map[string]any{"delimiters": []string{"`#`"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.first.Text, tt.second.Text = "A", "B"
+			out, err := c.Invoke(t.Context(), nil, map[string]any{
+				"name":          "doc.txt",
+				"output_format": "chunks",
+				"chunks":        []schema.ChunkDoc{tt.first, tt.second},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			chunks, ok, err := schema.ChunkDocsFromAny(out["chunks"])
+			if err != nil || !ok {
+				t.Fatalf("chunks: %v, %v", out["chunks"], err)
+			}
+			for i := range chunks {
+				chunks[i].DocType = ""
+				chunks[i].TKNums = nil
+			}
+			if !reflect.DeepEqual(chunks, tt.want) {
+				t.Fatalf("chunks = %#v, want %#v", chunks, tt.want)
+			}
+		})
+	}
+}
 
 // TestTokenChunker_BareDelimiterHonored locks the #17723 fix: a bare
 // (non-backtick) delimiter entry is now honored by TokenChunker. The payload

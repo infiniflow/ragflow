@@ -823,10 +823,14 @@ func mergeCustomDelimiterItems(items []schema.ChunkDoc, perItem [][]schema.Chunk
 func mergeChunkMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) bool {
 	// Conflicting scalar metadata needs separate chunks to remain representable.
 	if (dst.PageNumber != nil && src.PageNumber != nil && *dst.PageNumber != *src.PageNumber) ||
-		(dst.SheetIndex != nil && src.SheetIndex != nil && *dst.SheetIndex != *src.SheetIndex) {
+		(dst.SheetIndex != nil && src.SheetIndex != nil && *dst.SheetIndex != *src.SheetIndex) ||
+		(dst.MediaRef != nil && src.MediaRef != nil && *dst.MediaRef != *src.MediaRef) {
 		return false
 	}
-	for _, pair := range [][2]string{{dst.Layout, src.Layout}, {dst.LayoutType, src.LayoutType}, {dst.LayoutNo, src.LayoutNo}, {dst.Sheet, src.Sheet}} {
+	for _, pair := range [][2]string{
+		{dst.Layout, src.Layout}, {dst.LayoutType, src.LayoutType}, {dst.LayoutNo, src.LayoutNo},
+		{dst.Sheet, src.Sheet}, {dst.Mom, src.Mom}, {dst.ImgID, src.ImgID}, {dst.Image, src.Image},
+	} {
 		if pair[0] != "" && pair[1] != "" && pair[0] != pair[1] {
 			return false
 		}
@@ -836,32 +840,15 @@ func mergeChunkMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) bool {
 			return false
 		}
 	}
-	if dst.Layout == "" {
-		dst.Layout = src.Layout
-	}
-	if dst.LayoutType == "" {
-		dst.LayoutType = src.LayoutType
-	}
-	if dst.LayoutNo == "" {
-		dst.LayoutNo = src.LayoutNo
-	}
-	if dst.PageNumber == nil {
-		dst.PageNumber = src.PageNumber
+	mergeGeneralMetadata(dst, src)
+	if dst.Mom == "" {
+		dst.Mom = src.Mom
 	}
 	if dst.Sheet == "" {
 		dst.Sheet = src.Sheet
 	}
 	if dst.SheetIndex == nil {
 		dst.SheetIndex = src.SheetIndex
-	}
-	if dst.Extra == nil {
-		dst.Extra = cloneExtra(src.Extra)
-	} else {
-		for key, value := range src.Extra {
-			if _, exists := dst.Extra[key]; !exists {
-				dst.Extra[key] = value
-			}
-		}
 	}
 	return true
 }
