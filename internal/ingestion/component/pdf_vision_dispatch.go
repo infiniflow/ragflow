@@ -515,7 +515,7 @@ func defaultIsUnlimitedOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenant
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false
 	}
-	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 	return err == nil && isUnlimitedOCRDriver(resolved.driver)
 }
 
