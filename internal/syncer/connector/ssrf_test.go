@@ -195,6 +195,105 @@ func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 	}
 }
 
+func TestConnectorRequestHeaderTimeoutLeavesTheBodyToTheCaller(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(150 * time.Millisecond)
+		_, _ = io.WriteString(w, "slow body")
+	}))
+	defer server.Close()
+
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        server.URL,
+		HeaderTimeout: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "slow body" {
+		t.Fatalf("body = %q, want %q", string(body), "slow body")
+	}
+}
+
+func TestConnectorRequestBoundsTheResponseHeaderWait(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer server.Close()
+
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        server.URL,
+		HeaderTimeout: 50 * time.Millisecond,
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("connectorRequest succeeded despite a response header wait past the header timeout")
+	}
+}
+
+func TestConnectorRequestAppliesHeaderTimeoutToAClonedTransport(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer server.Close()
+
+	// A connector with custom TLS/CA settings supplies its own transport, the
+	// path taken when ca_cert_path is configured.
+	base := &http.Client{Transport: &http.Transport{}}
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        server.URL,
+		HeaderTimeout: 50 * time.Millisecond,
+		Base:          base,
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("connectorRequest succeeded despite a response header wait past the header timeout on a cloned transport")
+	}
+}
+
+func TestConnectorRequestKeepsAShorterClonedHeaderTimeout(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer server.Close()
+
+	base := &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 20 * time.Millisecond}}
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        server.URL,
+		HeaderTimeout: time.Second,
+		Base:          base,
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("connectorRequest widened the base transport's shorter response header timeout")
+	}
+}
+
 func TestConnectorRequestUsesProxyWithPinnedHTTPTarget(t *testing.T) {
 	withConnectorLoopbackTestHook(t)
 
