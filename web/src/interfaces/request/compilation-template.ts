@@ -23,6 +23,7 @@ export interface ICompilationTemplateConfigRequest {
   kind?: string;
   llm_id?: string;
   mode?: 'entity' | 'topic';
+  configured_entity_pages_only?: boolean;
   entity?: ICompilationTemplateSectionRequest;
   relation?: ICompilationTemplateSectionRequest;
   raptor?: ICompilationTemplateRaptorConfigRequest;

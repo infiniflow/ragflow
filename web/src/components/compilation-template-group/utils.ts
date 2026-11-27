@@ -51,6 +51,7 @@ export const isConfigMetaKey = (key: string) =>
     'synthesis',
     'use_blueprint',
     'mode',
+    'configured_entity_pages_only',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -108,6 +109,9 @@ export const buildConfigFromBuiltin = (
       typeof builtinTemplate.config?.mode === 'string'
         ? builtinTemplate.config.mode
         : '',
+    ...(builtinTemplate.config?.configured_entity_pages_only && {
+      configured_entity_pages_only: true,
+    }),
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -177,6 +181,9 @@ export const transformDetailToForm = (
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && hasBlueprintContent,
     mode: typeof config.mode === 'string' ? config.mode : '',
+    ...(config.configured_entity_pages_only && {
+      configured_entity_pages_only: true,
+    }),
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
@@ -255,6 +262,16 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
 
   Object.entries(template.config).forEach(([key, value]) => {
     if (key === 'kind') return;
+    if (key === 'configured_entity_pages_only') {
+      if (
+        template.kind === CompilationTemplateKind.Artifacts &&
+        template.config.mode === 'entity' &&
+        value === true
+      ) {
+        config.configured_entity_pages_only = true;
+      }
+      return;
+    }
     if (key === 'example' || key === 'instruction') return;
     if (key === 'synthesis') {
       config[key] = value as ICompilationTemplateConfigRequest[string];

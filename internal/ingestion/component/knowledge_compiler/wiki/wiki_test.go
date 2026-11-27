@@ -98,6 +98,58 @@ func TestRunPlan_EntityModeBuildsPagesFromReducedExtract(t *testing.T) {
 	}
 }
 
+func TestEntityModePagesForConfiguredTypesOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		typeName string
+		want     []string
+	}{
+		{"matching type", " Brand ", []string{"entity/brand/alpha", "entity/brand/beta"}},
+		{"no matching type", "supplier", nil},
+		{"empty specification", "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &wikiPipeline{
+				ctx: t.Context(),
+				param: common.Param{TemplateConfig: map[string]any{
+					"configured_entity_pages_only": true,
+					"entity":                       map[string]any{"fields": []any{map[string]any{"type": tc.typeName}}},
+				}},
+				reduced: wikiExtract{
+					Entities:  []wikiEntity{{Name: "Alpha", Type: "brand"}, {Name: "Depot", Type: "other"}, {Name: "Beta", Type: "brand"}},
+					Concepts:  []wikiConcept{{Term: "Returns"}},
+					Relations: []wikiRelation{{From: "Alpha", To: "Beta"}, {From: "Alpha", To: "Depot"}},
+					Claims:    []wikiClaim{{Subject: "Alpha", Statement: "Alpha accepts returns"}},
+				},
+			}
+			plan, err := p.runPlan()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var slugs []string
+			for _, page := range plan.Pages {
+				slugs = append(slugs, page.Slug)
+			}
+			if !slices.Equal(slugs, tc.want) {
+				t.Fatalf("pages = %v, want %v", slugs, tc.want)
+			}
+			if len(plan.Pages) > 0 {
+				if got := plan.Pages[0].RelatedKB; !slices.Equal(got, []string{"entity/brand/beta"}) {
+					t.Errorf("related pages = %v", got)
+				}
+			} else {
+				p.plan = plan
+				if pages, err := p.runRefine(); err != nil || len(pages) != 0 {
+					t.Errorf("REFINE after an empty plan: %d pages, err = %v", len(pages), err)
+				}
+			}
+			if len(p.reduced.Entities) != 3 || len(p.reduced.Concepts) != 1 || len(p.reduced.Claims) != 1 {
+				t.Error("page selection changed the extracted evidence")
+			}
+		})
+	}
+}
+
 func TestParseWikiExtractNormalizesTopicPathAndProvenance(t *testing.T) {
 	extract := parseWikiExtract(map[string]any{
 		"topics": []any{map[string]any{
