@@ -242,8 +242,8 @@ func diffWikiDocumentContribution(previous, current wikiDocumentContribution) (m
 			continue
 		}
 		affectedKeys[key] = struct{}{}
-		if page.Slug != "" {
-			affectedSlugs[page.Slug] = struct{}{}
+		if slug := wikiPageStorageSlug(page.PageType, page.Slug); slug != "" {
+			affectedSlugs[slug] = struct{}{}
 		}
 	}
 	for key, page := range previousByKey {
@@ -251,8 +251,8 @@ func diffWikiDocumentContribution(previous, current wikiDocumentContribution) (m
 			continue
 		}
 		affectedKeys[key] = struct{}{}
-		if page.Slug != "" {
-			affectedSlugs[page.Slug] = struct{}{}
+		if slug := wikiPageStorageSlug(page.PageType, page.Slug); slug != "" {
+			affectedSlugs[slug] = struct{}{}
 		}
 	}
 	return affectedKeys, affectedSlugs
