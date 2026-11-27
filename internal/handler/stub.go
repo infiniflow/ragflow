@@ -35,6 +35,8 @@ func filterSearchResponse(*gin.Context, *[]map[string]interface{}, *[]map[string
 
 func filterDifyRecords(context.Context, []difyRecord) error { return nil }
 
+func filterChunkResponse(_ context.Context, data any) (any, error) { return data, nil }
+
 // billingQuotaUser resolves the caller that the plan quota applies to.
 func billingQuotaUser(c *gin.Context) (*entity.User, common.ErrorCode, error) {
 	user, code, message := GetUser(c)
