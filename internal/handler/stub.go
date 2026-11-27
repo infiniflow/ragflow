@@ -29,6 +29,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func filterSearchResponse(*gin.Context, *[]map[string]interface{}, *[]map[string]interface{}) bool {
+	return true
+}
+
+func filterDifyRecords(context.Context, []difyRecord) error { return nil }
+
 // billingQuotaUser resolves the caller that the plan quota applies to.
 func billingQuotaUser(c *gin.Context) (*entity.User, common.ErrorCode, error) {
 	user, code, message := GetUser(c)
