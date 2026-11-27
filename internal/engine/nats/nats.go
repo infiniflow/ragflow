@@ -312,9 +312,10 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 // ensureConsumers creates or updates one durable consumer per tier stream and
 // stores every handle (high/medium/low in EE, one in OSS). It is idempotent, so
 // it doubles as the repair path when a stored handle is found to have outlived
-// its consumer. Consumer names
-// are fixed and durable: a restart must reattach to the same consumers (and
-// their pending messages) instead of leaving orphans behind.
+// its consumer. Consumer names are fixed and the consumers are durable on
+// purpose: a restart must reattach to the same consumers, with their pending
+// messages and delivery counts, instead of fresh ones that redeliver every
+// poison message up to MaxDeliver again.
 func (n *NatsEngine) ensureConsumers(ctx context.Context) error {
 	consumers := make(map[common.Tier]jetstream.Consumer, len(tierOrder))
 	for _, tier := range tierOrder {
@@ -340,6 +341,9 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jets
 		return nil, fmt.Errorf("NATS stream for tier %s is nil, engine not properly initialized", tier)
 	}
 	spec := tierStreams[tier]
+	if err := deleteEphemeralConsumer(ctx, stream, spec.consumerName); err != nil {
+		return nil, err
+	}
 
 	// Explicit redelivery schedule: BackOff paces successive redeliveries
 	// (5s/15s/30s, then 60s repeated) so an unsettled message (crash, slow
@@ -350,8 +354,9 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jets
 	// an existing consumer whose MaxWaiting differs.
 	consumerCfg := jetstream.ConsumerConfig{
 		Name:          spec.consumerName,
+		Durable:       spec.consumerName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    16,
+		MaxDeliver:    common.TaskMaxDeliver,
 		MaxAckPending: 1024 * 128,
 		AckWait:       60 * time.Second,
 		BackOff:       []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second},
@@ -377,6 +382,32 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jets
 		}
 	}
 	return consumer, nil
+}
+
+// deleteEphemeralConsumer deletes a lane consumer that the server treats as
+// ephemeral (created without Durable). The server reaps such a consumer after
+// 5s without a pull, and an update cannot make it durable: the update is
+// accepted but the inactivity threshold stays. The WorkQueue stream keeps
+// every unacknowledged message, so the durable consumer created next delivers
+// them again.
+func deleteEphemeralConsumer(ctx context.Context, stream jetstream.Stream, name string) error {
+	existing, err := stream.Consumer(ctx, name)
+	if errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect consumer %s: %w", name, err)
+	}
+	cfg := existing.CachedInfo().Config
+	if cfg.Durable != "" && cfg.InactiveThreshold == 0 {
+		return nil
+	}
+	common.Warn(fmt.Sprintf("NATS consumer %s is ephemeral (inactive threshold %s); replacing it with a durable consumer",
+		name, cfg.InactiveThreshold))
+	if err := stream.DeleteConsumer(ctx, name); err != nil && !errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return fmt.Errorf("failed to delete ephemeral consumer %s: %w", name, err)
+	}
+	return nil
 }
 
 // consumerHandle returns one lane's consumer handle, or an error when the
@@ -706,4 +737,12 @@ func (m *NatsMessageHandle) Nack() error {
 
 func (m *NatsMessageHandle) InProgress() error {
 	return m.message.InProgress()
+}
+
+func (m *NatsMessageHandle) NumDelivered() uint64 {
+	meta, err := m.message.Metadata()
+	if err != nil {
+		return 0
+	}
+	return meta.NumDelivered
 }
