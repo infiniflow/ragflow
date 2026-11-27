@@ -75,13 +75,6 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	irJSON, irChanged := p.wordOptions.prepareIR(irJSON, nil)
-	var text string
-	if !irChanged {
-		text, _, err = extractDocText(irJSON, mdText, plainText)
-		if err != nil {
-			return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
-		}
-	}
 
 	// Prefer the structured IR, which office_oxide recovers table
 	// (and list) structure for. Emitting structured sections lets the chunker
@@ -96,18 +89,13 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 		}
 		// Once the structured IR changes, use it as the only text source.
-		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 || irChanged {
-			if sink != nil && sink.err != nil {
-				return ParseResult{Err: sink.err}
-			}
-			if p.RemoveHeaderFooter {
-				// extractDOCXHeaderFooterTexts operates best-effort: for DOCX files
-				// misnamed with a .doc extension it extracts header/footer XML parts.
-				// For native OLE2 .doc binaries without a ZIP structure, it returns
-				// an empty map and preserves sections safely.
-				hfTexts := extractDOCXHeaderFooterTexts(data)
-				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
-			}
+		// If RemoveHeaderFooter dropped the only sections in the IR, keep the
+		// structured path rather than falling back to flattened plain text.
+		sections := buildDOCXJSONSectionsCore(irJSON, sink, !p.RemoveHeaderFooter)
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
+		if len(sections) > 0 || irChanged || (p.RemoveHeaderFooter && len(buildDOCXJSONSectionsCore(irJSON, nil, true)) > 0) {
 			if p.RemoveTOC {
 				outlines := extractDOCXOutlines(irJSON)
 				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
@@ -121,8 +109,13 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 				Warnings: sink.warnings(),
 			}
 		}
-		if sink != nil && sink.err != nil {
-			return ParseResult{Err: sink.err}
+	}
+
+	var text string
+	if !irChanged {
+		text, _, err = extractDocText(irJSON, mdText, plainText)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 		}
 	}
 	if strings.TrimSpace(text) == "" {

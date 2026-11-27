@@ -1,11 +1,7 @@
 package parser
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/json"
-	"encoding/xml"
-	"io"
 	"regexp"
 	"strings"
 )
@@ -139,104 +135,4 @@ func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []m
 	}
 
 	return removeContentsTable(items, eng)
-}
-
-// whitespaceCollapsePattern collapses runs of whitespace (spaces,
-// tabs, newlines) into a single space — mirrors Python
-// re.sub(r"\s+", " ", text).strip() used in
-// extract_docx_header_footer_texts (utils.py:210,229).
-var whitespaceCollapsePattern = regexp.MustCompile(`\s+`)
-
-// extractDOCXHeaderFooterTexts opens the docx ZIP, reads every
-// word/header*.xml and word/footer*.xml part, and returns the set
-// of normalized text strings found inside <w:t> elements. Mirrors
-// Python rag/flow/parser/utils.py:38-53
-// extract_docx_header_footer_texts (python-docx sections[].header/
-// footer paragraphs + tables).
-func extractDOCXHeaderFooterTexts(data []byte) map[string]bool {
-	texts := make(map[string]bool)
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return texts
-	}
-	for _, f := range zr.File {
-		name := f.Name
-		if !strings.HasPrefix(name, "word/") {
-			continue
-		}
-		base := name[len("word/"):]
-		if !strings.HasPrefix(base, "header") && !strings.HasPrefix(base, "footer") {
-			continue
-		}
-		if !strings.HasSuffix(base, ".xml") {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			continue
-		}
-		text := extractWtTextFromXML(rc)
-		rc.Close()
-		normalized := strings.TrimSpace(whitespaceCollapsePattern.ReplaceAllString(text, " "))
-		if normalized != "" {
-			texts[normalized] = true
-		}
-	}
-	return texts
-}
-
-// extractWtTextFromXML decodes the XML stream and concatenates the
-// content of every <w:t> element (the WordprocessingML text node).
-func extractWtTextFromXML(r io.Reader) string {
-	dec := xml.NewDecoder(r)
-	var sb strings.Builder
-	for {
-		tok, err := dec.Token()
-		if err != nil {
-			break
-		}
-		start, ok := tok.(xml.StartElement)
-		if !ok {
-			continue
-		}
-		if start.Name.Local != "t" {
-			continue
-		}
-		// The next token inside <w:t>...</w:t> is CharData.
-		for {
-			inner, err := dec.Token()
-			if err != nil {
-				return sb.String()
-			}
-			switch it := inner.(type) {
-			case xml.CharData:
-				sb.Write(it)
-			case xml.EndElement:
-				if it.Name.Local == "t" {
-					goto nextToken
-				}
-			}
-		}
-	nextToken:
-	}
-	return sb.String()
-}
-
-// removeDOCXHeaderFooterSections drops items whose normalized text
-// exactly matches a header/footer text string. Mirrors Python
-// rag/flow/parser/utils.py:56-67 remove_header_footer_docx_sections.
-func removeDOCXHeaderFooterSections(items []map[string]any, hfTexts map[string]bool) []map[string]any {
-	if len(hfTexts) == 0 {
-		return items
-	}
-	filtered := items[:0]
-	for _, item := range items {
-		text := itemText(item)
-		normalized := strings.TrimSpace(whitespaceCollapsePattern.ReplaceAllString(text, " "))
-		if normalized != "" && hfTexts[normalized] {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
 }
