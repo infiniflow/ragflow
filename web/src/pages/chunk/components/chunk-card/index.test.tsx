@@ -114,8 +114,7 @@ describe('ChunkCard', () => {
     expect(screen.getByText('chunk.docType.text')).toBeInTheDocument();
     expect(screen.getByText('Chunk content')).toBeInTheDocument();
     // The id and the way into the details belong to the entry, which this test
-    // stubs out: an edition without chunk history prints neither the id nor a
-    // version of its own.
+    // stubs out; the card itself prints neither the id nor a version.
     expect(screen.queryByText('chunk-1')).not.toBeInTheDocument();
     expect(screen.queryByText(/^v\d+$/)).not.toBeInTheDocument();
   });
