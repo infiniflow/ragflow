@@ -898,7 +898,14 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 			return 0, fmt.Errorf("ES delete aborted: empty id list on index %s", fullIndexName)
 		}
 	}
-	condition["kb_id"] = datasetID
+	if strings.HasPrefix(fullIndexName, "memory_") {
+		// Memory messages carry memory_id, not kb_id; the tenant index is shared
+		// by every memory, so scope the delete to the requested memory.
+		condition["memory_id"] = datasetID
+		condition = esoscommon.MapMemoryMessageESConditionFields(condition)
+	} else {
+		condition["kb_id"] = datasetID
+	}
 	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
