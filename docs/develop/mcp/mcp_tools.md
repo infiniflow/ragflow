@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # RAGFlow MCP Tools
 
-The Go MCP runtime registers three tools. Calls run as the user selected by the endpoint's authentication mode and have a 60-second server-side timeout.
+The Go MCP runtime registers five tools. Calls run as the user selected by the endpoint's authentication mode and have a 60-second server-side timeout.
 
 ## `ragflow_retrieval`
 
@@ -59,8 +59,41 @@ Lists chat assistants available to the authenticated user in descending creation
 
 The tool returns one text content item containing one JSON object per line. Each object contains `id`, `name`, and `description`. The text is empty when no chat assistants are available.
 
+## `ragflow_list_documents`
+
+Lists readable documents in an accessible dataset in descending creation-time order. Use the returned document IDs with `ragflow_retrieval` for scoped search or `ragflow_list_chunks` to read a whole document.
+
+| Argument | Type | Required | Default | Valid values and behavior |
+| --- | --- | --- | --- | --- |
+| `dataset_id` | string | Yes | — | Non-empty ID of an accessible dataset. |
+| `keywords` | string | No | Empty | Filters document names by keyword. |
+| `name` | string | No | Empty | Filters by exact document name; combines with `keywords` when both are supplied. |
+| `page` | integer | No | `1` | Minimum `1`. |
+| `page_size` | integer | No | `30` | From `1` through `100`. |
+
+The tool returns one text content item containing a JSON object with `documents`, `total`, `page`, and `page_size`. Each document contains `id`, `name`, `dataset_id`, `type`, `size`, `chunk_count`, `token_count`, `ingestion_status`, `create_date`, `update_date`, and `meta_fields`. `ingestion_status` is the Go API's parse status (for example, `UNSTART`, `RUNNING`, `COMPLETED`, or `FAILED`). `total` counts matching readable documents before pagination; an empty page returns `documents: []`.
+
+Missing IDs, invalid pagination, and inaccessible datasets return errors. Document visibility is applied before counting and pagination, using the same permission scope as the HTTP document-list API.
+
+## `ragflow_list_chunks`
+
+Reads chunks of one fully parsed document in document order. No question, similarity threshold, or relevance ranking is applied, and the retrieval tool's 512-candidate window does not apply. Page through the results to read the whole document.
+
+| Argument | Type | Required | Default | Valid values and behavior |
+| --- | --- | --- | --- | --- |
+| `dataset_id` | string | Yes | — | Non-empty ID of an accessible dataset. |
+| `document_id` | string | Yes | — | Non-empty ID of a readable document belonging to `dataset_id`. |
+| `page` | integer | No | `1` | Minimum `1`. |
+| `page_size` | integer | No | `30` | From `1` through `100`. |
+
+The tool returns one text content item containing a JSON object with `chunks`, `doc`, `total`, `page`, and `page_size`. It preserves the HTTP chunk-list fields, including `id`, `content`, available `positions`, and `important_keywords`. `doc` includes the document's `name` and `chunk_count`. `total` is the chunk-list total before pagination. Disabled chunks are included, with their `available` flag.
+
+Ordering follows the existing chunk-list service: ascending `chunk_order_int`, then page number and vertical position, then descending creation timestamp. For older chunks without an explicit chunk order, the position fields provide the reading order. As with HTTP pagination, changes to a document during reading can shift page boundaries.
+
+Missing IDs, invalid pagination, inaccessible resources, and a document that belongs to another dataset return errors. A document whose `ingestion_status` is not `COMPLETED` returns an explicit “not fully parsed” error with its current status.
+
 ## Tool discovery
 
-`tools/list` returns the schemas above. RAGFlow also appends the authenticated user's accessible dataset information to the retrieval and dataset-listing descriptions, and accessible chat information to the chat-listing description.
+`tools/list` returns the schemas above. RAGFlow also appends the authenticated user's accessible dataset information to the retrieval, dataset-listing, document-listing, and chunk-listing descriptions, and accessible chat information to the chat-listing description.
 
 For the authoritative implementation, see the [Go tool schemas](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/tools.json), [tool registration](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/server.go), [service connector](https://github.com/infiniflow/ragflow/blob/main/internal/mcp/connector.go), [MCP protocol handler](https://github.com/infiniflow/ragflow/blob/main/internal/handler/mcp_server.go), and [retrieval result handler](https://github.com/infiniflow/ragflow/blob/main/internal/handler/mcp_retrieval.go).

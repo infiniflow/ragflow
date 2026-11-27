@@ -52,6 +52,8 @@ func TestSDKTransportsAndTools(t *testing.T) {
 	for _, mode := range []string{"json", "stream", "sse"} {
 		t.Run(mode, func(t *testing.T) {
 			var retrieval RetrievalRequest
+			var documents ListDocumentsRequest
+			var chunks ListChunksRequest
 			factory := func() Connector {
 				return NewServiceConnector(
 					func(ctx context.Context, page, size int, _ string, _ bool) ([]map[string]any, int64, error) {
@@ -66,6 +68,12 @@ func TestSDKTransportsAndTools(t *testing.T) {
 					func(ctx context.Context, req RetrievalRequest) (string, error) {
 						retrieval = req
 						return `{"chunks":[],"query_info":{"question":"hello"}}`, nil
+					}, func(ctx context.Context, req ListDocumentsRequest) (string, error) {
+						documents = req
+						return `{"documents":[],"total":0}`, nil
+					}, func(ctx context.Context, req ListChunksRequest) (string, error) {
+						chunks = req
+						return `{"chunks":[],"total":0}`, nil
 					})
 			}
 			h := NewHandler(func(_ context.Context, key string) (string, error) {
@@ -79,7 +87,7 @@ func TestSDKTransportsAndTools(t *testing.T) {
 			defer h.Close()
 			ss := clientSession(t, hs.URL, mode, "alice")
 			tools, err := ss.ListTools(t.Context(), nil)
-			if err != nil || len(tools.Tools) != 3 {
+			if err != nil || len(tools.Tools) != 5 {
 				t.Fatalf("tools=%v err=%v", tools, err)
 			}
 			if tools.CacheScope != "private" {
@@ -90,6 +98,9 @@ func TestSDKTransportsAndTools(t *testing.T) {
 				t.Fatal(err)
 			}
 			for i, tool := range tools.Tools {
+				if tool.Name != "ragflow_list_chats" && !strings.Contains(tool.Description, `"id":"alice"`) {
+					t.Fatalf("dataset description missing for %s: %s", tool.Name, tool.Description)
+				}
 				got, _ := json.Marshal(tool.InputSchema)
 				want, _ := json.Marshal(expected[i].InputSchema)
 				if string(got) != string(want) {
@@ -135,6 +146,48 @@ func TestSDKTransportsAndTools(t *testing.T) {
 			if retrieval.Question != "hello" {
 				t.Fatalf("invalid input reached retrieval: %+v", retrieval)
 			}
+			for _, name := range []string{"ragflow_list_documents", "ragflow_list_chunks"} {
+				args := map[string]any{"dataset_id": "dataset", "document_id": "document"}
+				if name == "ragflow_list_documents" {
+					delete(args, "document_id")
+					args["name"] = "contract.pdf"
+					args["keywords"] = "contract"
+				}
+				result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: name, Arguments: args})
+				if err != nil || result.IsError {
+					t.Fatalf("%s: %v %v", name, result, err)
+				}
+				if name == "ragflow_list_chunks" {
+					for _, args := range []map[string]any{{"dataset_id": "dataset"}, {"dataset_id": "dataset", "document_id": ""}} {
+						result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: name, Arguments: args})
+						if err != nil || !result.IsError {
+							t.Fatalf("missing document_id accepted: %v %v", result, err)
+						}
+					}
+				}
+				for _, invalid := range []map[string]any{
+					{}, {"dataset_id": ""}, {"dataset_id": " "},
+					{"dataset_id": 3},
+					{"dataset_id": "dataset", "page_size": 101},
+					{"dataset_id": "dataset", "page_size": 0},
+					{"dataset_id": "dataset", "page": -1},
+					{"dataset_id": "dataset", "page": 1.5},
+				} {
+					if name == "ragflow_list_chunks" {
+						invalid["document_id"] = "document"
+					}
+					result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: name, Arguments: invalid})
+					if err != nil || !result.IsError {
+						t.Fatalf("%s accepted %v: %v %v", name, invalid, result, err)
+					}
+				}
+			}
+			if documents.DatasetID != "dataset" || documents.Page != 1 || documents.PageSize != 30 || documents.Name != "contract.pdf" || documents.Keywords != "contract" {
+				t.Fatalf("document defaults/filters: %+v", documents)
+			}
+			if chunks.DatasetID != "dataset" || chunks.DocumentID != "document" || chunks.Page != 1 || chunks.PageSize != 30 {
+				t.Fatalf("chunk defaults: %+v", chunks)
+			}
 			empty := clientSession(t, hs.URL, mode, "empty")
 			result, err = empty.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_list_datasets"})
 			if err != nil || result.IsError || result.Content[0].(*sdk.TextContent).Text != "" {
@@ -165,7 +218,7 @@ func TestConnectorPaginationAndNulls(t *testing.T) {
 		pages = append(pages, page)
 		sizes = append(sizes, size)
 		return []map[string]any{{"id": fmt.Sprint(page)}}, 2, nil
-	}, nil, nil)
+	}, nil, nil, nil, nil)
 	text, err := c.ListDatasets(t.Context(), 1, -1, "create_time", true)
 	if err != nil || !reflect.DeepEqual(pages, []int{1, 2}) || !strings.Contains(text, `"description":null`) {
 		t.Fatalf("pages=%v text=%s err=%v", pages, text, err)
@@ -188,7 +241,7 @@ func TestConcurrentTenantsAndSSEOwnership(t *testing.T) {
 			return []map[string]any{{"id": user}}, 1, nil
 		}, func(context.Context, int, int, string, bool) ([]map[string]any, int64, error) {
 			return nil, 0, nil
-		}, nil)
+		}, nil, nil, nil)
 	}, Options{true, true, true})
 	hs := httptest.NewServer(h)
 	defer hs.Close()
@@ -277,7 +330,7 @@ func TestProtocolErrorsAndCancellation(t *testing.T) {
 			started <- ctx
 			<-ctx.Done()
 			return "", ctx.Err()
-		})
+		}, nil, nil)
 	}, Options{true, true, true})
 	hs := httptest.NewServer(h)
 	defer hs.Close()
