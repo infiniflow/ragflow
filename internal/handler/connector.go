@@ -284,6 +284,11 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	connector, err := h.connectorService.CreateConnector(ctx, &req)
 	if err != nil {
+		if permissionresponse.IsPermissionError(err) {
+			code, permissionErr := permissionresponse.Normalize(err)
+			common.RespondError(c, code, permissionErr.Error())
+			return
+		}
 		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) || errors.Is(err, service.ErrConnectorEncryptedCredentials) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
