@@ -72,12 +72,12 @@ const DocumentPreview = function ({
         positions={positions}
         url={url}
       />
-      {['doc', 'docx'].indexOf(fileType) > -1 && (
+      {fileType === 'docx' && (
         <section>
           <DocPreviewer className={className} url={url} />
         </section>
       )}
-      {['txt', 'json'].indexOf(fileType) > -1 && (
+      {['doc', 'txt', 'json'].indexOf(fileType) > -1 && (
         <section>
           <TxtPreviewer className={className} url={url} />
         </section>

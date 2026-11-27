@@ -341,12 +341,12 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 	// Legacy .doc (OLE2) documents cannot be rendered by the
 	// .docx-only web previewer; serve extracted plain text instead.
 	if ext == "doc" {
-		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
-			data = []byte(text)
-			contentType = "text/plain; charset=utf-8"
-		} else if errors.Is(cerr, utility.ErrFeatureDisabled) {
-			return nil, cerr
+		text, err := extractDOCPreviewText(ctx, fileName, data)
+		if err != nil {
+			return nil, fmt.Errorf("extract DOC preview for document %s: %w", docID, err)
 		}
+		data = []byte(text)
+		contentType = "text/plain; charset=utf-8"
 	}
 
 	return &DocumentPreview{
