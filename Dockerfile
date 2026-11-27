@@ -136,7 +136,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-ARG NGINX_VERSION=1.31.3-1~noble
+ARG NGINX_VERSION=1.31.10-1~noble
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt -o Acquire::Retries=5 update && \
     apt -o Acquire::Retries=5 install -y --no-install-recommends gnupg && \
