@@ -149,6 +149,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Log all HTTP requests.
 	engine.Use(common.GinLogger())
 
+	// Read-only monitoring namespace. Mounted on the engine so it inherits the
+	// global middleware but can use its own authentication.
+	RegisterEEMonitorRouter(engine, r)
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
