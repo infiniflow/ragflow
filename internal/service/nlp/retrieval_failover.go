@@ -21,6 +21,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 )
 
 // RetrievalFailoverTarget resolves which retrieval-side model reference
@@ -44,9 +45,14 @@ func RetrievalFailoverTarget(embdRef, rerankRef string) (entity.ModelType, strin
 // RetrievalFailoverCanRetry attributes an invocation failure to the model
 // behind the failover group: document engine outages and request errors say
 // nothing about the member's health, so they must not deactivate a healthy
-// member. Only the sentinel-wrapped model-side failures may flip.
+// member. Only the sentinel-wrapped model-side failures may flip, and
+// client-side request rejections (HTTP 4xx payload refusals) never do —
+// replaying the same request on another member would fail identically.
 func RetrievalFailoverCanRetry(failoverType entity.ModelType) func(error) bool {
 	return func(err error) bool {
+		if models.IsRequestRejected(err) {
+			return false
+		}
 		switch failoverType {
 		case entity.ModelTypeEmbedding:
 			return errors.Is(err, ErrEmbeddingModelSide)

@@ -18,9 +18,12 @@ package nlp
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 )
 
 func TestRetrievalFailoverTarget(t *testing.T) {
@@ -78,6 +81,20 @@ func TestRetrievalFailoverCanRetry(t *testing.T) {
 	wrapped := errors.Join(errors.New("score failed"), ErrRerankModelSide)
 	if !reretryMatches(rerankRetry, wrapped) {
 		t.Fatal("wrapped ErrRerankModelSide must still retry")
+	}
+
+	// A client request rejection (payload refused, HTTP 4xx) fails
+	// identically on any member and must not flip one.
+	rejected := fmt.Errorf("rerank failed: %w", &models.APIStatusError{Status: http.StatusRequestEntityTooLarge})
+	if reretryMatches(rerankRetry, rejected) {
+		t.Fatal("request-level 4xx must not flip a member")
+	}
+	if reretryMatches(embeddingRetry, rejected) {
+		t.Fatal("request-level 4xx must not flip a member (embedding side)")
+	}
+	memberDown := fmt.Errorf("%w: rerank failed: %w", ErrRerankModelSide, &models.APIStatusError{Status: http.StatusBadGateway})
+	if !reretryMatches(rerankRetry, memberDown) {
+		t.Fatal("5xx member failure must still flip")
 	}
 }
 
