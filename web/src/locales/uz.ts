@@ -534,9 +534,9 @@ export default {
       chunkMethodTab: 'Bo‘laklash usuli',
       testResults: 'Natijalar',
       testSetting: 'Sozlash',
-      retrievalTesting: 'Qidiruv testi',
+      retrievalTesting: 'Qidiruv',
       retrievalTestingDescription:
-        'RAGFlow LLM uchun mo‘ljallangan kontentni qaytarib olishini tekshirish uchun qidiruv testini o‘tkazing.',
+        'RAGFlow LLM uchun mo‘ljallangan kontentni qaytarib olishini tekshirish uchun qidiruvni bajaring.',
       Parse: 'Tahlil qilish',
       dataset: 'Ma’lumotlar to‘plami',
       testing: 'Qidiruv',
@@ -572,7 +572,7 @@ export default {
       noTestResultsForNotRuned:
         'Hali test o‘tkazilmagan. Natijalar shu yerda paydo bo‘ladi.',
       testingDescription:
-        'RAGFlow LLM uchun mo‘ljallangan kontentni qaytarib olishini tekshirish uchun qidiruv testini o‘tkazing. Optimal natijalarga erishish uchun standart sozlamalarni (masalan, kalit so‘z o‘xshashlik og‘irligi yoki o‘xshashlik chegarasi) o‘zgartirgan bo‘lsangiz, bu o‘zgarishlar avtomatik saqlanmasligini yodda tuting. Ularni chat yordamchisi sozlamalariga yoki Qidiruv agent komponenti sozlamalariga qo‘llashingiz kerak.',
+        'RAGFlow LLM uchun mo‘ljallangan kontentni qaytarib olishini tekshirish uchun qidiruvni bajaring. Optimal natijalarga erishish uchun standart sozlamalarni (masalan, kalit so‘z o‘xshashlik og‘irligi yoki o‘xshashlik chegarasi) o‘zgartirgan bo‘lsangiz, bu o‘zgarishlar avtomatik saqlanmasligini yodda tuting. Ularni chat yordamchisi sozlamalariga yoki Qidiruv agent komponenti sozlamalariga qo‘llashingiz kerak.',
       similarityThreshold: 'O‘xshashlik chegarasi',
       similarityThresholdTip:
         'RAGFlow qidiruvda vaznli kalit so‘z o‘xshashligi va vaznli vektor kosinus o‘xshashligi kombinatsiyasidan, yoki reranker modeli tanlanganda vaznli kalit so‘z o‘xshashligi va vaznli qayta reyting balli kombinatsiyasidan foydalanadi. Bu parametr foydalanuvchi so‘rovi va bo‘laklar o‘rtasidagi o‘xshashlik chegarasini belgilaydi. Bu chegaramdan past ball olgan bo‘lak natijalardan chiqarib tashlanadi. Standart bo‘yicha chegara 20 ga teng: gibrid o‘xshashlik balli 20 yoki undan yuqori bo‘lgan bo‘laklargina qidirib olinadi. Agar vektor o‘xshashligi vazni 0 qilib belgilansa, bu chegara qo‘llanilmaydi.',

@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"maps"
+	"math"
 	"ragflow/internal/common"
-	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -237,6 +239,14 @@ func parseDoclingChunkedResult(filename string, body []byte, sourcePages int) (P
 	return doclingTextsToResult(filename, texts, pageCount), true
 }
 
+// doclingNoProvenanceWarning is attached when a standard response has to be
+// read from its Markdown or text export.
+const doclingNoProvenanceWarning = "Docling response carries no usable page provenance; read from its Markdown or text export and positions are unavailable"
+
+// parseDoclingStandardResult builds the result from json_content, the typed
+// element stream that carries each element's label, page and box. The
+// Markdown and text exports of the same document are a low-fidelity fallback
+// for a response whose elements cannot be placed on a page.
 func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, sourcePages int) (ParseResult, bool) {
 	var payload doclingResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -257,17 +267,410 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 	}
 	pageCount := doclingPageCount(docs, sourcePages)
 	for _, doc := range docs {
+		items, warnings := ExternalBlocksToItems(doclingBlocks(doc.JSONContent), ExternalBlockOptions{
+			Provider:  "Docling",
+			PageSizes: doclingPageSizes(doc.JSONContent),
+			// Docling does not fix which vertical edge is "t": it depends on
+			// the box's coord_origin.
+			ReorderEdges: true,
+		})
+		structured := ParseResult{File: pdfFileMeta(filename, pageCount), JSON: items, Warnings: warnings}
+		if doclingHasPositions(items) {
+			return structured, true
+		}
+		fallback, ok := ParseResult{}, false
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, pageCount), doc.JSONContent), true
+			fallback, ok = pdfMarkdownToResult(ctx, filename, md, pageCount), true
+		} else if txt := strings.TrimSpace(doc.TextContent); txt != "" {
+			fallback, ok = doclingTextsToResult(filename, []string{txt}, pageCount), true
+		} else if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
+			fallback, ok = pdfMarkdownToResult(ctx, filename, md, pageCount), true
 		}
-		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
-			return doclingAttachPositions(doclingTextsToResult(filename, []string{txt}, pageCount), doc.JSONContent), true
+		if ok {
+			common.Warn(doclingNoProvenanceWarning, zap.String("filename", filename))
+			fallback.Warnings = append(fallback.Warnings, doclingNoProvenanceWarning)
+			return fallback, true
 		}
-		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, pageCount), doc.JSONContent), true
+		if len(items) > 0 {
+			return structured, true
 		}
 	}
 	return ParseResult{}, false
+}
+
+func doclingHasPositions(items []DocItem) bool {
+	for _, item := range items {
+		if _, ok := ExtractPDFPositions(item.ToMap()); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// doclingBlocks reads json_content into blocks. The body tree gives the
+// reading order, which the blocks then declare authoritative so the chunker
+// does not sort a second column back between the lines of the first. A
+// document without a body tree is read as its flat element lists, whose order
+// says nothing about the page, so there the chunker's geometry order stands.
+func doclingBlocks(content map[string]any) []ExternalBlock {
+	walker := doclingWalker{nodes: map[string]map[string]any{}, seen: map[string]bool{}, owned: map[string]bool{}}
+	var listed []string
+	for _, key := range []string{"texts", "tables", "pictures", "groups"} {
+		entries, _ := content[key].([]any)
+		for index, raw := range entries {
+			node, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			ref := fmt.Sprintf("#/%s/%d", key, index)
+			walker.nodes[ref] = node
+			if key == "tables" || key == "pictures" {
+				for _, owned := range append(doclingRefs(node["captions"]), doclingRefs(node["footnotes"])...) {
+					walker.owned[owned] = true
+				}
+			}
+			if key != "groups" {
+				listed = append(listed, ref)
+			}
+		}
+	}
+	if body, _ := content["body"].(map[string]any); len(doclingRefs(body["children"])) > 0 {
+		walker.children(body)
+		for i := range walker.blocks {
+			walker.blocks[i].PreserveOrder = true
+		}
+	} else {
+		for _, ref := range listed {
+			walker.visit(ref)
+		}
+	}
+	return walker.blocks
+}
+
+// doclingWalker visits each element once.
+type doclingWalker struct {
+	nodes map[string]map[string]any
+	seen  map[string]bool
+	// owned holds the captions and footnotes of tables and pictures. They are
+	// part of their owner wherever they sit in the document, and never body
+	// text of their own.
+	owned  map[string]bool
+	blocks []ExternalBlock
+}
+
+func (w *doclingWalker) children(node map[string]any) {
+	for _, ref := range doclingRefs(node["children"]) {
+		w.visit(ref)
+	}
+}
+
+func (w *doclingWalker) visit(ref string) {
+	node := w.nodes[ref]
+	if node == nil || w.seen[ref] || w.owned[ref] {
+		return
+	}
+	w.seen[ref] = true
+	if !doclingIsContent(node) {
+		return
+	}
+	switch {
+	case strings.HasPrefix(ref, "#/groups/"):
+		if stringValue(node["label"]) != "inline" {
+			w.children(node)
+			return
+		}
+		// An inline group is one paragraph that Docling split by formatting.
+		block := ExternalBlock{Type: ExternalBlockText}
+		var floats []string
+		w.inline(node, &block, &floats)
+		w.blocks = append(w.blocks, block)
+		for _, floatRef := range floats {
+			w.visit(floatRef)
+		}
+	case strings.HasPrefix(ref, "#/tables/"):
+		data, _ := node["data"].(map[string]any)
+		w.blocks = append(w.blocks, ExternalBlock{
+			Type:      ExternalBlockTable,
+			HTML:      doclingTableHTML(data),
+			Captions:  w.attached(node["captions"]),
+			Footnotes: w.attached(node["footnotes"]),
+			Page:      doclingPage(node),
+			Regions:   doclingRegions(node),
+		})
+		// A table's children are its captions and the contents of its cells,
+		// both already in the block.
+		for _, child := range doclingRefs(node["children"]) {
+			w.seen[child] = true
+		}
+	case strings.HasPrefix(ref, "#/pictures/"):
+		w.blocks = append(w.blocks, ExternalBlock{
+			Type:      ExternalBlockFigure,
+			Captions:  w.attached(node["captions"]),
+			Footnotes: w.attached(node["footnotes"]),
+			Page:      doclingPage(node),
+			Regions:   doclingRegions(node),
+		})
+		// Text recognized inside the picture follows it as body text.
+		w.children(node)
+	default:
+		w.blocks = append(w.blocks, doclingTextBlock(node))
+		w.children(node)
+	}
+}
+
+// inline gathers the text under an inline group into one paragraph, through
+// any groups nested in it. A table or picture cannot be part of a paragraph:
+// it is handed back in floats, to follow the paragraph as its own block.
+func (w *doclingWalker) inline(node map[string]any, block *ExternalBlock, floats *[]string) {
+	for _, ref := range doclingRefs(node["children"]) {
+		child := w.nodes[ref]
+		if child == nil || w.seen[ref] || w.owned[ref] {
+			continue
+		}
+		if strings.HasPrefix(ref, "#/tables/") || strings.HasPrefix(ref, "#/pictures/") {
+			*floats = append(*floats, ref)
+			continue
+		}
+		w.seen[ref] = true
+		if !doclingIsContent(child) {
+			continue
+		}
+		if strings.HasPrefix(ref, "#/texts/") {
+			block.Text = strings.TrimSpace(block.Text + " " + doclingText(child))
+			block.Regions = append(block.Regions, doclingRegions(child)...)
+			if block.Page == 0 {
+				block.Page = doclingPage(child)
+			}
+		}
+		w.inline(child, block, floats)
+	}
+}
+
+// doclingIsContent reports whether an element belongs to the document body.
+// Page furniture, background layers and running headers and footers do not;
+// the Markdown export leaves them out as well.
+func doclingIsContent(node map[string]any) bool {
+	if layer := stringValue(node["content_layer"]); layer != "" && layer != "body" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(stringValue(node["label"]))) {
+	case "page_header", "page_footer":
+		return false
+	}
+	return true
+}
+
+// attached resolves the caption or footnote references of a table or picture
+// to their text. It does not depend on what has been visited, so the owner
+// gets its caption whichever of the two comes first in the document.
+func (w *doclingWalker) attached(raw any) []string {
+	var texts []string
+	for _, ref := range doclingRefs(raw) {
+		node := w.nodes[ref]
+		if node == nil || !doclingIsContent(node) {
+			continue
+		}
+		if text := doclingText(node); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return texts
+}
+
+// doclingTextBlock maps a text element's label onto a block type. Labels that
+// carry no structure of their own (text, paragraph, caption, footnote,
+// reference, ...) are body text.
+func doclingTextBlock(node map[string]any) ExternalBlock {
+	block := ExternalBlock{Type: ExternalBlockText, Text: doclingText(node), Page: doclingPage(node), Regions: doclingRegions(node)}
+	switch strings.ToLower(strings.TrimSpace(stringValue(node["label"]))) {
+	case "title":
+		block.Type, block.HeadingLevel = ExternalBlockHeading, 1
+	case "section_header":
+		// The document title is level 1, so a section header of Docling
+		// level n is written one level below it, as in the Markdown export.
+		level := 1
+		if n, ok := numericAny(node["level"]); ok && n >= 1 {
+			level = int(n)
+		}
+		block.Type, block.HeadingLevel = ExternalBlockHeading, min(level+1, 6)
+	case "list_item":
+		marker := "-"
+		if enumerated, _ := node["enumerated"].(bool); enumerated {
+			if m := strings.TrimSpace(stringValue(node["marker"])); m != "" {
+				marker = m
+			}
+		}
+		block.Type = ExternalBlockList
+		if block.Text != "" {
+			block.Text = marker + " " + block.Text
+		}
+	case "code":
+		block.Type = ExternalBlockCode
+	case "formula":
+		block.Type = ExternalBlockEquation
+	}
+	return block
+}
+
+// doclingText returns an element's text, falling back to the text as it was
+// read from the page when Docling produced no cleaned form.
+func doclingText(node map[string]any) string {
+	if text := strings.TrimSpace(stringValue(node["text"])); text != "" {
+		return text
+	}
+	return strings.TrimSpace(stringValue(node["orig"]))
+}
+
+func doclingRefs(raw any) []string {
+	list, _ := raw.([]any)
+	refs := make([]string, 0, len(list))
+	for _, entry := range list {
+		obj, _ := entry.(map[string]any)
+		if ref := stringValue(obj["$ref"]); ref != "" {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
+// doclingProvPage returns the 1-based page of a provenance entry.
+func doclingProvPage(prov map[string]any) (int, bool) {
+	page, ok := numericAny(prov["page_no"])
+	if !ok || page < 1 || page != math.Trunc(page) {
+		return 0, false
+	}
+	return int(page), true
+}
+
+// doclingPage returns the page an element starts on, or zero when its
+// provenance names none. The page is known even when the box is not.
+func doclingPage(node map[string]any) int {
+	for _, prov := range doclingProvs(node) {
+		if page, ok := doclingProvPage(prov); ok {
+			return page
+		}
+	}
+	return 0
+}
+
+// doclingRegions converts an element's provenance entries (1-based page_no
+// and bbox {l, t, r, b}) into regions. A bbox with coord_origin BOTTOMLEFT
+// measures y from the bottom of the page.
+func doclingRegions(node map[string]any) []ExternalRegion {
+	var regions []ExternalRegion
+	for _, prov := range doclingProvs(node) {
+		page, ok := doclingProvPage(prov)
+		if !ok {
+			continue
+		}
+		bbox, _ := prov["bbox"].(map[string]any)
+		region := ExternalRegion{Page: page}
+		complete := true
+		for i, key := range []string{"l", "t", "r", "b"} {
+			if region.Box[i], ok = numericAny(bbox[key]); !ok {
+				complete = false
+			}
+		}
+		if !complete {
+			continue
+		}
+		origin, _ := bbox["coord_origin"].(string)
+		region.BottomLeft = strings.EqualFold(origin, "BOTTOMLEFT")
+		regions = append(regions, region)
+	}
+	return regions
+}
+
+// doclingTableRows returns the cells of each table row, each merged cell once.
+// The grid repeats a merged cell in every slot it covers, so only the slot
+// where the cell starts counts. A table without a grid is read from its cell
+// list, where every cell names the row and column it starts at.
+func doclingTableRows(data map[string]any) [][]map[string]any {
+	start := func(cell map[string]any, key string) (int, bool) {
+		n, ok := numericAny(cell[key])
+		return int(n), ok && n >= 0
+	}
+	var rows [][]map[string]any
+	if grid, _ := data["grid"].([]any); len(grid) > 0 {
+		for rowIndex, rawRow := range grid {
+			var row []map[string]any
+			rawCells, _ := rawRow.([]any)
+			for colIndex, rawCell := range rawCells {
+				cell, ok := rawCell.(map[string]any)
+				if !ok {
+					continue
+				}
+				if at, ok := start(cell, "start_row_offset_idx"); ok && at != rowIndex {
+					continue
+				}
+				if at, ok := start(cell, "start_col_offset_idx"); ok && at != colIndex {
+					continue
+				}
+				row = append(row, cell)
+			}
+			rows = append(rows, row)
+		}
+		return rows
+	}
+	cells, _ := data["table_cells"].([]any)
+	for _, rawCell := range cells {
+		cell, ok := rawCell.(map[string]any)
+		if !ok {
+			continue
+		}
+		rowIndex, ok := start(cell, "start_row_offset_idx")
+		if !ok || rowIndex >= doclingMaxTableRows {
+			continue
+		}
+		for len(rows) <= rowIndex {
+			rows = append(rows, nil)
+		}
+		rows[rowIndex] = append(rows[rowIndex], cell)
+	}
+	for _, row := range rows {
+		sort.SliceStable(row, func(i, j int) bool {
+			left, _ := start(row[i], "start_col_offset_idx")
+			right, _ := start(row[j], "start_col_offset_idx")
+			return left < right
+		})
+	}
+	return rows
+}
+
+// doclingMaxTableRows bounds the row index a cell list may claim, so a
+// malformed offset cannot allocate rows without limit.
+const doclingMaxTableRows = 100_000
+
+// doclingTableHTML renders a table as markup once, keeping merged cells and
+// header rows. It returns "" for a table with no text in any cell.
+func doclingTableHTML(data map[string]any) string {
+	var b strings.Builder
+	hasText := false
+	b.WriteString("<table>")
+	for _, row := range doclingTableRows(data) {
+		b.WriteString("<tr>")
+		for _, cell := range row {
+			tag := "td"
+			if header, _ := cell["column_header"].(bool); header {
+				tag = "th"
+			}
+			b.WriteString("<" + tag)
+			for _, span := range [][2]string{{"row_span", "rowspan"}, {"col_span", "colspan"}} {
+				if n, ok := numericAny(cell[span[0]]); ok && n > 1 {
+					fmt.Fprintf(&b, ` %s="%d"`, span[1], int(n))
+				}
+			}
+			text := strings.TrimSpace(stringValue(cell["text"]))
+			hasText = hasText || text != ""
+			b.WriteString(">" + html.EscapeString(text) + "</" + tag + ">")
+		}
+		b.WriteString("</tr>")
+	}
+	b.WriteString("</table>")
+	if !hasText {
+		return ""
+	}
+	return b.String()
 }
 
 // doclingPageCount returns the number of PDF pages described by the Docling
@@ -353,49 +756,11 @@ func doclingProvs(entry map[string]any) []map[string]any {
 	return provs
 }
 
-// doclingProvPosition converts a Docling provenance entry (1-based page_no and
-// bbox {l, t, r, b}) into a [page, left, right, top, bottom] row with top
-// above bottom. Docling permits bbox coord_origin BOTTOMLEFT (y measured from
-// the page bottom); those boxes are converted to the top-left crop origin
-// when the page height is known, otherwise the sorted values are kept.
-func doclingProvPosition(prov map[string]any, heights map[int]float64) []any {
-	page, ok := numericAny(prov["page_no"])
-	if !ok || page < 1 {
-		return nil
-	}
-	bbox, _ := prov["bbox"].(map[string]any)
-	var v [4]float64
-	for i, key := range []string{"l", "t", "r", "b"} {
-		n, ok := numericAny(bbox[key])
-		if !ok {
-			return nil
-		}
-		v[i] = n
-	}
-	left, top, right, bottom := v[0], v[1], v[2], v[3]
-	if origin, _ := bbox["coord_origin"].(string); strings.EqualFold(origin, "BOTTOMLEFT") {
-		h := heights[int(page)]
-		if h <= 0 {
-			// Without the page height the bottom-origin Y cannot be converted
-			// to the top-origin contract downstream; a missing position is
-			// safer than a silently wrong crop.
-			return nil
-		}
-		top, bottom = h-top, h-bottom
-	}
-	if left > right {
-		left, right = right, left
-	}
-	if top > bottom {
-		top, bottom = bottom, top
-	}
-	return []any{int(page), left, right, top, bottom}
-}
-
-// doclingPageHeights maps 1-based page numbers to page heights from the
-// json_content pages metadata, used to convert BOTTOMLEFT bounding boxes.
-func doclingPageHeights(content map[string]any) map[int]float64 {
-	heights := map[int]float64{}
+// doclingPageSizes maps 1-based page numbers to [width, height] from the
+// json_content pages metadata. The height converts BOTTOMLEFT boxes and the
+// size keeps a box inside its page.
+func doclingPageSizes(content map[string]any) map[int][2]float64 {
+	sizes := map[int][2]float64{}
 	collect := func(page map[string]any, keyNo int) {
 		no, ok := numericAny(page["page_no"])
 		if !ok && keyNo > 0 {
@@ -405,9 +770,9 @@ func doclingPageHeights(content map[string]any) map[int]float64 {
 			return
 		}
 		size, _ := page["size"].(map[string]any)
-		if h, ok := numericAny(size["height"]); ok && h > 0 {
-			heights[int(no)] = h
-		}
+		width, _ := numericAny(size["width"])
+		height, _ := numericAny(size["height"])
+		sizes[int(no)] = [2]float64{width, height}
 	}
 	switch pages := content["pages"].(type) {
 	case map[string]any:
@@ -426,83 +791,7 @@ func doclingPageHeights(content map[string]any) map[int]float64 {
 			}
 		}
 	}
-	return heights
-}
-
-func doclingNormalizeText(text string) string {
-	return strings.Join(strings.Fields(text), " ")
-}
-
-var doclingMarkdownPrefix = regexp.MustCompile(`^(#{1,6}\s+|[-*]\s+|\d+\.\s+)`)
-
-// doclingStripMarkdownPrefix removes one recognized Markdown heading or list
-// marker. Leading digits elsewhere are content ("2026 Outlook") and stay.
-func doclingStripMarkdownPrefix(text string) (string, bool) {
-	stripped := doclingMarkdownPrefix.ReplaceAllString(text, "")
-	return stripped, stripped != text
-}
-
-// doclingAttachPositions copies page positions from Docling's structured
-// json_content onto JSON items whose text matches a Docling text element. Items
-// without a match are left unchanged.
-func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult {
-	if res.Err != nil || len(res.JSON) == 0 || len(content) == 0 {
-		return res
-	}
-	// Group positions per Docling text entry so repeated text keeps its own
-	// provenance: the i-th parsed occurrence takes the i-th entry's
-	// positions instead of every position of every identical entry.
-	byText := map[string][][][]any{}
-	heights := doclingPageHeights(content)
-	for _, entry := range doclingTextEntries(content) {
-		text := doclingNormalizeText(stringValue(entry["text"]))
-		if text == "" {
-			continue
-		}
-		var positions [][]any
-		for _, prov := range doclingProvs(entry) {
-			if pos := doclingProvPosition(prov, heights); pos != nil {
-				positions = append(positions, pos)
-			}
-		}
-		if len(positions) > 0 {
-			byText[text] = append(byText[text], positions)
-		}
-	}
-	if len(byText) == 0 {
-		return res
-	}
-	itemMaps := make([]map[string]any, len(res.JSON))
-	matched := false
-	used := map[string]int{}
-	for i, item := range res.JSON {
-		m := item.ToMap()
-		text := doclingNormalizeText(stringValue(m["text"]))
-		matches, ok := byText[text]
-		if !ok {
-			// List and heading markers are not content, but leading digits
-			// can be; only retry without a recognized Markdown prefix.
-			if stripped, changed := doclingStripMarkdownPrefix(text); changed {
-				if matches, ok = byText[stripped]; ok {
-					text = stripped
-				}
-			}
-		}
-		if ok && text != "" {
-			if idx := used[text]; idx < len(matches) {
-				m["positions"] = matches[idx]
-				m["_pdf_positions"] = matches[idx]
-				used[text]++
-				matched = true
-			}
-		}
-		itemMaps[i] = m
-	}
-	if !matched {
-		return res
-	}
-	res.JSON = MapsToItems(itemMaps)
-	return res
+	return sizes
 }
 
 func doclingTextsToResult(filename string, texts []string, pageCount int) ParseResult {

@@ -35,6 +35,8 @@ const Menus = [
       Operator.SofyaSearch,
       Operator.Search1APISearch,
       Operator.Search1APICrawl,
+      Operator.SpecStreamSearch,
+      Operator.SpecStreamExtract,
       Operator.AnySearchSearch,
       Operator.AnySearchDiscover,
       Operator.AnySearchExtract,

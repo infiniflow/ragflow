@@ -12,7 +12,7 @@ import { Routes } from '@/routes';
 import { useCallback, useEffect } from 'react';
 
 import { Outlet, useMatch } from 'react-router';
-import { SideBar } from './sidebar';
+import { DatasetSidebar } from './sidebar';
 
 export default function DatasetWrapper() {
   const { data, loading } = useFetchKnowledgeBaseConfiguration();
@@ -59,7 +59,7 @@ export default function DatasetWrapper() {
               )}
             >
               {!collapsed && (
-                <SideBar
+                <DatasetSidebar
                   dataset={data}
                   onCollapse={collapseSidebars}
                   onMenuSelect={collapsePrimarySidebar}

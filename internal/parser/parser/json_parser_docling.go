@@ -108,3 +108,49 @@ func doclingJSONTextItem(node map[string]any, heights map[int]float64) map[strin
 	}
 	return item
 }
+
+// doclingPageHeights maps 1-based page numbers to page heights from the
+// Docling pages metadata, used to flip BOTTOMLEFT bounding boxes.
+func doclingPageHeights(content map[string]any) map[int]float64 {
+	heights := map[int]float64{}
+	for page, size := range doclingPageSizes(content) {
+		if size[1] > 0 {
+			heights[page] = size[1]
+		}
+	}
+	return heights
+}
+
+// doclingProvPosition converts a Docling provenance entry (1-based page_no and
+// bbox {l, t, r, b}) into a [page, left, right, top, bottom] row with top above
+// bottom.
+func doclingProvPosition(prov map[string]any, heights map[int]float64) []any {
+	page, ok := numericAny(prov["page_no"])
+	if !ok || page < 1 {
+		return nil
+	}
+	bbox, _ := prov["bbox"].(map[string]any)
+	var v [4]float64
+	for i, key := range []string{"l", "t", "r", "b"} {
+		n, ok := numericAny(bbox[key])
+		if !ok {
+			return nil
+		}
+		v[i] = n
+	}
+	left, top, right, bottom := v[0], v[1], v[2], v[3]
+	if origin, _ := bbox["coord_origin"].(string); strings.EqualFold(origin, "BOTTOMLEFT") {
+		h := heights[int(page)]
+		if h <= 0 {
+			return nil
+		}
+		top, bottom = h-top, h-bottom
+	}
+	if left > right {
+		left, right = right, left
+	}
+	if top > bottom {
+		top, bottom = bottom, top
+	}
+	return []any{int(page), left, right, top, bottom}
+}

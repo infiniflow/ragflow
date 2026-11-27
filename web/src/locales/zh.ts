@@ -28,6 +28,7 @@ export default {
       descriptionMaxLength: '描述最多 {{max}} 个字符。',
       next: '下一步',
       create: '创建',
+      createdAt: '创建时间',
       edit: '编辑',
       upload: '上传',
       english: '英文',
@@ -560,9 +561,9 @@ export default {
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
       testSetting: '测试设置',
-      retrievalTesting: '知识检索测试',
+      retrievalTesting: '检索',
       retrievalTestingDescription:
-        '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
+        '进行检索，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
       Parse: '解析',
       dataset: '知识库',
       testing: '检索',
@@ -598,7 +599,7 @@ export default {
       noTestResultsForRuned: '未找到相关结果，请尝试调整查询语句或参数',
       noTestResultsForNotRuned: '尚未运行测试，结果会显示在这里',
       testingDescription:
-        '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
+        '请执行检索：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
@@ -1295,6 +1296,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
+      specstreamApiKeyTip:
+        '选择 SpecStream 后，将使用 SpecStream 的网络搜索结果补充知识库检索。',
+      specstreamApiKeyMessage: '请输入 SpecStream API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
@@ -2908,6 +2912,19 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1APICrawlUrl: '网页地址',
       search1APICrawlUrlTip:
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      specStreamSearch: 'SpecStream',
+      specStreamSearchDescription:
+        '使用 SpecStream Search API 搜索实时网页，返回带有标题、链接和摘要的搜索结果。需要配置 API Key。',
+      specStreamApiKeyTip: '必填。请在 specstream.ai 申请 API Key。',
+      specStreamPassages: '正文片段',
+      specStreamPassagesTip:
+        '同时返回排名靠前页面中提取的正文片段，无需再单独读取页面。',
+      specStreamExtract: 'SpecStream 网页读取',
+      specStreamExtractDescription:
+        '使用 SpecStream Extract API 读取网页或文档（PDF、Word、Excel），返回标题和正文。需要配置 API Key。',
+      specStreamExtractUrl: '网页地址',
+      specStreamExtractUrlTip:
+        '要读取页面或文档的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       anySearchSearch: 'AnySearch',
       anySearchSearchDescription:
         '通过 AnySearch 进行网页与垂直领域搜索：通用网页结果，或金融、学术、代码、法律等垂直领域。无需 API Key 即可使用。',

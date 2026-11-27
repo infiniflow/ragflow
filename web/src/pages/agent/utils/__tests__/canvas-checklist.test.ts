@@ -872,6 +872,8 @@ describe('collectCanvasIssues: required tool API key', () => {
   it.each([
     ['SofyaSearch', 'SofyaSearch:s1'],
     ['Search1APISearch', 'Search1API:s2'],
+    ['SpecStreamSearch', 'SpecStreamSearch:s3'],
+    ['SpecStreamExtract', 'SpecStreamExtract:s4'],
     ['PerplexitySearch', 'PerplexitySearch:p1'],
     ['perplexitysearch', 'PerplexitySearch:p2'],
     ['perplexity', 'PerplexitySearch:p3'],
@@ -892,22 +894,25 @@ describe('collectCanvasIssues: required tool API key', () => {
     );
   });
 
-  it.each([['SofyaSearch'], ['Search1APISearch'], ['PerplexitySearch']])(
-    'passes a standalone %s node with an API key',
-    (label) => {
-      const issues = collect({
-        nodes: [makeNode(`${label}:s1`, label, { api_key: 'secret' })],
-      });
+  it.each([
+    ['SofyaSearch'],
+    ['Search1APISearch'],
+    ['SpecStreamSearch'],
+    ['SpecStreamExtract'],
+    ['PerplexitySearch'],
+  ])('passes a standalone %s node with an API key', (label) => {
+    const issues = collect({
+      nodes: [makeNode(`${label}:s1`, label, { api_key: 'secret' })],
+    });
 
-      expect(
-        issues.some(
-          (x) =>
-            x.type === CanvasIssueType.MissingRequired &&
-            x.messageKey === 'flow.apiKeyMissing',
-        ),
-      ).toBe(false);
-    },
-  );
+    expect(
+      issues.some(
+        (x) =>
+          x.type === CanvasIssueType.MissingRequired &&
+          x.messageKey === 'flow.apiKeyMissing',
+      ),
+    ).toBe(false);
+  });
 
   it('flags an agent-embedded tool without an API key on the Tool node', () => {
     const agent = makeNode('Agent:a1', 'Agent', {

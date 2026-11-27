@@ -37,6 +37,10 @@ func RegisterEEProtectedRouter(_ *gin.RouterGroup, _ *Router) {}
 // edition.
 func RegisterEEAuthRouter(_ *gin.RouterGroup, _ *Router) {}
 
+// RegisterEEMonitorRouter registers no monitoring routes in the community
+// edition.
+func RegisterEEMonitorRouter(_ *gin.Engine, _ *Router) {}
+
 // allowAll is the community gate for a feature toggle: every request passes.
 func allowAll() gin.HandlerFunc {
 	return func(c *gin.Context) {

@@ -48,7 +48,7 @@ import {
 } from '../compilation/constants';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
-import { DatasetTableLayout } from '@/components/dataset-table-layout';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
 import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
@@ -436,7 +436,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
 
   return (
     <>
-      <DatasetTableLayout
+      <PaginatedTableLayout
         pagination={
           <RAGFlowPagination
             {...{ current: pagination.current, pageSize: pagination.pageSize }}
@@ -488,7 +488,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
             </TableRow>
           )}
         </TableBody>
-      </DatasetTableLayout>
+      </PaginatedTableLayout>
 
       {isModalVisible && (
         <ProcessLogModal

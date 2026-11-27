@@ -9,23 +9,28 @@ import {
   LucideTextSearch,
 } from 'lucide-react';
 
-import { SecondarySidebarHeader } from '@/components/sidebar-header';
-import { Button } from '@/components/ui/button';
+import {
+  SecondarySidebar,
+  SecondarySidebarMenu,
+} from '@/components/secondary-sidebar';
 import { useDatasetSidebarExtraItems } from '@/ee/hooks/use-dataset-sidebar-extra-items';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 
 import { IDataset } from '@/interfaces/database/dataset';
 import { useParams } from 'react-router';
 
-type PropType = {
+type DatasetSidebarProps = {
   dataset: IDataset;
   onCollapse: () => void;
   onMenuSelect: () => void;
 };
 
-export function SideBar({ dataset: data, onCollapse, onMenuSelect }: PropType) {
+export function DatasetSidebar({
+  dataset: data,
+  onCollapse,
+  onMenuSelect,
+}: DatasetSidebarProps) {
   const pathName = useSecondPathName();
   const { id } = useParams();
   const { t } = useTranslation();
@@ -34,65 +39,43 @@ export function SideBar({ dataset: data, onCollapse, onMenuSelect }: PropType) {
   const items = useMemo(() => {
     const list = [
       {
-        icon: <LucideFolderOpen className="size-[1em]" />,
+        icon: <LucideFolderOpen className="size-4 shrink-0" />,
         label: t(`knowledgeDetails.subbarFiles`),
         key: Routes.Files,
       },
       {
-        icon: <LucideTextSearch className="size-[1em]" />,
+        icon: <LucideTextSearch className="size-4 shrink-0" />,
         label: t(`knowledgeDetails.testing`),
         key: Routes.DatasetTesting,
       },
       {
-        icon: <LucideLogs className="size-[1em]" />,
+        icon: <LucideLogs className="size-4 shrink-0" />,
         label: t(`knowledgeDetails.overview`),
         key: Routes.DataSetOverview,
       },
       {
-        icon: <LucideSettings className="size-[1em]" />,
+        icon: <LucideSettings className="size-4 shrink-0" />,
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DataSetSetting,
       },
       {
-        icon: <LucideBookText className="size-[1em]" />,
+        icon: <LucideBookText className="size-4 shrink-0" />,
         label: 'Artifacts',
         key: Routes.Compilation,
       },
     ];
 
-    return [...list, ...extraItems];
-  }, [t, extraItems]);
+    return [...list, ...extraItems].map((item) => ({
+      ...item,
+      active: `/${pathName}` === item.key,
+      to: `${Routes.DatasetBase}${item.key}/${id}`,
+      onSelect: onMenuSelect,
+    }));
+  }, [extraItems, id, onMenuSelect, pathName, t]);
 
   return (
-    <aside className="flex flex-col w-64 relative">
-      <SecondarySidebarHeader title={data.name} onCollapse={onCollapse} />
-
-      <nav className="px-5 pt-1 pb-5 overflow-y-auto">
-        <ul className="space-y-5">
-          {items.map((item) => {
-            const active = '/' + pathName === item.key;
-
-            return (
-              <li key={item.key}>
-                <Button
-                  asLink
-                  block
-                  variant="ghost"
-                  className={cn(
-                    'justify-start gap-2.5 px-3 relative h-10 text-base',
-                    active && 'bg-bg-card text-text-primary',
-                  )}
-                  to={`${Routes.DatasetBase}${item.key}/${id}`}
-                  onClick={onMenuSelect}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-    </aside>
+    <SecondarySidebar title={data.name} onCollapse={onCollapse}>
+      <SecondarySidebarMenu items={items} navigationLabel={data.name} />
+    </SecondarySidebar>
   );
 }

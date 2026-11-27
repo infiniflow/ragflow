@@ -25,7 +25,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DatasetTableLayout } from '@/components/dataset-table-layout';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
 import { LogTabs } from './dataset-common';
 import { DatasetOverviewKeys } from './utils';
 
@@ -123,7 +123,7 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
   });
 
   return (
-    <DatasetTableLayout
+    <PaginatedTableLayout
       tableClassName="table-fixed"
       pagination={
         <RAGFlowPagination
@@ -173,7 +173,7 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
           </TableRow>
         )}
       </TableBody>
-    </DatasetTableLayout>
+    </PaginatedTableLayout>
   );
 };
 

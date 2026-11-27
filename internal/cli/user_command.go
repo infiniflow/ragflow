@@ -3035,9 +3035,6 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
 	}
-	if err := c.refreshLocalParseFeatures(commandCount, filename); err != nil {
-		return nil, err
-	}
 	fileParser, actual, err := parser.GetTextOnlyParser(fileType, fileContent)
 	if err != nil {
 		return nil, err
@@ -3046,7 +3043,7 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 		fmt.Fprintf(os.Stderr, "WARNING: file %q: requested format %s; detected %s; continuing with the %s parser\n", filepath.Base(filename), fileType, actual, actual)
 	}
 
-	ctx := context.Background()
+	ctx := c.prepareLocalParseContext(context.Background())
 	parseResult := fileParser.ParseWithResult(ctx, filename, fileContent)
 	if parseResult.Err != nil {
 		return nil, formatRequestError("parse local file", parseResult.Err)

@@ -119,9 +119,9 @@ func TestPDFParser_ParseWithResult_SoMarkRequiresBaseURL(t *testing.T) {
 	}
 }
 
-func TestSoMarkBlockToItem_DropsHeaderByDefault(t *testing.T) {
-	if item, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "header", "content": "x"}, false, &htmlWalkState{budget: newMediaBudgetForTest()}); item != nil {
-		t.Fatalf("item = %#v, want nil", item)
+func TestSoMarkBlock_DropsHeaderByDefault(t *testing.T) {
+	if block, ok, _ := soMarkBlock(t.Context(), map[string]any{"type": "header", "content": "x"}, false, &htmlWalkState{budget: newMediaBudgetForTest()}); ok {
+		t.Fatalf("block = %#v, want the header dropped", block)
 	}
 }
 
@@ -163,11 +163,11 @@ func TestSoMarkItemsUseEnclosingPageGeometry(t *testing.T) {
 		t.Fatalf("pageCount=%d items=%d warnings=%v", pageCount, len(items), warnings)
 	}
 	want := [][]any{
-		{1.0, 5.0, 55.0, 10.0, 20.0},
-		{3.0, 25.0, 50.0, 25.0, 45.0},
+		{1, 5.0, 55.0, 10.0, 20.0},
+		{3, 25.0, 50.0, 25.0, 45.0},
 	}
 	for i, row := range want {
-		if items[i]["page_number"] != int(row[0].(float64)) {
+		if items[i]["page_number"] != row[0] {
 			t.Fatalf("item %d page_number = %v, want %v", i, items[i]["page_number"], row[0])
 		}
 		for _, key := range []string{"positions", "_pdf_positions"} {
@@ -180,7 +180,6 @@ func TestSoMarkItemsUseEnclosingPageGeometry(t *testing.T) {
 		t.Fatalf("block without bbox must not carry positions: %#v", items[2])
 	}
 }
-
 func TestPDFParser_ParseWithResult_SoMarkJSONCarriesPositions(t *testing.T) {
 	withSSRFBypass(t)
 	withSoMarkPollInterval(t, time.Millisecond)
@@ -274,7 +273,7 @@ func TestSoMarkPositionsRescaledFromPixelsToPoints(t *testing.T) {
 	wantX1 := 827.0 / 1654 * 595.28
 	wantTop := 233.9 / 2339 * 841.89
 	wantBott := 467.8 / 2339 * 841.89
-	if pos[0] != float64(1) {
+	if pos[0] != 1 {
 		t.Fatalf("page = %v, want 1", pos[0])
 	}
 	for i, want := range []float64{wantX0, wantX1, wantTop, wantBott} {
@@ -325,7 +324,7 @@ func TestSoMarkPositionsAtPageEdges(t *testing.T) {
 		want []any
 		warn bool
 	}{
-		{"at tolerance", []any{-10, -20, 110, 220}, []any{1.0, 0.0, 50.0, 0.0, 100.0}, false},
+		{"at tolerance", []any{-10, -20, 110, 220}, []any{1, 0.0, 50.0, 0.0, 100.0}, false},
 		{"past left", []any{-11, 0, 25, 20}, nil, true},
 		{"past right", []any{50, 10, 111, 20}, nil, true},
 		{"past top", []any{10, -21, 50, 20}, nil, true},
@@ -334,11 +333,64 @@ func TestSoMarkPositionsAtPageEdges(t *testing.T) {
 		{"zero height", []any{10, 20, 50, 20}, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pos, warning := soMarkBlockPosition(map[string]any{"bbox": tc.bbox}, 1, 100, 200, [2]float64{50, 100})
-			if !reflect.DeepEqual(pos, tc.want) || (warning != "") != tc.warn {
-				t.Fatalf("position = %v, warning = %q, want %v (warn=%v)", pos, warning, tc.want, tc.warn)
+			result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+				map[string]any{"page_num": 0, "page_size": map[string]any{"w": 100, "h": 200}, "blocks": []any{
+					map[string]any{"type": "text", "content": "body", "bbox": tc.bbox},
+				}},
+			}}}}
+			items, _, warnings := soMarkItems(t.Context(), result, false, [][2]float64{{50, 100}})
+			if len(items) != 1 {
+				t.Fatalf("items = %d, want 1", len(items))
+			}
+			rows, _ := items[0]["positions"].([][]any)
+			var pos []any
+			if len(rows) > 0 {
+				pos = rows[0]
+			}
+			hasWarn := len(warnings) > 0
+			if !reflect.DeepEqual(pos, tc.want) || hasWarn != tc.warn {
+				t.Fatalf("position = %v, warnings = %q, want %v (warn=%v)", pos, warnings, tc.want, tc.warn)
 			}
 		})
+	}
+}
+
+func TestSoMarkPositionsAtPageEdgesWithScaling(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": 0, "page_size": map[string]any{"w": 1000, "h": 2000}, "blocks": []any{
+			map[string]any{"type": "text", "content": "body", "bbox": []any{-100, -200, 1100, 2200}},
+		}},
+	}}}}
+	items, _, warnings := soMarkItems(t.Context(), result, false, [][2]float64{{612, 792}})
+	if len(items) != 1 || len(warnings) != 0 {
+		t.Fatalf("items = %d, warnings = %q", len(items), warnings)
+	}
+	want := []any{1, 0.0, 612.0, 0.0, 792.0}
+	rows, _ := items[0]["positions"].([][]any)
+	if len(rows) != 1 || !reflect.DeepEqual(rows[0], want) {
+		t.Fatalf("position = %v, want %v", rows, want)
+	}
+}
+
+func TestSoMarkItemsScaleRepeatedPageByOwnRaster(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": 1, "page_size": map[string]any{"w": 100, "h": 100}, "blocks": []any{
+			map[string]any{"type": "text", "content": "first", "bbox": []any{10, 20, 50, 60}},
+		}},
+		map[string]any{"page_size": map[string]any{"w": 200, "h": 200}, "blocks": []any{
+			map[string]any{"type": "text", "content": "second", "bbox": []any{20, 40, 100, 120}},
+		}},
+	}}}}
+	items, _, warnings := soMarkItems(t.Context(), result, false, [][2]float64{{100, 100}, {100, 100}})
+	if len(items) != 2 || len(warnings) != 0 {
+		t.Fatalf("items = %d, warnings = %q", len(items), warnings)
+	}
+	want := []any{2, 10.0, 50.0, 20.0, 60.0}
+	for i, item := range items {
+		rows, _ := item["positions"].([][]any)
+		if item["page_number"] != 2 || len(rows) != 1 || !reflect.DeepEqual(rows[0], want) {
+			t.Fatalf("item %d positions = %v (page %v), want %v", i, rows, item["page_number"], want)
+		}
 	}
 }
 
@@ -365,13 +417,22 @@ func TestSoMarkPagePointSizesHonorRotate(t *testing.T) {
 	}
 }
 
-func TestSoMarkBlockPositionRejectsNonFinite(t *testing.T) {
+func TestSoMarkItemsRejectNonFiniteBox(t *testing.T) {
 	for _, bbox := range [][]any{
 		{1.0, math.NaN(), 110.0, 40.0},
 		{1.0, 20.0, math.Inf(1), 40.0},
 		{1.0, 20.0, 110.0, math.Inf(-1)},
 	} {
-		if pos, _ := soMarkBlockPosition(map[string]any{"bbox": bbox}, 1, 200, 200, [2]float64{100, 100}); pos != nil {
+		result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+			map[string]any{"page_num": float64(0), "page_size": map[string]any{"w": 200, "h": 200}, "blocks": []any{
+				map[string]any{"type": "text", "content": "body", "bbox": bbox},
+			}},
+		}}}}
+		items, _, _ := soMarkItems(context.Background(), result, false, [][2]float64{{100, 100}})
+		if len(items) != 1 {
+			t.Fatalf("items = %d, want the text kept", len(items))
+		}
+		if pos, ok := items[0]["_pdf_positions"]; ok && pos != nil {
 			t.Fatalf("non-finite bbox %v must drop the position, got %#v", bbox, pos)
 		}
 	}

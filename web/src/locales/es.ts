@@ -81,6 +81,7 @@ export default {
       reselectParserAfterUploadHint:
         'Continúa con la carga y el sistema cambiará automáticamente estos archivos a una configuración de análisis integrada compatible.',
       dataset: 'Conjunto de datos',
+      retrievalTesting: 'Recuperación',
       testing: 'Recuperación',
       files: 'Archivos',
       configuration: 'Configuración',

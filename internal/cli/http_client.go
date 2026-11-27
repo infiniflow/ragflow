@@ -18,6 +18,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -133,6 +134,11 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 
 // Request makes an HTTP request
 func (c *HTTPClient) Request(commandCount int, method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	return c.RequestWithContext(context.Background(), commandCount, method, path, authKind, headers, jsonBody)
+}
+
+// RequestWithContext makes an HTTP request using the caller's cancellation and deadline.
+func (c *HTTPClient) RequestWithContext(ctx context.Context, commandCount int, method, path string, authKind string, headers map[string]string, jsonBody map[string]any) (*Response, error) {
 	if c == nil {
 		return nil, fmt.Errorf("HTTP Client is nil")
 	}
@@ -153,7 +159,7 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 		mergedHeaders["Content-Type"] = "application/json"
 	}
 
-	req, err := http.NewRequest(method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
@@ -169,9 +175,24 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 	successCount := 0
 	failCount := 0
 	var respHeader http.Header
-	for i := 0; i < commandCount; i++ {
+	var requestErr error
+	for i := range commandCount {
+		if i > 0 && req.GetBody != nil {
+			req.Body, err = req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+		}
 		respBody, respHeader, statusCode, err = c.HttpDo(req)
 		if err == nil {
+			if statusCode >= http.StatusBadRequest {
+				failCount++
+				continue
+			}
+			if statusCode == http.StatusNoContent {
+				successCount++
+				continue
+			}
 			var result struct {
 				Code int `json:"code"`
 			}
@@ -182,10 +203,22 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 			}
 		} else {
 			failCount++
+			if requestErr == nil {
+				requestErr = err
+			}
+			if ctx.Err() != nil {
+				break
+			}
 		}
 	}
 
 	duration := time.Since(startTime).Seconds()
+	if ctx.Err() != nil {
+		requestErr = ctx.Err()
+	} else if commandCount > 1 {
+		// Repeated commands report transport failures through their aggregate counters.
+		requestErr = nil
+	}
 
 	return &Response{
 		StatusCode: statusCode,
@@ -194,7 +227,7 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 		Duration:   duration,
 		Success:    successCount,
 		Fail:       failCount,
-	}, nil
+	}, requestErr
 }
 
 func (c *HTTPClient) HttpDo(req *http.Request) ([]byte, http.Header, int, error) {

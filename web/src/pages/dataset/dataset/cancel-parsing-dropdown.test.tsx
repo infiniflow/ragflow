@@ -19,7 +19,11 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/hooks/use-document-request', () => ({
-  useGetDocumentFilter: () => ({ statusCounts: mockStatusCounts }),
+  useGetDocumentFilter: () => ({
+    statusCounts: mockStatusCounts,
+    parsingCount: mockStatusCounts.RUNNING ?? 0,
+    pendingCount: mockStatusCounts.SCHEDULED ?? 0,
+  }),
   useStopAllDocuments: () => ({ stopAllDocuments: mockStopAllDocuments }),
 }));
 

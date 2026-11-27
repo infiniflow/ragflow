@@ -1,7 +1,8 @@
-import { SecondarySidebarHeader } from '@/components/sidebar-header';
-import { Button } from '@/components/ui/button';
+import {
+  SecondarySidebar,
+  SecondarySidebarMenu,
+} from '@/components/secondary-sidebar';
 import { AgentQuery } from '@/constants/agent';
-import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {
   ClipboardClock,
@@ -89,6 +90,7 @@ export function AgentSidebar({
     return list.map((item) => ({
       ...item,
       to: { pathname: item.path, search },
+      onSelect: onMenuSelect,
     }));
   }, [
     id,
@@ -97,37 +99,14 @@ export function AgentSidebar({
     isPipeline,
     isSetting,
     isVersionHistory,
+    onMenuSelect,
     searchParams,
     t,
   ]);
 
   return (
-    <aside className="flex w-64 flex-col">
-      <SecondarySidebarHeader title={title} onCollapse={onCollapse} />
-
-      <nav className="overflow-y-auto px-5 pb-5 pt-1">
-        <ul className="space-y-2">
-          {items.map((item) => (
-            <li key={item.key}>
-              <Button
-                asLink
-                block
-                variant="ghost"
-                to={item.to}
-                aria-current={item.active ? 'page' : undefined}
-                className={cn(
-                  'relative h-10 justify-start gap-2.5 px-3 text-base',
-                  item.active && 'bg-bg-card text-text-primary',
-                )}
-                onClick={onMenuSelect}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </aside>
+    <SecondarySidebar title={title} onCollapse={onCollapse}>
+      <SecondarySidebarMenu items={items} navigationLabel={title} />
+    </SecondarySidebar>
   );
 }

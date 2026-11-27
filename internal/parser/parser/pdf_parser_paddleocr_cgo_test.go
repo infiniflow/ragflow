@@ -229,3 +229,26 @@ func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
 		}
 	}
 }
+
+// A response may list the same page twice at different raster sizes. Each
+// entry's blocks are scaled by that entry's raster, not by the last one seen.
+func TestOCRPDFResultScalesRepeatedPageByItsOwnRaster(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{
+		{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Text: "first pass", Label: "text", BBox: []float64{174, 146, 1015, 240}}}},
+		{Index: 0, Width: 2382, Height: 3368, Blocks: []models.OCRBlock{{Text: "second pass", Label: "text", BBox: []float64{348, 292, 2030, 480}}}},
+	}}
+	result := OCRPDFResult(t.Context(), "MiniCPM-OCR", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	want := [][]any{{1, float64(87), 507.5, float64(73), float64(120)}}
+	for i, item := range result.JSON {
+		if got := item.ToMap()["_pdf_positions"]; !reflect.DeepEqual(got, want) {
+			t.Fatalf("item %d positions = %v, want %v (the same region at either raster size)", i, got, want)
+		}
+	}
+}

@@ -74,7 +74,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	if err := checkWPSLicense(filename); err != nil {
+	if err := checkWPSLicense(ctx, filename); err != nil {
 		return ParseResult{Err: err}
 	}
 	method := normalizeXLSXParseMethod(p.ParseMethod)

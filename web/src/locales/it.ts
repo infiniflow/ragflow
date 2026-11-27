@@ -482,9 +482,9 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       chunkMethodTab: 'Metodo chunk',
       testResults: 'Risultati',
       testSetting: 'Impostazioni',
-      retrievalTesting: 'Test di recupero',
+      retrievalTesting: 'Recupero',
       retrievalTestingDescription:
-        'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM.',
+        'Esegui il recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM.',
       Parse: 'Analizza',
       dataset: 'Dataset',
       testing: 'Recupero',
@@ -518,7 +518,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       noTestResultsForNotRuned:
         'Nessun test eseguito. I risultati appariranno qui.',
       testingDescription:
-        'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
+        'Esegui il recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
         'Durante il recupero, RAGFlow utilizza una combinazione di similarità ponderata delle parole chiave e similarità coseno vettoriale ponderata oppure, quando è selezionato un modello di reranking, una combinazione di similarità ponderata delle parole chiave e punteggio di reranking ponderato. Questo parametro imposta la soglia di similarità tra la query dell’utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata su 20. Ciò significa che verranno recuperati solo i chunk con un punteggio di similarità ibrida pari o superiore a 20. Se il peso della similarità vettoriale è impostato su 0, questa soglia non si applica.',

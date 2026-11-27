@@ -3,10 +3,8 @@ package parser
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 
-	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 )
 
@@ -22,9 +20,18 @@ func isStructuralOCRTextLayout(fields map[string]any) bool {
 	return false
 }
 
+// ocrAspectTolerance allows 2% variation between the horizontal and vertical
+// scale of an OCR page raster for renderer pixel rounding. Anything beyond it
+// is anisotropic scaling: the raster was cropped or rotated differently from
+// the PDF page.
+const ocrAspectTolerance = 0.02
+
 // OCRPDFResult projects the page blocks of an OCR provider onto the PDF's page
 // geometry and emits the structured items consumed by the existing PDF chunk
 // pipeline. provider names the OCR service in errors and warnings.
+//
+// A block's BBox is [left, top, right, bottom] in the pixels of the page
+// raster the provider recognized, and its text is a Markdown fragment.
 func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -46,33 +53,47 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 		return ParseResult{Err: err}
 	}
 	markdown.FetchRemoteImages = false
+	opts := ExternalBlockOptions{
+		Provider:        provider,
+		PageSizes:       externalPageSizes(sizes),
+		AspectTolerance: ocrAspectTolerance,
+	}
 	for _, page := range response.Pages {
-		if !hasPageCount && page.Index+1 > pageCount {
-			pageCount = page.Index + 1
+		pageNumber := page.Index + 1
+		if !hasPageCount && pageNumber > pageCount {
+			pageCount = pageNumber
 		}
-		size := sizes[page.Index]
-		if paddleOCRPageMismatch(page, size) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("%s page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", provider, page.Index+1, page.Width, page.Height, size[0], size[1]))
-			size = [2]float64{}
+		// Each page entry is its own raster and is converted on its own, so a
+		// response that repeats a page index cannot scale one entry's blocks
+		// by another entry's raster.
+		pageOpts := opts
+		if page.Normalized {
+			pageOpts.SourceSizes = map[int][2]float64{pageNumber: {1, 1}}
+			pageOpts.AspectTolerance = 0
+		} else {
+			pageOpts.SourceSizes = map[int][2]float64{pageNumber: {page.Width, page.Height}}
 		}
-		for _, block := range page.Blocks {
+		var blocks []ExternalBlock
+		var markdownWarnings []string
+		for _, ocrBlock := range page.Blocks {
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
 			}
-			label := strings.ToLower(strings.TrimSpace(block.Label))
-			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(block.Text) {
-				text := models.OCRBlockBody(block.Text)
-				position := paddleOCRBlockPosition(page, block.BBox, size)
-				// A block with neither body text nor a crop region has nothing
-				// media can act on: a crop preview needs positive-area geometry,
-				// and a synthetic text body would index as retrievable text.
-				if text == "" && len(position) == 0 {
-					continue
-				}
-				result.JSON = append(result.JSON, paddleOCRMediaItem(page, text, position))
+			// Page identity is retained even when the block has no usable geometry.
+			block := ExternalBlock{Page: pageNumber, PreserveOrder: true}
+			if len(ocrBlock.BBox) == 4 {
+				block.Regions = []ExternalRegion{{Page: pageNumber, Box: [4]float64(ocrBlock.BBox)}}
+			}
+			label := strings.ToLower(strings.TrimSpace(ocrBlock.Label))
+			content := models.OCRBlockBody(ocrBlock.Text)
+			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(ocrBlock.Text) {
+				// A figure-like block stays a media item. Its region is kept for
+				// the vision pass and the on-demand crop; a synthetic placeholder
+				// would index as retrievable body text (#21218).
+				block.Type, block.Text = ExternalBlockFigure, content
+				blocks = append(blocks, block)
 				continue
 			}
-			content := models.OCRBlockBody(block.Text)
 			if content == "" {
 				continue
 			}
@@ -80,62 +101,15 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 			if parsed.Err != nil {
 				return parsed
 			}
-			result.Warnings = append(result.Warnings, parsed.Warnings...)
-			position := paddleOCRBlockPosition(page, block.BBox, size)
-			if len(position) == 0 && page.KeepPagePosition {
-				position = []any{page.Index + 1, 0.0, 0.0, 0.0, 0.0}
-			}
-			isTitle := label == "doc_title" || label == "paragraph_title"
-			if label == "figure_title" || label == "table_title" {
-				label = "caption"
-			}
-			for _, item := range parsed.JSON {
-				_, isTextItem := item.(TextItem)
-				if text, ok := item.(TextItem); ok {
-					if strings.TrimSpace(text.Text) == "" {
-						continue
-					}
-					layout, _ := text.Extra["layout"].(string)
-					if isTitle && layout != "heading" && layout != "list" && layout != "code" {
-						prefix := "## "
-						if label == "doc_title" {
-							prefix = "# "
-						}
-						text.Text = prefix + text.Text
-						if text.Extra == nil {
-							text.Extra = map[string]any{}
-						}
-						text.Extra["layout"] = "heading"
-						item = text
-					}
-				}
-				fields := item.ToMap()
-				// Page identity is retained even when the block has no usable geometry.
-				fields["page_number"] = page.Index + 1
-				fields["_preserve_order"] = true
-				// Markdown normalization already asserted a structural layout
-				// (heading/list/code). The OCR block label is coarser and must
-				// not overwrite it; only fill an absent layout.
-				if isTitle && isTextItem && !isStructuralOCRTextLayout(fields) {
-					// The asserted-title marker the Title chunker reads without
-					// the notTitle heuristic guard. PDF model labels that merely
-					// look title-like stay on "title".
-					fields["layout"] = "heading"
-				} else if label != "" {
-					if existing, _ := fields["layout"].(string); existing == "" {
-						fields["layout"] = label
-					}
-				}
-				if len(position) > 0 {
-					matrix := [][]any{position}
-					fields["positions"], fields["_pdf_positions"] = matrix, matrix
-				}
-				if table, ok := fields["table"].(*entity.TableData); ok && table != nil {
-					table.Page = page.Index + 1
-				}
-				result.JSON = append(result.JSON, DocItemFromMap(fields))
+			markdownWarnings = append(markdownWarnings, parsed.Warnings...)
+			if block.Items = ocrBlockItems(label, parsed.JSON); len(block.Items) > 0 {
+				block.KeepPagePosition = page.KeepPagePosition
+				blocks = append(blocks, block)
 			}
 		}
+		items, placementWarnings := ExternalBlocksToItems(blocks, pageOpts)
+		result.JSON = append(result.JSON, items...)
+		result.Warnings = append(append(result.Warnings, placementWarnings...), markdownWarnings...)
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -147,72 +121,50 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 	return result
 }
 
-// paddleOCRMediaItem keeps a figure-like block as a media item. The text stays
-// empty when the block carries no body text: the region is preserved for the
-// vision pass and the on-demand crop, while a synthetic placeholder would
-// index as retrievable body text (#21218). The chunker drops a text-less media
-// item that never became retrievable, matching the DeepDoc figure path.
-func paddleOCRMediaItem(page models.OCRPage, text string, position []any) DocItem {
-	fields := map[string]any{
-		"doc_type_kwd":    "image",
-		"layout":          "figure",
-		"page_number":     page.Index + 1,
-		"_preserve_order": true,
+// ocrBlockItems applies an OCR block label to the items the Markdown parser
+// produced from the block's text. A title label promotes plain text to a
+// heading; any other label fills only the layout Markdown did not assert.
+func ocrBlockItems(label string, parsed []DocItem) []map[string]any {
+	isTitle := label == "doc_title" || label == "paragraph_title"
+	if label == "figure_title" || label == "table_title" {
+		label = "caption"
 	}
-	if text != "" {
-		fields["text"] = text
-	}
-	if len(position) > 0 {
-		matrix := [][]any{position}
-		fields["positions"], fields["_pdf_positions"] = matrix, matrix
-	}
-	return DocItemFromMap(fields)
-}
-
-// paddleOCRPageMismatch reports whether a page's OCR image dimensions do not
-// match the PDF page's aspect ratio, so its pixel boxes cannot be placed. A
-// Normalized page gives boxes as page fractions and is never a mismatch.
-func paddleOCRPageMismatch(page models.OCRPage, size [2]float64) bool {
-	return !page.Normalized && paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size)
-}
-
-// paddleOCRBlockPosition scales a block box onto the PDF page. A Normalized
-// page gives the box as page fractions, so it needs no aspect-ratio check.
-func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {
-	if page.Normalized {
-		page.Width, page.Height = 1, 1
-	}
-	if page.Index < 0 || !paddleOCRPositive(page.Width) || !paddleOCRPositive(page.Height) || !paddleOCRPositive(size[0]) || !paddleOCRPositive(size[1]) {
-		return nil
-	}
-	if (!page.Normalized && !paddleOCRAspectRatioMatches(page, size)) || len(bbox) != 4 {
-		return nil
-	}
-	for _, v := range bbox {
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return nil
+	items := make([]map[string]any, 0, len(parsed))
+	for _, item := range parsed {
+		_, isTextItem := item.(TextItem)
+		if text, ok := item.(TextItem); ok {
+			if strings.TrimSpace(text.Text) == "" {
+				continue
+			}
+			layout, _ := text.Extra["layout"].(string)
+			if isTitle && layout != "heading" && layout != "list" && layout != "code" {
+				prefix := "## "
+				if label == "doc_title" {
+					prefix = "# "
+				}
+				text.Text = prefix + text.Text
+				if text.Extra == nil {
+					text.Extra = map[string]any{}
+				}
+				text.Extra["layout"] = "heading"
+				item = text
+			}
 		}
+		fields := item.ToMap()
+		// Markdown normalization already asserted a structural layout
+		// (heading/list/code). The OCR block label is coarser and must
+		// not overwrite it; only fill an absent layout.
+		if isTitle && isTextItem && !isStructuralOCRTextLayout(fields) {
+			// The asserted-title marker the Title chunker reads without
+			// the notTitle heuristic guard. PDF model labels that merely
+			// look title-like stay on "title".
+			fields["layout"] = "heading"
+		} else if label != "" {
+			if existing, _ := fields["layout"].(string); existing == "" {
+				fields["layout"] = label
+			}
+		}
+		items = append(items, fields)
 	}
-	left, top, right, bottom := bbox[0], bbox[1], bbox[2], bbox[3]
-	if right <= left || bottom <= top {
-		return nil
-	}
-	left = math.Max(0, math.Min(size[0], left*size[0]/page.Width))
-	right = math.Max(0, math.Min(size[0], right*size[0]/page.Width))
-	top = math.Max(0, math.Min(size[1], top*size[1]/page.Height))
-	bottom = math.Max(0, math.Min(size[1], bottom*size[1]/page.Height))
-	if right <= left || bottom <= top {
-		return nil
-	}
-	return []any{page.Index + 1, left, right, top, bottom}
-}
-
-// Allow 2% variation for renderer pixel rounding, but reject anisotropic scaling.
-func paddleOCRAspectRatioMatches(page models.OCRPage, size [2]float64) bool {
-	xScale, yScale := size[0]/page.Width, size[1]/page.Height
-	return math.Max(xScale, yScale) <= 1.02*math.Min(xScale, yScale)
-}
-
-func paddleOCRPositive(value float64) bool {
-	return value > 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
+	return items
 }

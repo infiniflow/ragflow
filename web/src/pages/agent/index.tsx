@@ -310,29 +310,34 @@ export default function Agent() {
                 runButton
               ))}
             <CanvasChecklist issues={issues} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label={t('flow.management')}
-                >
-                  <Ellipsis />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {hasReadPermission(operatorPermission) && (
-                  <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
-                    <MessageSquareCode />
-                    {t('flow.conversationVariable')}
+            {isPipeline ? (
+              <Button variant="secondary" onClick={handleExportJson}>
+                <Upload />
+                {t('flow.export')}
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    aria-label={t('flow.management')}
+                  >
+                    <Ellipsis />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {hasReadPermission(operatorPermission) && (
+                    <AgentDropdownMenuItem onClick={showGlobalParamSheet}>
+                      <MessageSquareCode />
+                      {t('flow.conversationVariable')}
+                    </AgentDropdownMenuItem>
+                  )}
+                  <AgentDropdownMenuItem onClick={handleExportJson}>
+                    <Upload />
+                    {t('flow.export')}
                   </AgentDropdownMenuItem>
-                )}
-                <AgentDropdownMenuItem onClick={handleExportJson}>
-                  <Upload />
-                  {t('flow.export')}
-                </AgentDropdownMenuItem>
-                {isPipeline ||
-                  (location.hostname !== 'cloud.ragflow.io' && (
+                  {location.hostname !== 'cloud.ragflow.io' && (
                     <>
                       <DropdownMenuSeparator />
                       <AgentDropdownMenuItem onClick={handleEmbedClick}>
@@ -340,9 +345,10 @@ export default function Agent() {
                         {t('common.embedIntoSite')}
                       </AgentDropdownMenuItem>
                     </>
-                  ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </PageHeader>
         <ModelResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>

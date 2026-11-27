@@ -135,7 +135,7 @@ func TestCreateCommitRejectsFilesOutsideFolder(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := svc.CreateCommit(ctx, "folder-a", "user-a", "attempt", []entity.FileChange{tc.change}); err == nil {
+			if _, err := svc.CreateCommit(ctx, nil, "folder-a", "user-a", "attempt", []entity.FileChange{tc.change}); err == nil {
 				t.Fatalf("expected CreateCommit to reject %s", tc.change.FileID)
 			}
 			f.assertUntouched(t, tc.victim, tc.wantName, tc.wantLocation)
@@ -148,7 +148,7 @@ func TestCreateCommitAcceptsFilesInsideFolderTree(t *testing.T) {
 	svc := NewFileCommitService()
 	ctx := permission.WithIdentity(context.Background(), "user-a", "tenant-a")
 
-	commit, err := svc.CreateCommit(ctx, "folder-a", "user-a", "edit", []entity.FileChange{
+	commit, err := svc.CreateCommit(ctx, nil, "folder-a", "user-a", "edit", []entity.FileChange{
 		{FileID: "file-a", Operation: "modify", FileName: "a.txt", Content: "hello"},
 		{FileID: "file-sub", Operation: "modify", FileName: "nested.txt", Content: "nested hello"},
 	})
@@ -178,7 +178,7 @@ func TestCreateCommitRejectsInvalidRenameTarget(t *testing.T) {
 
 	for _, name := range []string{"", "   ", strings.Repeat("a", 256)} {
 		t.Run(name, func(t *testing.T) {
-			_, err := svc.CreateCommit(permission.WithIdentity(context.Background(), "user-a", "tenant-a"), "folder-a", "user-a", "rename", []entity.FileChange{
+			_, err := svc.CreateCommit(permission.WithIdentity(context.Background(), "user-a", "tenant-a"), nil, "folder-a", "user-a", "rename", []entity.FileChange{
 				{FileID: "file-a", Operation: "rename", OldName: "a.txt", NewName: name},
 			})
 			if err == nil {
@@ -200,7 +200,7 @@ func TestCreateCommitRejectsMissingFolder(t *testing.T) {
 	f := newCommitAuthFixture(t)
 	svc := NewFileCommitService()
 
-	if _, err := svc.CreateCommit(permission.WithIdentity(context.Background(), "user-a", "tenant-a"), "no-such-folder", "user-a", "edit", []entity.FileChange{
+	if _, err := svc.CreateCommit(permission.WithIdentity(context.Background(), "user-a", "tenant-a"), nil, "no-such-folder", "user-a", "edit", []entity.FileChange{
 		{FileID: "file-a", Operation: "modify", FileName: "a.txt", Content: "hello"},
 	}); err == nil {
 		t.Fatal("expected CreateCommit to reject an unknown folder")

@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/deepdoc/parser/pdf/table"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -129,27 +129,29 @@ func openDataLoaderMultipart(filename string, data []byte, parser *PDFParser) (i
 	return strings.NewReader(body.String()), writer.FormDataContentType(), nil
 }
 
+// openDataLoaderBleedTolerance is how far past the page edge a box may reach,
+// as a fraction of that page dimension. Printed content bleeds slightly; a box
+// further out is not a bleed but a disagreement about the coordinate space.
+const openDataLoaderBleedTolerance = 0.1
+
 // openDataLoaderItemsWithGeometry flattens every typed element into a parse
 // item. pageSizes maps a 0-based page index to the PDF's page size in points;
 // when it is nil (nocgo, or a document pdfium cannot load) the items keep
 // their text and the reported page number, but carry no positions. The second
 // return value reports the pages whose boxes did not fit that page size.
+//
+// OpenDataLoader reports boxes as [left, bottom, right, top] in PDF points
+// with the origin at the bottom-left. The point space is a service contract
+// this adapter cannot read, so a box that cannot belong to its page is taken
+// as evidence of a different space.
 func openDataLoaderItemsWithGeometry(root any, pageSizes map[int][2]float64) ([]map[string]any, []string) {
-	items := []map[string]any{}
-	// One warning per page: a page whose boxes disagree with the point space
-	// is a coordinate-space mismatch worth surfacing, but repeating it per
-	// element would bury the rest of the parse result in noise.
-	reported := map[int]string{}
+	var blocks []ExternalBlock
 	var walk func(any)
 	walk = func(node any) {
 		switch v := node.(type) {
 		case map[string]any:
-			item, page, warning := openDataLoaderNodeToItem(v, pageSizes)
-			if item != nil {
-				items = append(items, item)
-			}
-			if warning != "" && reported[page] == "" {
-				reported[page] = warning
+			if block, ok := openDataLoaderBlock(v); ok {
+				blocks = append(blocks, block)
 			}
 			for _, child := range v {
 				walk(child)
@@ -161,121 +163,51 @@ func openDataLoaderItemsWithGeometry(root any, pageSizes map[int][2]float64) ([]
 		}
 	}
 	walk(root)
-	pages := make([]int, 0, len(reported))
-	for page := range reported {
-		pages = append(pages, page)
-	}
-	sort.Ints(pages)
-	warnings := make([]string, 0, len(pages))
-	for _, page := range pages {
-		warnings = append(warnings, reported[page])
-	}
-	return items, warnings
+	return externalBlockMaps(blocks, ExternalBlockOptions{
+		Provider:          "OpenDataLoader",
+		PageSizes:         externalPageSizes(pageSizes),
+		BleedTolerance:    openDataLoaderBleedTolerance,
+		FigurePlaceholder: "[Image]",
+	})
 }
 
-func openDataLoaderNodeToItem(el map[string]any, pageSizes map[int][2]float64) (map[string]any, int, string) {
+// openDataLoaderBlock reads one typed element. Nodes without a type are
+// containers and yield no block.
+func openDataLoaderBlock(el map[string]any) (ExternalBlock, bool) {
 	rawType, _ := el["type"].(string)
 	t := strings.ToLower(strings.TrimSpace(rawType))
 	if t == "" {
-		return nil, 0, ""
+		return ExternalBlock{}, false
 	}
-	text := strings.TrimSpace(stringValue(el["content"]))
-	if text == "" {
-		text = strings.TrimSpace(stringValue(el["text"]))
+	block := ExternalBlock{Type: ExternalBlockText, Text: stringValue(el["content"])}
+	if strings.TrimSpace(block.Text) == "" {
+		block.Text = stringValue(el["text"])
 	}
 	switch t {
 	case "table":
-		html := strings.TrimSpace(stringValue(el["html"]))
-		if html == "" {
-			html = strings.TrimSpace(stringValue(el["html_content"]))
+		block.Type = ExternalBlockTable
+		block.HTML = stringValue(el["html"])
+		if strings.TrimSpace(block.HTML) == "" {
+			block.HTML = stringValue(el["html_content"])
 		}
-		if html == "" {
-			if rows := openDataLoaderCellRows(el["cells"]); rowsHaveText(rows) {
-				html = table.SimpleRowsToHTML(rows)
-			}
+		// Markup wins over cells, so the cells are read only without it.
+		if strings.TrimSpace(block.HTML) == "" {
+			block.TableCells = openDataLoaderCellRows(el["cells"])
 		}
-		if html != "" {
-			text = html
-		}
-		if text == "" {
-			return nil, 0, ""
-		}
-		item := map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
-		projectPDFTable(item)
-		return openDataLoaderWithPositions(item, el, pageSizes)
 	case "image", "picture", "figure":
-		if text == "" {
-			text = "[Image]"
-		}
-		return openDataLoaderWithPositions(map[string]any{"text": text, "doc_type_kwd": "image", "layout": "figure"}, el, pageSizes)
+		block.Type = ExternalBlockFigure
 	case "formula", "equation":
-		if text == "" {
-			return nil, 0, ""
+		block.Type = ExternalBlockEquation
+	case "title", "heading":
+		block.Type = ExternalBlockTitle
+	}
+	if page, ok := openDataLoaderPageNumber(el); ok {
+		block.Page = page
+		if box, ok := openDataLoaderBox(el); ok {
+			block.Regions = []ExternalRegion{{Page: page, Box: box, BottomLeft: true}}
 		}
-		return openDataLoaderWithPositions(map[string]any{"text": text, "doc_type_kwd": "text", "layout": "equation"}, el, pageSizes)
-	default:
-		if text == "" {
-			return nil, 0, ""
-		}
-		layout := "text"
-		if t == "title" || t == "heading" {
-			layout = "title"
-		}
-		return openDataLoaderWithPositions(map[string]any{"text": text, "doc_type_kwd": "text", "layout": layout}, el, pageSizes)
 	}
-}
-
-func openDataLoaderWithPositions(item map[string]any, el map[string]any, pageSizes map[int][2]float64) (map[string]any, int, string) {
-	page, ok := openDataLoaderPageNumber(el)
-	if !ok {
-		return item, 0, ""
-	}
-	// The page identity survives without geometry (nocgo, or a missing box),
-	// matching the PaddleOCR adapter: downstream chunking and croppers can
-	// still attribute the item to its page.
-	item["page_number"] = page
-	positions, warning := openDataLoaderPositions(page, el, pageSizes)
-	if len(positions) > 0 {
-		item["positions"], item["_pdf_positions"] = positions, positions
-	}
-	return item, page, warning
-}
-
-// openDataLoaderPositions converts one element's geometry into RAGFlow's
-// canonical [page, left, right, top, bottom] row. OpenDataLoader reports
-// [left, bottom, right, top] in PDF points with the origin at the bottom-left,
-// while positions are stored in screen space with the origin at the top-left,
-// so the vertical edges are flipped against the page height. Without the page
-// size the flip cannot be computed, and a wrong-y highlight is worse than none.
-// The flip assumes both sides describe the same (post-rotation) page box, which
-// holds for the page sizes pdfium reports; the point space itself is a service
-// contract this adapter cannot read, so a box that cannot belong to the page is
-// treated as evidence of a different space and reported through the second
-// return value.
-func openDataLoaderPositions(page int, el map[string]any, pageSizes map[int][2]float64) ([][]any, string) {
-	size, ok := pageSizes[page-1]
-	if !ok || size[0] <= 0 || size[1] <= 0 {
-		return nil, ""
-	}
-	box, ok := openDataLoaderBox(el)
-	if !ok {
-		return nil, ""
-	}
-	left, bottom, right, top := box[0], box[1], box[2], box[3]
-	if right <= left || top <= bottom {
-		return nil, ""
-	}
-	if pdfBoxExceedsBleed(left, bottom, right, top, size[0], size[1]) {
-		return nil, fmt.Sprintf("OpenDataLoader page %d: element box [%g %g %g %g] does not fit page size %gx%g; positions omitted because the service coordinates do not match the PDF point space", page, left, bottom, right, top, size[0], size[1])
-	}
-	left = math.Max(0, math.Min(size[0], left))
-	right = math.Max(0, math.Min(size[0], right))
-	screenTop := math.Max(0, math.Min(size[1], size[1]-top))
-	screenBottom := math.Max(0, math.Min(size[1], size[1]-bottom))
-	if right <= left || screenBottom <= screenTop {
-		return nil, ""
-	}
-	return [][]any{{float64(page), left, right, screenTop, screenBottom}}, ""
+	return block, true
 }
 
 // openDataLoaderReportedPageCount is the page-count fallback when pdfium is
@@ -369,10 +301,12 @@ func openDataLoaderCellRows(raw any) [][]string {
 	if len(rows) == 0 || maxRow < 0 {
 		return nil
 	}
+	// Walk the rows that exist, not every index up to the highest: one far-off
+	// row index must not become a scan of that length.
 	ordered := make([][]string, 0, len(rows))
-	for i := 0; i <= maxRow; i++ {
-		if cols, ok := rows[i]; ok {
-			ordered = append(ordered, cols)
+	for _, row := range slices.Sorted(maps.Keys(rows)) {
+		if row >= 0 {
+			ordered = append(ordered, rows[row])
 		}
 	}
 	return ordered
