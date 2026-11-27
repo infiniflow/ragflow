@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 
@@ -83,6 +84,11 @@ func resolveModelRefWithType(ctx context.Context, db *gorm.DB, modelID, driver, 
 		}
 		if ok {
 			return resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, resolvedType, nil
+		}
+	}
+	if driver == "" {
+		if groupID, ok := common.ParseGroupModelRef(modelID); ok {
+			return resolveGroupModelRef(ctx, db, groupID, apiKey, baseURL, allowedTypes)
 		}
 	}
 	if driver == "" && modelID != "" {
@@ -338,6 +344,42 @@ func resolveTenantCompositeModel(ctx context.Context, db *gorm.DB, modelRef, api
 		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("model %q has no active decision entry", modelRef)
 	}
 	return resolveTenantModelByTenantModelID(ctx, db, tid, selected.ID, apiKey, baseURL, allowedTypes)
+}
+
+// resolveGroupModelRef resolves a gp-<group_id> reference to the group's
+// currently picked active member: PickModelFromGroup selects the member in
+// position order and resolveTenantModelByTenantModelID fills in the member's
+// model name, provider, and credentials. A group with no usable member
+// resolves to an error instead of falling through to the dummy driver — a
+// group reference that cannot serve the requested type is a configuration
+// mistake, not an unconfigured model.
+func resolveGroupModelRef(ctx context.Context, db *gorm.DB, groupID, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, error) {
+	if db == nil {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("model group %s cannot be resolved without a database handle", groupID)
+	}
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("model group %s requires a canvas context with tenant_id", groupID)
+	}
+	tid, _ := state.GetSysString("tenant_id")
+	if tid == "" {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("model group %s requires a tenant context", groupID)
+	}
+	member, err := transaction.PickModelFromGroup(ctx, db, groupID, allowedTypes)
+	if err != nil {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("pick model group %s member: %w", groupID, err)
+	}
+	if member == nil {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("model group %s has no active member usable as %s model", groupID, allowedTypes)
+	}
+	modelName, provider, modelKey, modelBaseURL, modelType, ok, err := resolveTenantModelByTenantModelID(ctx, db, tid, member.ID, apiKey, baseURL, allowedTypes)
+	if err != nil {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("resolve model group %s member: %w", groupID, err)
+	}
+	if !ok {
+		return "", "", apiKey, baseURL, 0, fmt.Errorf("model group %s member %s cannot be used as %s model", groupID, member.ID, allowedTypes)
+	}
+	return modelName, provider, modelKey, modelBaseURL, modelType, nil
 }
 
 func resolveTenantModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, bool, error) {
