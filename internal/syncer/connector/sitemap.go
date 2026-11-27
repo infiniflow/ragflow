@@ -157,7 +157,7 @@ func (c *SitemapConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 			if entry.lastmod.IsZero() {
 				continue
 			}
-			if beforeOrAtWindowStart(entry.lastmod, request.WindowStart) || afterWindowEnd(entry.lastmod, request.WindowEnd) {
+			if beforeOrAtWindowStart(entry.lastmodEnd(), request.WindowStart) || afterWindowEnd(entry.lastmod, request.WindowEnd) {
 				continue
 			}
 		}
@@ -594,6 +594,20 @@ func (s *sitemapPruneSession) Close() error {
 type sitemapEntry struct {
 	loc     string
 	lastmod time.Time
+	// dateOnly is set when <lastmod> has no time of day (YYYY-MM-DD).
+	dateOnly bool
+}
+
+// lastmodEnd returns the time OpenSync compares with the window start. A date
+// without a time covers the whole day in the site's unstated time zone, and that
+// day ends last at UTC-12, 36 hours after the UTC midnight stored in lastmod;
+// comparing that end keeps a page edited on that day after the previous sync
+// started. Other values are compared as parsed.
+func (e sitemapEntry) lastmodEnd() time.Time {
+	if e.dateOnly {
+		return e.lastmod.Add(36 * time.Hour)
+	}
+	return e.lastmod
 }
 
 // sitemapDocument is a parsed sitemap or sitemap index.
@@ -641,7 +655,8 @@ func parseSitemapXML(data []byte) (*sitemapDocument, error) {
 			if loc == "" {
 				continue
 			}
-			document.entries = append(document.entries, sitemapEntry{loc: loc, lastmod: parseSitemapLastmod(item.Lastmod)})
+			lastmod, dateOnly := parseSitemapLastmod(item.Lastmod)
+			document.entries = append(document.entries, sitemapEntry{loc: loc, lastmod: lastmod, dateOnly: dateOnly})
 		}
 	default:
 		return nil, fmt.Errorf("unexpected root element <%s>", root.XMLName.Local)
@@ -649,11 +664,12 @@ func parseSitemapXML(data []byte) (*sitemapDocument, error) {
 	return document, nil
 }
 
-// parseSitemapLastmod parses W3C Datetime values used by <lastmod>.
-func parseSitemapLastmod(value string) time.Time {
+// parseSitemapLastmod parses W3C Datetime values used by <lastmod> and reports
+// whether the value is a date without a time.
+func parseSitemapLastmod(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return time.Time{}
+		return time.Time{}, false
 	}
 	layouts := []string{
 		time.RFC3339Nano,
@@ -662,15 +678,15 @@ func parseSitemapLastmod(value string) time.Time {
 		"2006-01-02T15:04:05",
 		"2006-01-02T15:04Z07:00",
 		"2006-01-02T15:04",
-		"2006-01-02",
+		time.DateOnly,
 	}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.UTC()
+			return parsed.UTC(), layout == time.DateOnly
 		}
 	}
 	common.Debug("sitemap: unrecognised lastmod format", zap.String("value", value))
-	return time.Time{}
+	return time.Time{}, false
 }
 
 // validateSitemapURL checks scheme/host shape and the SSRF guard.
