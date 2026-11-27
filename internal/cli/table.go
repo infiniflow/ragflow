@@ -103,7 +103,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		colIsNumeric[col] = isNumeric
 	}
 
-	// Calculate column widths (capped at maxColWidth)
+	// Calculate column widths, capping them only in plain mode.
 	colWidths := make(map[string]int)
 	for _, col := range columns {
 		maxWidth := getStringWidth(strings.ToLower(col))
@@ -114,7 +114,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 				maxWidth = valueWidth
 			}
 		}
-		if maxWidth > maxColWidth {
+		if format == OutputFormatPlain && maxWidth > maxColWidth {
 			maxWidth = maxColWidth
 		}
 		if maxWidth < 2 {
@@ -170,7 +170,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		fmt.Println(separator)
 		headerParts := make([]string, 0, len(columns))
 		for _, col := range columns {
-			headerParts = append(headerParts, fmt.Sprintf(" %-*s ", colWidths[col], col))
+			headerParts = append(headerParts, fmt.Sprintf(" %s ", padCell(col, colWidths[col], false)))
 		}
 		fmt.Println("|" + strings.Join(headerParts, "|") + "|")
 		fmt.Println(separator)

@@ -199,3 +199,27 @@ func capturePrintOut(t *testing.T, print func()) (string, any) {
 	}
 	return string(output), panicValue
 }
+
+func TestCommonResponseTableBorders(t *testing.T) {
+	longValue := strings.Repeat("a", 257)
+	response := &CommonResponse{
+		Data:         []map[string]interface{}{{"id": longValue, "名称": "中文"}},
+		OutputFormat: OutputFormatTable,
+	}
+	output, panicValue := capturePrintOut(t, response.PrintOut)
+	if panicValue != nil {
+		t.Fatalf("print table: %v", panicValue)
+	}
+	border := "+" + strings.Repeat("-", 259) + "+------+"
+	want := strings.Join([]string{
+		border,
+		"| id" + strings.Repeat(" ", 256) + "| 名称 |",
+		border,
+		"| " + longValue + " | 中文 |",
+		border,
+		"",
+	}, "\n")
+	if output != want {
+		t.Errorf("table output = %q, want %q", output, want)
+	}
+}
