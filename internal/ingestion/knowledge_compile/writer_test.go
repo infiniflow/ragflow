@@ -18,7 +18,7 @@ type recordingPageCommitter struct {
 	inputs []file.PageEditCommitInput
 }
 
-func (c *recordingPageCommitter) RecordPageEdit(_ context.Context, input file.PageEditCommitInput) (*entity.FileCommit, error) {
+func (c *recordingPageCommitter) RecordPageEdit(_ context.Context, _ *gorm.DB, input file.PageEditCommitInput) (*entity.FileCommit, error) {
 	c.inputs = append(c.inputs, input)
 	return &entity.FileCommit{ID: "commit-1"}, nil
 }

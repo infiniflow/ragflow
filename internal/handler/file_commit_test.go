@@ -39,7 +39,7 @@ import (
 
 // mockFileCommitSvc implements FileCommitServiceInterface for testing
 type mockFileCommitSvc struct {
-	createCommitFn          func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
+	createCommitFn          func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	listCommitsFn           func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	getCommitFn             func(ctx context.Context, commitID string) (*entity.FileCommit, error)
 	getPageCommitDetailFn   func(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
@@ -52,9 +52,9 @@ type mockFileCommitSvc struct {
 	listPageCommitsFn       func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error)
 }
 
-func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 	if m.createCommitFn != nil {
-		return m.createCommitFn(ctx, folderID, authorID, message, changes)
+		return m.createCommitFn(ctx, db, folderID, authorID, message, changes)
 	}
 	return &entity.FileCommit{
 		ID:        "commit-1",
@@ -232,7 +232,7 @@ func setupFileCommitTestNoAuth() *gin.Engine {
 
 func TestFileCommit_CreateCommit_Success(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		if folderID != "folder-1" {
 			t.Errorf("expected folder-1, got %s", folderID)
 		}
@@ -280,7 +280,7 @@ func TestFileCommit_CreateCommit_Success(t *testing.T) {
 
 func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		return nil, fmt.Errorf("%w: f1", file.ErrDeleteLiveFile)
 	}
 
@@ -305,7 +305,7 @@ func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
 
 func TestFileCommit_CreateCommit_InvalidRenameIsBadRequest(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		return nil, fmt.Errorf("%w: f1", file.ErrInvalidRenameTarget)
 	}
 
@@ -330,7 +330,7 @@ func TestFileCommit_CreateCommit_InvalidRenameIsBadRequest(t *testing.T) {
 
 func TestFileCommit_CreateCommit_RejectsFileOutsideFolder(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		return nil, fmt.Errorf("%w: file f2 is outside folder %s", permission.ErrPermissionDenied, folderID)
 	}
 

@@ -152,7 +152,7 @@ func (w engineWriter) datasetTokenizer(ctx context.Context, kb string) (tokenize
 }
 
 type pageCommitter interface {
-	RecordPageEdit(context.Context, file.PageEditCommitInput) (*entity.FileCommit, error)
+	RecordPageEdit(context.Context, *gorm.DB, file.PageEditCommitInput) (*entity.FileCommit, error)
 }
 
 func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error {
@@ -297,7 +297,7 @@ func (w engineWriter) recordWikiPageRemoval(ctx context.Context, kb string, row 
 	if !ok {
 		return
 	}
-	if _, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
+	if _, err := w.commitService.RecordPageEdit(ctx, w.db, file.PageEditCommitInput{
 		DatasetID: kb,
 		Slug:      target.bareSlug,
 		PageType:  target.pageType,
@@ -565,7 +565,7 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 		}
 		seen[target.key] = struct{}{}
 
-		_, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
+		_, err := w.commitService.RecordPageEdit(ctx, w.db, file.PageEditCommitInput{
 			DatasetID: kb,
 			Slug:      target.bareSlug,
 			PageType:  target.pageType,
