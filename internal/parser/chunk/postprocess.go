@@ -19,6 +19,7 @@ package chunk
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 type mergeConfig struct {
@@ -94,7 +95,7 @@ func (o *PostprocessOperator) Execute(chunkCtx *ChunkContext) error {
 	// Re-index
 	for i := range chunks {
 		chunks[i].Index = i
-		chunks[i].Size = len(chunks[i].GetContent())
+		chunks[i].Size = utf8.RuneCountInString(chunks[i].GetContent())
 	}
 
 	chunkCtx.ResultChunks = chunks
