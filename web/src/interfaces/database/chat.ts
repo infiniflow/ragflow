@@ -51,6 +51,7 @@ export interface PromptConfig {
   agentic_rag?: AgenticRagOverride | null;
   anysearch_api_key?: string;
   brave_api_key?: string;
+  context_dev_api_key?: string;
   exa_api_key?: string;
   firecrawl_api_key?: string;
   keirolabs_api_key?: string;

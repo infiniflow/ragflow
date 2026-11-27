@@ -39,6 +39,7 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
       .optional(),
     anysearch_api_key: z.string().optional(),
     brave_api_key: z.string().optional(),
+    context_dev_api_key: z.string().optional(),
     exa_api_key: z.string().optional(),
     firecrawl_api_key: z.string().optional(),
     keirolabs_api_key: z.string().optional(),
@@ -56,6 +57,7 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
       .enum([
         WebSearchProvider.AnySearch,
         WebSearchProvider.Brave,
+        WebSearchProvider.ContextDev,
         WebSearchProvider.Exa,
         WebSearchProvider.Firecrawl,
         WebSearchProvider.Keirolabs,

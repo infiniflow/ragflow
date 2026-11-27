@@ -35,7 +35,7 @@ import (
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
-// (anysearch, brave, exa, firecrawl, keirolabs, linkup, parallel, perplexity, querit,
+// (anysearch, brave, context, exa, firecrawl, keirolabs, linkup, parallel, perplexity, querit,
 // search1api, searchapi, serply, specstream, tavily, youcom) so a new provider has exactly
 // one obvious place in each list.
 // Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
@@ -43,6 +43,7 @@ import (
 const (
 	webSearchProviderAnySearch  = "anysearch"
 	webSearchProviderBrave      = "brave"
+	webSearchProviderContext    = "context"
 	webSearchProviderExa        = "exa"
 	webSearchProviderFirecrawl  = "firecrawl"
 	webSearchProviderKeirolabs  = "keirolabs"
@@ -59,6 +60,7 @@ const (
 
 	anySearchWebSearchEndpoint = "https://api.anysearch.com/v1/search"
 	braveWebSearchEndpoint     = "https://api.search.brave.com/res/v1/web/search"
+	contextWebSearchEndpoint   = "https://api.context.dev/v1/web/search"
 	exaWebSearchEndpoint       = "https://api.exa.ai/search"
 	// v2 is Firecrawl's current search shape; the v1 endpoint is deprecated.
 	firecrawlWebSearchEndpoint  = "https://api.firecrawl.dev/v2/search"
@@ -91,7 +93,11 @@ var (
 			return http.ErrUseLastResponse
 		},
 	}
-	braveWebSearchHTTPClient      = &http.Client{Timeout: 30 * time.Second}
+	braveWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
+	contextWebSearchHTTPClient = &http.Client{
+		Timeout:       30 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	exaWebSearchHTTPClient        = &http.Client{Timeout: 30 * time.Second}
 	firecrawlWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	keirolabsWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
@@ -150,6 +156,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		keyOptional = true
 	case webSearchProviderBrave:
 		apiKeyField = "brave_api_key"
+	case webSearchProviderContext:
+		apiKeyField = "context_dev_api_key"
 	case webSearchProviderExa:
 		apiKeyField = "exa_api_key"
 	case webSearchProviderFirecrawl:
@@ -243,6 +251,8 @@ func retrieveWebSearchWithTavily(
 			provider.APIKey,
 			question,
 		)
+	case webSearchProviderContext:
+		return retrieveContextWebSearch(ctx, contextWebSearchHTTPClient, contextWebSearchEndpoint, provider.APIKey, question)
 	case webSearchProviderExa:
 		return retrieveExaWebSearch(
 			ctx,
@@ -613,6 +623,91 @@ func retrieveBraveWebSearch(
 		})
 	}
 	return webSearchPayload("brave", hits), nil
+}
+
+// --- Context.dev ------------------------------------------------------------
+
+type contextWebSearchResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	Highlights  struct {
+		Code       string   `json:"code"`
+		Highlights []string `json:"highlights"`
+	} `json:"highlights"`
+}
+
+func retrieveContextWebSearch(ctx context.Context, client *http.Client, endpoint, apiKey, query string) (map[string]interface{}, error) {
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":             query,
+		"numResults":        webSearchResultCount,
+		"highlightsOptions": map[string]interface{}{"enabled": true, "maxCharacters": 2000},
+	})
+	if err != nil {
+		return nil, errors.New("context: invalid search request")
+	}
+	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, map[string]string{
+		"Accept":        "application/json",
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + apiKey,
+	}, bytes.NewReader(requestBody))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		var status webSearchHTTPStatusError
+		if errors.As(err, &status) {
+			return nil, fmt.Errorf("context: %w", status)
+		}
+		// Transport errors can include request headers; keep them out of error chains.
+		return nil, errors.New("context: search request failed")
+	}
+	var response struct {
+		Results json.RawMessage `json:"results"`
+		Partial bool            `json:"partial"`
+	}
+	if json.Unmarshal(responseBody, &response) != nil || len(response.Results) == 0 || response.Results[0] != '[' {
+		return nil, errors.New("context: invalid search response")
+	}
+	var results []*contextWebSearchResult
+	if json.Unmarshal(response.Results, &results) != nil {
+		return nil, errors.New("context: invalid search results")
+	}
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		if result == nil {
+			return nil, errors.New("context: invalid search result")
+		}
+		sourceURL, err := url.Parse(strings.TrimSpace(result.URL))
+		if err != nil || sourceURL.Hostname() == "" || sourceURL.User != nil || (sourceURL.Scheme != "http" && sourceURL.Scheme != "https") {
+			continue
+		}
+		passages := make([]string, 0, len(result.Highlights.Highlights))
+		if result.Highlights.Code == "SUCCESS" {
+			for _, passage := range result.Highlights.Highlights {
+				if passage = strings.TrimSpace(passage); passage != "" {
+					passages = append(passages, passage)
+				}
+			}
+		}
+		content := strings.Join(passages, "\n")
+		if content == "" {
+			if description := strings.TrimSpace(result.Description); description != "" {
+				content = "[Highlights unavailable; search description only.] " + description
+			}
+		}
+		if content == "" {
+			continue
+		}
+		if response.Partial {
+			content = "[Partial search results.] " + content
+		}
+		hits = append(hits, webSearchHit{Title: result.Title, URL: sourceURL.String(), Content: content})
+	}
+	if response.Partial && len(hits) == 0 {
+		return nil, errors.New("context: partial search returned no usable results")
+	}
+	return webSearchPayload("context", hits), nil
 }
 
 // --- Exa --------------------------------------------------------------------

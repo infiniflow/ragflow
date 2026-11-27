@@ -2694,10 +2694,11 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"keirolabs"`, `"linkup"`, `"parallel"`, `"perplexity"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"specstream"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"context"`, `"exa"`, `"firecrawl"`, `"keirolabs"`, `"linkup"`, `"parallel"`, `"perplexity"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"specstream"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"anysearch_api_key"`: `string` The optional [AnySearch](https://anysearch.com/console/api-keys) API key. Set `web_search_provider` to `"anysearch"` when using this field. Omit it or leave it blank for anonymous search; service limits apply.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
+  - `"context_dev_api_key"`: `string` The [Context.dev](https://context.dev) API key. Set `web_search_provider` to `"context"` to use search Highlights. Requests consume your Context.dev account credits.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
   - `"firecrawl_api_key"`: `string` The [Firecrawl](https://www.firecrawl.dev/search) API key. Set `web_search_provider` to `"firecrawl"` when using this field. See the [Firecrawl Search API reference](https://docs.firecrawl.dev/api-reference/endpoint/search) for details.
   - `"keirolabs_api_key"`: `string` The [Keirolabs](https://www.keirolabs.cloud) API key. Set `web_search_provider` to `"keirolabs"` when using this field.
