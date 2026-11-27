@@ -37,6 +37,8 @@ func filterDifyRecords(context.Context, []difyRecord) error { return nil }
 
 func filterChunkResponse(_ context.Context, data any) (any, error) { return data, nil }
 
+func allowAPIKeyCreation(_ *gin.Context) bool { return true }
+
 // billingQuotaUser resolves the caller that the plan quota applies to.
 func billingQuotaUser(c *gin.Context) (*entity.User, common.ErrorCode, error) {
 	user, code, message := GetUser(c)

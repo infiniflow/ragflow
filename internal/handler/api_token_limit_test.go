@@ -19,6 +19,9 @@ import (
 func TestCreateKeyQuotaReturnsBadRequest(t *testing.T) {
 	db := testutil.SetupTestDB(t, &entity.Tenant{}, &entity.UserTenant{}, &entity.APIToken{}, &entity.SystemSettings{})
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
+	if err := dao.NewSystemSettingsDAO().SaveOrCreate(t.Context(), db, "expose_api.enabled", "true", "runtime", "bool"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&entity.Tenant{ID: "tenant-1", ParserIDs: ""}).Error; err != nil {
 		t.Fatal(err)
 	}
