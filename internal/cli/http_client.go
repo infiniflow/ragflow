@@ -170,6 +170,12 @@ func (c *HTTPClient) Request(commandCount int, method, path string, authKind str
 	failCount := 0
 	var respHeader http.Header
 	for i := 0; i < commandCount; i++ {
+		if i > 0 && req.GetBody != nil {
+			req.Body, err = req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+		}
 		respBody, respHeader, statusCode, err = c.HttpDo(req)
 		if err == nil {
 			var result struct {
