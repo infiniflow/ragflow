@@ -634,6 +634,41 @@ func TestUploadInfosRejectsNameOverLimitAfterNormalization(t *testing.T) {
 	}
 }
 
+func TestUploadInfosPreservesMarkdownWithoutContentType(t *testing.T) {
+	t.Setenv(common.EnvMaxFileNumPerUser, "")
+	store := &fakeStorage{}
+	factory := storage.GetStorageFactory()
+	original := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(original) })
+
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	source := []byte("<div>Lesson &amp; example</div>\n")
+	for _, tc := range []struct {
+		name, contentType, wantType, wantBody string
+	}{
+		{"lesson.md", "", "text/markdown", string(source)},
+		{"lesson.md", "text/html", "text/html", "Lesson & example"},
+		{"lesson.html", "", "text/html", "Lesson & example"},
+	} {
+		t.Run(tc.name+"/"+tc.contentType, func(t *testing.T) {
+			fh := makeUploadInfoHeader(t, tc.name, source)
+			if tc.contentType == "" {
+				fh.Header.Del("Content-Type")
+			} else {
+				fh.Header.Set("Content-Type", tc.contentType)
+			}
+			results, err := testFileService().UploadInfos(ctx, []*multipart.FileHeader{fh})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) != 1 || results[0]["mime_type"] != tc.wantType || string(store.blob) != tc.wantBody {
+				t.Fatalf("UploadInfos = %v, stored %q; want type %s and body %q", results, store.blob, tc.wantType, tc.wantBody)
+			}
+		})
+	}
+}
+
 func makeUploadInfoHeader(t *testing.T, filename string, content []byte) *multipart.FileHeader {
 	t.Helper()
 	var body bytes.Buffer
