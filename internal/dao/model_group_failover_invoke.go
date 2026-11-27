@@ -18,6 +18,8 @@ package dao
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	"ragflow/internal/common"
@@ -30,11 +32,14 @@ import (
 // InvokeWithGroupFailover is the shared failover orchestration for every model
 // invocation chain that resolves a gp- group reference: resolve → invoke, and
 // when the invocation fails retryably, flip the currently picked group member
-// inactive and retry once on the next member (a fresh resolution).
+// inactive and retry on the next member (a fresh resolution). The cycle
+// repeats: each retry member that also fails retryably is flipped too, until a
+// member succeeds, the caller's context ends, an error fails canRetry, or the
+// group runs out of members.
 //
 // resolve produces the model for the first attempt — a caller that already
 // resolved the model earlier (e.g. because intermediate phases need it) returns
-// that instance here. reresolve re-resolves the same reference after the flip;
+// that instance here. reresolve re-resolves the same reference after each flip;
 // pass nil to reuse resolve when resolve always performs a fresh lookup. invoke
 // performs the call; any state that must reset between attempts (streaming
 // accumulators and the like) is reset inside it. canRetry gates which
@@ -42,10 +47,14 @@ import (
 // orchestration itself refuses to retry once ctx is done. Failover only
 // applies to gp- references — non-group model IDs never flip and never retry.
 //
-// On a failed flip, re-resolution, or retry the original invocation error is
-// returned so it surfaces exactly as it would without failover; only Warn logs
-// mark the outcome. In the community edition MarkGroupMemberInactive reports
-// false, so this collapses to a single resolve+invoke attempt.
+// Error semantics: a success returns nil; a first-attempt or retry error that
+// fails canRetry (or ends with the context) is returned as-is so it surfaces
+// exactly as it would without failover. When no member is left to try — the
+// flip fails, re-resolution finds no active member — an exhausted error
+// wrapping every failed attempt (errors.Join) is returned, so errors.Is
+// matches any of the member failures. Warn logs mark each failed transition.
+// In the community edition MarkGroupMemberInactive reports false, so this
+// collapses to a single resolve+invoke attempt.
 func InvokeWithGroupFailover[T any](
 	ctx context.Context,
 	db *gorm.DB,
@@ -57,12 +66,17 @@ func InvokeWithGroupFailover[T any](
 	invoke func(context.Context, T) error,
 	canRetry func(error) bool,
 ) error {
+	attempts := []error{}
 	model, err := resolve(ctx)
 	if err != nil {
 		return err
 	}
 	invErr := invoke(ctx, model)
-	if invErr == nil || ctx.Err() != nil || (canRetry != nil && !canRetry(invErr)) {
+	if invErr == nil {
+		return nil
+	}
+	attempts = append(attempts, invErr)
+	if ctx.Err() != nil || (canRetry != nil && !canRetry(invErr)) {
 		return invErr
 	}
 	groupID, ok := common.ParseGroupModelRef(modelRef)
@@ -75,28 +89,44 @@ func InvokeWithGroupFailover[T any](
 	if db == nil {
 		return invErr
 	}
-	flipped, ferr := MarkGroupMemberInactive(ctx, db, strings.TrimSpace(tenantID), groupID, modelType)
-	if ferr != nil {
-		common.WarnCtx(ctx, "model group failover: failed to mark member inactive",
-			zap.String("model_ref", modelRef), zap.Error(ferr))
-		return invErr
-	}
-	if !flipped {
-		return invErr
-	}
 	if reresolve == nil {
 		reresolve = resolve
 	}
-	retryModel, rerr := reresolve(ctx)
-	if rerr != nil {
-		common.WarnCtx(ctx, "model group failover: re-resolve failed",
-			zap.String("model_ref", modelRef), zap.Error(rerr))
-		return invErr
+	for ctx.Err() == nil {
+		flipped, ferr := MarkGroupMemberInactive(ctx, db, strings.TrimSpace(tenantID), groupID, modelType)
+		if ferr != nil {
+			common.WarnCtx(ctx, "model group failover: failed to mark member inactive",
+				zap.String("model_ref", modelRef), zap.Error(ferr))
+			return exhaustedGroupError(groupID, attempts)
+		}
+		if !flipped {
+			return exhaustedGroupError(groupID, attempts)
+		}
+		retryModel, rerr := reresolve(ctx)
+		if rerr != nil {
+			common.WarnCtx(ctx, "model group failover: re-resolve failed, no member left to try",
+				zap.String("model_ref", modelRef), zap.Error(rerr))
+			return exhaustedGroupError(groupID, attempts)
+		}
+		invErr = invoke(ctx, retryModel)
+		if invErr == nil {
+			return nil
+		}
+		attempts = append(attempts, invErr)
+		if ctx.Err() != nil || (canRetry != nil && !canRetry(invErr)) {
+			// The latest member's failure is terminal for this invocation:
+			// surface it as-is rather than as an exhaustion.
+			return invErr
+		}
 	}
-	if retryErr := invoke(ctx, retryModel); retryErr != nil {
-		common.WarnCtx(ctx, "model group failover: retry failed",
-			zap.String("model_ref", modelRef), zap.Error(retryErr))
-		return invErr
-	}
-	return nil
+	// The context ended mid-cascade: the last observed member failure is the
+	// meaningful cause (it is what the caller's cancellation interrupted).
+	return attempts[len(attempts)-1]
+}
+
+// exhaustedGroupError reports that every remaining member of a gp- group was
+// tried (or the flip machinery failed) and the invocation still failed. It
+// joins all member failures so errors.Is matches any one of them.
+func exhaustedGroupError(groupID string, attempts []error) error {
+	return fmt.Errorf("model group %s exhausted: %d member invocation(s) failed: %w", groupID, len(attempts), errors.Join(attempts...))
 }
