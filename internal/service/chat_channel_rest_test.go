@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -95,6 +96,56 @@ func TestChatChannelRESTStreamFailures(t *testing.T) {
 				t.Fatalf("error=%v", err)
 			}
 		})
+	}
+}
+
+func TestChatChannelRESTClientRunsThinkingNotifierBeforeCompletion(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.APIToken{}); err != nil {
+		t.Fatal(err)
+	}
+	serviceTestContext(t, "owner", "owner")
+	if err := db.Create(&entity.User{ID: "owner", Email: "owner@example.com", AccessToken: new("owner-access")}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.APIToken{TenantID: "owner", UserID: new("owner"), Token: "owner-key"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	createServiceTestDialog(t, db, "chat", "owner", "Support")
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		Config:   entity.JSONMap{},
+		ID:       "channel",
+		TenantID: "owner",
+		ChatID:   new("chat"),
+		Status:   1,
+	})
+
+	var notified atomic.Bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !notified.Load() {
+			t.Error("completion started before the thinking placeholder")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"code\":0,\"data\":{\"answer\":\"answer\"}}\n\ndata: {\"code\":0,\"data\":true}\n\n")
+	}))
+	defer api.Close()
+
+	notifications := 0
+	answer, err := NewChatChannelRESTClient(api.URL).HandleIncomingMessage(
+		t.Context(),
+		ChatChannelIncomingMessage{AccountID: "channel", ChatID: "external", Text: "hello"},
+		nil,
+		func() error {
+			notifications++
+			notified.Store(true)
+			return fmt.Errorf("placeholder delivery failed")
+		},
+	)
+	if err != nil || answer != "answer" {
+		t.Fatalf("answer=%q error=%v", answer, err)
+	}
+	if notifications != 1 {
+		t.Fatalf("thinking notifications = %d, want 1", notifications)
 	}
 }
 

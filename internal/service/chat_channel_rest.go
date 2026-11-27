@@ -31,7 +31,7 @@ func NewChatChannelRESTClient(baseURL string) *ChatChannelRESTClient {
 	}}
 }
 
-func (c *ChatChannelRESTClient) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (answer string, err error) {
+func (c *ChatChannelRESTClient) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string), notifyThinking ...func() error) (answer string, err error) {
 	if strings.TrimSpace(msg.Text) == "" {
 		return "", nil
 	}
@@ -77,6 +77,7 @@ func (c *ChatChannelRESTClient) HandleIncomingMessage(ctx context.Context, msg C
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	notifyThinkingMessage(notifyThinking)
 	response, err := c.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("channel completion API is unavailable: %w", err)
@@ -99,6 +100,20 @@ func (c *ChatChannelRESTClient) HandleIncomingMessage(ctx context.Context, msg C
 		return "", fmt.Errorf("channel completion API rejected the request (code %d)", failure.Code)
 	}
 	return consumeChatChannelRESTStream(response.Body, agent, onDelta)
+}
+
+// notifyThinkingMessage posts the interim "thinking" message when the channel
+// supplied one.
+func notifyThinkingMessage(notifiers []func() error) {
+	for _, notify := range notifiers {
+		if notify == nil {
+			continue
+		}
+		if err := notify(); err != nil {
+			common.Warn("chat channel thinking placeholder failed", zap.Error(err))
+		}
+		return
+	}
 }
 
 func consumeChatChannelRESTStream(reader io.Reader, agent bool, onDelta func(string)) (string, error) {

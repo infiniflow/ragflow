@@ -28,12 +28,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -848,5 +850,311 @@ func TestWeComSendStreamFinishesWhenCancelled(t *testing.T) {
 	}
 	if stream["content"] != "Hello" {
 		t.Fatalf("finish content = %v, want the last shown text", stream["content"])
+	}
+}
+
+func TestWeComWebhookRecoversPanickingHandlerAndAllowsRetry(t *testing.T) {
+	resetWeComDedupeForTest(t)
+	channel, aesKey := newWeComWebhookTestChannel(t, "account-panic")
+
+	called := make(chan struct{}, 1)
+	channel.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		called <- struct{}{}
+		panic("boom")
+	})
+	server := &wecomWebhookServer{channels: map[string]*wecomChannel{"account-panic": channel}}
+
+	const messageID = "message-panic"
+	const dedupeKey = "account-panic:" + messageID
+	request := newWeComTextWebhookRequest(t, aesKey, "account-panic", messageID, "hello")
+	response := httptest.NewRecorder()
+	server.handleRequest(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("message response status = %d, body=%q", response.Code, response.Body.String())
+	}
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the panicking handler")
+	}
+	if !waitForWeComDedupeState(t, dedupeKey, false, false) {
+		t.Fatal("dedupe entry must be cleared after a handler panic")
+	}
+	if !waitForWeComWorkSlots(t, 0) {
+		t.Fatal("panic recovery must release the callback work slot")
+	}
+}
+
+func TestWeComWebhookAcknowledgesBeforeHandlerFinishesAndDeduplicatesRetry(t *testing.T) {
+	resetWeComDedupeForTest(t)
+	channel, aesKey := newWeComWebhookTestChannel(t, "account-async")
+	server := &wecomWebhookServer{channels: map[string]*wecomChannel{"account-async": channel}}
+
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	channel.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		started <- struct{}{}
+		<-release
+		return nil
+	})
+
+	const messageID = "message-async"
+	firstRequest := newWeComTextWebhookRequest(t, aesKey, "account-async", messageID, "hello")
+	firstCode := make(chan int, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.handleRequest(response, firstRequest)
+		firstCode <- response.Code
+	}()
+	select {
+	case code := <-firstCode:
+		if code != http.StatusOK {
+			t.Fatalf("first callback status = %d, want 200", code)
+		}
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("callback was not acknowledged before the handler completed")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("timed out waiting for the first handler")
+	}
+
+	secondRequest := newWeComTextWebhookRequest(t, aesKey, "account-async", messageID, "hello")
+	secondCode := make(chan int, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.handleRequest(response, secondRequest)
+		secondCode <- response.Code
+	}()
+	select {
+	case code := <-secondCode:
+		if code != http.StatusServiceUnavailable {
+			t.Fatalf("in-flight duplicate callback status = %d, want 503", code)
+		}
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("in-flight duplicate callback did not return")
+	}
+	select {
+	case <-started:
+		close(release)
+		t.Fatal("duplicate callback started a concurrent handler")
+	default:
+	}
+
+	close(release)
+	const dedupeKey = "account-async:" + messageID
+	if !waitForWeComDedupeState(t, dedupeKey, false, true) {
+		t.Fatal("successfully processed callback was not retained in the dedupe window")
+	}
+
+	response := httptest.NewRecorder()
+	server.handleRequest(response, newWeComTextWebhookRequest(t, aesKey, "account-async", messageID, "hello"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("processed duplicate status = %d, want 200", response.Code)
+	}
+	select {
+	case <-started:
+		t.Fatal("processed duplicate callback started another handler")
+	default:
+	}
+	if !waitForWeComWorkSlots(t, 0) {
+		t.Fatal("successful handler did not release its callback work slot")
+	}
+}
+
+func TestWeComWebhookRetriesAfterHandlerFailure(t *testing.T) {
+	resetWeComDedupeForTest(t)
+	channel, aesKey := newWeComWebhookTestChannel(t, "account-retry")
+	server := &wecomWebhookServer{channels: map[string]*wecomChannel{"account-retry": channel}}
+
+	var calls atomic.Int32
+	called := make(chan int32, 2)
+	channel.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		call := calls.Add(1)
+		called <- call
+		if call == 1 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	})
+
+	const messageID = "message-retry"
+	const dedupeKey = "account-retry:" + messageID
+	response := httptest.NewRecorder()
+	server.handleRequest(response, newWeComTextWebhookRequest(t, aesKey, "account-retry", messageID, "hello"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("first callback status = %d, want 200", response.Code)
+	}
+	select {
+	case call := <-called:
+		if call != 1 {
+			t.Fatalf("first handler call = %d", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the failed handler")
+	}
+	if !waitForWeComDedupeState(t, dedupeKey, false, false) {
+		t.Fatal("retryable failure must clear the dedupe entry")
+	}
+
+	response = httptest.NewRecorder()
+	server.handleRequest(response, newWeComTextWebhookRequest(t, aesKey, "account-retry", messageID, "hello"))
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry callback status = %d, want 200", response.Code)
+	}
+	select {
+	case call := <-called:
+		if call != 2 {
+			t.Fatalf("retry handler call = %d, want 2", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retry callback did not run the handler again")
+	}
+	if !waitForWeComDedupeState(t, dedupeKey, false, true) {
+		t.Fatal("successful retry must be retained in the dedupe window")
+	}
+	if !waitForWeComWorkSlots(t, 0) {
+		t.Fatal("successful retry did not release its callback work slot")
+	}
+}
+
+func TestWeComWebhookRequestsRetryWhenHandlerCapacityIsExhausted(t *testing.T) {
+	resetWeComDedupeForTest(t)
+	channel, aesKey := newWeComWebhookTestChannel(t, "account-full")
+	server := &wecomWebhookServer{channels: map[string]*wecomChannel{"account-full": channel}}
+	called := make(chan struct{}, 1)
+	channel.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		called <- struct{}{}
+		return nil
+	})
+
+	if len(weComWorkSlots) != 0 {
+		t.Fatalf("callback work slots were not empty: %d", len(weComWorkSlots))
+	}
+	acquired := 0
+	t.Cleanup(func() {
+		for acquired > 0 {
+			releaseWeComWork()
+			acquired--
+		}
+	})
+	for acquired < cap(weComWorkSlots) {
+		if !tryAcquireWeComWork() {
+			t.Fatalf("failed to fill callback work slot %d", acquired+1)
+		}
+		acquired++
+	}
+
+	const messageID = "message-full"
+	response := httptest.NewRecorder()
+	server.handleRequest(response, newWeComTextWebhookRequest(t, aesKey, "account-full", messageID, "hello"))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("saturated callback status = %d, want 503", response.Code)
+	}
+	select {
+	case <-called:
+		t.Fatal("saturated callback ran the handler")
+	default:
+	}
+	if inFlight, seen := weComDedupeState("account-full:" + messageID); inFlight || seen {
+		t.Fatal("saturated callback must not record the message id")
+	}
+}
+
+func newWeComWebhookTestChannel(t *testing.T, accountID string) (*wecomChannel, []byte) {
+	t.Helper()
+	encodingAESKey, aesKey := testWeComAESKey()
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      accountID,
+		ConnectionType: "webhook",
+		CorpID:         "corp-id",
+		AgentID:        1000001,
+		Secret:         "secret",
+		Token:          "token",
+		AESKey:         encodingAESKey,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+	return channel, aesKey
+}
+
+func newWeComTextWebhookRequest(t *testing.T, aesKey []byte, accountID, messageID, content string) *http.Request {
+	t.Helper()
+	plaintext, err := xml.Marshal(struct {
+		XMLName      xml.Name `xml:"xml"`
+		ToUserName   string   `xml:"ToUserName"`
+		FromUserName string   `xml:"FromUserName"`
+		CreateTime   int64    `xml:"CreateTime"`
+		MsgType      string   `xml:"MsgType"`
+		Content      string   `xml:"Content"`
+		MsgID        string   `xml:"MsgId"`
+	}{
+		ToUserName:   "corp-id",
+		FromUserName: "user-1",
+		CreateTime:   123,
+		MsgType:      "text",
+		Content:      content,
+		MsgID:        messageID,
+	})
+	if err != nil {
+		t.Fatalf("marshal webhook message: %v", err)
+	}
+	encrypted := encryptWeComTestPayload(t, aesKey, plaintext, "corp-id")
+	body, err := xml.Marshal(wecomEncryptedXML{Encrypt: encrypted})
+	if err != nil {
+		t.Fatalf("marshal encrypted XML: %v", err)
+	}
+	query := url.Values{
+		"msg_signature": {testWeComSignature("token", "124", "nonce-2", encrypted)},
+		"timestamp":     {"124"},
+		"nonce":         {"nonce-2"},
+	}
+	return httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/wecom/%s/callback?%s", accountID, query.Encode()),
+		bytes.NewReader(body),
+	)
+}
+
+func waitForWeComDedupeState(t *testing.T, key string, wantInFlight, wantSeen bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		inFlight, seen := weComDedupeState(key)
+		if inFlight == wantInFlight && seen == wantSeen {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func weComDedupeState(key string) (bool, bool) {
+	weComSeenMessagesMu.Lock()
+	_, inFlight := weComInFlightMessages[key]
+	_, seen := weComSeenMessages[key]
+	weComSeenMessagesMu.Unlock()
+	return inFlight, seen
+}
+
+func waitForWeComWorkSlots(t *testing.T, want int) bool {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		if len(weComWorkSlots) == want {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
