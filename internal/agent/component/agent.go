@@ -141,7 +141,11 @@ type AgentParam struct {
 	// so downstream Message templates like {Agent:X@structured} resolve.
 	OutputStructure map[string]any
 	visualFiles     []string // image URIs resolved from VisualFilesVar for this invocation
-	contextLength   int
+	// modelGroup carries gp- failover wiring for this invocation: the
+	// original reference, the tenant, and the pre-resolution credentials.
+	// nil when the model is not a gp- group reference.
+	modelGroup    *agentModelGroup
+	contextLength int
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -224,16 +228,30 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		maxSteps += 2
 	}
 
+	var toolCallingModel model.ToolCallingChatModel = &roundLimitedChatModel{
+		ToolCallingChatModel: chatModel,
+		modelName:            p.ModelID,
+		remaining:            maxSteps / 2,
+		maxRetries:           p.MaxRetries,
+		initialDelay:         p.DelayAfterError,
+		contextLength:        contextLength,
+		outputTokens:         outputTokens,
+	}
+	if p.modelGroup != nil {
+		// gp- group reference: wrap the round limiter with failover so a
+		// retryably failing member is flipped inactive and the next active
+		// member is retried with a freshly resolved chat model. The wrapper
+		// sits outside the limiter so the per-member retry budget (and the
+		// round budget) stays intact per member.
+		toolCallingModel = newGroupFailoverChatModel(toolCallingModel, *p.modelGroup, func(ctx context.Context, driver, modelName, apiKey, baseURL string) (model.ToolCallingChatModel, error) {
+			member := p
+			member.ModelID, member.Driver, member.APIKey, member.BaseURL = modelName, driver, apiKey, baseURL
+			return buildAgentChatModel(ctx, member)
+		})
+	}
+
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: &roundLimitedChatModel{
-			ToolCallingChatModel: chatModel,
-			modelName:            p.ModelID,
-			remaining:            maxSteps / 2,
-			maxRetries:           p.MaxRetries,
-			initialDelay:         p.DelayAfterError,
-			contextLength:        contextLength,
-			outputTokens:         outputTokens,
-		},
+		ToolCallingModel: toolCallingModel,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -343,6 +361,23 @@ func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolC
 		outputTokens:         m.outputTokens,
 		toolSchemaTokens:     schemaTokens,
 	}, nil
+}
+
+// withSwappedModel returns a copy carrying a new underlying member model
+// while preserving round accounting and retry configuration. Group failover
+// uses it to rebind a freshly resolved member without resetting the
+// tool-call budget the limiter has already spent.
+func (m *roundLimitedChatModel) withSwappedModel(inner model.ToolCallingChatModel, modelName string) *roundLimitedChatModel {
+	return &roundLimitedChatModel{
+		ToolCallingChatModel: inner,
+		modelName:            modelName,
+		remaining:            m.remaining,
+		maxRetries:           m.maxRetries,
+		initialDelay:         m.initialDelay,
+		contextLength:        m.contextLength,
+		outputTokens:         m.outputTokens,
+		toolSchemaTokens:     m.toolSchemaTokens,
+	}
 }
 
 func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
@@ -1290,6 +1325,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 
 	var err error
+	preDriver, preKey, preURL := p.Driver, p.APIKey, p.BaseURL
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, err
@@ -1315,6 +1351,16 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	tenantID := ""
 	if state != nil {
 		tenantID, _ = state.GetSysString("tenant_id")
+	}
+	if _, isGroup := common.ParseGroupModelRef(originalModelID); isGroup {
+		p.modelGroup = &agentModelGroup{
+			modelRef: originalModelID,
+			tenantID: tenantID,
+			db:       db,
+			driver:   preDriver,
+			apiKey:   preKey,
+			baseURL:  preURL,
+		}
 	}
 	p.contextLength = modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	p.visualFiles, err = resolveAgentVisualFiles(state, p.VisualFilesVar)
