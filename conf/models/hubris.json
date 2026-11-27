@@ -1,7 +1,7 @@
 {
   "name": "Hubris",
   "url": {
-    "default": "https://api.hubris.pw/v1"
+    "default": "https://api.hubris.pro/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
