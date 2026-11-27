@@ -157,7 +157,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName strin
 		if chatModelConfig.TopP != nil {
 			reqBody["top_p"] = *chatModelConfig.TopP
 		}
-		if chatModelConfig.Stop != nil {
+		if chatModelConfig.Stop != nil && len(*chatModelConfig.Stop) > 0 {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
 	}
@@ -212,7 +212,7 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		if chatModelConfig.TopP != nil {
 			reqBody["top_p"] = *chatModelConfig.TopP
 		}
-		if chatModelConfig.Stop != nil {
+		if chatModelConfig.Stop != nil && len(*chatModelConfig.Stop) > 0 {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
 	}

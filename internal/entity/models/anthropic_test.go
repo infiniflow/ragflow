@@ -738,3 +738,23 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 		t.Errorf("ShowTask: got %v", err)
 	}
 }
+
+func TestApplyAnthropicChatConfigOmitsEmptyStop(t *testing.T) {
+	empty := []string{}
+	reqBody := map[string]interface{}{}
+	if err := applyAnthropicChatConfig(reqBody, &ChatConfig{Stop: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := reqBody["stop_sequences"]; present {
+		t.Errorf("stop_sequences must stay absent for an empty stop list, got %v", reqBody["stop_sequences"])
+	}
+
+	stops := []string{"Human:"}
+	reqBody = map[string]interface{}{}
+	if err := applyAnthropicChatConfig(reqBody, &ChatConfig{Stop: &stops}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := reqBody["stop_sequences"].([]string); !ok || len(got) != 1 || got[0] != "Human:" {
+		t.Errorf("stop_sequences = %v, want [Human:]", reqBody["stop_sequences"])
+	}
+}

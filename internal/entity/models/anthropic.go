@@ -144,7 +144,7 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	if chatModelConfig.TopP != nil {
 		reqBody["top_p"] = *chatModelConfig.TopP
 	}
-	if chatModelConfig.Stop != nil {
+	if chatModelConfig.Stop != nil && len(*chatModelConfig.Stop) > 0 {
 		reqBody["stop_sequences"] = *chatModelConfig.Stop
 	}
 	var tools []map[string]any

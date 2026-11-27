@@ -210,3 +210,23 @@ func TestIsRequestRejected(t *testing.T) {
 		})
 	}
 }
+
+// An empty stop list must not reach the provider: OpenAI-compatible gateways
+// translate "stop": [] into an empty stop-sequence field that some backends
+// reject (Amazon Bedrock through LiteLLM answers "This model doesn't support
+// the stopSequences field" for Qwen3 and gpt-oss). Omitting it is equivalent
+// to sending no stop sequence.
+func TestBuildRequestBodyStop(t *testing.T) {
+	empty := []string{}
+	stops := []string{"###"}
+	for name, cfg := range map[string]*ChatConfig{"unset": {}, "empty": {Stop: &empty}} {
+		body := buildRequestBody(cfg, "m", []Message{{Role: "user", Content: "x"}}, false)
+		if _, present := body["stop"]; present {
+			t.Errorf("%s: stop must stay absent, got %v", name, body["stop"])
+		}
+	}
+	body := buildRequestBody(&ChatConfig{Stop: &stops}, "m", []Message{{Role: "user", Content: "x"}}, false)
+	if got, ok := body["stop"].([]string); !ok || len(got) != 1 || got[0] != "###" {
+		t.Fatalf("stop = %v, want [###]", body["stop"])
+	}
+}
