@@ -378,6 +378,15 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 						return nil, ctx.Err()
 					case <-time.After(wait):
 					}
+					// Do consumed the body even when the response asks for a retry.
+					if req.GetBody != nil {
+						req.Body, err = req.GetBody()
+						if err != nil {
+							req.URL = &originalURL
+							transport.CloseIdleConnections()
+							return nil, err
+						}
+					}
 					continue
 				}
 			}
