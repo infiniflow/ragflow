@@ -1,5 +1,9 @@
 import { LLMFactory } from '@/constants/llm';
-import { ProviderConfigMap } from './provider-config-map';
+import { FormFieldType } from '@/components/dynamic-form';
+import {
+  ProviderConfigMap,
+  SCALEWAY_BASE_URL_TEMPLATE,
+} from './provider-config-map';
 
 jest.mock('@/components/dynamic-form', () => ({
   FormFieldType: {
@@ -119,6 +123,43 @@ describe('Unlimited-OCR-2 provider configuration', () => {
     ).toMatchObject({
       unlimited_ocr_server_url: 'http://127.0.0.1:18000',
       unlimited_ocr_api_key: 'token-123',
+    });
+  });
+});
+
+describe('Scaleway provider configuration', () => {
+  const config = ProviderConfigMap[LLMFactory.Scaleway];
+  const projectUrl =
+    'https://api.scaleway.ai/11111111-2222-3333-4444-555555555555/v1';
+
+  it('pre-fills the Base URL with the project-scoped template', () => {
+    const baseUrl = config.fields.find((field) => field.name === 'base_url');
+
+    expect(baseUrl).toMatchObject({
+      type: FormFieldType.Text,
+      required: true,
+      defaultValue: SCALEWAY_BASE_URL_TEMPLATE,
+    });
+    expect(SCALEWAY_BASE_URL_TEMPLATE).toBe(
+      'https://api.scaleway.ai/<project_id>/v1',
+    );
+  });
+
+  it('saves and verifies with the edited Base URL', () => {
+    const values = {
+      instance_name: 'scaleway',
+      api_key: 'scw-secret',
+      base_url: ` ${projectUrl} `,
+    };
+
+    expect(config.submitTransform?.(values)).toMatchObject({
+      llm_factory: LLMFactory.Scaleway,
+      api_key: 'scw-secret',
+      base_url: projectUrl,
+    });
+    expect(config.verifyTransform?.(values)).toMatchObject({
+      apiKey: 'scw-secret',
+      baseUrl: projectUrl,
     });
   });
 });

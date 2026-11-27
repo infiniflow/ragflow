@@ -37,6 +37,9 @@ const buildMineruApiKey = (values: Record<string, any>) => {
   return cfg;
 };
 
+export const SCALEWAY_BASE_URL_TEMPLATE =
+  'https://api.scaleway.ai/<project_id>/v1';
+
 /**
  * Factory configuration mapping table
  * key: LLMFactory value
@@ -99,6 +102,56 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         model_info: [],
       };
     },
+  },
+
+  // ============ Scaleway ============
+  [LLMFactory.Scaleway]: {
+    llmFactory: LLMFactory.Scaleway,
+    title: 'Scaleway',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        autoComplete: 'new-password',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'api_key',
+        label: 'apiKey',
+        type: FormFieldType.Password,
+        required: true,
+        placeholder: 'apiKeyMessage',
+        autoComplete: 'new-password',
+        validation: { message: 'apiKeyMessage' },
+      },
+      {
+        name: 'base_url',
+        label: 'baseUrl',
+        type: FormFieldType.Text,
+        required: true,
+        // Pre-filled template: users replace <project_id> with their Scaleway
+        // Project ID, or enter the URL of a dedicated deployment.
+        defaultValue: SCALEWAY_BASE_URL_TEMPLATE,
+        placeholder: 'scalewayBaseUrlPlaceholder',
+        tooltip: 'scalewayBaseUrlTip',
+        validation: { message: 'baseUrlNameMessage' },
+      },
+    ],
+    verifyTransform: (values) => ({
+      apiKey: values.api_key,
+      baseUrl: String(values.base_url ?? '').trim(),
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.Scaleway,
+      api_key: values.api_key ?? '',
+      base_url: String(values.base_url ?? '').trim(),
+      model_info: [],
+    }),
   },
 
   // ============ VolcEngine ============

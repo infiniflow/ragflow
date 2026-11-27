@@ -87,6 +87,7 @@ const themeIcons = [
   LLMFactory.MinerUNet,
   LLMFactory.JiekouAI,
   LLMFactory.Perplexity,
+  LLMFactory.Scaleway,
 ];
 
 const svgIcons = [
@@ -148,6 +149,7 @@ const svgIcons = [
   LLMFactory.HopBase,
   LLMFactory.GreenNode,
   LLMFactory.Morse,
+  LLMFactory.Scaleway,
   LLMFactory.TeamoRouter,
   LLMFactory.Straitly,
 ];
