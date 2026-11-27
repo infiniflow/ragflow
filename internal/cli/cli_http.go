@@ -608,9 +608,11 @@ func (c *CLI) ExecuteSingleCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return c.SingleUseWorkspaceCommand(commandCount, cmd)
 	case "single_new_workspace":
 		return c.SingleNewWorkspaceCommand(commandCount, cmd)
+	case "single_delete_workspace":
+		return c.SingleDeleteWorkspaceCommand(commandCount, cmd)
 	case "single_save_message":
 		return c.SingleSaveMessageCommand(commandCount, cmd)
-	case "single_show_workspace":
+	case "single_show_current_workspace":
 		return c.SingleShowCurrentWorkspaceCommand(commandCount, cmd)
 	case "file_system_command":
 		return c.ExecuteFilesystemCommand(commandCount, cmd)

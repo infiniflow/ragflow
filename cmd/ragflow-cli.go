@@ -33,7 +33,8 @@ func main() {
 	var err error
 	cli.Arguments, err = cli.ParseArgs(os.Args[1:])
 	if err != nil {
-		return
+		fmt.Printf("Failed to parse arguments: %v\n", err)
+		os.Exit(1)
 	}
 
 	if cli.Arguments.ShowHelp {
@@ -68,7 +69,8 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if cli.Arguments.CLIMode == cli.CommandMode {
+	// A command runs once and exits; without one the CLI stays interactive.
+	if cli.Arguments.Command != nil {
 		if err = client.RunSingleCommand(cli.Arguments.Command); err != nil {
 			fmt.Printf("Command execution failed: %v\n", err)
 			os.Exit(1)

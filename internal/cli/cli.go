@@ -243,19 +243,19 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 
 	switch commandLineConfig.CLIMode {
 	case CommandMode:
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			commandArgs = append(commandArgs, arg)
-		}
-
 		defaultApiServerConfig := &APIServerConfig{
 			UserName:     nil,
 			UserPassword: nil,
 			APIKey:       nil,
 		}
 
-		configFile := "rf.yml"
-		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
+		var err error
+		commandArgs, err = collectSingleCommandArgs(args)
+		if err != nil {
+			return nil, err
+		}
+
+		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, "rf.yml")
 		if err != nil {
 			return nil, err
 		}
@@ -269,81 +269,10 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		}
 
 		configFile := "rf.yml"
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-
-			// Handle known global flags (already parsed in first pass).
-			// Intercept here regardless of position so they are never
-			// mistaken for command args or unknown flags downstream.
-			switch arg {
-			case "-o", "--output":
-				if i+1 < len(args) {
-					i++
-				}
-				continue
-			case "-v", "--verbose", "--help", "-help", "--version", "-V":
-				continue
-			case "--admin", "-admin":
-				return nil, fmt.Errorf("unexpected parameter: --admin")
-			}
-
-			// If we've found the command, collect remaining args
-			if foundCommand {
-				commandArgs = append(commandArgs, arg)
-				continue
-			}
-
-			switch arg {
-			case "-h", "--host":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					hostVal := args[i+1]
-					h, port, err := parseHostPort(hostVal)
-					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %w", err)
-					}
-					defaultApiServerConfig.IP = h
-					defaultApiServerConfig.Port = port
-					i++
-				}
-			case "-t", "--token":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.APIKey = &args[i+1]
-					i++
-				}
-			case "-u", "--user":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.UserName = &args[i+1]
-					i++
-				}
-			case "-p", "--password":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.UserPassword = &args[i+1]
-					i++
-				}
-			case "-f", "--config":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					configFile = args[i+1]
-					// Convert to absolute path immediately
-					if !filepath.IsAbs(configFile) {
-						absPath, err := filepath.Abs(configFile)
-						if err == nil {
-							configFile = absPath
-						}
-					}
-					i++
-				}
-			case "-k", "--key":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.KeyFile = &args[i+1]
-					i++
-				}
-			default:
-				// Non-flag argument (command)
-				if !strings.HasPrefix(arg, "-") {
-					commandArgs = append(commandArgs, arg)
-					foundCommand = true
-				}
-			}
+		var err error
+		commandArgs, configFile, err = collectCommandArgs(args, defaultApiServerConfig, configFile)
+		if err != nil {
+			return nil, err
 		}
 
 		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
@@ -437,6 +366,137 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	return commandLineConfig, nil
 }
 
+// collectSingleCommandArgs keeps only the command words and the output
+// switches of single-command mode. Its server configuration always comes from
+// the default rf.yml, so the connection and config flags are rejected here
+// instead of being parsed as settings or silently folded into the command
+// text.
+func collectSingleCommandArgs(args []string) ([]string, error) {
+	var commandArgs []string
+	var foundCommand bool
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch arg {
+		case "-o", "--output":
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		case "-v", "--verbose", "--help", "-help", "--version", "-V":
+			continue
+		}
+
+		if foundCommand {
+			commandArgs = append(commandArgs, arg)
+			continue
+		}
+
+		switch arg {
+		case "-h", "--host", "-t", "--token", "-u", "--user", "-p", "--password", "-f", "--config", "-k", "--key":
+			return nil, fmt.Errorf("single-command mode reads its settings from rf.yml; %s is not accepted", arg)
+		}
+
+		if !strings.HasPrefix(arg, "-") {
+			commandArgs = append(commandArgs, arg)
+			foundCommand = true
+		}
+	}
+
+	return commandArgs, nil
+}
+
+// collectCommandArgs applies the connection flags of the API-backed modes to
+// cfg and returns the positional command words. The command text must carry
+// only the command: a flag left in it makes the parser reject the line with
+// "expected command, got -". Once the first positional word starts the
+// command, every later word belongs to the command, even if it looks like a
+// flag.
+func collectCommandArgs(args []string, cfg *APIServerConfig, configFile string) ([]string, string, error) {
+	var commandArgs []string
+	var foundCommand bool
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Handle known global flags (already parsed in first pass).
+		// Intercept here regardless of position so they are never
+		// mistaken for command args or unknown flags downstream.
+		switch arg {
+		case "-o", "--output":
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		case "-v", "--verbose", "--help", "-help", "--version", "-V":
+			continue
+		case "--admin", "-admin":
+			return nil, configFile, fmt.Errorf("unexpected parameter: --admin")
+		}
+
+		// If we've found the command, collect remaining args
+		if foundCommand {
+			commandArgs = append(commandArgs, arg)
+			continue
+		}
+
+		switch arg {
+		case "-h", "--host":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				hostVal := args[i+1]
+				h, port, err := parseHostPort(hostVal)
+				if err != nil {
+					return nil, configFile, fmt.Errorf("invalid host format: %w", err)
+				}
+				cfg.IP = h
+				cfg.Port = port
+				i++
+			}
+		case "-t", "--token":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.APIKey = &args[i+1]
+				i++
+			}
+		case "-u", "--user":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.UserName = &args[i+1]
+				i++
+			}
+		case "-p", "--password":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.UserPassword = &args[i+1]
+				i++
+			}
+		case "-f", "--config":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				configFile = args[i+1]
+				// Convert to absolute path immediately
+				if !filepath.IsAbs(configFile) {
+					absPath, err := filepath.Abs(configFile)
+					if err == nil {
+						configFile = absPath
+					}
+				}
+				i++
+			}
+		case "-k", "--key":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.KeyFile = &args[i+1]
+				i++
+			}
+		default:
+			// Non-flag argument (command)
+			if !strings.HasPrefix(arg, "-") {
+				commandArgs = append(commandArgs, arg)
+				foundCommand = true
+			}
+		}
+	}
+
+	return commandArgs, configFile, nil
+}
+
 // parseHostPort parses a host:port string and returns host and port
 func parseHostPort(hostPort string) (string, int, error) {
 	if hostPort == "" {
@@ -484,9 +544,11 @@ Authentication:
   Note: These two methods are mutually exclusive.
 
 Configuration File:
-  The CLI will automatically read rf.yml from the current directory if it exists.
-  Use -f or --config to specify a custom config file path.
-  Command line options override config file values.
+  The CLI reads rf.yml from the current directory when it exists.
+  Single-command mode takes the connection settings only from rf.yml: every
+  other argument is part of the command, and the connection flags
+  (-h/-t/-u/-p/-f/-k) are rejected there. Use -f or --config to select another
+  file in the other modes.
 
   Config file format:
     host: 127.0.0.1:9380
@@ -637,75 +699,8 @@ func sanitizeCLIError(err error) string {
 
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
-	// If username is provided without password, prompt for password
-	cliConfig := c.Config
-	switch cliConfig.CLIMode {
-	case APIMode:
-		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
-		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.APIKey == nil {
-			// provider username but no password or api token
-			maxAttempts := 3
-			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				fmt.Printf("Please input your password: ")
-
-				password, err := ReadPassword()
-
-				if password == "" {
-					if attempt < maxAttempts {
-						fmt.Println("Password cannot be empty, please try again")
-						continue
-					}
-					return errors.New("no password provided after 3 attempts")
-				}
-
-				apiConfig.UserPassword = &password
-
-				if err = c.VerifyAuth(*apiConfig.UserName, *apiConfig.UserPassword); err != nil {
-					if attempt < maxAttempts {
-						fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
-						continue
-					}
-					return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
-				}
-
-				break
-			}
-		}
-
-	case AdminMode:
-		adminConfig := c.Config.AdminClientConfig
-		if adminConfig.AdminName != nil && adminConfig.AdminPassword == nil {
-			// provider username but no password or api token
-			maxAttempts := 3
-			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				fmt.Printf("Please input your password: ")
-
-				password, err := ReadPassword()
-
-				if password == "" {
-					if attempt < maxAttempts {
-						fmt.Println("Password cannot be empty, please try again")
-						continue
-					}
-					return errors.New("no password provided after 3 attempts")
-				}
-
-				adminConfig.AdminPassword = &password
-
-				if err = c.VerifyAuth(*adminConfig.AdminName, *adminConfig.AdminPassword); err != nil {
-					if attempt < maxAttempts {
-						fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
-						continue
-					}
-					return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
-				}
-
-				break
-			}
-		}
-
-	default:
-		return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
+	if err := c.prepareAuth(); err != nil {
+		return err
 	}
 
 	c.running = true
@@ -732,13 +727,15 @@ func (c *CLI) Run() error {
 
 	for c.running {
 		var prompt string
-		switch cliConfig.CLIMode {
+		switch c.Config.CLIMode {
 		case APIMode:
 			prompt = fmt.Sprintf("RAGFlow(api/%s)> ", c.Config.APIClientConfig.CurrentAPIServer)
 		case AdminMode:
 			prompt = "RAGFlow(admin)> "
+		case CommandMode:
+			prompt = "RAGFlow(user)> "
 		default:
-			return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
+			return fmt.Errorf("unexpected CLI mode: %s", c.Config.CLIMode)
 		}
 		input, err := c.line.Prompt(prompt)
 		if err != nil {
@@ -887,11 +884,12 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow-cli -f rf.yml "LIST DATASETS"        # SQL mode (with quotes)
-  ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
-  ragflow-cli -f rf.yml ls files               # List files in root
-  ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
-  ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
+  ragflow-cli "LIST DATASETS"                  # SQL mode (with quotes)
+  ragflow-cli ls datasets                      # Filesystem mode (no quotes)
+  ragflow-cli ls files                         # List files in root
+  ragflow-cli cat datasets                     # Error: datasets is a directory
+  ragflow-cli ls files/myfolder                # List folder contents
+  ragflow-cli -o json ws ls                    # JSON output
 
 For more information, see documentation.
 
@@ -914,11 +912,75 @@ func (c *CLI) RunSingleCommand(command *string) error {
 	// Ensure cleanup is called on exit to restore terminal settings
 	defer c.Cleanup()
 
+	if err := c.prepareAuth(); err != nil {
+		return err
+	}
+
 	// Execute the command
 	if err := c.execute(*command); err != nil {
 		return err
 	}
 	return nil
+}
+
+// prepareAuth brings the client to an authenticated state before any command
+// runs, so the interactive loop and a single command share one login path: a
+// supplied username without a password prompts, and an API key needs no login.
+func (c *CLI) prepareAuth() error {
+	switch c.Config.CLIMode {
+	case APIMode, CommandMode:
+		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
+		if apiConfig.UserName == nil || apiConfig.UserPassword != nil || apiConfig.APIKey != nil {
+			return nil
+		}
+		return c.promptAndVerifyPassword(*apiConfig.UserName)
+	case AdminMode:
+		adminConfig := c.Config.AdminClientConfig
+		if adminConfig.AdminName == nil || adminConfig.AdminPassword != nil {
+			return nil
+		}
+		return c.promptAndVerifyPassword(*adminConfig.AdminName)
+	default:
+		return fmt.Errorf("unexpected CLI mode: %s", c.Config.CLIMode)
+	}
+}
+
+func (c *CLI) promptAndVerifyPassword(username string) error {
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		fmt.Printf("Please input your password: ")
+
+		entered, err := c.readPassword()
+		if err != nil {
+			return err
+		}
+
+		if entered == "" {
+			if attempt < maxAttempts {
+				fmt.Println("Password cannot be empty, please try again")
+				continue
+			}
+			return errors.New("no password provided after 3 attempts")
+		}
+
+		if err = c.VerifyAuth(username, entered); err != nil {
+			if attempt < maxAttempts {
+				fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
+				continue
+			}
+			return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
+		}
+
+		return nil
+	}
+	return errors.New("no password provided after 3 attempts")
+}
+
+func (c *CLI) readPassword() (string, error) {
+	if c.PasswordPrompt != nil {
+		return c.PasswordPrompt("")
+	}
+	return ReadPassword()
 }
 
 // VerifyAuth verifies authentication if needed
@@ -947,7 +1009,7 @@ func (c *CLI) GetPublicKeyPEM() ([]byte, error) {
 	switch c.Config.CLIMode {
 	case AdminMode:
 		publicKeyFile = c.Config.AdminClientConfig.KeyFile
-	case APIMode:
+	case APIMode, CommandMode:
 		publicKeyFile = c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].KeyFile
 	}
 	if publicKeyFile == nil {
