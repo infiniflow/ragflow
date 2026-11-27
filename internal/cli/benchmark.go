@@ -54,6 +54,10 @@ func (c *CLI) RunBenchmark(commandCount int, cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("concurrency must be greater than 0")
 	}
 
+	if iterations < 1 {
+		return nil, fmt.Errorf("iterations must be greater than 0")
+	}
+
 	// Add iterations to the nested command
 	nestedCmd.Params["iterations"] = iterations
 

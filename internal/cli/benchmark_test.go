@@ -37,3 +37,18 @@ func TestRunBenchmarkConcurrentPropagatesWorkerError(t *testing.T) {
 		t.Fatalf("RunBenchmark() response = %#v, want nil on worker error", response)
 	}
 }
+
+func TestRunBenchmarkRejectsNonpositiveIterations(t *testing.T) {
+	client := &CLI{Config: &CommandLineConfig{CLIMode: APIMode}}
+	for _, iterations := range []int{0, -1} {
+		command := &Command{Type: "benchmark", Params: map[string]interface{}{
+			"iterations": iterations,
+			"command":    &Command{Type: "not_a_command", Params: map[string]interface{}{}},
+		}}
+
+		response, err := client.RunBenchmark(1, command)
+		if response != nil || err == nil || err.Error() != "iterations must be greater than 0" {
+			t.Errorf("iterations %d: got response %v, error %v; want iteration validation error", iterations, response, err)
+		}
+	}
+}
