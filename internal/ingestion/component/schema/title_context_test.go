@@ -30,7 +30,7 @@ func TestTitleContextParameters(t *testing.T) {
 		`{}`, `{"table_context_size":0,"image_context_size":0}`,
 		`{"table_context_size":32,"image_context_size":64}`,
 	} {
-		var params TitleChunkerParam
+		params := TitleChunkerParam{}.Defaults()
 		if err := json.Unmarshal([]byte(raw), &params); err != nil {
 			t.Fatal(err)
 		}
@@ -50,7 +50,7 @@ func TestTitleContextParameters(t *testing.T) {
 		}
 	}
 	for _, field := range []string{"table_context_size", "image_context_size"} {
-		var params TitleChunkerParam
+		params := TitleChunkerParam{}.Defaults()
 		if err := json.Unmarshal([]byte(`{"`+field+`":-1}`), &params); err != nil {
 			t.Fatal(err)
 		}

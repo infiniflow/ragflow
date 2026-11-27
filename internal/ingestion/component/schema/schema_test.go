@@ -363,7 +363,7 @@ func TestTitleChunkerParamDefaults(t *testing.T) {
 
 func TestTitleChunkerParamValidate(t *testing.T) {
 	// Method=hierarchy with no levels -> error.
-	p := TitleChunkerParam{Method: "hierarchy"}
+	p := TitleChunkerParam{Method: "hierarchy", ChunkTokenCap: 512}
 	if err := p.Validate(); err == nil {
 		t.Fatal("expected error when Method=hierarchy with no levels")
 	}
@@ -372,19 +372,20 @@ func TestTitleChunkerParamValidate(t *testing.T) {
 	if err := p.Validate(); err == nil {
 		t.Fatal("expected error when Method=hierarchy with no hierarchy number")
 	}
-	// Method=hierarchy with levels and a positive hierarchy -> OK.
+	// Method=hierarchy with levels, a positive hierarchy and the default cap
+	// -> OK.
 	h := 2
 	p.Hierarchy = &h
 	if err := p.Validate(); err != nil {
 		t.Fatalf("Validate unexpectedly failed: %v", err)
 	}
-	// Method=group with levels -> OK.
-	p = TitleChunkerParam{Method: "group", Levels: [][]string{{"^# "}}}
+	// Method=group with levels and the default cap -> OK.
+	p = TitleChunkerParam{Method: "group", Levels: [][]string{{"^# "}}, ChunkTokenCap: 512}
 	if err := p.Validate(); err != nil {
 		t.Fatalf("Validate unexpectedly failed: %v", err)
 	}
 	// Method=group with no levels -> error.
-	p = TitleChunkerParam{Method: "group"}
+	p = TitleChunkerParam{Method: "group", ChunkTokenCap: 512}
 	if err := p.Validate(); err == nil {
 		t.Fatal("expected error when Method=group with no levels")
 	}
@@ -392,7 +393,7 @@ func TestTitleChunkerParamValidate(t *testing.T) {
 
 func TestGroupTitleChunkerParamAlias(t *testing.T) {
 	// The alias must be assignable from a TitleChunkerParam value.
-	var gp GroupTitleChunkerParam = TitleChunkerParam{Method: "group", Levels: [][]string{{"^# "}}}
+	var gp GroupTitleChunkerParam = TitleChunkerParam{Method: "group", Levels: [][]string{{"^# "}}, ChunkTokenCap: 512}
 	if err := gp.Validate(); err != nil {
 		t.Fatalf("group param via alias failed Validate: %v", err)
 	}
@@ -400,7 +401,7 @@ func TestGroupTitleChunkerParamAlias(t *testing.T) {
 
 func TestHierarchyTitleChunkerParamAlias(t *testing.T) {
 	h := 1
-	var hp HierarchyTitleChunkerParam = TitleChunkerParam{Method: "hierarchy", Levels: [][]string{{"^# "}}, Hierarchy: &h}
+	var hp HierarchyTitleChunkerParam = TitleChunkerParam{Method: "hierarchy", Levels: [][]string{{"^# "}}, Hierarchy: &h, ChunkTokenCap: 512}
 	if err := hp.Validate(); err != nil {
 		t.Fatalf("hierarchy param via alias failed Validate: %v", err)
 	}
