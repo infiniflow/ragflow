@@ -617,6 +617,20 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 	}
 
 	currentURL, queryParams := c.buildURLWithTemplates(merged)
+	// Resolve redirects against the complete initial URL. Parameters belong to
+	// this request; each Location controls the query for the following hop.
+	if encoded := restAPIEncodeParams(queryParams); encoded != "" {
+		requestURL, err := url.Parse(currentURL)
+		if err != nil {
+			return nil, err
+		}
+		if requestURL.RawQuery != "" {
+			requestURL.RawQuery += "&" + encoded
+		} else {
+			requestURL.RawQuery = encoded
+		}
+		currentURL = requestURL.String()
+	}
 	currentMethod := c.cfg.Method
 	currentHeaders := make(map[string]string, len(c.cfg.Headers)+len(c.authHeaders))
 	for k, v := range c.cfg.Headers {
@@ -660,17 +674,6 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			if currentAuth != nil {
 				req.SetBasicAuth(currentAuth.username, currentAuth.password)
 			}
-			if encoded := restAPIEncodeParams(queryParams); encoded != "" {
-				sep := "?"
-				if strings.Contains(hop.URL, "?") {
-					sep = "&"
-				}
-				fullURL, err := url.Parse(hop.URL + sep + encoded)
-				if err != nil {
-					return err
-				}
-				req.URL = fullURL
-			}
 			return nil
 		},
 		RetryStatus: func(resp *http.Response, attempt int) (time.Duration, bool) {
@@ -688,17 +691,12 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			}
 			return wait, true
 		},
-		NextHop: func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop {
+		NextHop: func(nextURL string, _ int, hop connectorRequestHop) connectorRequestHop {
 			nextOrigin := connectorOrigin(nextURL)
 			if nextOrigin != "" && nextOrigin != previousOrigin {
 				currentAuth = nil
 			}
 			previousOrigin = nextOrigin
-			if status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther {
-				hop.Method = http.MethodGet
-				hop.Body = nil
-				queryParams = nil
-			}
 			hop.URL = nextURL
 			return hop
 		},
