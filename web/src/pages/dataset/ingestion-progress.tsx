@@ -167,12 +167,24 @@ export const IngestionProgressSummary: React.FC<
           <IngestionProgressDetailButton datasetId={datasetId} logId={logId} />
         </>
       ) : data.fallback ? (
-        <div className="text-text-secondary text-sm">
-          {t('knowledgeDetails.ingestionProgress.detailUnavailable')}
-          <span className="ml-2">
-            · {t('knowledgeDetails.ingestionProgress.elapsed')}{' '}
-            {formatDuration(data.duration_s)}
-          </span>
+        <div className="flex flex-col gap-1 text-sm">
+          {data.stage ? (
+            <div className="flex items-center justify-between">
+              <span className="text-text-secondary">
+                {t('knowledgeDetails.ingestionProgress.currentStage')}
+              </span>
+              <span className="text-text-primary font-medium min-w-0 break-words">
+                {data.stage}
+              </span>
+            </div>
+          ) : null}
+          <div className="text-text-secondary">
+            {t('knowledgeDetails.ingestionProgress.detailUnavailable')}
+            <span className="ml-2">
+              · {t('knowledgeDetails.ingestionProgress.elapsed')}{' '}
+              {formatDuration(data.duration_s)}
+            </span>
+          </div>
         </div>
       ) : (
         <>

@@ -601,6 +601,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
           'chunk:tags': 'Tag extraction',
           'chunk:resume': 'Checkpoint recovery',
           'chunk:remaining': 'Information completion',
+          'image:crop': 'Image cropping',
           'chunk:embed': 'Embedding',
           'chunk:claim': 'Claim extraction',
           'batch:generate': 'Batch generation',

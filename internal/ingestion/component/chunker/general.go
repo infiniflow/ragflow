@@ -40,6 +40,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/parser/tableutil"
@@ -312,7 +313,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	// General chunking is synchronous and its output count is unknown until
 	// the final split, so report a single terminal position rather than a
 	// synthetic in-flight progress bar.
-	runtime.ReportProgressDetail(ctx, "chunk:final", uint32(len(chunks)), uint32(len(chunks)))
+	runtime.ReportProgressDetail(ctx, progress.UnitChunkFinal, uint32(len(chunks)), uint32(len(chunks)))
 	attachPDFOutline(chunks, upstream.File)
 	return chunkOutputs(chunks), nil
 }

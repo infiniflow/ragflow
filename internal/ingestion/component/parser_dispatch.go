@@ -135,7 +135,7 @@ func dispatchParse(ctx context.Context, p parser.ParseResultProducer, fileType u
 	}
 
 	configureParserFromSetups(p, fileType, setups)
-	attachPDFPageProgress(ctx, p, window)
+	finishPageProgress := attachPDFPageProgress(ctx, p, window)
 	var finishParserIO func()
 	if method := strings.ToLower(strings.TrimSpace(parseMethod)); method != "" && method != "deepdoc" && method != "plain_text" && !parser.HasParseMethod(fileType, method) {
 		finishParserIO = agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend="+method)
@@ -148,6 +148,7 @@ func dispatchParse(ctx context.Context, p parser.ParseResultProducer, fileType u
 	if res.Err != nil {
 		return parser.ParseResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
 	}
+	finishPageProgress()
 	// Carry the configured parse_method on the file metadata so
 	// downstream consumers can read which provider ran.
 	if parseMethod != "" {
@@ -184,25 +185,34 @@ func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schem
 // the component exits. Only the local DeepDOC backend fires it; remote
 // engines (MinerU, PaddleOCR, Docling, …) never call the callback and
 // the fraction stays at zero.
-func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window progress.Window) {
+func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window progress.Window) func() {
 	pdfParser, ok := p.(*parser.PDFParser)
 	if !ok {
-		return
+		return func() {}
 	}
 	pdfParser.OnModelCall = func(callCtx context.Context, operation string) func() {
 		return agentruntime.TrackIO(callCtx, "DeepDOC", operation, "file_type=pdf")
 	}
 	if window.Span <= 0 {
-		return
+		return func() {}
 	}
+	// The total arrives with the first page callback, so the counter starts
+	// without one and establishes N/N on the first report. The returned hook
+	// pins the terminal position even when the backend skips its last callback.
+	var counter *progress.Counter
 	pdfParser.OnPageDone = func(done, total int) {
 		if total <= 0 {
 			return
 		}
-		window.Report(ctx, float64(done)/float64(total))
-		// Report the discrete page position alongside the fraction so the
-		// ingestion log can answer "which page of how many" (finding ③).
-		agentruntime.ReportProgressDetail(ctx, "page:parse", uint32(done), uint32(total))
+		if counter == nil {
+			counter = progress.NewCounter(ctx, progress.UnitPageParse, 0, window)
+		}
+		counter.Report(uint32(done), uint32(total))
+	}
+	return func() {
+		if counter != nil {
+			counter.Finish()
+		}
 	}
 }
 

@@ -3,7 +3,6 @@ package progress
 
 import (
 	"context"
-	"sync/atomic"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -71,14 +70,11 @@ func (w Window) ReportPosition(ctx context.Context, current, total uint32) {
 }
 
 // Counter returns a concurrency-safe reporter to call after each completed job.
+// It delegates to Counter so the fraction/detail emission logic has a single
+// implementation; the returned closure keeps the historical call signature.
 func (w Window) Counter(ctx context.Context, total int) func() {
-	var done atomic.Int64
-	return func() {
-		if total <= 0 {
-			return
-		}
-		w.ReportPosition(ctx, uint32(done.Add(1)), uint32(total))
-	}
+	c := &Counter{ctx: ctx, unit: w.Phase, total: uint32(max(0, total)), window: w}
+	return func() { c.Inc() }
 }
 
 // split hands out one equal window per enabled sequential phase.
