@@ -2219,3 +2219,19 @@ func TestDispatchUsesRegisteredPDFMethod(t *testing.T) {
 	}
 	requireJSONText(t, out, "registered parser, language: German")
 }
+
+func TestConfigureParserFromSetups_EPUB(t *testing.T) {
+	p := parser.NewEPUBParser()
+	configureParserFromSetups(p, utility.FileTypeEPUB, defaultSetups())
+	if p.RemoveTOC {
+		t.Error("default FileTypeEPUB remove_toc = true, want false")
+	}
+
+	setups := defaultSetups()
+	setups["epub"]["remove_toc"] = true
+	enabled := parser.NewEPUBParser()
+	configureParserFromSetups(enabled, utility.FileTypeEPUB, setups)
+	if !enabled.RemoveTOC {
+		t.Error("FileTypeEPUB remove_toc = false after the setup enabled it")
+	}
+}

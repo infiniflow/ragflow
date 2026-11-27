@@ -41,6 +41,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -52,7 +53,11 @@ import (
 
 // EPUBParser extracts text from EPUB archives.
 type EPUBParser struct {
-	textOnly bool
+	// RemoveTOC drops the navigation table of contents declared by the package
+	// metadata. Hand-written TOC pages without nav, guide, or landmarks markup
+	// stay in the output.
+	RemoveTOC bool
+	textOnly  bool
 }
 
 func NewEPUBParser() *EPUBParser {
@@ -68,6 +73,16 @@ func NewEPUBTextParser() *EPUBParser {
 
 func (p *EPUBParser) String() string {
 	return "EPUBParser"
+}
+
+// ConfigureFromSetup reads the EPUB family setup map.
+func (p *EPUBParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
 }
 
 // ParseWithResult implements ParseResultProducer. It extracts XHTML
@@ -99,7 +114,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly)
+	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly, p.RemoveTOC)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
 	}
@@ -151,16 +166,24 @@ func readContainerXML(r *zip.Reader) (string, error) {
 type opfPackage struct {
 	Manifest struct {
 		Items []struct {
-			ID   string `xml:"id,attr"`
-			Href string `xml:"href,attr"`
-			Type string `xml:"media-type,attr"`
+			ID         string `xml:"id,attr"`
+			Href       string `xml:"href,attr"`
+			Type       string `xml:"media-type,attr"`
+			Properties string `xml:"properties,attr"`
 		} `xml:"item"`
 	} `xml:"manifest"`
 	Spine struct {
+		TOCID    string `xml:"toc,attr"`
 		ItemRefs []struct {
 			IDRef string `xml:"idref,attr"`
 		} `xml:"itemref"`
 	} `xml:"spine"`
+	Guide struct {
+		References []struct {
+			Type string `xml:"type,attr"`
+			Href string `xml:"href,attr"`
+		} `xml:"reference"`
+	} `xml:"guide"`
 }
 
 // opfManifest is the parsed OPF package document.
@@ -173,6 +196,15 @@ type opfManifest struct {
 	// Images maps a resolved ZIP entry path to the media type the package
 	// declares for it.
 	Images map[string]string
+	// NavHref is the manifest href of the EPUB3 navigation document, the item
+	// whose properties list includes "nav".
+	NavHref string
+	// GuideTOCHref is the EPUB2 guide reference whose type is "toc".
+	GuideTOCHref string
+	// NCXHref is the manifest href of the NCX the spine toc attribute names.
+	// An NCX is a machine-readable TOC: it confirms the package declares one
+	// but locates no visible page to remove.
+	NCXHref string
 }
 
 func readOPFManifest(r *zip.Reader, opfPath string) (*opfManifest, error) {
@@ -188,14 +220,26 @@ func readOPFManifest(r *zip.Reader, opfPath string) (*opfManifest, error) {
 	// Build id → href lookup.
 	byID := make(map[string]string, len(pkg.Manifest.Items))
 	images := make(map[string]string)
+	navHref := ""
 	for _, it := range pkg.Manifest.Items {
 		byID[it.ID] = it.Href
+		if navHref == "" && hasPropertyToken(it.Properties, "nav") {
+			navHref = it.Href
+		}
 		mime := strings.ToLower(strings.TrimSpace(it.Type))
 		if !strings.HasPrefix(mime, "image/") {
 			continue
 		}
 		if entry, ok := resolveEPUBEntry(dir, it.Href); ok {
 			images[entry] = mime
+		}
+	}
+
+	guideTOCHref := ""
+	for _, ref := range pkg.Guide.References {
+		if strings.EqualFold(strings.TrimSpace(ref.Type), "toc") {
+			guideTOCHref = ref.Href
+			break
 		}
 	}
 
@@ -206,7 +250,7 @@ func readOPFManifest(r *zip.Reader, opfPath string) (*opfManifest, error) {
 			hrefs = append(hrefs, href)
 		}
 	}
-	return &opfManifest{Dir: dir, SpineHrefs: hrefs, Images: images}, nil
+	return &opfManifest{Dir: dir, SpineHrefs: hrefs, Images: images, NavHref: navHref, GuideTOCHref: guideTOCHref, NCXHref: byID[pkg.Spine.TOCID]}, nil
 }
 
 // readOPFBytes reads the package document and returns its ZIP directory. Some
@@ -283,9 +327,15 @@ func normalizeEPUBSelfClosing(source string) string {
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
-func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool) ([]map[string]any, string, []string, error) {
+//
+// With removeTOC the TOC locations the package metadata declares are dropped:
+// a separate TOC page leaves the spine, and a navigation document keeps only
+// the content outside its toc nav. A package that declares no TOC location is
+// left unchanged and warned about; text matching is never used as a fallback.
+func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool, removeTOC bool) ([]map[string]any, string, []string, error) {
 	var items []map[string]any
 	var failures []string
+	var extraWarnings []string
 	read := 0
 	state := &htmlWalkState{
 		refOnly:     true,
@@ -308,6 +358,18 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 			entries[f.Name] = f
 		}
 	}
+	toc := epubTOCPlan{}
+	if removeTOC {
+		toc = readEPUBTOCPlan(r, opf)
+		switch {
+		case len(toc.fragments) > 0:
+			extraWarnings = append(extraWarnings, fmt.Sprintf("epub remove_toc: the TOC reference %s points at a section inside a chapter, not at a whole document; that section was left in place", strings.Join(toc.fragments, ", ")))
+		case !toc.declared() && opf.NCXHref != "":
+			extraWarnings = append(extraWarnings, "epub remove_toc: the package declares only an NCX table of contents, which locates no visible page; the output is unchanged")
+		case !toc.declared():
+			extraWarnings = append(extraWarnings, "epub remove_toc: the package declares no navigation document or TOC reference; the table of contents was left in place")
+		}
+	}
 	detectedEncoding := "utf-8"
 	for _, href := range opf.SpineHrefs {
 		if state.err != nil {
@@ -319,6 +381,9 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 			continue
 		}
 		if len(raw) == 0 {
+			continue
+		}
+		if removeTOC && chapterEntry != toc.navEntry && toc.pages[chapterEntry] {
 			continue
 		}
 		read++
@@ -335,17 +400,218 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 			failures = append(failures, fmt.Sprintf("%s: %v", href, err))
 			continue
 		}
+		if removeTOC && chapterEntry == toc.navEntry {
+			stripEPUBNavTOC(doc)
+		}
 		// Image sources are relative to the chapter, not to the OPF.
 		state.resolveMedia = epubMediaResolver(entries, state, chapterEntry, opf.Images)
 		items = appendEPUBChapter(items, doc, state)
 	}
+	warnings := append(state.warnings(), extraWarnings...)
 	if state.err != nil {
-		return nil, detectedEncoding, state.warnings(), state.err
+		return nil, detectedEncoding, warnings, state.err
 	}
 	if len(failures) > 0 && read == 0 {
-		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(opf.SpineHrefs), failures[0])
+		return nil, detectedEncoding, warnings, fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(opf.SpineHrefs), failures[0])
 	}
-	return items, detectedEncoding, state.warnings(), nil
+	return items, detectedEncoding, warnings, nil
+}
+
+// epubTOCPlan is where the package metadata declares the table of contents.
+// The EPUB3 navigation document contributes both the nav subtree to strip in
+// place and the landmarks link that may name a separate TOC page. The EPUB2
+// guide contributes only that page. A reference that carries a fragment names
+// a section inside a chapter and is recorded in fragments instead. An empty
+// plan means the package declares no visible TOC location, so the output stays
+// unchanged.
+type epubTOCPlan struct {
+	navEntry string
+	pages    map[string]bool
+	// fragments lists TOC references that carry a fragment. They name a
+	// section inside a chapter, not a whole document, and stay in place.
+	fragments []string
+}
+
+func (p epubTOCPlan) declared() bool {
+	return p.navEntry != "" || len(p.pages) > 0
+}
+
+// readEPUBTOCPlan resolves the declared TOC locations. The navigation document
+// is read only to find its landmarks link; an unreadable nav document still has
+// its TOC subtree stripped when it appears in the spine.
+func readEPUBTOCPlan(r *zip.Reader, opf *opfManifest) epubTOCPlan {
+	plan := epubTOCPlan{pages: map[string]bool{}}
+	// A reference that carries a fragment points at a section inside a
+	// chapter, not at a whole TOC document. Dropping the entry would remove
+	// the rest of that chapter, so only whole-document references leave the
+	// spine; a fragment reference is recorded so the parser can report that the
+	// section stays.
+	if opf.GuideTOCHref != "" {
+		if strings.Contains(opf.GuideTOCHref, "#") {
+			plan.fragments = append(plan.fragments, opf.GuideTOCHref)
+		} else if entry, ok := resolveEPUBEntry(opf.Dir, opf.GuideTOCHref); ok {
+			plan.pages[entry] = true
+		}
+	}
+	navEntry, ok := resolveEPUBEntry(opf.Dir, opf.NavHref)
+	if !ok {
+		return plan
+	}
+	plan.navEntry = navEntry
+	raw, opened, err := readEPUBContentFile(r, opf.Dir, opf.NavHref)
+	if err != nil || len(raw) == 0 {
+		return plan
+	}
+	// readEPUBContentFile falls back to the raw href when the OPF-relative
+	// name is absent; the spine loop opens that same name.
+	if opened != "" {
+		plan.navEntry = opened
+	}
+	decoded, _ := charset.DecodeToUTF8(raw, "application/xhtml+xml")
+	doc, err := html.Parse(strings.NewReader(normalizeEPUBSelfClosing(string(decoded))))
+	if err != nil {
+		return plan
+	}
+	for _, href := range epubLandmarkTOCHrefs(doc) {
+		if strings.Contains(href, "#") {
+			if !slices.Contains(plan.fragments, href) {
+				plan.fragments = append(plan.fragments, href)
+			}
+			continue
+		}
+		if entry, ok := resolveEPUBEntry(path.Dir(plan.navEntry), href); ok && entry != plan.navEntry {
+			plan.pages[entry] = true
+		}
+	}
+	return plan
+}
+
+// epubOPSNamespace is the EPUB structural vocabulary namespace. A document may
+// bind it to any prefix, so attributes are matched through the prefixes the
+// document declares instead of the conventional `epub`.
+const epubOPSNamespace = "http://www.idpf.org/2007/ops"
+
+// epubOPSBoundAt reports whether prefix is bound to the EPUB structural
+// namespace at n. The binding in scope is the innermost xmlns:prefix
+// declaration on n or an ancestor: a document may rebind a prefix for a
+// subtree, and an attribute only means what the nearest declaration says. A
+// prefix the document binds nowhere still accepts the conventional `epub`
+// spelling, which documents commonly omit.
+func epubOPSBoundAt(n *html.Node, prefix string) bool {
+	for cur := n; cur != nil; cur = cur.Parent {
+		for _, a := range cur.Attr {
+			if !strings.EqualFold(a.Key, "xmlns:"+prefix) {
+				continue
+			}
+			return strings.EqualFold(strings.TrimSpace(a.Val), epubOPSNamespace)
+		}
+	}
+	return prefix == "epub"
+}
+
+// epubHasTypeToken reports whether n carries an EPUB structural `type`
+// attribute that lists token, resolving the prefix at n.
+func epubHasTypeToken(n *html.Node, token string) bool {
+	for _, a := range n.Attr {
+		prefix, name, ok := strings.Cut(strings.ToLower(a.Key), ":")
+		if !ok || name != "type" || !epubOPSBoundAt(n, prefix) {
+			continue
+		}
+		for _, t := range strings.Fields(a.Val) {
+			if strings.EqualFold(t, token) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// epubLandmarkTOCHrefs returns the hrefs a navigation document's landmarks
+// point at for the toc relationship. The link names a separate visible TOC
+// page; a toc nav in the document itself is stripped in place instead.
+func epubLandmarkTOCHrefs(doc *html.Node) []string {
+	var hrefs []string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "nav" && epubHasTypeToken(n, "landmarks") {
+			collectEPUBAnchorHrefs(n, "toc", &hrefs)
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	return hrefs
+}
+
+// collectEPUBAnchorHrefs appends the href of every anchor under n whose
+// EPUB structural type lists token.
+func collectEPUBAnchorHrefs(n *html.Node, token string, hrefs *[]string) {
+	if n.Type == html.ElementNode && n.Data == "a" && epubHasTypeToken(n, token) {
+		if href, ok := epubAttr(n, "href"); ok && href != "" {
+			*hrefs = append(*hrefs, href)
+		}
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		collectEPUBAnchorHrefs(c, token, hrefs)
+	}
+}
+
+// stripEPUBNavTOC removes every table-of-contents nav subtree from a navigation
+// document so the rest of the document still reaches the text extractor.
+func stripEPUBNavTOC(doc *html.Node) {
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; {
+			next := c.NextSibling
+			if c.Type == html.ElementNode && c.Data == "nav" &&
+				(epubHasTypeToken(c, "toc") || epubAttrHasToken(c, "role", "doc-toc")) {
+				n.RemoveChild(c)
+			} else {
+				walk(c)
+			}
+			c = next
+		}
+	}
+	walk(doc)
+}
+
+// epubAttr returns the first value of the attribute whose name matches key
+// case-insensitively.
+func epubAttr(n *html.Node, key string) (string, bool) {
+	for _, a := range n.Attr {
+		if strings.EqualFold(a.Key, key) {
+			return a.Val, true
+		}
+	}
+	return "", false
+}
+
+// epubAttrHasToken reports whether any attribute named key lists token among
+// its space-separated values.
+func epubAttrHasToken(n *html.Node, key, token string) bool {
+	for _, a := range n.Attr {
+		if !strings.EqualFold(a.Key, key) {
+			continue
+		}
+		for _, t := range strings.Fields(a.Val) {
+			if strings.EqualFold(t, token) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasPropertyToken reports whether an OPF properties attribute lists token.
+func hasPropertyToken(properties, token string) bool {
+	for _, t := range strings.Fields(properties) {
+		if strings.EqualFold(t, token) {
+			return true
+		}
+	}
+	return false
 }
 
 // epubMediaResolver returns the image resolver for one chapter. src is an image

@@ -64,11 +64,38 @@ func buildTestEPUB(t *testing.T, chapters []epubTestChapter) []byte {
 	return buildTestEPUBWithImages(t, chapters, nil)
 }
 
+// epubTestPackageOptions is the package metadata a test EPUB declares for TOC
+// removal.
+type epubTestPackageOptions struct {
+	// navHref marks the manifest item with this href as the EPUB3 navigation
+	// document (properties="nav").
+	navHref string
+	// navInSpine keeps that navigation document in the spine.
+	navInSpine bool
+	// guideTOCHref adds an EPUB2 guide reference of type "toc".
+	guideTOCHref string
+	// spineTOC adds a spine toc attribute. The NCX id it names confirms the
+	// metadata but locates no visible page.
+	spineTOC string
+}
+
 func buildTestEPUBWithImages(t *testing.T, chapters []epubTestChapter, images []epubTestImage) []byte {
+	t.Helper()
+	return buildTestEPUBWithOptions(t, chapters, images, epubTestPackageOptions{})
+}
+
+func buildTestEPUBWithOptions(t *testing.T, chapters []epubTestChapter, images []epubTestImage, opt epubTestPackageOptions) []byte {
 	t.Helper()
 	var manifest, spine strings.Builder
 	for i, ch := range chapters {
-		fmt.Fprintf(&manifest, `<item id="c%d" href="%s" media-type="application/xhtml+xml"/>`, i, ch.name)
+		props := ""
+		if opt.navHref != "" && ch.name == opt.navHref {
+			props = ` properties="nav"`
+		}
+		fmt.Fprintf(&manifest, `<item id="c%d" href="%s" media-type="application/xhtml+xml"%s/>`, i, ch.name, props)
+		if ch.name == opt.navHref && !opt.navInSpine {
+			continue
+		}
 		fmt.Fprintf(&spine, `<itemref idref="c%d"/>`, i)
 	}
 	for i, img := range images {
@@ -79,8 +106,19 @@ func buildTestEPUBWithImages(t *testing.T, chapters []epubTestChapter, images []
 		}
 		fmt.Fprintf(&manifest, `<item id="m%d" href="%s" media-type="%s"/>`, i, href, mime)
 	}
+	spineAttr := ""
+	ncxItem := ""
+	if opt.spineTOC != "" {
+		spineAttr = fmt.Sprintf(` toc="%s"`, opt.spineTOC)
+		fmt.Fprintf(&manifest, `<item id="%s" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`, opt.spineTOC)
+		ncxItem = opt.spineTOC
+	}
+	guide := ""
+	if opt.guideTOCHref != "" {
+		guide = fmt.Sprintf(`<guide><reference type="toc" href="%s"/></guide>`, opt.guideTOCHref)
+	}
 	containerXML := `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`
-	contentOPF := `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>` + manifest.String() + `</manifest><spine>` + spine.String() + `</spine></package>`
+	contentOPF := `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>` + manifest.String() + `</manifest><spine` + spineAttr + `>` + spine.String() + `</spine>` + guide + `</package>`
 
 	buf := new(bytes.Buffer)
 	zw := zip.NewWriter(buf)
@@ -104,6 +142,9 @@ func buildTestEPUBWithImages(t *testing.T, chapters []epubTestChapter, images []
 	}
 	write("META-INF/container.xml", containerXML)
 	write("OEBPS/content.opf", contentOPF)
+	if ncxItem != "" {
+		write("OEBPS/toc.ncx", `<?xml version="1.0" encoding="utf-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap><navPoint id="n1"><navLabel><text>Contents</text></navLabel><content src="toc.xhtml"/></navPoint></navMap></ncx>`)
+	}
 	for _, ch := range chapters {
 		switch {
 		case ch.missing:
@@ -1066,5 +1107,288 @@ func TestEPUBParserPreservesImageOrderAndAlt(t *testing.T) {
 	}
 	if items[3]["doc_type_kwd"] != DocTypeImage || items[3]["text"] != "B" || items[3]["media_order"] != 2 {
 		t.Fatalf("second image = %#v", items[3])
+	}
+}
+
+func epubTestNavHTML(body string) string {
+	return `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Nav</title></head><body>` + body + `</body></html>`
+}
+
+// epubResultText joins every text item so a test can assert on presence.
+func epubResultText(t *testing.T, res ParseResult) string {
+	t.Helper()
+	var b strings.Builder
+	for _, it := range ItemsToMaps(res.JSON) {
+		text, _ := it["text"].(string)
+		b.WriteString(text)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func parseEPUBWithTOCFlag(t *testing.T, data []byte, removeTOC bool) ParseResult {
+	t.Helper()
+	p := NewEPUBParser()
+	p.RemoveTOC = removeTOC
+	res := p.ParseWithResult(context.Background(), "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult (remove_toc=%v): %v", removeTOC, res.Err)
+	}
+	return res
+}
+
+func TestEPUBParser_ConfigureFromSetup(t *testing.T) {
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	if !p.RemoveTOC {
+		t.Error("RemoveTOC = false, want true")
+	}
+
+	p2 := NewEPUBParser()
+	p2.ConfigureFromSetup(nil)
+	if p2.RemoveTOC {
+		t.Error("flag should stay false after nil setup")
+	}
+}
+
+// The EPUB3 navigation document is a spine item here: its toc nav subtree is
+// stripped while the rest of the document survives.
+func TestEPUBParser_RemoveTOCStripsNavDocumentInSpine(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<nav epub:type="toc"><h1>Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><p>Navigation preface.</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Contents") {
+		t.Errorf("toc nav was not stripped: %q", text)
+	}
+	if !strings.Contains(text, "Navigation preface.") {
+		t.Errorf("nav document content outside the toc nav was dropped: %q", text)
+	}
+	if !strings.Contains(text, "Body text.") {
+		t.Errorf("body chapter was dropped: %q", text)
+	}
+}
+
+// A navigation document outside the spine still names a separate TOC page
+// through its landmarks; that page leaves the spine.
+func TestEPUBParser_RemoveTOCSkipsLandmarkTOCPage(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<nav epub:type="landmarks"><ol><li><a epub:type="toc" href="toc.xhtml">Contents</a></li></ol></nav>`)},
+		{name: "toc.xhtml", content: epubTestHTML(`<h1>Contents</h1><p>Chapter One</p><p>Chapter Two</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml"})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Chapter Two") {
+		t.Errorf("declared TOC page was not skipped: %q", text)
+	}
+	if !strings.Contains(text, "Body text.") {
+		t.Errorf("body chapter was dropped: %q", text)
+	}
+}
+
+// An EPUB2 package locates its visible TOC page through the guide.
+func TestEPUBParser_RemoveTOCSkipsGuideTOCPage(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "toc.xhtml", content: epubTestHTML(`<h1>Contents</h1><p>Chapter One</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{guideTOCHref: "toc.xhtml"})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Contents") {
+		t.Errorf("guide TOC page was not skipped: %q", text)
+	}
+	if !strings.Contains(text, "Body text.") {
+		t.Errorf("body chapter was dropped: %q", text)
+	}
+}
+
+// role="doc-toc" is the ARIA form of the same navigation landmark.
+func TestEPUBParser_RemoveTOCStripsRoleDocTOCNav(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<nav role="doc-toc"><h1>Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><p>Kept note.</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Contents") {
+		t.Errorf("role=doc-toc nav was not stripped: %q", text)
+	}
+	if !strings.Contains(text, "Kept note.") {
+		t.Errorf("content outside the toc nav was dropped: %q", text)
+	}
+}
+
+// A nav element inside an ordinary chapter is not declared by the package
+// metadata, so it stays. The output equals the remove_toc=false path and the
+// parser warns that it found no metadata.
+func TestEPUBParser_RemoveTOCWithoutMetadataLeavesOutputUnchanged(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(`<nav epub:type="toc"><h1>Contents</h1></nav><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{})
+
+	withTOC := parseEPUBWithTOCFlag(t, data, true)
+	withoutTOC := parseEPUBWithTOCFlag(t, data, false)
+	if got, want := epubResultText(t, withTOC), epubResultText(t, withoutTOC); got != want {
+		t.Errorf("remove_toc changed output without metadata:\ngot  %q\nwant %q", got, want)
+	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "declares no navigation document or TOC reference") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the missing-metadata warning", withTOC.Warnings)
+	}
+}
+
+// The spine toc attribute names the NCX, which confirms metadata but locates
+// no visible page. Nothing is removed and the parser warns.
+func TestEPUBParser_RemoveTOCNCXOnlyIsANoOp(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "toc.xhtml", content: epubTestHTML(`<h1>Contents</h1><p>Chapter One</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{spineTOC: "ncx"})
+
+	withTOC := parseEPUBWithTOCFlag(t, data, true)
+	withoutTOC := parseEPUBWithTOCFlag(t, data, false)
+	if got, want := epubResultText(t, withTOC), epubResultText(t, withoutTOC); got != want {
+		t.Errorf("NCX-only metadata changed output:\ngot  %q\nwant %q", got, want)
+	}
+	text := epubResultText(t, withTOC)
+	if !strings.Contains(text, "Contents") {
+		t.Errorf("NCX-only package removed a page it cannot locate: %q", text)
+	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "declares only an NCX table of contents") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the NCX-only warning", withTOC.Warnings)
+	}
+}
+
+// A navigation document that carries no toc nav and no landmarks locates no
+// TOC, so its content stays.
+func TestEPUBParser_RemoveTOCMalformedNavKeepsContent(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<p>Navigation notes.</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if !strings.Contains(text, "Navigation notes.") || !strings.Contains(text, "Body text.") {
+		t.Errorf("malformed nav dropped content: %q", text)
+	}
+}
+
+// remove_toc=false keeps the declared TOC page and the nav subtree.
+func TestEPUBParser_RemoveTOCDisabledKeepsNavigation(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<nav epub:type="toc"><h1>Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, false))
+	if !strings.Contains(text, "Contents") {
+		t.Errorf("remove_toc=false removed the navigation: %q", text)
+	}
+}
+
+// A guide or landmark reference with a fragment points at a section inside a
+// chapter. Only whole-document references leave the spine, so the chapter that
+// holds the TOC section keeps its other content.
+func TestEPUBParser_RemoveTOCKeepsChapterForFragmentTOC(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "front.xhtml", content: epubTestHTML(`<h1>Front preface.</h1><section id="contents"><h2>Contents</h2><p>Chapter One</p></section>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{guideTOCHref: "front.xhtml#contents"})
+
+	withTOC := parseEPUBWithTOCFlag(t, data, true)
+	text := epubResultText(t, withTOC)
+	if !strings.Contains(text, "Front preface.") {
+		t.Errorf("chapter holding a fragment TOC was dropped: %q", text)
+	}
+	if !strings.Contains(text, "Body text.") {
+		t.Errorf("body chapter was dropped: %q", text)
+	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "front.xhtml#contents") && strings.Contains(w, "left in place") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the fragment-TOC warning", withTOC.Warnings)
+	}
+}
+
+// A landmark link with a fragment points at a section inside a chapter too.
+// The nav document's own toc nav is still stripped, the referenced section
+// stays, and the parser reports the reference it could not act on.
+func TestEPUBParser_RemoveTOCKeepsSectionForFragmentLandmark(t *testing.T) {
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: epubTestNavHTML(`<nav epub:type="toc"><h1>Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><nav epub:type="landmarks"><ol><li><a epub:type="toc" href="front.xhtml#contents">Contents</a></li></ol></nav>`)},
+		{name: "front.xhtml", content: epubTestHTML(`<h1>Front preface.</h1><section id="contents"><h2>Contents</h2><p>Chapter One</p></section>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	withTOC := parseEPUBWithTOCFlag(t, data, true)
+	text := epubResultText(t, withTOC)
+	if !strings.Contains(text, "Front preface.") {
+		t.Errorf("chapter holding a fragment TOC was dropped: %q", text)
+	}
+	if !strings.Contains(text, "Body text.") {
+		t.Errorf("body chapter was dropped: %q", text)
+	}
+	found := false
+	for _, w := range withTOC.Warnings {
+		if strings.Contains(w, "front.xhtml#contents") && strings.Contains(w, "left in place") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the fragment-TOC warning", withTOC.Warnings)
+	}
+}
+
+// The structural vocabulary may be bound to any prefix; the parser follows the
+// document's xmlns binding instead of assuming `epub`.
+func TestEPUBParser_RemoveTOCMatchesDeclaredOpsPrefix(t *testing.T) {
+	nav := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:ops="http://www.idpf.org/2007/ops"><head><title>Nav</title></head><body><nav ops:type="toc"><h1>Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><p>Kept note.</p></body></html>`
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: nav},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Contents") {
+		t.Errorf("ops-prefixed toc nav was not stripped: %q", text)
+	}
+	if !strings.Contains(text, "Kept note.") {
+		t.Errorf("content outside the toc nav was dropped: %q", text)
+	}
+}
+
+// A prefix binding applies to its subtree only. A descendant that rebinds the
+// same prefix to another namespace marks an ordinary nav, which stays.
+func TestEPUBParser_RemoveTOCResolvesPrefixInScope(t *testing.T) {
+	nav := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:ops="http://www.idpf.org/2007/ops"><head><title>Nav</title></head><body><nav ops:type="toc"><h1>Outer Contents</h1><ol><li><a href="ch1.xhtml">Chapter One</a></li></ol></nav><div xmlns:ops="urn:example:other"><nav ops:type="toc"><h2>Rebound Contents</h2></nav></div></body></html>`
+	data := buildTestEPUBWithOptions(t, []epubTestChapter{
+		{name: "nav.xhtml", content: nav},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>Chapter One</h1><p>Body text.</p>`)},
+	}, nil, epubTestPackageOptions{navHref: "nav.xhtml", navInSpine: true})
+
+	text := epubResultText(t, parseEPUBWithTOCFlag(t, data, true))
+	if strings.Contains(text, "Outer Contents") {
+		t.Errorf("toc nav bound to the OPS namespace was not stripped: %q", text)
+	}
+	if !strings.Contains(text, "Rebound Contents") {
+		t.Errorf("nav under a rebinding of the prefix was stripped: %q", text)
 	}
 }
