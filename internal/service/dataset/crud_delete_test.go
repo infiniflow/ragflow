@@ -23,6 +23,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 
@@ -361,5 +363,188 @@ func TestCleanupDatasetExternalDetachesFromRequestContext(t *testing.T) {
 	}
 	if eng.liveChunkCalls == 0 || eng.liveMetaCalls == 0 {
 		t.Fatalf("cleanup skipped engine deletes on a canceled context: liveChunkCalls=%d liveMetaCalls=%d", eng.liveChunkCalls, eng.liveMetaCalls)
+	}
+}
+
+// sharedBucketStorage refuses RemoveBucket the way OSS behaves with OSS_BUCKET
+// set: the physical bucket holds other datasets' objects, so removing one
+// logical bucket is refused rather than performed.
+type sharedBucketStorage struct {
+	storage.Storage
+}
+
+func (s sharedBucketStorage) RemoveBucket(_ context.Context, _ string) error {
+	return storage.ErrSharedBucketRemoval
+}
+
+// fakeImageEngine answers the chunk-image lookup and swallows the engine
+// cleanup, so a test can watch what the storage side does.
+type fakeImageEngine struct {
+	engine.DocEngine
+	chunks             map[string][]map[string]interface{}
+	err                error
+	total              int64
+	offsets            *[]int
+	includeUnavailable *bool
+}
+
+func (f fakeImageEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
+	return 0, nil
+}
+
+func (f fakeImageEngine) DeleteMetadata(context.Context, map[string]interface{}, string) (int64, error) {
+	return 0, nil
+}
+
+func (f fakeImageEngine) Search(_ context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
+	if f.offsets != nil {
+		*f.offsets = append(*f.offsets, req.Offset)
+	}
+	if f.includeUnavailable != nil {
+		*f.includeUnavailable = req.IncludeUnavailable
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	docID, _ := req.Filter["doc_id"].(string)
+	all := f.chunks[docID]
+	start := req.Offset
+	if start > len(all) {
+		start = len(all)
+	}
+	end := start + req.Limit
+	if end > len(all) {
+		end = len(all)
+	}
+	total := int64(len(all))
+	if f.total > 0 {
+		total = f.total
+	}
+	return &enginetypes.SearchResult{Chunks: all[start:end], Total: total}, nil
+}
+
+// deleteOneDataset runs the two halves the service exposes: the transactional
+// delete, then the external cleanup the caller runs after its commit.
+func deleteOneDataset(t *testing.T, service *DatasetService, db *gorm.DB) {
+	t.Helper()
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.DeleteDatasetTx(t.Context(), db, kb)
+	if err != nil {
+		t.Fatalf("delete dataset: %v", err)
+	}
+	service.CleanupDatasetExternal(t.Context(), plan)
+}
+
+// TestDatasetCleanupKeepsASharedBucketAndRemovesItsImages covers what a kept
+// bucket would otherwise hold forever: the dataset's own objects go, the bucket
+// stays for the datasets that share it, and the chunk images go with the dataset
+// (#22513).
+func TestDatasetCleanupKeepsASharedBucketAndRemovesItsImages(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
+	if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "Document", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
+		t.Fatal(err)
+	}
+	store := sharedBucketStorage{Storage: storage.NewMemoryStorage()}
+	for _, object := range []string{"tracked", "chunk-9"} {
+		if err := store.Put(t.Context(), "kb-1", object, []byte("content")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	includeUnavailable := false
+	service := testDatasetUpdateService(t)
+	service.docEngine = fakeImageEngine{
+		chunks:             map[string][]map[string]interface{}{"doc-1": {{"id": "chunk-9", "img_id": "kb-1-chunk-9"}}},
+		includeUnavailable: &includeUnavailable,
+	}
+	deleteOneDataset(t, service, db)
+
+	if !includeUnavailable {
+		t.Fatal("image lookup hid disabled chunks, whose images would stay behind")
+	}
+	if store.ObjExist(t.Context(), "kb-1", "chunk-9") {
+		t.Fatal("dataset cleanup retained a chunk image in the shared bucket")
+	}
+	if store.ObjExist(t.Context(), "kb-1", "tracked") {
+		t.Fatal("dataset cleanup retained the document object")
+	}
+	if !store.BucketExists(t.Context(), "kb-1") {
+		t.Fatal("dataset cleanup removed the bucket every dataset shares")
+	}
+}
+
+// TestDatasetCleanupLeavesImagesItCouldNotName pins the fallback: when the chunk
+// index cannot be read, nothing is guessed and the cleanup still finishes.
+func TestDatasetCleanupLeavesImagesItCouldNotName(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
+	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
+		t.Fatal(err)
+	}
+	store := sharedBucketStorage{Storage: storage.NewMemoryStorage()}
+	for _, object := range []string{"tracked", "chunk-9"} {
+		if err := store.Put(t.Context(), "kb-1", object, []byte("content")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	service := testDatasetUpdateService(t)
+	service.docEngine = fakeImageEngine{err: errors.New("chunk index unavailable")}
+	deleteOneDataset(t, service, db)
+
+	if store.ObjExist(t.Context(), "kb-1", "tracked") {
+		t.Fatal("document object survived the cleanup")
+	}
+	if !store.ObjExist(t.Context(), "kb-1", "chunk-9") {
+		t.Fatal("cleanup deleted an image it could not name")
+	}
+}
+
+// TestDatasetCleanupStopsImageLookupAtTheResultWindow pins the page budget: a
+// document with more chunks than the backend will paginate keeps cleaning, and
+// no page is requested whose from + size leaves the window.
+func TestDatasetCleanupStopsImageLookupAtTheResultWindow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
+	if err := db.Exec("INSERT INTO document (id, kb_id, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", "doc-1", "kb-1", "general", "{}", "pdf", "tenant-1", "pdf", "tracked").Error; err != nil {
+		t.Fatal(err)
+	}
+	store := sharedBucketStorage{Storage: storage.NewMemoryStorage()}
+	if err := store.Put(t.Context(), "kb-1", "tracked", []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	offsets := make([]int, 0, 12)
+	service := testDatasetUpdateService(t)
+	service.docEngine = fakeImageEngine{
+		chunks:  map[string][]map[string]interface{}{"doc-1": {{"id": "chunk-9"}}},
+		total:   100_000,
+		offsets: &offsets,
+	}
+	deleteOneDataset(t, service, db)
+
+	for _, offset := range offsets {
+		if offset+imageLookupPageSize > common.MAX_RESULT_WINDOW {
+			t.Fatalf("asked for offset %d, whose page leaves the result window: %v", offset, offsets)
+		}
 	}
 }
