@@ -127,11 +127,11 @@ func TestWeightSharingProducesIdenticalInference(t *testing.T) {
 
 	ctx := context.Background()
 	input := make([]float32, prod(inShape))
-	outAlone, err := alone.Run(ctx, input)
+	outAlone, err := alone.Run(ctx, ModelInput{Data: input, Shape: inShape})
 	if err != nil {
 		t.Fatalf("Run (non-shared): %v", err)
 	}
-	outShared, err := shared.Run(ctx, input)
+	outShared, err := shared.Run(ctx, ModelInput{Data: input, Shape: inShape})
 	if err != nil {
 		t.Fatalf("Run (shared): %v", err)
 	}
@@ -170,11 +170,11 @@ func TestWeightSharingRecProducesIdenticalInference(t *testing.T) {
 
 	ctx := context.Background()
 	input := make([]float32, prod(inShape))
-	outAlone, err := alone.Run(ctx, input)
+	outAlone, err := alone.Run(ctx, ModelInput{Data: input, Shape: inShape})
 	if err != nil {
 		t.Fatalf("Run (non-shared rec): %v", err)
 	}
-	outShared, err := shared.Run(ctx, input)
+	outShared, err := shared.Run(ctx, ModelInput{Data: input, Shape: inShape})
 	if err != nil {
 		t.Fatalf("Run (shared rec): %v", err)
 	}

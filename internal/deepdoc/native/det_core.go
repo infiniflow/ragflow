@@ -98,6 +98,12 @@ const (
 	detShapePoolCap = 4
 )
 
+// detSessionKeyShape is the sentinel shape used as the pool key and session
+// creation hint. The underlying DynamicAdvancedSession is shape-agnostic: the
+// real input shape is supplied per Run via ModelInput, so all input sizes
+// share one pooled session per model.
+const detSessionKeyShape int64 = 640
+
 type detSessKey struct {
 	modelPath string
 	rh, rw    int64
@@ -107,15 +113,16 @@ type detSessKey struct {
 // distinct shape-pools, each retaining up to detShapePoolCap idle sessions.
 var detSessions = newSessionPool[detSessKey, *session](detMaxShapePools, detShapePoolCap)
 
-// getDetSession returns a reusable detector session for the given resized
-// shape plus a release func. The caller must call release exactly once. On a
-// pool miss a fresh session is created; creation errors are propagated and
-// nothing is cached.
-func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*session, func(), error) {
-	key := detSessKey{modelPath, rh, rw}
+// getDetSession returns a reusable detector session plus a release func. The
+// caller must call release exactly once. All input shapes share one pooled
+// session key (the real shape is supplied per Run via ModelInput). On a pool
+// miss a fresh session is created; creation errors are propagated and nothing
+// is cached.
+func getDetSession(ctx context.Context, modelPath string) (*session, func(), error) {
+	key := detSessKey{modelPath, detSessionKeyShape, detSessionKeyShape}
 	return detSessions.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, "x",
-			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0")
+			[]int64{1, 3, detSessionKeyShape, detSessionKeyShape}, "sigmoid_0.tmp_0")
 	})
 }
 
@@ -124,13 +131,14 @@ func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*sessio
 // extraction uses the pure-Go connected-components backend.
 func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error) {
 	blob, rh, rw, sh, sw := detPreprocess(img)
-	sess, release, e := getDetSession(ctx, filepath.Join(modelDir, modelFileDet), int64(rh), int64(rw))
+	shape := []int64{1, 3, int64(rh), int64(rw)}
+	sess, release, e := getDetSession(ctx, filepath.Join(modelDir, modelFileDet))
 	if e != nil {
 		return DetResult{}, e
 	}
 	defer release()
 
-	out, e := sess.Run(ctx, blob)
+	out, e := sess.Run(ctx, ModelInput{Data: blob, Shape: shape})
 	if e != nil {
 		return DetResult{}, e
 	}

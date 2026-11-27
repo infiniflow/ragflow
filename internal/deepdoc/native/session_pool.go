@@ -232,6 +232,14 @@ func isNil[V pooledSession](v V) bool {
 	return rv.IsNil()
 }
 
+// SetMaxFree updates the idle-session retention cap at runtime. Used by the
+// calibrated session budget to apply a measured quota after startup.
+func (p *sessionPool[K, V]) SetMaxFree(n int) {
+	p.mu.Lock()
+	p.maxFree = n
+	p.mu.Unlock()
+}
+
 // KeyCount returns the number of distinct key-pools currently live. Used by
 // tests that assert the pool set is bounded.
 func (p *sessionPool[K, V]) KeyCount() int {
@@ -316,10 +324,9 @@ func getModelSession(ctx context.Context, modelPath, inName string, inShape []in
 
 // ---- dynamic-width OCR-rec pool ----
 
-// recKey is the pool key for the dynamic-width OCR-rec model. The session is
-// pinned to one input width (the input tensor is fixed-shape per width), and
-// the output is auto-allocated at the model's true (width-dependent) sequence
-// length, so the key carries the width but no output shape.
+// recKey is the pool key for the OCR-rec model. With shape carried per Run
+// via ModelInput, all input widths/batch sizes share one key; the inShape
+// field retains the sentinel shape used at session creation.
 type recKey struct {
 	modelPath, inName, outName string
 	inShape                    string
@@ -356,19 +363,26 @@ const (
 // distinct width-pools, each retaining up to recShapePoolCap idle sessions.
 var recSessions = newSessionPool[recKey, *recSession](recMaxShapePools, recShapePoolCap)
 
-// getRecSession returns a reusable dynamic-width OCR-rec session for the given
-// input width plus a release func. The caller must call release exactly once.
-func getRecSession(ctx context.Context, modelPath, inName string, inShape []int64, outName string) (*recSession, func(), error) {
-	key := recKeyOf(modelPath, inName, inShape, outName)
+// recSessionKeyShape is the sentinel shape used as the pool key and the
+// weight-extraction hint. The underlying DynamicAdvancedSession is
+// shape-agnostic; the caller supplies the real shape per Run via ModelInput,
+// so all input widths/batch sizes share one pooled session per model.
+var recSessionKeyShape = []int64{1, 3, 48, 640}
+
+// getRecSession returns a reusable OCR-rec session plus a release func. The
+// caller must call release exactly once. All input shapes share one pooled
+// session key; the real shape is passed to Run via ModelInput.
+func getRecSession(ctx context.Context, modelPath, inName, outName string) (*recSession, func(), error) {
+	key := recKeyOf(modelPath, inName, recSessionKeyShape, outName)
 	return recSessions.Get(ctx, key, func() (*recSession, error) {
 		// Weight sharing is best-effort: a failure here degrades to a normal
 		// (non-shared) session rather than breaking OCR-rec entirely.
-		weights, werr := sharedWeights(modelPath, inName, inShape, outName)
+		weights, werr := sharedWeights(modelPath, inName, recSessionKeyShape, outName)
 		if werr != nil {
 			log.Printf("deepdoc/native: rec weight sharing unavailable for %s: %v",
 				modelPath, werr)
 			weights = nil
 		}
-		return newRecSession(modelPath, inName, inShape, outName, weights)
+		return newRecSession(modelPath, inName, recSessionKeyShape, outName, weights)
 	})
 }

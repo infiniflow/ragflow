@@ -83,14 +83,15 @@ var dlaPostprocessFn = dlaPostprocess
 // RunDLA runs layout detection on a page image.
 func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error) {
 	blob, sf := dlaPreprocess(img)
+	shape := []int64{1, 3, dlaInputSize, dlaInputSize}
 	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, modelFileLayout), "images",
-		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0")
+		shape, "output0")
 	if err != nil {
 		return DLAResult{}, err
 	}
 	defer release()
 
-	out, err := sess.Run(ctx, blob)
+	out, err := sess.Run(ctx, ModelInput{Data: blob, Shape: shape})
 	if err != nil {
 		return DLAResult{}, err
 	}

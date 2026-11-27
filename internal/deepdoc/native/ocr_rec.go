@@ -137,14 +137,14 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 		copy(batch[i*lineStride:(i+1)*lineStride], b)
 	}
 
-	sess, release, err := getRecSession(ctx, filepath.Join(modelDir, modelFileRec), "x",
-		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0")
+	shape := []int64{int64(n), 3, recH, int64(imgW)}
+	sess, release, err := getRecSession(ctx, filepath.Join(modelDir, modelFileRec), "x", "softmax_11.tmp_0")
 	if err != nil {
 		return nil, err
 	}
 	defer release()
 
-	out, err := sess.Run(ctx, batch)
+	out, err := sess.Run(ctx, ModelInput{Data: batch, Shape: shape})
 	if err != nil {
 		return nil, err
 	}
@@ -178,14 +178,14 @@ func recognizeLine(ctx context.Context, modelDir string, img *Image, maxWhRatio 
 		resizedW = imgW
 	}
 	blob := ocrRecPreprocess(img, resizedW, imgW)
-	sess, release, err := getRecSession(ctx, filepath.Join(modelDir, modelFileRec), "x",
-		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0")
+	shape := []int64{recMaxBatch, 3, recH, int64(imgW)}
+	sess, release, err := getRecSession(ctx, filepath.Join(modelDir, modelFileRec), "x", "softmax_11.tmp_0")
 	if err != nil {
 		return OCRRecResult{}, err
 	}
 	defer release()
 
-	out, err := sess.Run(ctx, blob)
+	out, err := sess.Run(ctx, ModelInput{Data: blob, Shape: shape})
 	if err != nil {
 		return OCRRecResult{}, err
 	}
@@ -318,7 +318,6 @@ func (r OCRRecResult) Wire() string {
 type recSession struct {
 	inName   string
 	outName  string
-	inShape  []int64
 	sess     *ort.DynamicAdvancedSession
 	poisoned bool
 }
@@ -341,16 +340,15 @@ func newRecSession(modelPath, inName string, inShape []int64, outName string, we
 	if err != nil {
 		return nil, err
 	}
-	return &recSession{inName: inName, outName: outName, inShape: inShape, sess: sess}, nil
+	return &recSession{inName: inName, outName: outName, sess: sess}, nil
 }
 
 // Run allocates a fresh input tensor, executes with an auto-allocated
 // (dynamic) output, and returns the output data. Both tensors are destroyed
 // before returning; out is a fresh copy the caller owns.
-func (s *recSession) Run(ctx context.Context, input []float32) ([]float32, error) {
-	if len(input) != int(prod(s.inShape)) {
-		return nil, fmt.Errorf("recSession %s: input len %d != expected %d",
-			s.outName, len(input), int(prod(s.inShape)))
+func (s *recSession) Run(ctx context.Context, in ModelInput) ([]float32, error) {
+	if err := in.validate(); err != nil {
+		return nil, fmt.Errorf("recSession %s: %w", s.outName, err)
 	}
 	opts, err := ort.NewRunOptions()
 	if err != nil {
@@ -363,7 +361,7 @@ func (s *recSession) Run(ctx context.Context, input []float32) ([]float32, error
 
 	// Fresh input tensor per Run; freed right after the call. nil output →
 	// onnxruntime allocates the actual-shaped tensor.
-	inT, err := ort.NewTensor(ort.NewShape(s.inShape...), input)
+	inT, err := ort.NewTensor(ort.NewShape(in.Shape...), in.Data)
 	if err != nil {
 		return nil, err
 	}
