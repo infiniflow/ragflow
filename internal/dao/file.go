@@ -682,7 +682,10 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 			if mapping.FileID == nil {
 				continue
 			}
-			if err := db.WithContext(ctx).Model(&entity.File{}).Where("id = ? AND tenant_id = ?", *mapping.FileID, tenantID).Updates(map[string]interface{}{"user_id": ownerUserID, "parent_id": datasetFolderID}).Error; err != nil {
+			// A file-manager upload still uses its original parent ID as its storage bucket.
+			if err := db.WithContext(ctx).Model(&entity.File{}).
+				Where("id = ? AND tenant_id = ? AND source_type = ?", *mapping.FileID, tenantID, entity.FileSourceKnowledgebase).
+				Updates(map[string]interface{}{"user_id": ownerUserID, "parent_id": datasetFolderID}).Error; err != nil {
 				return err
 			}
 		}
