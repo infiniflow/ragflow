@@ -914,6 +914,36 @@ func TestAnySearch_ReferencesAndOutputs(t *testing.T) {
 	}
 }
 
+func TestAnySearch_MalformedAuthorityIsNotCited(t *testing.T) {
+	const malformed = "https://www.reddit.comhttps://www.reddit.com/r/AskReddit/comments/1xf01af/"
+	const malformedUppercase = "https://www.reddit.comHTTPS://example.com/article"
+	const valid = "https://www.reddit.com:443/r/AskReddit/comments/1xf01af/"
+	const emptyPort = "https://example.com:/article"
+	helper, _ := anySearchTestServer(t, anySearchOK(`[
+		{"url":"`+malformed+`","content":"Unusable link"},
+		{"url":"`+malformedUppercase+`","content":"Unusable link with mixed case"},
+		{"url":"`+valid+`","content":"Usable link"},
+		{"url":"`+emptyPort+`","content":"Usable default-port link"}
+	]`))
+	search := NewAnySearchToolWith(helper, "")
+	out, err := search.InvokableRun(t.Context(), `{"query":"Reddit comments"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := decodeAnySearchEnvelope(t, out).Queries[0]
+	if len(result.Results) != 4 || result.Results[0]["url"] != malformed || result.Results[1]["url"] != malformedUppercase {
+		t.Fatalf("raw result URL was lost: %v", result.Results)
+	}
+	if len(result.ReferenceIDs) != 2 || result.ReferenceIDs[2][0] == "" || result.ReferenceIDs[3][0] == "" {
+		t.Fatalf("reference IDs = %v, want both valid URLs", result.ReferenceIDs)
+	}
+	envelope := decodeAnySearchBody(t, []byte(out))
+	chunks, docs := search.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 2 || len(docs) != 2 || chunks[0]["url"] != valid || chunks[1]["url"] != emptyPort {
+		t.Fatalf("references = %v / %v, want both valid URLs", chunks, docs)
+	}
+}
+
 func TestAnySearch_RenderCountsTheWholeBlockBeforeAppending(t *testing.T) {
 	t.Parallel()
 	big := strings.Repeat("alpha ", 200)

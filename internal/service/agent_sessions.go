@@ -201,15 +201,23 @@ func normalizeAgentReferenceChunks(chunks []interface{}) []map[string]interface{
 		if !ok {
 			continue
 		}
-		result = append(result, map[string]interface{}{
-			"id":            firstNonNil(chunk["chunk_id"], chunk["id"]),
+		id := chunk["id"]
+		if id == nil || id == "" {
+			id = chunk["chunk_id"]
+		}
+		normalized := map[string]interface{}{
+			"id":            id,
 			"content":       firstNonNil(chunk["content_with_weight"], chunk["content"]),
 			"document_id":   firstNonNil(chunk["doc_id"], chunk["document_id"]),
 			"document_name": firstNonNil(chunk["docnm_kwd"], chunk["document_name"]),
 			"dataset_id":    firstNonNil(chunk["kb_id"], chunk["dataset_id"]),
 			"image_id":      firstNonNil(chunk["image_id"], chunk["img_id"]),
 			"positions":     firstNonNil(chunk["positions"], chunk["position_int"]),
-		})
+		}
+		if chunkID := chunk["chunk_id"]; chunkID != nil {
+			normalized["chunk_id"] = chunkID
+		}
+		result = append(result, normalized)
 	}
 	return result
 }

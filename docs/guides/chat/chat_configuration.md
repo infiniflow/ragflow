@@ -60,6 +60,14 @@ The web search control is shown only when a provider is configured and its requi
 
 Web search supplements the datasets selected for the Chat. Select a provider, complete its required fields, and save the configuration to make the web search control available. For providers that require an API key, the key must be nonblank. Users can then enable web search when asking a question.
 
+#### AnySearch
+
+Select **AnySearch** and leave its API key blank for anonymous access, or save your own key to use your account's quota. Enable web search for the question. The Chat provider requests up to six results; Agent workflow search and extraction have their own [tool configuration](../agent/use_anysearch.md).
+
+For request correlation, run the Go API service with `--log-level info`. Its `AnySearch response` events record the HTTP status, an integer business code when available, and a safe server request ID. They do not include the query, API key, vendor message, or results. Missing or unsafe IDs are marked unavailable; IDs containing request secrets are marked redacted. The default `warn` level filters these informational events. HTTP and business errors retain an available safe ID for troubleshooting.
+
+An unsuccessful search is not evidence that no relevant information exists. Inspect the provider error and any available request ID before retrying. A rejected key is not retried anonymously.
+
 ## Naive Settings
 
 Expand **Advanced settings > Naive**. These fields configure the standard retrieval-and-answer flow. They do not replace the separate **Agentic template**.

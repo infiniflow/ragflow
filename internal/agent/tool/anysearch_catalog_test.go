@@ -10,8 +10,11 @@ package tool
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -77,7 +80,7 @@ func TestAnySearchVerticalSourceAndConditionalFields(t *testing.T) {
 		{"China fundamentals keeps unused symbol", "finance.fundamental", map[string]any{"type": "income", "symbol": "", "cn_code": "600519.SH"}},
 		{"CVE lookup", "security.vuln", map[string]any{"type": "cve", "value": "CVE-2021-44228"}},
 		{"package lookup", "security.vuln", map[string]any{"type": "package", "value": "PyPI:jinja2@2.4.1"}},
-		{"academic source filter", "academic.paper", map[string]any{"source": "MED", "data_source": "arxiv,openalex"}},
+		{"academic source filter", "academic.paper", map[string]any{"source": "MED"}},
 	}
 	for _, source := range []string{"sina", "wallstreetcn", "10jqka", "eastmoney", "cls", "yicai", "yuncaijing", "fenghuang", "jinrongjie"} {
 		cases = append(cases, struct {
@@ -102,5 +105,123 @@ func TestAnySearchVerticalSourceAndConditionalFields(t *testing.T) {
 				t.Fatalf("source or conditional parameters changed: %#v", body)
 			}
 		})
+	}
+}
+
+// These cases exercise the public tool boundary with controlled responses.
+// They do not establish vendor acceptance, filtering, or source provenance.
+func TestAnySearchCatalogContractCases(t *testing.T) {
+	raw, err := os.ReadFile("testdata/anysearch-contracts.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Tags []struct {
+			Tag    string         `json:"tag"`
+			Query  string         `json:"query"`
+			Params map[string]any `json:"params"`
+			Cases  []struct {
+				ID            string         `json:"id"`
+				Set           map[string]any `json:"set"`
+				Omit          []string       `json:"omit"`
+				Query         string         `json:"query"`
+				LocalError    string         `json:"local_error"`
+				UpstreamError bool           `json:"upstream_error"`
+				PackageCount  int            `json:"package_count"`
+			} `json:"cases"`
+		} `json:"tags"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range fixture.Tags {
+		for _, tc := range tag.Cases {
+			t.Run(tc.ID, func(t *testing.T) {
+				params := maps.Clone(tag.Params)
+				for key, value := range tc.Set {
+					params[key] = value
+				}
+				for _, key := range tc.Omit {
+					delete(params, key)
+				}
+				query := tag.Query
+				if tc.Query != "" {
+					query = tc.Query
+				}
+				if tc.PackageCount > 0 {
+					packages := make([]string, tc.PackageCount)
+					for i := range packages {
+						packages[i] = fmt.Sprintf("npm:contract-fixture-%d@1.0.0", i)
+					}
+					query = strings.Join(packages, ",")
+					params["value"] = query
+				}
+				args := map[string]any{"query": query, "tag": tag.Tag, "params": params, "max_results": 3}
+				// This response checks preservation of structured vertical data and references.
+				// It makes no assertion about what a particular vendor source returns.
+				const results = `[{"title":"Controlled vertical result","url":"https://example.com/contract","content":"Contract result text","source":{"name":"fixture","count":2}}]`
+				handler := anySearchOK(results)
+				if tc.UpstreamError {
+					handler = func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+						writeAnySearch(w, http.StatusBadRequest, `{"code":400,"message":"contract probe rejected","request_id":"contract-case-id"}`)
+					}
+				}
+				helper, recorder := anySearchTestServer(t, handler)
+				search := NewAnySearchToolWith(helper, "")
+				out, err := search.InvokableRun(t.Context(), mustJSON(t, args))
+				if err != nil {
+					t.Fatal(err)
+				}
+				env := decodeAnySearchEnvelope(t, out)
+				seen := recorder.all()
+				if tc.LocalError != "" {
+					if len(seen) != 0 || !strings.Contains(env.Error, tc.LocalError) || len(env.Queries) != 0 {
+						t.Fatalf("local validation: requests=%d result=%s", len(seen), out)
+					}
+					return
+				}
+				if len(seen) != 1 || seen[0].Method != http.MethodPost || seen[0].Path != "/v1/search" {
+					t.Fatalf("requests=%+v", seen)
+				}
+				expected := map[string]any{"query": query, "tag": tag.Tag, "max_results": 3}
+				expectedParams := maps.Clone(params)
+				if tag.Tag == "travel.flight_status" {
+					if _, present := expectedParams["departure"]; !present {
+						expectedParams["departure"] = ""
+					}
+				}
+				if len(expectedParams) > 0 {
+					expected["params"] = expectedParams
+				}
+				if got := decodeAnySearchBody(t, seen[0].Body); mustJSON(t, got) != mustJSON(t, expected) {
+					t.Fatalf("wire body: got=%s want=%s", mustJSON(t, got), mustJSON(t, expected))
+				}
+				if len(env.Queries) != 1 {
+					t.Fatalf("query association: %s", out)
+				}
+				record := env.Queries[0]
+				if record.Index != 0 || record.Query != query || record.Tag != tag.Tag {
+					t.Fatalf("query association: %s", out)
+				}
+				decoded := decodeAnySearchBody(t, []byte(out))
+				chunks, docs := search.BuildReferences(t.Context(), decoded)
+				if tc.UpstreamError {
+					if !strings.Contains(env.Error, "contract probe rejected") || record.Error == "" || record.RequestID != "contract-case-id" || len(record.Results) != 0 || len(chunks) != 0 || len(docs) != 0 {
+						t.Fatalf("upstream error became success or lost diagnostics: %s", out)
+					}
+					return
+				}
+				var want []map[string]any
+				if err := json.Unmarshal([]byte(results), &want); err != nil {
+					t.Fatal(err)
+				}
+				if env.Error != "" || record.Error != "" || record.RequestID != "rid-ok" || mustJSON(t, record.Results) != mustJSON(t, want) || len(chunks) != 1 || len(docs) != 1 {
+					t.Fatalf("delivered result/reference: %s chunks=%v docs=%v", out, chunks, docs)
+				}
+				if chunks[0]["content"] != "Contract result text" || chunks[0]["url"] != "https://example.com/contract" {
+					t.Fatalf("reference=%v", chunks[0])
+				}
+			})
+		}
 	}
 }

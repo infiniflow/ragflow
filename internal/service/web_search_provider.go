@@ -413,6 +413,8 @@ func (e webSearchHTTPStatusError) Error() string {
 	return fmt.Sprintf("status %d", int(e))
 }
 
+type webSearchResponseObserver func(status int, body []byte)
+
 // webSearchRequest performs one provider call and returns the response body.
 // Providers differ only in method, headers and body; the shared helper bounds
 // response size and reports failures for callers to handle.
@@ -423,6 +425,7 @@ func webSearchRequest(
 	endpoint string,
 	headers map[string]string,
 	body io.Reader,
+	observers ...webSearchResponseObserver,
 ) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
@@ -437,7 +440,8 @@ func webSearchRequest(
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	failed := response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices
+	if failed && len(observers) == 0 {
 		return nil, webSearchHTTPStatusError(response.StatusCode)
 	}
 	// Cap the body: a misbehaving or compromised provider must not be able to make
@@ -446,6 +450,18 @@ func webSearchRequest(
 	// 2000 characters each), and exceeding it is an error rather than a silent
 	// truncation that would surface later as an unparseable JSON body.
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, webSearchMaxResponseBytes+1))
+	observedBody := responseBody
+	if err != nil || len(responseBody) > webSearchMaxResponseBytes {
+		observedBody = nil
+	}
+	for _, observe := range observers {
+		if observe != nil {
+			observe(response.StatusCode, observedBody)
+		}
+	}
+	if failed {
+		return nil, webSearchHTTPStatusError(response.StatusCode)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -485,7 +501,8 @@ func retrieveAnySearchWebSearch(
 	if key := strings.TrimSpace(apiKey); key != "" {
 		headers["Authorization"] = "Bearer " + key
 	}
-	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, headers, bytes.NewReader(requestBody))
+	diagnostic := anySearchWebSearchDiagnostic{key: strings.TrimSpace(apiKey), query: query}
+	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, headers, bytes.NewReader(requestBody), diagnostic.observe)
 	if err != nil {
 		// Transport errors may contain credentials or request data. Only safe
 		// categories and codes reach the host's ordinary web-search logs.
@@ -493,7 +510,7 @@ func retrieveAnySearchWebSearch(
 		var networkError net.Error
 		switch {
 		case errors.As(err, &status):
-			return nil, fmt.Errorf("anysearch: HTTP status %d", int(status))
+			return nil, diagnostic.withRequestID(fmt.Errorf("anysearch: HTTP status %d", int(status)))
 		case errors.Is(err, context.Canceled):
 			return nil, fmt.Errorf("anysearch: %w", context.Canceled)
 		case errors.Is(err, context.DeadlineExceeded):
@@ -508,7 +525,7 @@ func retrieveAnySearchWebSearch(
 	}
 	results, err := decodeAnySearchWebSearchResults(responseBody)
 	if err != nil {
-		return nil, err
+		return nil, diagnostic.withRequestID(err)
 	}
 	hits := make([]webSearchHit, 0, len(results))
 	for _, result := range results {

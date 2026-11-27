@@ -20,13 +20,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
 // This checks the live provider contract, not the full ordinary Chat pipeline.
@@ -40,6 +42,7 @@ func TestAnySearchLiveProvider(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			logs := captureAnySearchLogs(t, zapcore.InfoLevel)
 			const query = "What is the capital of France?"
 			var response struct {
 				Code      *int   `json:"code"`
@@ -128,9 +131,16 @@ func TestAnySearchLiveProvider(t *testing.T) {
 				}
 			}
 			requestID := "redacted"
-			validID, _ := regexp.MatchString(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`, response.RequestID)
+			validID := anySearchDiagnosticID.MatchString(response.RequestID)
 			if validID && (tc.key == "" || !strings.Contains(strings.ToLower(response.RequestID), strings.ToLower(tc.key))) {
 				requestID = response.RequestID
+			}
+			events := logs.FilterMessage("AnySearch response").All()
+			if requestID == "redacted" || len(events) != 1 || events[0].ContextMap()["request_id"] != requestID || events[0].ContextMap()["http_status"] != int64(status) {
+				t.Fatal("ordinary diagnostics did not retain the real safe server request ID and status")
+			}
+			if tc.key != "" && strings.Contains(fmt.Sprint(logs.All()), tc.key) {
+				t.Fatal("ordinary diagnostics exposed the configured key")
 			}
 			t.Logf("requests=%d HTTP=%d code=0 request_id=%s upstream_hits=%d delivered_chunks=%d mode=%s", requests, status, requestID, len(response.Data.Results), len(chunks), tc.name)
 		})
