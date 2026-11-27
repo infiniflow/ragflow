@@ -930,71 +930,300 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	return nil
 }
 
+// structureLookupBatch bounds one lookup so a batch with many buckets stays
+// under the engines' filter-size limits.
+const structureLookupBatch = 500
+
+// relationSweepPairCap bounds one relation lookup by the product of its two
+// endpoint value lists, which keeps the terms lists a single request carries
+// well below the engines' filter-size limits. It does not bound the rows the
+// request returns: one endpoint pair can hold several stored rows (different
+// relation types, templates or superseded ids), so the sweep also splits a
+// group whose rows reach the engine result window, and a single pair that
+// fills the window is read in window-sized rounds instead of failing.
+const relationSweepPairCap = 1000
+
+// relationExclusionChunk caps the ids one must_not terms clause carries. The
+// engines reject a single terms clause past their term-count limit, so the
+// ids a round already read are excluded in clauses of at most this many values.
+const relationExclusionChunk = 512
+
+// structureRelationPair is one incoming relation's endpoints, the unit the
+// relation sweep splits on.
+type structureRelationPair struct {
+	from string
+	to   string
+}
+
+// relationExclusionClauses renders ids already read as must_not id clauses for
+// the caller to conjoin with its positive filter under "and". Nesting the list
+// under a top-level must_not instead would negate the conjunction, and the
+// engines read NOT(a AND b) of two negations as a OR b: the round would select
+// exactly the ids it means to exclude. Chunked because a single terms clause
+// over the whole set would pass the engines' term-count limit; the read enters
+// this path with at least one result window of ids, so it is always chunked.
+func relationExclusionClauses(ids []string) []map[string]interface{} {
+	clauses := make([]map[string]interface{}, 0, (len(ids)+relationExclusionChunk-1)/relationExclusionChunk)
+	for start := 0; start < len(ids); start += relationExclusionChunk {
+		end := min(start+relationExclusionChunk, len(ids))
+		clauses = append(clauses, map[string]interface{}{"must_not": map[string]interface{}{"id": ids[start:end]}})
+	}
+	return clauses
+}
+
+// mergeExistingStructureBuckets folds the persisted dataset-level rows into the
+// incoming buckets: it unions source doc/chunk ids, keeps a specific entity type
+// over "other", and returns the ids of rows superseded by the current id scheme.
+//
+// The lookups are keyed (current ids, then the entity/relation identity fields),
+// never a paged scan of every dataset-level row: this read runs while the caller
+// holds the dataset write lock, and a full scan on a large mind map kept that
+// lock past innodb_lock_wait_timeout, so the claim heartbeat failed and the batch
+// was retried forever (#22626). The identity sweep still finds rows stored under
+// an older id scheme, which is what the stale cleanup exists for.
 func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, baseName, tenant, kb string, buckets []StructureBucket) ([]string, error) {
 	byIdentity := make(map[string]int, len(buckets))
+	byID := make(map[string]bool, len(buckets))
 	compileKinds := make([]string, 0, len(buckets))
+	entityNames := make([]string, 0, len(buckets))
 	for i := range buckets {
-		byIdentity[structureBucketIdentity(buckets[i])] = i
-		compileKinds = common.AppendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
+		b := buckets[i]
+		byIdentity[structureBucketIdentity(b)] = i
+		byID[datasetLevelStructureID(tenant, kb, structureTemplateIdentity(b.TemplateID, b.TemplateKind), b.Name, b.Type, b.CompileKwd, b.RelationType)] = true
+		compileKinds = common.AppendUnique(compileKinds, []string{structureCompileKind(b.CompileKwd)})
+		if b.FromEntity == "" && b.ToEntity == "" {
+			entityNames = common.AppendUnique(entityNames, []string{b.Name, strings.ToLower(b.Name)})
+		}
 	}
 	if len(byIdentity) == 0 {
 		return nil, nil
 	}
 
-	const pageSize = 500
+	selectFields := []string{
+		"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
+		"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+		"content_with_weight", "source_doc_ids", "source_chunk_ids",
+	}
 	stale := map[string]bool{}
-	for offset := 0; ; offset += pageSize {
-		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{kb},
-			SelectFields: []string{
-				"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
-				"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
-				"content_with_weight", "source_doc_ids", "source_chunk_ids",
-			},
-			Filter: map[string]interface{}{
-				"kb_id":               kb,
-				"scope_kwd":           "dataset",
-				"compile_kwd":         compileKinds,
-				"knowledge_graph_kwd": []string{"entity", "relation"},
-			},
-			Offset: offset,
-			Limit:  pageSize,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("structure merge load existing rows: %w", err)
+	// applyRow is shared by every lookup; a row reaching it has already been
+	// narrowed by id or by identity fields, so it only needs the identity check.
+	applyRow := func(row map[string]interface{}) {
+		idx, ok := byIdentity[structureRowIdentity(row)]
+		if !ok {
+			return
 		}
-		for _, row := range res.Chunks {
-			identity := structureRowIdentity(row)
-			idx, ok := byIdentity[identity]
-			if !ok {
-				continue
-			}
-			bucket := &buckets[idx]
-			if !structureBucketWritable(*bucket) {
-				continue
-			}
-			bucket.SourceDocIDs = common.AppendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
-			bucket.SourceChunkIDs = common.AppendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
-			payload := structureRowPayload(row)
-			if bucket.FromEntity == "" && bucket.ToEntity == "" {
-				existingType := structureString(row["entity_type_kwd"])
-				if existingType == "" {
-					existingType = structureString(payload["type"])
-				}
-				bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
-			}
-			id := structureString(row["id"])
-			newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
-			if id != "" && id != newID {
-				stale[id] = true
-			}
+		bucket := &buckets[idx]
+		if !structureBucketWritable(*bucket) {
+			return
 		}
-		if len(res.Chunks) < pageSize {
-			break
+		bucket.SourceDocIDs = common.AppendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
+		bucket.SourceChunkIDs = common.AppendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+		payload := structureRowPayload(row)
+		if bucket.FromEntity == "" && bucket.ToEntity == "" {
+			existingType := structureString(row["entity_type_kwd"])
+			if existingType == "" {
+				existingType = structureString(payload["type"])
+			}
+			bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
+		}
+		id := structureString(row["id"])
+		newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
+		if id != "" && id != newID {
+			stale[id] = true
 		}
 	}
-	ids := make([]string, 0, len(stale))
+	// lookup pages through the rows a filter matches and returns how many it
+	// fetched. A positive stopAtOffset stops before the page that would start
+	// there, so a caller bound by an engine result window never requests an
+	// offset the engine rejects; 0 pages until the first short page. A non-nil
+	// readIDs collects the ids of the rows fetched, so a later round can exclude
+	// them and continue past the window.
+	lookup := func(extra map[string]interface{}, stopAtOffset int, readIDs *[]string) (int, error) {
+		filter := make(map[string]interface{}, len(extra)+3)
+		filter["kb_id"] = kb
+		filter["scope_kwd"] = "dataset"
+		filter["compile_kwd"] = compileKinds
+		for k, v := range extra {
+			filter[k] = v
+		}
+		fetched := 0
+		for offset := 0; stopAtOffset <= 0 || offset < stopAtOffset; offset += structureLookupBatch {
+			res, err := eng.Search(ctx, &types.SearchRequest{
+				IndexNames:   []string{baseName},
+				KbIDs:        []string{kb},
+				SelectFields: selectFields,
+				Filter:       filter,
+				Offset:       offset,
+				Limit:        structureLookupBatch,
+			})
+			if err != nil {
+				return fetched, fmt.Errorf("structure merge load existing rows: %w", err)
+			}
+			for _, row := range res.Chunks {
+				applyRow(row)
+				if readIDs != nil {
+					if id := structureString(row["id"]); id != "" {
+						*readIDs = append(*readIDs, id)
+					}
+				}
+			}
+			fetched += len(res.Chunks)
+			if len(res.Chunks) < structureLookupBatch {
+				break
+			}
+		}
+		return fetched, nil
+	}
+
+	// Rows already stored under the current id scheme: fetch them by id so the
+	// source doc/chunk union does not depend on how name_kwd was stored.
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for start := 0; start < len(ids); start += structureLookupBatch {
+		end := min(start+structureLookupBatch, len(ids))
+		if _, err := lookup(map[string]interface{}{
+			"id":                  ids[start:end],
+			"knowledge_graph_kwd": []string{"entity", "relation"},
+		}, 0, nil); err != nil {
+			return nil, err
+		}
+	}
+	// Rows stored under an older id scheme: find them by the identity fields so
+	// they are still superseded instead of accumulating as orphans.
+	batchedLookup := func(field string, values []string, extra map[string]interface{}) error {
+		for start := 0; start < len(values); start += structureLookupBatch {
+			end := min(start+structureLookupBatch, len(values))
+			filter := map[string]interface{}{field: values[start:end]}
+			for k, v := range extra {
+				filter[k] = v
+			}
+			if _, err := lookup(filter, 0, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := batchedLookup("name_kwd", entityNames, map[string]interface{}{"knowledge_graph_kwd": "entity"}); err != nil {
+		return nil, err
+	}
+	// Relation sweep: the filter combines from and to with AND, so one request
+	// matches the cross product of its two endpoint lists. That product only
+	// bounds the endpoint lists; it does not bound the rows that come back,
+	// because one endpoint pair can hold several stored rows. The engines still
+	// reject a page whose offset+limit passes the result window
+	// (index.max_result_window, 10,000 rows) and these rows have no sortable
+	// unique field for search_after, so a group that fills the window is split
+	// in half and read again. A single pair cannot be split further: it is read
+	// in window-sized rounds, each excluding the ids already read, so a pair with
+	// more rows than the window is still read completely. Pairs no incoming
+	// relation requests are still read when they fall inside a group's product;
+	// the identity check in applyRow rejects them.
+	var pairs []structureRelationPair
+	seenPairs := make(map[structureRelationPair]bool, len(buckets))
+	for i := range buckets {
+		b := buckets[i]
+		if b.FromEntity == "" && b.ToEntity == "" {
+			continue
+		}
+		pair := structureRelationPair{from: b.FromEntity, to: b.ToEntity}
+		if seenPairs[pair] {
+			continue
+		}
+		seenPairs[pair] = true
+		pairs = append(pairs, pair)
+	}
+	// readPastWindow continues a read whose rows filled the engine result window.
+	// Each round conjoins the ids read so far as must_not id clauses and pages
+	// again from offset 0, so every request stays inside the window and the pair is still
+	// read completely. Re-applied rows are idempotent, so a round overlapping an
+	// earlier one folds each source id once.
+	readPastWindow := func(pair structureRelationPair, extra map[string]interface{}, readIDs []string) error {
+		known := make(map[string]bool, len(readIDs))
+		for _, id := range readIDs {
+			known[id] = true
+		}
+		for {
+			roundExtra := make(map[string]interface{}, len(extra)+1)
+			for k, v := range extra {
+				roundExtra[k] = v
+			}
+			if len(readIDs) > 0 {
+				roundExtra["and"] = relationExclusionClauses(readIDs)
+			}
+			var roundIDs []string
+			fetched, err := lookup(roundExtra, common.MAX_RESULT_WINDOW, &roundIDs)
+			if err != nil {
+				return err
+			}
+			added := 0
+			for _, id := range roundIDs {
+				if !known[id] {
+					known[id] = true
+					readIDs = append(readIDs, id)
+					added++
+				}
+			}
+			if fetched < common.MAX_RESULT_WINDOW {
+				return nil
+			}
+			if added == 0 {
+				// A backend that drops the must_not clause hands back the same
+				// rows every round. Re-applying them is harmless, but the rows
+				// behind the window stay unreachable, so stop instead of spinning.
+				return fmt.Errorf("structure merge relation lookup for %q -> %q keeps returning rows already read (%d ids); this engine does not apply the id exclusion needed to read past its result window", pair.from, pair.to, len(readIDs))
+			}
+		}
+	}
+	var sweepRelations func(pairs []structureRelationPair) error
+	splitPairs := func(pairs []structureRelationPair) error {
+		half := len(pairs) / 2
+		if err := sweepRelations(pairs[:half]); err != nil {
+			return err
+		}
+		return sweepRelations(pairs[half:])
+	}
+	sweepRelations = func(pairs []structureRelationPair) error {
+		if len(pairs) == 0 {
+			return nil
+		}
+		var froms, tos []string
+		for _, p := range pairs {
+			froms = common.AppendUnique(froms, []string{p.from, strings.ToLower(p.from)})
+			tos = common.AppendUnique(tos, []string{p.to, strings.ToLower(p.to)})
+		}
+		if len(pairs) > 1 && len(froms)*len(tos) > relationSweepPairCap {
+			return splitPairs(pairs)
+		}
+		extra := map[string]interface{}{"knowledge_graph_kwd": "relation"}
+		if len(froms) > 0 {
+			extra["from_entity_kwd"] = froms
+		}
+		if len(tos) > 0 {
+			extra["to_entity_kwd"] = tos
+		}
+		var groupIDs []string
+		fetched, err := lookup(extra, common.MAX_RESULT_WINDOW, &groupIDs)
+		if err != nil {
+			return err
+		}
+		if fetched < common.MAX_RESULT_WINDOW {
+			return nil
+		}
+		if len(pairs) == 1 {
+			return readPastWindow(pairs[0], extra, groupIDs)
+		}
+		// The rows already applied are idempotent to re-read (source ids are
+		// unioned, stale ids are a set), so the halves start from offset 0.
+		return splitPairs(pairs)
+	}
+	if err := sweepRelations(pairs); err != nil {
+		return nil, err
+	}
+
+	ids = ids[:0]
 	for id := range stale {
 		ids = append(ids, id)
 	}

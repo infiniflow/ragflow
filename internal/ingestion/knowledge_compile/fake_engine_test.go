@@ -42,6 +42,9 @@ type fakeEngine struct {
 	searchReqs []*types.SearchRequest
 	// searchCalls counts Search invocations.
 	searchCalls int
+	// searchFn, when set, computes the result per request. Tests of keyed
+	// lookups need a different answer per filter, which searchChunks cannot give.
+	searchFn func(req *types.SearchRequest) ([]map[string]interface{}, error)
 	// windowed emulates the backend max_result_window: a request with no
 	// OrderBy whose from+size exceeds common.MAX_RESULT_WINDOW is rejected, the
 	// way Elasticsearch rejects from+size beyond index.max_result_window. With a
@@ -62,6 +65,13 @@ func (f *fakeEngine) Search(_ context.Context, req *types.SearchRequest) (*types
 	f.lastSearchReq = req
 	f.searchReqs = append(f.searchReqs, req)
 	f.searchCalls++
+	if f.searchFn != nil {
+		chunks, err := f.searchFn(req)
+		if err != nil {
+			return nil, err
+		}
+		return &types.SearchResult{Chunks: chunks}, nil
+	}
 	// Honour the subset of filters the production engine applies, so tests can
 	// assert real filtering behaviour (doc_id IN + exists) instead of a raw
 	// pass-through of every canned chunk.
