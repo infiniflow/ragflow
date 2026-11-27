@@ -23,6 +23,42 @@ type docxOutline struct {
 // (\.{2,}|…{2,}|·{2,}|[ ]{2,})\s*\d+\s*$.
 var dotPageNumberPattern = regexp.MustCompile(`(\.{2,}|…{2,}|·{2,}|[ ]{2,})\s*\d+\s*$`)
 
+var (
+	docxTOCEntryStylePattern = regexp.MustCompile(`(?i)^toc\s*\d+$`)
+	docxTOCTitleStylePattern = regexp.MustCompile(`(?i)^toc\s*heading$`)
+	docxTOCPageNumberPattern = regexp.MustCompile(`\t *\d+\s*$`)
+)
+
+func (ir docxIRDocument) hasTOCEntries() bool {
+	for _, section := range ir.Sections {
+		for _, el := range section.Elements {
+			if el.isTOCEntry() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (el docxIRElement) isTOCEntry() bool {
+	if el.Type != "paragraph" {
+		return false
+	}
+	if docxTOCEntryStylePattern.MatchString(strings.TrimSpace(el.Style)) {
+		return true
+	}
+	// Custom styles can still identify an entry by its internal TOC link
+	// and tab-separated page number. A link alone can also be a body reference.
+	runs := el.contentRuns()
+	for _, run := range runs {
+		label, _, _ := strings.Cut(run.Text, "\t")
+		if run.Type == "text" && strings.HasPrefix(run.Hyperlink, "#_Toc") && strings.TrimSpace(label) != "" {
+			return docxTOCPageNumberPattern.MatchString(joinDOCXIRRuns(runs))
+		}
+	}
+	return false
+}
+
 // extractDOCXOutlines parses the office_oxide IR JSON and returns
 // heading outlines (title + 0-based level). Mirrors Python
 // rag/flow/parser/utils.py:77-89 extract_word_outlines.
@@ -31,6 +67,10 @@ func extractDOCXOutlines(irJSON string) []docxOutline {
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
 	}
+	return ir.outlines()
+}
+
+func (ir docxIRDocument) outlines() []docxOutline {
 	var outlines []docxOutline
 	for _, sec := range ir.Sections {
 		for _, el := range sec.Elements {

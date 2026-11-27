@@ -27,6 +27,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ragflow/internal/entity"
@@ -102,10 +103,11 @@ type docxIRList struct {
 }
 
 type docxIRRun struct {
-	Type    string          `json:"type"` // "text", "line_break", "image"
-	Text    string          `json:"text"`
-	Data    []byte          `json:"data"`    // raw image bytes for inline image runs
-	Content []docxIRElement `json:"content"` // nested elements (used in table cells)
+	Type      string          `json:"type"` // "text", "line_break", "image"
+	Text      string          `json:"text"`
+	Hyperlink string          `json:"hyperlink"`
+	Data      []byte          `json:"data"`    // raw image bytes for inline image runs
+	Content   []docxIRElement `json:"content"` // nested elements (used in table cells)
 }
 
 type docxIRRow struct {
@@ -363,16 +365,27 @@ func docxHeadingLocationCaption(headings []docxHeading) string {
 
 // buildDOCXJSONSections renders the body of a Word document as structured items.
 func buildDOCXJSONSections(irJSON string, sink *officeMediaSink) []map[string]any {
-	return buildDOCXJSONSectionsCore(irJSON, sink, false)
+	return buildDOCXJSONSectionsCore(irJSON, sink, docxSectionOptions{})
+}
+
+type docxSectionOptions struct {
+	includeHeaderFooter bool
+	removeTOC           bool
 }
 
 // buildDOCXJSONSectionsCore converts Office IR elements to structured items.
 // The heading hierarchy supplies body table captions, with an explicit
 // Caption-styled paragraph taking precedence. A nil sink skips embedded images.
-func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, includeHeaderFooter bool) []map[string]any {
+func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, options docxSectionOptions) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
+	}
+	removeGeneratedTOC := options.removeTOC && ir.hasTOCEntries()
+	useTOCFallback := options.removeTOC && !removeGeneratedTOC
+	var outlines []docxOutline
+	if useTOCFallback {
+		outlines = ir.outlines()
 	}
 	var sections []map[string]any
 	tableSequence := 0
@@ -390,6 +403,10 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, includeHead
 				return
 			}
 			el := elements[ei]
+			if removeGeneratedTOC && topLevel && el.Type == "paragraph" &&
+				(docxTOCTitleStylePattern.MatchString(strings.TrimSpace(el.Style)) || el.isTOCEntry()) {
+				continue
+			}
 			switch el.Type {
 			case "paragraph", "heading":
 				if el.Type == "heading" {
@@ -438,20 +455,33 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, includeHead
 			}
 		}
 	}
+	bodyStart := 0
+	filterBodyTOC := func(end int) {
+		body := sections[bodyStart:end]
+		filtered := removeTOCWord(body, outlines, isEnglishItems(body))
+		sections = slices.Delete(sections, bodyStart+len(filtered), end)
+	}
 	emitHeaderFooter := func(parts ...docxIRHeaderFooter) {
+		bodyEnd := len(sections)
 		bodyHeadings := headings
 		headings = nil
 		for _, part := range parts {
 			emitElements(part.Content, false)
 		}
 		headings = bodyHeadings
+		// Filter the preceding body range only when a header or footer
+		// emitted items. The parts stay in their original section order.
+		if useTOCFallback && bodyEnd != len(sections) {
+			filterBodyTOC(bodyEnd)
+			bodyStart = len(sections)
+		}
 	}
 	for _, sec := range ir.Sections {
-		if includeHeaderFooter {
+		if options.includeHeaderFooter {
 			emitHeaderFooter(sec.FirstPageHeader, sec.Header, sec.EvenPageHeader)
 		}
 		emitElements(sec.Elements, true)
-		if includeHeaderFooter {
+		if options.includeHeaderFooter {
 			emitHeaderFooter(sec.FirstPageFooter, sec.Footer, sec.EvenPageFooter)
 		}
 	}
@@ -464,6 +494,9 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, includeHead
 			"image":        nil,
 			"doc_type_kwd": "text",
 		})
+	}
+	if useTOCFallback && bodyStart < len(sections) {
+		filterBodyTOC(len(sections))
 	}
 
 	return sections

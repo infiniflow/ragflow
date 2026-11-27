@@ -98,18 +98,15 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// word/document.xml re-parse that the Go parser used before the field
 	// existed.
 	irJSON, _ = p.wordOptions.prepareIR(irJSON, data)
-	sections := buildDOCXJSONSectionsCore(irJSON, sink, !p.RemoveHeaderFooter)
+	sections := buildDOCXJSONSectionsCore(irJSON, sink, docxSectionOptions{
+		includeHeaderFooter: !p.RemoveHeaderFooter,
+		removeTOC:           p.RemoveTOC,
+	})
 	if sink != nil && sink.err != nil {
 		return ParseResult{Err: sink.err}
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
-	}
-	// remove_toc: filter TOC entries using heading outlines
-	// (mirrors Python parser.py:892-893 remove_toc_word).
-	if p.RemoveTOC {
-		outlines := extractDOCXOutlines(irJSON)
-		sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
 	}
 	if len(sections) == 0 {
 		sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
