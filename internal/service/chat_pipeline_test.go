@@ -33,6 +33,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/tablequery"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -670,47 +671,20 @@ func TestAsyncChatResult_FinalFlagDefaultsFalse(t *testing.T) {
 	}
 }
 
-// --- P5 SQL retrieval normalization ---
-
-// TestNormalizeSQL_StripsThinkBlocks covers the cleanup that runs on
-// the LLM-generated SQL before it's handed to the engine.
-func TestNormalizeSQL_StripsThinkBlocks(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"empty", "", ""},
-		{"plain", "SELECT 1", "SELECT 1"},
-		{"think block", "<think>x</think>SELECT 1", "SELECT 1"},
-		{"code fence", "```sql\nSELECT 1\n```", "SELECT 1"},
-		{"trailing semicolon", "SELECT 1;", "SELECT 1"},
-		{"all of the above", "<think>x</think>```sql\nSELECT 1;\n```", "SELECT 1"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := normalizeSQL(c.in); got != c.want {
-				t.Errorf("normalizeSQL(%q) = %q, want %q", c.in, got, c.want)
-			}
-		})
-	}
-}
+// --- P5 table retrieval reference assembly ---
 
 // TestBuildSQLReference_Scalar covers the single-row scalar shortcut in
-// buildSQLReference. The path mirrors the previous
-// `TestRenderSQLAnswer_Scalar` but goes through the new entry point,
-// which requires constructing a minimal OpenAIChatService.
+// buildSQLReference.
 func TestBuildSQLReference_Scalar(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "", "",
+		t.Context(), nil, nil,
 		[]map[string]interface{}{{"count": 42.0}},
-		"", "", nil, nil, true,
+		nil, true,
 	)
 	if ans != "42" {
 		t.Errorf("buildSQLReference scalar answer = %q, want %q", ans, "42")
 	}
-	// Scalar branch returns empty chunks/doc_aggs and total=1.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
 		t.Errorf("scalar branch chunks = %v, want empty", chunks)
 	}
@@ -720,9 +694,7 @@ func TestBuildSQLReference_Scalar(t *testing.T) {
 }
 
 // TestBuildSQLReference_MultiRowTable covers the markdown-table branch
-// (multi-row, multi-column) and verifies that display columns and rows
-// render correctly. Mirrors the previous
-// `TestRenderSQLAnswer_MultiRowTable`.
+// (multi-row, multi-column).
 func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"id": 1.0, "name": "alice"},
@@ -730,11 +702,9 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "", "select id, name from t",
-		rows,
-		"sys", "elasticsearch", nil, nil, true,
+		t.Context(), nil, nil,
+		rows, nil, true,
 	)
-	// No source columns → empty chunks/doc_aggs.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
 		t.Errorf("non-source path chunks = %v, want empty", chunks)
 	}
@@ -1178,89 +1148,12 @@ func TestExtractSourceColumnIndexes(t *testing.T) {
 	}
 }
 
-// TestBuildChunkFetchSQL verifies the WHERE-clause extraction and SQL
-// construction at dialog_service.py:1321-1331.
-func TestBuildChunkFetchSQL(t *testing.T) {
-	cases := []struct {
-		name      string
-		sql       string
-		multiKB   bool
-		wantSQL   string
-		wantFound bool
-	}{
-		{
-			name:      "WHERE + GROUP BY (extracts up to GROUP BY)",
-			sql:       "select count(*) from t where x = 1 group by y",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "WHERE only, single KB, no limit",
-			sql:       "select * from t where x = 1",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "WHERE only, multi KB adds kb_id column",
-			sql:       "select * from t where x = 1",
-			multiKB:   true,
-			wantSQL:   "select doc_id, docnm_kwd, kb_id from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			// The secondary fetch drops the aggregate query's trailing clauses
-			// and applies its own limit.
-			name:      "WHERE + ORDER BY + LIMIT 5 (suffixes dropped, no extra limit)",
-			sql:       "select * from t where x = 1 order by y limit 5",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "no WHERE returns not-found",
-			sql:       "select * from t",
-			multiKB:   false,
-			wantSQL:   "",
-			wantFound: false,
-		},
-		{
-			// Python's f-string emits a literal lowercase "where";
-			// the original case from the input is NOT preserved.
-			name:      "case-insensitive where (output uses lowercase where)",
-			sql:       "select * from t WHERE x = 1",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "Infinity expectedCol is docnm (not _kwd)",
-			sql:       "select * from t where x = 1",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm from t where x = 1 limit 20",
-			wantFound: true,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			expectedCol := "docnm_kwd"
-			if tc.name == "Infinity expectedCol is docnm (not _kwd)" {
-				expectedCol = "docnm"
-			}
-			gotSQL, gotFound := buildChunkFetchSQL(tc.sql, "t", expectedCol, tc.multiKB, "elasticsearch")
-			if gotFound != tc.wantFound {
-				t.Errorf("found = %v, want %v", gotFound, tc.wantFound)
-			}
-			if gotSQL != tc.wantSQL {
-				t.Errorf("sql = %q, want %q", gotSQL, tc.wantSQL)
-			}
-		})
-	}
-}
+const (
+	scopeAllowedKB = "11111111-1111-1111-1111-111111111111"
+	scopeVictimKB  = "22222222-2222-2222-2222-222222222222"
+)
 
-// TestToIfaceSlice verifies the slice type conversion for the call-site
-// contract at chat_pipeline.go:3846.
+// TestToIfaceSlice verifies the slice type conversion.
 func TestToIfaceSlice(t *testing.T) {
 	in := []map[string]interface{}{
 		{"a": 1},
@@ -1275,133 +1168,89 @@ func TestToIfaceSlice(t *testing.T) {
 	}
 }
 
-// TestExpectedDocNameColumn verifies the engine→column name mapping.
-func TestExpectedDocNameColumn(t *testing.T) {
-	if got := expectedDocNameColumn("infinity"); got != "docnm" {
-		t.Errorf("infinity = %q, want docnm", got)
-	}
-	if got := expectedDocNameColumn("oceanbase"); got != "docnm_kwd" {
-		t.Errorf("oceanbase = %q, want docnm_kwd", got)
-	}
-	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
-		t.Errorf("seekdb = %q, want docnm_kwd", got)
-	}
-	if got := expectedDocNameColumn("vastbase"); got != "docnm_kwd" {
-		t.Errorf("vastbase = %q, want docnm_kwd", got)
-	}
-	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
-		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
-	}
-	if got := expectedDocNameColumn("opensearch"); got != "docnm_kwd" {
-		t.Errorf("opensearch = %q, want docnm_kwd", got)
-	}
-	if got := expectedDocNameColumn("unknown"); got != "docnm_kwd" {
-		t.Errorf("unknown = %q, want docnm_kwd", got)
-	}
-}
-
-// TestIsAggregateSQL matches the regex from dialog_service.py:974.
-func TestIsAggregateSQL(t *testing.T) {
-	cases := []struct {
-		sql  string
-		want bool
-	}{
-		{"select count(*) from t", true},
-		{"select sum(x) from t", true},
-		{"select avg(x) from t", true},
-		{"select max(x), min(y) from t", true},
-		{"select count(distinct x) from t", true},
-		{"select * from t where x = 1", false},
-		{"select distinct x from t", false}, // bare DISTINCT without ( ) doesn't match
-		{"", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.sql, func(t *testing.T) {
-			if got := isAggregateSQL(tc.sql); got != tc.want {
-				t.Errorf("isAggregateSQL(%q) = %v, want %v", tc.sql, got, tc.want)
-			}
-		})
-	}
-}
-
 // sqlFakeEngine is a minimal in-memory engine.DocEngine stub for
-// testing fetchAggregateChunks / buildSQLReference without a real
-// engine. It embeds engine.DocEngine to satisfy the interface (the
-// embedded methods will panic if accidentally called, which is the
-// intended loud-failure mode).
+// testing fetchAggregateChunks / buildSQLReference without a real engine.
 type sqlFakeEngine struct {
 	engine.DocEngine
 	engineType string
-	sqlCalls   *[]string
-	rowsBySQL  map[string][]map[string]interface{}
-	errBySQL   map[string]error
-	runSQL     func(ctx context.Context, sqlText string) ([]map[string]interface{}, error)
+	queries    *[]*tablequery.ValidatedQuery
+	execQuery  func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error)
 }
 
 func (f *sqlFakeEngine) GetType() string { return f.engineType }
-func (f *sqlFakeEngine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
-	if f.runSQL != nil {
-		return f.runSQL(ctx, sqlText)
+func (f *sqlFakeEngine) ExecuteTableQuery(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+	if f.queries != nil {
+		*f.queries = append(*f.queries, query)
 	}
-	if f.sqlCalls != nil {
-		*f.sqlCalls = append(*f.sqlCalls, sqlText)
-	}
-	if f.errBySQL != nil {
-		if err, ok := f.errBySQL[sqlText]; ok {
-			return nil, err
-		}
-	}
-	if f.rowsBySQL != nil {
-		if rows, ok := f.rowsBySQL[sqlText]; ok {
-			return rows, nil
-		}
+	if f.execQuery != nil {
+		return f.execQuery(ctx, query)
 	}
 	return nil, nil
 }
 
-// TestFetchAggregateChunks_SkipsInfinityMultiKB verifies the
-// Infinity multi-KB short-circuit (mirrors Python's add_kb_filter
-// no-op for Infinity).
+func mustValidatedTestQuery(t *testing.T, table string, kbIDs []string, q tablequery.Query, quote bool) *tablequery.ValidatedQuery {
+	t.Helper()
+	vq, err := tablequery.Validate(tablequery.Scope{
+		TenantID:  "tenant_a",
+		TableName: table,
+		KBIDs:     kbIDs,
+		Fields: tablequery.FieldsFromFieldMap(map[string]interface{}{
+			"x":          "X (int)",
+			"title":      "Title",
+			"created_at": "Created At",
+		}),
+	}, q, quote)
+	if err != nil {
+		t.Fatalf("tablequery.Validate: %v", err)
+	}
+	return vq
+}
+
 func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
-	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
+	var called []*tablequery.ValidatedQuery
+	sqlEngine := &sqlFakeEngine{engineType: "infinity", queries: &called}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB, scopeVictimKB}, tablequery.Query{
+		Aggregates: []tablequery.Aggregate{{Fn: tablequery.AggCount, As: "cnt"}},
+		Where:      &tablequery.FilterNode{Field: "x", Op: tablequery.OpEq, Value: 1},
+	}, true)
 	s := &ChatPipelineService{}
-	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		"docnm", []string{"kb_a", "kb_b"},
-	)
-	if chunks != nil || docAggs != nil {
-		t.Errorf("expected nil chunks/docAggs on Infinity multi-KB, got %v / %v", chunks, docAggs)
+	chunks, docAggs := s.fetchAggregateChunks(t.Context(), sqlEngine, vq)
+	if chunks != nil || docAggs != nil || len(called) != 0 {
+		t.Errorf("expected nil chunks/docAggs and no execution on Infinity multi-KB, got %v / %v / calls=%d", chunks, docAggs, len(called))
 	}
 }
 
-// TestFetchAggregateChunks_SingleKBSuccess verifies the secondary fetch
-// path populates chunks and doc_aggs correctly.
 func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
-	chunksSQL := "select doc_id, docnm_kwd from t WHERE (x = 1) AND (kb_id = '" + scopeAllowedKB + "') limit 20"
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
-		rowsBySQL: map[string][]map[string]interface{}{
-			chunksSQL: {
+		execQuery: func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+			compiled, err := tablequery.Compile(query, tablequery.DialectElasticsearch)
+			if err != nil {
+				return nil, err
+			}
+			want := "SELECT doc_id, docnm_kwd FROM ragflow_tenant_a WHERE (x = 1) AND (kb_id = '" + scopeAllowedKB + "') LIMIT 20"
+			if compiled.SQL != want {
+				return nil, fmt.Errorf("unexpected compiled citation SQL:\n got: %s\nwant: %s", compiled.SQL, want)
+			}
+			return []map[string]interface{}{
 				{"doc_id": "d1", "docnm_kwd": "Doc1"},
 				{"doc_id": "d2", "docnm_kwd": "Doc2"},
 				{"doc_id": "d1", "docnm_kwd": "Doc1"},
-			},
+			}, nil
 		},
 	}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Aggregates: []tablequery.Aggregate{{Fn: tablequery.AggCount, As: "cnt"}},
+		Where:      &tablequery.FilterNode{Field: "x", Op: tablequery.OpEq, Value: 1},
+	}, true)
 	s := &ChatPipelineService{}
-	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{scopeAllowedKB},
-	)
+	chunks, docAggs := s.fetchAggregateChunks(t.Context(), sqlEngine, vq)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks len = %d, want 3", len(chunks))
 	}
 	if len(docAggs) != 2 {
 		t.Fatalf("docAggs len = %d, want 2", len(docAggs))
 	}
-	// d1 appears twice → count=2; d2 once → count=1.
 	counts := map[string]int{}
 	for _, agg := range docAggs {
 		counts[agg["doc_id"].(string)] = agg["count"].(int)
@@ -1409,7 +1258,6 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	if counts["d1"] != 2 || counts["d2"] != 1 {
 		t.Errorf("counts = %v, want d1=2, d2=1", counts)
 	}
-	// Single-kb: each chunk gets kb_id from the dialog's kb list.
 	for i, c := range chunks {
 		if c["kb_id"] != scopeAllowedKB {
 			t.Errorf("chunks[%d].kb_id = %v, want %s", i, c["kb_id"], scopeAllowedKB)
@@ -1417,52 +1265,45 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 }
 
-// TestFetchAggregateChunks_NoWhereClause verifies the no-WHERE early
-// return (matches Python's aggregate fallback at L1365).
 func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
-	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
+	var called []*tablequery.ValidatedQuery
+	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch", queries: &called}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Aggregates: []tablequery.Aggregate{{Fn: tablequery.AggCount, As: "cnt"}},
+	}, true)
 	s := &ChatPipelineService{}
-	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t",
-		"docnm_kwd", []string{"kb_a"},
-	)
-	if chunks != nil || docAggs != nil {
-		t.Errorf("expected nil on no-WHERE, got %v / %v", chunks, docAggs)
+	chunks, docAggs := s.fetchAggregateChunks(t.Context(), sqlEngine, vq)
+	if chunks != nil || docAggs != nil || len(called) != 0 {
+		t.Errorf("expected nil on no-WHERE, got %v / %v / calls=%d", chunks, docAggs, len(called))
 	}
 }
 
-// TestFetchAggregateChunks_RunSQLError verifies graceful failure.
-func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
+func TestFetchAggregateChunks_ExecuteError(t *testing.T) {
 	called := false
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
-		runSQL: func(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
+		execQuery: func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
 			called = true
 			return nil, fmt.Errorf("engine boom")
 		},
 	}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Aggregates: []tablequery.Aggregate{{Fn: tablequery.AggCount, As: "cnt"}},
+		Where:      &tablequery.FilterNode{Field: "x", Op: tablequery.OpEq, Value: 1},
+	}, true)
 	s := &ChatPipelineService{}
-	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{scopeAllowedKB},
-	)
+	chunks, docAggs := s.fetchAggregateChunks(t.Context(), sqlEngine, vq)
 	if !called {
 		t.Fatal("expected the secondary query to execute")
 	}
 	if chunks != nil || docAggs != nil {
-		t.Errorf("expected nil on RunSQL error, got %v / %v", chunks, docAggs)
+		t.Errorf("expected nil on error, got %v / %v", chunks, docAggs)
 	}
 }
 
-// TestBuildSQLReference_EmptyRows verifies the empty-rows path.
 func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
-	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "", "", nil,
-		"", "", nil, nil, true,
-	)
+	ans, ref := s.buildSQLReference(t.Context(), nil, nil, nil, nil, true)
 	if ans != "No results." {
 		t.Errorf("ans = %q, want %q", ans, "No results.")
 	}
@@ -1471,20 +1312,16 @@ func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	}
 }
 
-// TestBuildSQLReference_NonAggregateWithSourceColumns verifies that
-// chunks and doc_aggs are populated from rows when source columns
-// are present.
 func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"doc_id": "d1", "docnm_kwd": "Doc1", "title": "T1"},
 		{"doc_id": "d2", "docnm_kwd": "Doc2", "title": "T2"},
 	}
-	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Select: []string{"title"},
+	}, true)
 	s := &ChatPipelineService{}
-	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil, true,
-	)
+	ans, ref := s.buildSQLReference(t.Context(), nil, vq, rows, nil, true)
 	if !strings.Contains(ans, "Source|") {
 		t.Errorf("expected Source column in answer, got:\n%s", ans)
 	}
@@ -1499,17 +1336,13 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	if len(docAggs) != 2 {
 		t.Fatalf("docAggs len = %d, want 2", len(docAggs))
 	}
-	// Each chunk must carry dataset_id (remapped from kb_id by chunksFormat) from the single-KB dialog.
 	for i, cm := range chunks {
-		if cm["dataset_id"] != "kb_a" {
-			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
+		if cm["dataset_id"] != scopeAllowedKB {
+			t.Errorf("chunks[%d].dataset_id = %v, want %s", i, cm["dataset_id"], scopeAllowedKB)
 		}
 	}
 
-	ans, ref = s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil, false,
-	)
+	ans, ref = s.buildSQLReference(t.Context(), nil, vq, rows, nil, false)
 	if strings.Contains(ans, "Source|") || strings.Contains(ans, "##0$$") {
 		t.Errorf("quote=false leaked SQL citations in answer:\n%s", ans)
 	}
@@ -1518,33 +1351,24 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	}
 }
 
-// TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch
-// verifies that an aggregate SQL with no source columns triggers the
-// secondary fetch and uses its result for chunks/doc_aggs.
-//
-// The test uses a multi-cell aggregate (1 row, 2 columns) to avoid the
-// scalar shortcut at the top of buildSQLReference.
 func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"count": 42.0, "label": "total"},
 	}
-	chunksSQL := "select doc_id, docnm_kwd from t WHERE (x = 1) AND (kb_id = '" + scopeAllowedKB + "') limit 20"
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
-		rowsBySQL: map[string][]map[string]interface{}{
-			chunksSQL: {
+		execQuery: func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+			return []map[string]interface{}{
 				{"doc_id": "d1", "docnm_kwd": "Doc1"},
-			},
+			}, nil
 		},
 	}
-	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Aggregates: []tablequery.Aggregate{{Fn: tablequery.AggCount, As: "cnt"}},
+		Where:      &tablequery.FilterNode{Field: "x", Op: tablequery.OpEq, Value: 1},
+	}, true)
 	s := &ChatPipelineService{}
-	ans, ref := s.buildSQLReference(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		rows, "", "elasticsearch", kbs, nil, true,
-	)
-	// Multi-cell aggregate → renders as a table, not a scalar.
+	ans, ref := s.buildSQLReference(t.Context(), sqlEngine, vq, rows, nil, true)
 	if !strings.Contains(ans, "|42|") {
 		t.Errorf("ans = %q, want to contain |42|", ans)
 	}
@@ -1554,19 +1378,16 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	}
 }
 
-// TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs verifies
-// that non-aggregate SQL without source columns returns the table but
-// empty chunks/doc_aggs (Python's best-effort path at L1367).
 func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"title": "T1"},
 		{"title": "T2"},
 	}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Select: []string{"title"},
+	}, true)
 	s := &ChatPipelineService{}
-	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "t", "select title from t",
-		rows, "", "elasticsearch", nil, nil, true,
-	)
+	ans, ref := s.buildSQLReference(t.Context(), nil, vq, rows, nil, true)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
 		t.Errorf("expected table data in answer, got:\n%s", ans)
 	}
@@ -1583,18 +1404,13 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	}
 }
 
-// TestBuildSQLReference_DisplayNameTranslation verifies that column
-// names are translated via the field_map.
 func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"doc_id": "d1", "docnm_kwd": "Doc1", "title": "Hello"},
 	}
 	fieldMap := map[string]interface{}{"title": "My Title"}
 	s := &ChatPipelineService{}
-	ans, _ := s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", nil, fieldMap, true,
-	)
+	ans, _ := s.buildSQLReference(t.Context(), nil, nil, rows, fieldMap, true)
 	if !strings.Contains(ans, "|My Title|") {
 		t.Errorf("expected translated column name, got:\n%s", ans)
 	}
@@ -1603,23 +1419,210 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	}
 }
 
-// TestBuildSQLReference_ISOTimestampStripped verifies that ISO
-// timestamps in cell values are stripped from the rendered table.
 func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"doc_id": "d1", "docnm_kwd": "Doc1", "created_at": "2024-01-15T13:24:55"},
 	}
 	s := &ChatPipelineService{}
-	ans, _ := s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
-		rows, "", "elasticsearch", nil, nil, true,
-	)
+	ans, _ := s.buildSQLReference(t.Context(), nil, nil, rows, nil, true)
 	if strings.Contains(ans, "T13:24:55") {
 		t.Errorf("expected ISO timestamp stripped, got:\n%s", ans)
 	}
 	if !strings.Contains(ans, "2024-01-15") {
 		t.Errorf("expected date portion preserved, got:\n%s", ans)
 	}
+}
+
+func TestBuildTableQueryScope_EnforcesIsolationBeforeLLM(t *testing.T) {
+	fieldMap := map[string]interface{}{"title": "Title"}
+	validKB := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	multiKB := []*entity.Knowledgebase{{ID: scopeAllowedKB}, {ID: scopeVictimKB}}
+	invalidKB := []*entity.Knowledgebase{{ID: "not-a-uuid"}}
+
+	// Infinity rejects multi-KB and invalid UUIDs up front.
+	infEng := &sqlFakeEngine{engineType: "infinity"}
+	if _, ok := buildTableQueryScope("tenant_a", multiKB, infEng, fieldMap); ok {
+		t.Fatal("SECURITY: Infinity must reject multi-KB scope")
+	}
+	if _, ok := buildTableQueryScope("tenant_a", invalidKB, infEng, fieldMap); ok {
+		t.Fatal("SECURITY: Infinity must reject non-UUID kb_id")
+	}
+	infScope, ok := buildTableQueryScope("tenant_a", validKB, infEng, fieldMap)
+	if !ok || infScope.TableName != "ragflow_tenant_a_"+scopeAllowedKB {
+		t.Fatalf("Infinity single-KB scope = (%+v, %v)", infScope, ok)
+	}
+
+	// Shared-table engines reject invalid tenant IDs and non-UUID kb_ids.
+	esEng := &sqlFakeEngine{engineType: "elasticsearch"}
+	if _, ok := buildTableQueryScope("tenant; DROP TABLE x", validKB, esEng, fieldMap); ok {
+		t.Fatal("SECURITY: invalid tenant identifier must be rejected")
+	}
+	if _, ok := buildTableQueryScope("tenant_a", invalidKB, esEng, fieldMap); ok {
+		t.Fatal("SECURITY: invalid kb_id UUID must be rejected")
+	}
+	esScope, ok := buildTableQueryScope("tenant_a", multiKB, esEng, fieldMap)
+	if !ok || esScope.TableName != "ragflow_tenant_a" || len(esScope.KBIDs) != 2 {
+		t.Fatalf("ES multi-KB scope = (%+v, %v)", esScope, ok)
+	}
+}
+
+func TestAggregateReferencesStayInAuthorizedKB(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.Exec("CREATE TABLE ragflow_tenant_a (doc_id TEXT, docnm_kwd TEXT, kb_id TEXT, x INT)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO ragflow_tenant_a VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
+		"allowed-doc", "Allowed", scopeAllowedKB, 1,
+		"victim-doc", "Victim", scopeVictimKB, 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	docEngine := &sqlFakeEngine{
+		engineType: "elasticsearch",
+		execQuery: func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+			compiled, err := tablequery.Compile(query, tablequery.DialectElasticsearch)
+			if err != nil {
+				return nil, err
+			}
+			var rows []map[string]interface{}
+			err = db.WithContext(ctx).Raw(compiled.SQL).Scan(&rows).Error
+			return rows, err
+		},
+	}
+
+	s := &ChatPipelineService{}
+	vq := mustValidatedTestQuery(t, "ragflow_tenant_a", []string{scopeAllowedKB}, tablequery.Query{
+		Aggregates: []tablequery.Aggregate{{Fn: tablequery.AggCount, As: "n"}},
+		Where:      &tablequery.FilterNode{Field: "x", Op: tablequery.OpEq, Value: 1},
+	}, true)
+	rows := []map[string]interface{}{{"n": 1, "label": "total"}}
+	_, ref := s.buildSQLReference(t.Context(), docEngine, vq, rows, nil, true)
+	chunks, _ := ref["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 || chunks[0]["document_id"] != "allowed-doc" {
+		t.Fatalf("SECURITY: aggregate references = %#v, want only allowed-doc", ref)
+	}
+}
+
+type scriptedChatDriver struct {
+	modelModule.ModelDriver
+	responses []string
+	calls     int
+}
+
+func (d *scriptedChatDriver) ChatWithMessages(_ context.Context, _ string, _ []modelModule.Message, _ *modelModule.APIConfig, _ *modelModule.ChatConfig, _ *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	if d.calls >= len(d.responses) {
+		return nil, fmt.Errorf("unexpected extra LLM call #%d", d.calls+1)
+	}
+	ans := d.responses[d.calls]
+	d.calls++
+	return &modelModule.ChatResponse{Answer: &ans}, nil
+}
+
+func TestUseSQLWithEngine_EndToEndFlows(t *testing.T) {
+	chat := &entity.Chat{TenantID: "tenant_a"}
+	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	fieldMap := map[string]interface{}{"category": "Category", "price_flt": "Price (float)"}
+	modelName := "test-model"
+	s := &ChatPipelineService{}
+
+	t.Run("row-count skips LLM and runs compiled aggregate", func(t *testing.T) {
+		drv := &scriptedChatDriver{}
+		cm := modelModule.NewChatModel(drv, &modelName, &modelModule.APIConfig{})
+		eng := &sqlFakeEngine{
+			engineType: "elasticsearch",
+			execQuery: func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+				if !query.IsAggregate() {
+					t.Fatalf("expected aggregate query for row count")
+				}
+				return []map[string]interface{}{{"rows": 7}}, nil
+			},
+		}
+		ans, err := s.useSQLWithEngine(t.Context(), eng, chat, kbs, "how many rows in this dataset?", cm, fieldMap, true)
+		if err != nil {
+			t.Fatalf("useSQLWithEngine: %v", err)
+		}
+		if drv.calls != 0 {
+			t.Fatalf("expected 0 LLM calls for row-count override, got %d", drv.calls)
+		}
+		if ans == nil || ans["answer"] != "7" {
+			t.Fatalf("ans = %#v, want answer=7", ans)
+		}
+	})
+
+	t.Run("unsupported JSON falls back cleanly without executing", func(t *testing.T) {
+		drv := &scriptedChatDriver{responses: []string{`{"unsupported": true}`}}
+		cm := modelModule.NewChatModel(drv, &modelName, &modelModule.APIConfig{})
+		var called []*tablequery.ValidatedQuery
+		eng := &sqlFakeEngine{engineType: "elasticsearch", queries: &called}
+		ans, err := s.useSQLWithEngine(t.Context(), eng, chat, kbs, "summarize the narrative", cm, fieldMap, true)
+		if err != nil || ans != nil || len(called) != 0 {
+			t.Fatalf("want clean fallback (nil, nil, 0 calls), got ans=%#v err=%v calls=%d", ans, err, len(called))
+		}
+	})
+
+	t.Run("validation repair then execution repair updates active query for citations", func(t *testing.T) {
+		drv := &scriptedChatDriver{
+			responses: []string{
+				// 1st attempt: unknown field -> schema validation triggers repair
+				`{"select": ["unknown_col"]}`,
+				// 2nd attempt: valid aggregate, fails on first execution
+				`{"aggregates": [{"fn": "count", "as": "cnt"}], "where": {"field": "category", "op": "eq", "value": "old"}}`,
+				// 3rd attempt (execution error repair): valid aggregate with updated WHERE
+				`{"aggregates": [{"fn": "count", "as": "cnt"}], "where": {"field": "category", "op": "eq", "value": "fixed"}}`,
+			},
+		}
+		cm := modelModule.NewChatModel(drv, &modelName, &modelModule.APIConfig{})
+		var seenSQL []string
+		attempt := 0
+		eng := &sqlFakeEngine{
+			engineType: "elasticsearch",
+			execQuery: func(ctx context.Context, query *tablequery.ValidatedQuery) ([]map[string]interface{}, error) {
+				compiled, err := tablequery.Compile(query, tablequery.DialectElasticsearch)
+				if err != nil {
+					return nil, err
+				}
+				seenSQL = append(seenSQL, compiled.SQL)
+				attempt++
+				if attempt == 1 {
+					return nil, fmt.Errorf("simulated engine failure")
+				}
+				if attempt == 2 {
+					return []map[string]interface{}{{"cnt": 3, "label": "fixed"}}, nil
+				}
+				// 3rd execution is the derived citation query; must carry the repaired WHERE!
+				return []map[string]interface{}{{"doc_id": "d1", "docnm_kwd": "Fixed.xlsx"}}, nil
+			},
+		}
+		ans, err := s.useSQLWithEngine(t.Context(), eng, chat, kbs, "count fixed items", cm, fieldMap, true)
+		if err != nil || ans == nil {
+			t.Fatalf("useSQLWithEngine = (%#v, %v)", ans, err)
+		}
+		if len(seenSQL) != 3 {
+			t.Fatalf("expected 3 engine executions (fail + repaired + citation), got %d: %v", len(seenSQL), seenSQL)
+		}
+		if !strings.Contains(seenSQL[2], "category = 'fixed'") {
+			t.Fatalf("citation query did not use repaired ValidatedQuery; SQL=%s", seenSQL[2])
+		}
+	})
+
+	t.Run("infinity multi-KB rejects before calling LLM", func(t *testing.T) {
+		drv := &scriptedChatDriver{}
+		cm := modelModule.NewChatModel(drv, &modelName, &modelModule.APIConfig{})
+		eng := &sqlFakeEngine{engineType: "infinity"}
+		multiKBs := []*entity.Knowledgebase{{ID: scopeAllowedKB}, {ID: scopeVictimKB}}
+		ans, err := s.useSQLWithEngine(t.Context(), eng, chat, multiKBs, "list categories", cm, fieldMap, true)
+		if err != nil || ans != nil || drv.calls != 0 {
+			t.Fatalf("expected fail-closed early exit before LLM, got ans=%#v err=%v calls=%d", ans, err, drv.calls)
+		}
+	})
 }
 
 // --- BuildChatConfig unit tests (moved from openai_chat_test.go) ---
