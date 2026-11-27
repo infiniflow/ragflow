@@ -33,6 +33,7 @@ type Connector struct {
 	PruneBatches                []syncerconnector.PruneBatch
 	PruneErrAt                  int
 	FetchBlobs                  map[string][]byte
+	FetchErrs                   map[string]error
 	OnSyncBatch                 func(index int)
 	OnPruneBatch                func(index int)
 	SyncRequests                []syncerconnector.SyncRequest
@@ -94,8 +95,11 @@ func (s *SyncSession) NextBatch(ctx context.Context) (syncerconnector.SyncBatch,
 	return batch, nil
 }
 
-// Fetch returns a configured lazy blob.
+// Fetch returns a configured lazy blob or error.
 func (s *SyncSession) Fetch(ctx context.Context, ref syncerconnector.FetchReference) ([]byte, error) {
+	if err := s.connector.FetchErrs[ref.Key]; err != nil {
+		return nil, err
+	}
 	return s.connector.FetchBlobs[ref.Key], nil
 }
 
