@@ -173,9 +173,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// User login by email endpoint
 		apiNoAuth.POST("/auth/login", r.userHandler.LoginByEmail)
-		// The login page asks which external providers exist before it renders;
-		// answering here keeps that request out of the 404 path.
-		apiNoAuth.GET("/auth/login/channels", r.authHandler.ListLoginChannels)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)

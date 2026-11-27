@@ -59,26 +59,6 @@ func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) 
 	return nil, fmt.Errorf("invalid authorization")
 }
 
-// LoginChannel is one external identity provider the login page offers. Name is
-// the channel identifier the page appends to /api/v1/auth/login/<name>.
-type LoginChannel struct {
-	Name string `json:"name"`
-}
-
-// ListLoginChannels answers GET /api/v1/auth/login/channels. The login page asks
-// before any session exists and renders one button per entry, so an empty list is
-// a valid answer: it leaves the email/password form as the only way in. Which
-// providers exist is a build capability (see loginChannels), not user state.
-func (h *AuthHandler) ListLoginChannels(c *gin.Context) {
-	channels := loginChannels()
-	if channels == nil {
-		// Emit [] rather than leaving data out: the page treats the field as a
-		// list either way, but an absent key reads as an error in client logs.
-		channels = []LoginChannel{}
-	}
-	common.RespondSuccess(c, channels, "success")
-}
-
 // userTokenResolver is the subset of UserService the auth
 // middleware actually depends on. We keep it as a small interface
 // so the test suite can swap in a stub without spinning up the
