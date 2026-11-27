@@ -147,9 +147,11 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if IsMinerUCloudBase(u.String()) {
 		return minerUCloudReachable(ctx, m.baseModel.httpClient, u)
 	}
-	v1URL := *u
-	v1URL.Path = "/v1/health"
-	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	// Append the probe path to the configured base URL instead of replacing
+	// its path: a proxy may expose MinerU under a custom prefix such as
+	// /model/proxy/55/, and /v1/health lives under that prefix (issue #22327).
+	v1URL := healthURL(u, "v1/health")
+	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL, token)
 	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
 		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
 	}
@@ -157,9 +159,8 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 		return nil
 	}
 
-	legacy := *u
-	legacy.Path = "/health"
-	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
+	legacy := healthURL(u, "health")
+	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy, token)
 	if err != nil {
 		if v1Err != nil {
 			return fmt.Errorf("connection failed: %w", v1Err)
@@ -173,9 +174,24 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 		return nil
 	}
 	if v1Err != nil {
-		return fmt.Errorf("not a MinerU service: %s: %w", v1URL.String(), v1Err)
+		return fmt.Errorf("not a MinerU service: %s: %w", v1URL, v1Err)
 	}
-	return fmt.Errorf("not a MinerU service: %s HTTP %d, %s HTTP %d", v1URL.String(), v1Code, legacy.String(), code)
+	return fmt.Errorf("not a MinerU service: %s HTTP %d, %s HTTP %d", v1URL, v1Code, legacy, code)
+}
+
+// healthURL appends a health path to the configured base URL, preserving any
+// custom path prefix (e.g. a reverse-proxy mount point) and leaving query
+// parameters in place. joinURL's version deduplication is deliberately not
+// used: "v1/health" here is the probe path, not a duplicated API version.
+func healthURL(base *url.URL, path string) string {
+	u := *base
+	basePath := strings.TrimRight(u.Path, "/")
+	if basePath == "" || basePath == "/" {
+		u.Path = "/" + path
+	} else {
+		u.Path = basePath + "/" + path
+	}
+	return u.String()
 }
 
 func minerUGET(ctx context.Context, client *http.Client, rawURL, token string) (int, []byte, error) {

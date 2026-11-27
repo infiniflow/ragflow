@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -232,5 +233,51 @@ func TestMinerULocalOCRFileDelegatesToCheckConnection(t *testing.T) {
 	}
 	if res == nil {
 		t.Fatal("OCRFile returned nil response")
+	}
+}
+
+// TestMinerULocalCheckConnectionCustomPathPrefix covers issue #22327: a
+// proxy-mounted MinerU base URL keeps its prefix on both health probes.
+func TestMinerULocalCheckConnectionCustomPathPrefix(t *testing.T) {
+	var gotPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.Path)
+		if r.URL.Path == "/model/proxy/55/v1/health" || r.URL.Path == "/model/proxy/55/health" {
+			writeMinerUHealth(w)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	baseURL := server.URL + "/model/proxy/55/"
+	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
+		t.Fatalf("CheckConnection with custom path prefix: %v (paths: %v)", err, gotPaths)
+	}
+	if len(gotPaths) == 0 || gotPaths[0] != "/model/proxy/55/v1/health" {
+		t.Fatalf("first probe path = %v, want /model/proxy/55/v1/health", gotPaths)
+	}
+}
+
+// TestHealthURLPreservesPrefixAndQuery verifies the helper independently:
+// trailing slashes don't double up and query parameters survive.
+func TestHealthURLPreservesPrefixAndQuery(t *testing.T) {
+	cases := []struct {
+		base, path, want string
+	}{
+		{"http://host:8000/model/proxy/55/", "v1/health", "http://host:8000/model/proxy/55/v1/health"},
+		{"http://host:8000/model/proxy/55", "health", "http://host:8000/model/proxy/55/health"},
+		{"http://host:8000", "v1/health", "http://host:8000/v1/health"},
+		{"http://host:8000/prefix?token=abc", "health", "http://host:8000/prefix/health?token=abc"},
+	}
+	for _, c := range cases {
+		u, err := url.Parse(c.base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := healthURL(u, c.path); got != c.want {
+			t.Errorf("healthURL(%q, %q) = %q, want %q", c.base, c.path, got, c.want)
+		}
 	}
 }
