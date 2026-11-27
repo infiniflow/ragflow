@@ -27,6 +27,7 @@ import (
 	"image"
 	"io"
 	"maps"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -55,12 +56,24 @@ var (
 
 const (
 	visionEnhancementConcurrency int = 10
-	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
-	// occupy one of the concurrency slots indefinitely. It wraps each
-	// per-image call with a 30-second timeout and 3 retries.
-	visionChatTimeout     = 30 * time.Second
-	visionMediaItemBudget = 10 * time.Second
+	// defaultVisionChatTimeout is the fallback budget for a single VLM call
+	// when VISION_CHAT_TIMEOUT is unset or invalid, so a hung endpoint cannot
+	// occupy one of the concurrency slots indefinitely.
+	defaultVisionChatTimeout = 30 * time.Second
+	visionMediaItemBudget    = 10 * time.Second
 )
+
+// visionChatTimeout resolves the per-image VLM call budget from
+// VISION_CHAT_TIMEOUT (seconds), falling back to the 30s default on an unset,
+// malformed, or non-positive value. A slow local endpoint can need far longer
+// than 30s for one image, and an expired budget fails the call instead of
+// retrying it.
+func visionChatTimeout() time.Duration {
+	if n := common.GetEnvInt(common.EnvVisionChatTimeout, 0); n > 0 && int64(n) <= math.MaxInt64/int64(time.Second) {
+		return time.Duration(n) * time.Second
+	}
+	return defaultVisionChatTimeout
+}
 
 // backendDescribedKey marks items whose text already carries a backend-provided
 // vision description (MinerU folds vlm_description into text). The vision
@@ -548,7 +561,7 @@ func defaultVisionChatInvoker(
 	messages []modelModule.Message,
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
-	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
+	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout())
 	defer cancel()
 	config := &modelModule.ChatConfig{Vision: new(true), Thinking: new(false)}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
