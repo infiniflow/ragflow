@@ -19,7 +19,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
+
+	"ragflow/internal/entity/models"
 )
 
 // TestOCRFailoverCanRetry verifies that the gp- flip-and-retry decision only
@@ -46,6 +49,13 @@ func TestOCRFailoverCanRetry(t *testing.T) {
 		{name: "inner per-member deadline", err: wrap(context.DeadlineExceeded), wantRetry: true},
 		{name: "deadline wrapped in provider error", err: wrap(fmt.Errorf("post: %w", context.DeadlineExceeded)), wantRetry: true},
 		{name: "inner context canceled", err: wrap(context.Canceled), wantRetry: true},
+		// Request-level refusals fail identically on any member and must not
+		// flip one.
+		{name: "payload too large", err: &models.APIStatusError{Status: http.StatusRequestEntityTooLarge, Body: "file too large"}, wantRetry: false},
+		{name: "bad request", err: fmt.Errorf("post: %w", &models.APIStatusError{Status: http.StatusBadRequest, Body: "invalid pages"}), wantRetry: false},
+		{name: "server error still flips", err: &models.APIStatusError{Status: http.StatusBadGateway, Body: "upstream"}, wantRetry: true},
+		{name: "rate limit still flips", err: &models.APIStatusError{Status: http.StatusTooManyRequests, Body: "slow down"}, wantRetry: true},
+		{name: "request timeout still flips", err: &models.APIStatusError{Status: http.StatusRequestTimeout, Body: "timed out"}, wantRetry: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

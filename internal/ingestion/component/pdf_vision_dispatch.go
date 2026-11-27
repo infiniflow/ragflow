@@ -70,6 +70,12 @@ func ocrFailoverCanRetry(err error) bool {
 	if err == nil {
 		return false
 	}
+	// A rejected request (payload too large, unsupported parameter, HTTP 4xx
+	// other than the transient 408/429) would fail identically on any member,
+	// so it must not flip one inactive.
+	if modelModule.IsRequestRejected(err) {
+		return false
+	}
 	return !errors.Is(err, errOCRTaskPollTimeout) &&
 		!errors.Is(err, errMonkeyOCRNoTextualLayouts) &&
 		!errors.Is(err, errOCRResultNoText) &&
@@ -422,10 +428,17 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	type monkeyOCRv2Target struct {
 		baseURL string
 		timeout time.Duration
+		// fromGroup: the endpoint was resolved from the gp- group member.
+		// When the gp- resolution failed and parsing fell back to the
+		// setup/environment URL, the request never reaches a member, so its
+		// failures must not flip one — and would flip a freshly re-picked
+		// member on every retry.
+		fromGroup bool
 	}
 	resolveTarget := func(ctx context.Context) (*monkeyOCRv2Target, error) {
 		baseURL := strings.TrimRight(getStringOr(setup, "monkeyocrv2_server_url", os.Getenv(common.EnvMonkeyOCRv2ServerURL)), "/")
 		timeout := monkeyOCRv2RequestTimeout(setup, nil)
+		memberResolved := false
 		if tenantID != "" {
 			var driver modelModule.ModelDriver
 			var apiConfig *modelModule.APIConfig
@@ -445,6 +458,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 					baseURL = strings.TrimRight(configuredURL, "/")
 				}
 				timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
+				memberResolved = true
 			} else if baseURL == "" {
 				return nil, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
 			}
@@ -452,12 +466,23 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		if baseURL == "" {
 			return nil, fmt.Errorf("parser: MonkeyOCRv2 requires monkeyocrv2_server_url or MONKEYOCRV2_SERVER_URL")
 		}
-		return &monkeyOCRv2Target{baseURL: baseURL, timeout: timeout}, nil
+		_, refIsGroup := common.ParseGroupModelRef(modelRef)
+		return &monkeyOCRv2Target{baseURL: baseURL, timeout: timeout, fromGroup: refIsGroup && memberResolved}, nil
 	}
 
 	var result parser.ParseResult
+	var attemptTarget *monkeyOCRv2Target
+	// Only flip while the failed invocation actually targeted the resolved
+	// group member; a fallback to the setup/environment URL says nothing
+	// about any member's health.
+	failoverCanRetry := func(err error) bool {
+		return attemptTarget != nil && attemptTarget.fromGroup && ocrFailoverCanRetry(err)
+	}
 	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, modelRef,
-		resolveTarget, nil,
+		func(ctx context.Context) (*monkeyOCRv2Target, error) {
+			attemptTarget = nil
+			return resolveTarget(ctx)
+		}, nil,
 		func(ctx context.Context, target *monkeyOCRv2Target) error {
 			zipBytes, invErr := monkeyOCRv2ParseRequest(ctx, target.baseURL+"/parse", filename, binary, target.timeout)
 			if invErr != nil {
@@ -471,7 +496,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 			res.Warnings = append(res.Warnings, budget.Warnings()...)
 			result = res
 			return nil
-		}, ocrFailoverCanRetry)
+		}, failoverCanRetry)
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
