@@ -198,7 +198,7 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 					"type": "adaptive",
 				}
 				reqBody["reasoning_split"] = true
-			} else {
+			} else if modelName != "MiniMax-M3.1-Flash" { // always thinks; rejects "disabled"
 				reqBody["thinking"] = map[string]interface{}{
 					"type": "disabled",
 				}
@@ -257,7 +257,7 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 					"type": "adaptive",
 				}
 				reqBody["reasoning_split"] = true
-			} else {
+			} else if modelName != "MiniMax-M3.1-Flash" { // always thinks; rejects "disabled"
 				reqBody["thinking"] = map[string]interface{}{
 					"type": "disabled",
 				}
