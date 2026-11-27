@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -276,6 +277,73 @@ func TestApplyCitations(t *testing.T) {
 	}
 	if len(cited) != 1 || cited[0] != 0 {
 		t.Errorf("cited = %v", cited)
+	}
+}
+
+// The sentence-ending punctuation belongs to the sentence it closes. A
+// citation marker goes right after that sentence, so no character of the next
+// sentence may be pulled into it.
+func TestSplitAnswer_KeepsEachSentenceWhole(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		answer string
+		want   []string
+	}{
+		{"chinese", "你好世界。这是一个测试。", []string{"你好世界。", "这是一个测试。"}},
+		{"english", "First sentence is interesting. Second one too.", []string{"First sentence is interesting.", " Second one too."}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sentences, idx := splitAnswer(tc.answer)
+			if !slices.Equal(sentences, tc.want) {
+				t.Errorf("splitAnswer(%q) = %q, want %q", tc.answer, sentences, tc.want)
+			}
+			if want := []int{0, 1}; !slices.Equal(idx, want) {
+				t.Errorf("splitAnswer(%q) indices = %v, want %v", tc.answer, idx, want)
+			}
+		})
+	}
+}
+
+func TestInsertCitationsWithVectors_MarkerFollowsItsOwnSentence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		answer string
+		want   string
+	}{
+		{
+			"chinese",
+			"你好世界。这是一个测试。",
+			"你好世界。 [ID:0]这是一个测试。 [ID:1]",
+		},
+		{
+			"chinese three sentences",
+			"第一句话在这里。第二句话在这里。第三句话在这里。",
+			"第一句话在这里。 [ID:0]第二句话在这里。 [ID:1]第三句话在这里。 [ID:2]",
+		},
+		{
+			"english",
+			"First sentence is interesting. Second one too.",
+			"First sentence is interesting. [ID:0] Second one too. [ID:1]",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sentences, idx := splitAnswer(tc.answer)
+			// Sentence i is closest to chunk i only.
+			var chunks []SourcedChunk
+			vectors := make([][]float64, len(sentences))
+			for i := range sentences {
+				chunks = append(chunks, SourcedChunk{ID: fmt.Sprintf("c%d", i)})
+				vectors[i] = make([]float64, len(sentences))
+				vectors[i][i] = 1
+			}
+			got, cited := InsertCitationsWithVectors(tc.answer, chunks, vectors, vectors, sentences, idx)
+			if got != tc.want {
+				t.Errorf("InsertCitationsWithVectors(%q) = %q, want %q", tc.answer, got, tc.want)
+			}
+			if len(cited) != len(sentences) {
+				t.Errorf("cited = %v, want one chunk per sentence", cited)
+			}
+		})
 	}
 }
 

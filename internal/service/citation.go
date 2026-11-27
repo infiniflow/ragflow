@@ -153,14 +153,6 @@ func splitAnswer(answer string) ([]string, []int) {
 			rawPieces = append(rawPieces, sentenceSplit(block)...)
 		}
 	}
-	// Rejoin the trailing punctuation that the regex captured as a separate piece.
-	for i := 1; i < len(rawPieces); i++ {
-		if sentenceSplitRE.MatchString(rawPieces[i]) {
-			r := []rune(rawPieces[i])
-			rawPieces[i-1] += string(r[0])
-			rawPieces[i] = string(r[1:])
-		}
-	}
 	// Filter out short pieces.
 	var sentences []string
 	var sentenceIdx []int
@@ -173,6 +165,8 @@ func splitAnswer(answer string) ([]string, []int) {
 	return sentences, sentenceIdx
 }
 
+// sentenceSplit cuts text right after each sentence boundary. The boundary
+// stays at the end of the sentence it closes, so the pieces join back into text.
 func sentenceSplit(text string) []string {
 	indices := sentenceSplitRE.FindAllStringIndex(text, -1)
 	if len(indices) == 0 {
@@ -205,13 +199,6 @@ func applyCitations(answer string, sentences []string, sentenceIdx []int, cites 
 			rawPieces = append(rawPieces, "```"+block+"```\n")
 		} else {
 			rawPieces = append(rawPieces, sentenceSplit(block)...)
-		}
-	}
-	for i := 1; i < len(rawPieces); i++ {
-		if sentenceSplitRE.MatchString(rawPieces[i]) {
-			r := []rune(rawPieces[i])
-			rawPieces[i-1] += string(r[0])
-			rawPieces[i] = string(r[1:])
 		}
 	}
 
