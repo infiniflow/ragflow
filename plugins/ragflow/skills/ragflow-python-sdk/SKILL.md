@@ -60,11 +60,13 @@ All `document_ids` passed together must share an embedding model.
 ```python
 assistant = rag.create_chat("Handbook bot", dataset_ids=[dataset.id])
 session = assistant.create_session()
-answer = session.ask("How many vacation days do new hires get?", stream=False)
+# ask() always yields Message objects; consume with next() when stream=False.
+answer = next(session.ask("How many vacation days do new hires get?", stream=False))
 print(answer.content)
 
-for part in session.ask("And after five years?", stream=True):
-    print(part.content)
+# Streaming yields intermediate content then a final full answer; take the last.
+parts = list(session.ask("And after five years?", stream=True))
+print(parts[-1].content)
 ```
 
 Agents work the same way via `rag.list_agents()` and agent sessions.
