@@ -78,9 +78,15 @@ print(parts[-1].content)
 ## Agents
 
 Agent sessions use `rag.list_agents()` then `agent.create_session()`.
+An agent must already exist (create one in the RAGFlow UI first, or guard
+against an empty list); `list_agents()` returns `[]` when the account has
+none, and indexing `[0]` raises `IndexError`.
 `Session.ask()` yields `Message` objects without an event type, so filter on
 `content` instead. Streaming sends content deltas; join non-empty parts and
-ignore the empty final part (references may appear there):
+ignore the empty final part (references may appear there). When the agent
+has thinking enabled, that join includes reasoning text before the final
+answer (the SDK drops `start_to_think`/`end_to_think` markers and does not
+expose a separate boundary):
 
 ```python
 agent = rag.list_agents()[0]
