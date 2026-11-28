@@ -86,6 +86,29 @@ func TestCollectArtifactsKeepsRelativePaths(t *testing.T) {
 	}
 }
 
+// The published size describes the bytes that were read, like the local
+// provider. A file that grew after `find` reported its size must not be
+// advertised under the stale listing value.
+func TestCollectArtifactsReportsReadSize(t *testing.T) {
+	f := &artifactFixture{
+		dirs:  map[string][]remoteEntry{"/w/artifacts": {fileEntry("report.csv", 4)}},
+		files: map[string]string{"/w/artifacts/report.csv": "a,b,c,d,e"},
+	}
+	p := &SSHProvider{maxArtifacts: 10, maxArtifactBytes: 1 << 20}
+
+	var out []map[string]any
+	listings := 0
+	if err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", 0, &listings, &out, f.list, f.read); err != nil {
+		t.Fatalf("collectArtifactsInto: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("collected %d artifacts, want 1", len(out))
+	}
+	if got := out[0]["size"]; got != int64(9) {
+		t.Fatalf("artifact size = %v, want 9 (the bytes read, not find's 4)", got)
+	}
+}
+
 // maxArtifacts must bound the whole tree. A per-subtree check lets every
 // directory add another maxArtifacts entries.
 func TestCollectArtifactsAppliesCapAcrossSubtrees(t *testing.T) {
