@@ -1,4 +1,5 @@
 import { FileType } from '@/constants/file';
+import { additionalParserGlobalOptions } from '@/ee/utils/parser-global-options';
 import i18n from '@/locales/config';
 import { z } from 'zod';
 
@@ -82,6 +83,7 @@ export const FormSchema = z
       })
       .optional(),
     enable_vision_enhancement: z.boolean().optional(),
+    ...additionalParserGlobalOptions.shape,
   })
   .superRefine((values, ctx) => {
     // An image needs at least one text source: local OCR or the global vision

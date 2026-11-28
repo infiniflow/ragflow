@@ -382,8 +382,8 @@ type TitleChunkerParam struct {
 	// ChunkTokenCap is the hard ceiling on each emitted text chunk's token
 	// count (mirrors chunk_token_cap, added in
 	// #18455). A built text chunk exceeding it is re-split on sentence
-	// boundaries into <= cap sub-chunks. 0 disables the ceiling. The
-	// default is 512; valid range when non-zero is 128..8000.
+	// boundaries into <= cap sub-chunks. The default is 512; the accepted
+	// range is 128..8000.
 	ChunkTokenCap int `json:"chunk_token_cap"`
 
 	// TableContextSize and ImageContextSize are per-side media context budgets.
@@ -416,13 +416,11 @@ func (p *TitleChunkerParam) Validate() error {
 	if p.ImageContextSize < 0 {
 		return errInvalidValue{Field: "image_context_size", Value: fmt.Sprintf("%d", p.ImageContextSize)}
 	}
-	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
-	// integer in [128, 8000] (mirrors title_chunker #18455). Checked
-	// BEFORE the method switch so an unset method cannot bypass the range.
-	if p.ChunkTokenCap != 0 {
-		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
-			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
-		}
+	// chunk_token_cap must be a positive integer in [128, 8000] (mirrors
+	// title_chunker #18455). Checked BEFORE the method switch so an unset
+	// method cannot bypass the range.
+	if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
+		return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
 	}
 	switch p.Method {
 	case "hierarchy", "group":

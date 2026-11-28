@@ -104,6 +104,7 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{name: "numeric string chunk size", input: `{"chunk_token_num":"256"}`, want: `{"GeneralChunker:SixApplesFall":{"chunk_token_size":256}}`},
 		{name: "unusable chunk size is dropped", input: `{"chunk_token_num":"many"}`, want: `{}`},
 		{name: "title chunker cap", parser: "book", input: `{"chunk_token_num":256}`, want: `{"TitleChunker:GrumpyGarlicsBake":{"chunk_token_cap":256}}`},
+		{name: "title chunker zero cap is dropped", parser: "book", input: `{"chunk_token_num":0}`, want: `{}`},
 		{name: "title chunker cap out of range", parser: "book", input: `{"chunk_token_num":64}`, want: `{}`},
 		{name: "manual chunker has no cap", parser: "manual", input: `{"chunk_token_num":512}`, want: `{}`},
 		{name: "delimiter with backticks and unicode", input: "{\"delimiter\":\"`--`。？\"}", want: `{"GeneralChunker:SixApplesFall":{"delimiters":["` + "`--`" + `","。","？"]}}`},
@@ -300,6 +301,37 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 	}
 	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
 		t.Fatalf("version=%s", got)
+	}
+}
+
+func TestMigrateIngestionParserConfigsMistralOCR(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	selectors := map[string]string{
+		"knowledgebase": "mistral-ocr-latest@default@Mistral OCR",
+		"document":      "mistral-ocr-2512@Mistral OCR",
+	}
+	for table, selector := range selectors {
+		insertIngestionConfig(t, db, table, "row-1", "general", fmt.Sprintf(`{"layout_recognize":%q}`, selector))
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for table, selector := range selectors {
+		var row ingestionConfigMigrationRow
+		if err := db.Table(table).Where("id = ?", "row-1").Take(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row.ParserConfig == nil {
+			t.Fatalf("%s: parser config is missing", table)
+		}
+		got := decodeIngestionConfig(t, *row.ParserConfig)
+		want := decodeIngestionConfig(t, fmt.Sprintf(`{"Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":%q}}}`, selector))
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: got %v, want %v", table, got, want)
+		}
+	}
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("version=%s, want %s", got, ingestionParserConfigTargetVersion)
 	}
 }
 

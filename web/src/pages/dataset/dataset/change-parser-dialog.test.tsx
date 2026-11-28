@@ -344,9 +344,9 @@ it('saves after switching from a built-in parser to a pipeline', async () => {
   );
 });
 
-it('saves the repository advanced ingestion pipeline template', async () => {
+it('saves a copy of the repository enriched built-in pipeline', async () => {
   mockCustomDsl =
-    require('../../../../../internal/agent/templates/advanced_ingestion_pipeline.json').dsl;
+    require('../../../../../internal/ingestion/pipeline/template/ingestion_pipeline_enriched.json').dsl;
   renderHarness({ builtin: true });
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
   fireEvent.click(screen.getByRole('button', { name: 'Choose pipeline' }));

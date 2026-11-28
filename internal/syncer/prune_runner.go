@@ -19,6 +19,7 @@ package syncer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -59,13 +60,16 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 				return "", err
 			}
 			common.Warn("prune unsupported by connector, completing as no-op", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
+			recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", "Source does not support pruning")
 			return r.taskService.CompletePrune(ctx, taskContext, 0)
 		}
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", "[ERROR] Could not open prune source scan")
 		return "", err
 	}
 	defer session.Close()
 
 	retain := map[string]struct{}{}
+	sourceIDs := map[string]struct{}{}
 	for {
 		if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 			return "", err
@@ -75,9 +79,11 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 			break
 		}
 		if nextErr != nil {
+			recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", "[ERROR] Could not read prune source batch")
 			return "", nextErr
 		}
 		for _, doc := range batch.Documents {
+			sourceIDs[doc.SourceID] = struct{}{}
 			service.AddRetainDocumentID(retain, taskContext.Knowledgebase.ID, taskContext.Connector.ID, doc.SourceID)
 		}
 	}
@@ -85,9 +91,22 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
-	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain)
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d document IDs to retain", len(sourceIDs)))
+	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain, func(docID string, deleteErr error) {
+		message := "File " + docID + " deleted"
+		if deleteErr != nil {
+			message = "[ERROR] Could not delete file " + docID
+		}
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "file", message)
+	})
 	if err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("[ERROR] Prune stopped after deleting %d files", removed))
 		return "", err
 	}
-	return r.taskService.CompletePrune(ctx, taskContext, removed)
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Removed %d stale files", removed))
+	nextTask, err := r.taskService.CompletePrune(ctx, taskContext, removed)
+	if err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", "[ERROR] Could not save prune completion")
+	}
+	return nextTask, err
 }

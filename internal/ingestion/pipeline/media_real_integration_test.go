@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
-	"gopkg.in/yaml.v3"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/kvrocks"
@@ -27,6 +25,9 @@ import (
 	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
+
+	"github.com/cespare/xxhash/v2"
+	"gopkg.in/yaml.v3"
 )
 
 // runMediaRealServices exercises the normal canvas with real MySQL, Kvrocks
@@ -260,9 +261,7 @@ func loadMediaIntegrationConfig(t *testing.T) *config.Config {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
-		t.Fatal(err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "")
 	if err := server.Init(path); err != nil {
 		t.Fatal(err)
 	}

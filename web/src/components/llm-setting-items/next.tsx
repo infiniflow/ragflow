@@ -186,6 +186,7 @@ export function LlmSettingFieldItems({
             <FormLabel className="flex-1">{t('freedom')}</FormLabel>
             <FormControl>
               <Select
+                disabled={field.disabled}
                 value={field.value}
                 onValueChange={(val) => {
                   handleChange(val);
@@ -284,6 +285,7 @@ export function LlmSettingFieldItems({
               </FormLabel>
               <FormControl>
                 <Select
+                  disabled={field.disabled}
                   value={field.value ?? 'disabled'}
                   onValueChange={field.onChange}
                 >

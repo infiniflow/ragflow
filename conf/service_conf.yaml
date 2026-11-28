@@ -36,6 +36,9 @@ mysql:
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
+  # go-sql-driver/mysql `tls` value: '' (no TLS), 'true', 'skip-verify' or
+  # 'preferred'. Set it when the metadata MySQL requires TLS.
+  tls: ''
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
@@ -132,6 +135,10 @@ ingestor:
     max_age: 30             # days
 file_syncer:
   max_concurrent_syncs: 5
+deepdoc:
+  name: 'deepdoc'
+  host: 'localhost'
+  port: 9388
 user_default_llm:
   default_models:
     embedding_model:

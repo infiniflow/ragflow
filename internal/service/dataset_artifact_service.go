@@ -17,6 +17,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -175,15 +177,16 @@ func (s *DatasetArtifactService) HasSkill(ctx context.Context, tenantID, dataset
 
 // WikiPageItem is a single wiki page summary returned by ListWikiPages.
 type WikiPageItem struct {
-	Slug     string `json:"slug"`
-	Title    string `json:"title"`
-	PageType string `json:"page_type"`
-	Topic    string `json:"topic"`
-	Summary  string `json:"summary"`
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	PageType     string   `json:"page_type"`
+	Topic        string   `json:"topic"`
+	Summary      string   `json:"summary"`
+	SourceDocIDs []string `json:"-"`
 }
 
 // wikiPageSelectFields are the engine fields ListWikiPages reads.
-var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"}
+var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight", "source_doc_ids"}
 
 // wikiPageOrderBy ranks wiki pages by connectivity then title.
 func wikiPageOrderBy() *types.OrderByExpr {
@@ -256,6 +259,65 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 	return matched[offset:end], total, nil
 }
 
+// ListWikiPagesWithSourceAccess filters merged pages by all of their source
+// documents before applying pagination. The access callback receives each
+// engine batch's source-document lists and returns one visibility result per
+// page. A page with no source documents is hidden when a callback is supplied.
+func (s *DatasetArtifactService) ListWikiPagesWithSourceAccess(ctx context.Context, tenantID, datasetID, pageType, topic, keywords string, page, pageSize int, canAccess func([][]string) ([]bool, error)) ([]WikiPageItem, int64, error) {
+	if canAccess == nil {
+		return s.ListWikiPages(ctx, tenantID, datasetID, pageType, topic, keywords, page, pageSize)
+	}
+	filter := map[string]interface{}{"type_kwd": []string{CompileKwdWikiPage}, "available_int": 1}
+	if pageType != "" {
+		filter["page_type_kwd"] = []string{pageType}
+	}
+	if topic != "" {
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
+	}
+	kw := strings.ToLower(keywords)
+	matched := make([]WikiPageItem, 0)
+	const batchSize = 1000
+	for offset := 0; ; offset += batchSize {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, wikiPageSelectFields, offset, batchSize, wikiPageOrderBy())
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(chunks) == 0 {
+			break
+		}
+		items := wikiPageItemsFromChunks(chunks)
+		sourceIDs := make([][]string, len(items))
+		for i := range items {
+			sourceIDs[i] = items[i].SourceDocIDs
+		}
+		visible, err := canAccess(sourceIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i, item := range items {
+			if i >= len(visible) || !visible[i] {
+				continue
+			}
+			if keywords == "" || wikiPageItemMatchesKeyword(item, kw) {
+				matched = append(matched, item)
+			}
+		}
+		if int64(offset+len(chunks)) >= total {
+			break
+		}
+	}
+	total := int64(len(matched))
+	offset := (page - 1) * pageSize
+	if offset < 0 || offset >= len(matched) {
+		return []WikiPageItem{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total, nil
+}
+
 // wikiPageItemsFromChunks maps engine rows to wiki page summaries.
 func wikiPageItemsFromChunks(chunks []map[string]interface{}) []WikiPageItem {
 	items := make([]WikiPageItem, 0, len(chunks))
@@ -270,16 +332,17 @@ func wikiPageItemFromChunk(c map[string]interface{}) WikiPageItem {
 	// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
 	// contract); expose the bare slug to the frontend so it can be placed in
 	// a single URL path segment (gin :slug does not match '/').
-	bareSlug := firstStringValue(c["slug_kwd"])
+	bareSlug := common.FirstEngineString(c["slug_kwd"])
 	if pageType != "" {
 		bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
 	}
 	return WikiPageItem{
-		Slug:     bareSlug,
-		Title:    firstStringValue(c["title_kwd"]),
-		PageType: pageType,
-		Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
-		Summary:  firstStringValue(c["summary_with_weight"]),
+		Slug:         bareSlug,
+		Title:        common.FirstEngineString(c["title_kwd"]),
+		PageType:     pageType,
+		Topic:        kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"])),
+		Summary:      common.FirstEngineString(c["summary_with_weight"]),
+		SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 	}
 }
 
@@ -312,6 +375,7 @@ type WikiPageDetail struct {
 	RelatedKbPages []string `json:"related_kb_pages"`
 	SourceChunkIDs []string `json:"source_chunk_ids"`
 	SourceDocIDs   []string `json:"source_doc_ids"`
+	CanEdit        bool     `json:"can_edit"`
 }
 
 // GetWikiPage returns a single wiki page by page_type and slug.
@@ -347,17 +411,17 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
 	// "<page_type>/" prefix being doubled (matches ListWikiPages).
 	detailPageType := types.WikiPageCategory(c)
-	detailSlug := firstStringValue(c["slug_kwd"])
+	detailSlug := common.FirstEngineString(c["slug_kwd"])
 	if detailPageType != "" {
 		detailSlug = strings.TrimPrefix(detailSlug, detailPageType+"/")
 	}
 	detail := &WikiPageDetail{
 		Slug:           detailSlug,
-		Title:          firstStringValue(c["title_kwd"]),
+		Title:          common.FirstEngineString(c["title_kwd"]),
 		PageType:       detailPageType,
-		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
+		Topic:          kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"])),
 		ContentMd:      content,
-		Summary:        firstStringValue(c["summary_with_weight"]),
+		Summary:        common.FirstEngineString(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
 		RelatedKbPages: toStringSlice(c["related_kb_pages_kwd"]),
@@ -371,7 +435,7 @@ func loadWikiPageBody(ctx context.Context, docEngine engine.DocEngine, indexName
 	if content := types.WikiPageContent(row); content != "" {
 		return content, nil
 	}
-	raw, err := docEngine.GetChunk(ctx, indexName, firstStringValue(row["id"]), []string{datasetID})
+	raw, err := docEngine.GetChunk(ctx, indexName, common.FirstEngineString(row["id"]), []string{datasetID})
 	if err != nil {
 		return "", err
 	}
@@ -446,67 +510,304 @@ var restorableWikiPageFields = []string{
 	"scope_kwd",
 }
 
-// RestoreWikiPage writes a page as a version recorded it: every field the
-// snapshot carries, not only the body. A page whose summary and links still
-// describe a later edit is not the page the version described, so the whole
-// document moves together.
+// WikiPageIdentity names one wiki page: the page type and slug the engine keys it
+// by. Together they form the page's slug_kwd.
+type WikiPageIdentity struct {
+	PageType string
+	Slug     string
+}
+
+// Key is the identity as the engine stores it and as the page history keys it:
+// the page type and the bare slug, with a "page_type/" prefix dropped when the
+// slug already carries one.
+func (i WikiPageIdentity) Key() string {
+	if i.PageType == "" {
+		return strings.TrimPrefix(i.Slug, "/")
+	}
+	return i.PageType + "/" + strings.TrimPrefix(i.Slug, i.PageType+"/")
+}
+
+// WikiPageState is one page as the engine holds it: the row to write over and the
+// fields a restore compares before deciding whether to write at all.
+type WikiPageState struct {
+	ID      string
+	Content string
+	Title   string
+	Summary string
+	Topic   string
+	// Outlinks is the page's link list rendered by canonicalWikiPageList, so it
+	// compares by membership: the engine is free to return the same links in
+	// another order.
+	Outlinks string
+}
+
+// wikiPageStateFields are what that comparison reads: the body, the headers a page
+// edit moves with it, and the links a page can be given without touching its body
+// (UpdateWikiPage edits them on their own).
 //
-// The page is found by its identity. When the engine no longer holds it the page
-// is rebuilt from the snapshot, because a restore has to put back the pages the
-// version had and not only fix the ones that survived - and the snapshot is the
-// only thing that remembers them.
-func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string, page map[string]any) (bool, error) {
+// slug_kwd is not a comparison field - it is the key the answer is stored under.
+// Leaving it out of the projection reads every page as absent, and a restore
+// answers an absent page by writing it back: the version's pages would be rebuilt
+// on every restore instead of the ones that moved.
+var wikiPageStateFields = []string{"id", "slug_kwd", "content_with_weight", "title_kwd", "summary_with_weight", "topic_kwd", "outlinks_kwd"}
+
+// wikiPageExistenceFields is the cheap answer to "is the page still there": the
+// row id and the key it is stored under, no bodies.
+var wikiPageExistenceFields = []string{"id", "slug_kwd"}
+
+// currentWikiPagesBatch bounds one search: a restore asks about every page the
+// version holds, and a body comes back with each answer.
+const currentWikiPagesBatch = 200
+
+// wikiPageRows reads the engine rows of the given pages, one search per batch,
+// selecting only the fields the caller asked for.
+func (s *DatasetArtifactService) wikiPageRows(ctx context.Context, tenantID, datasetID string, pages []WikiPageIdentity, fields []string) ([]map[string]interface{}, error) {
+	rows := make([]map[string]interface{}, 0, len(pages))
+	for start := 0; start < len(pages); start += currentWikiPagesBatch {
+		end := start + currentWikiPagesBatch
+		if end > len(pages) {
+			end = len(pages)
+		}
+		slugs := make([]string, 0, end-start)
+		for _, page := range pages[start:end] {
+			if page.PageType == "" || page.Slug == "" {
+				continue
+			}
+			slugs = append(slugs, page.Key())
+		}
+		if len(slugs) == 0 {
+			continue
+		}
+		// Read the batch until the engine reports it has been read out. A single
+		// request capped at the number of identities would silently drop a page when
+		// the batch matches more rows than that (a duplicate slug), and a dropped page
+		// reads as one the engine lost - which the restore answers by rebuilding it.
+		//
+		// The batch is read in id order because offset paging needs a total order:
+		// without one the engine may hand a row back twice and skip another between
+		// requests, which drops a page the same way.
+		for offset := 0; ; {
+			chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, map[string]interface{}{
+				"type_kwd":      []string{CompileKwdWikiPage},
+				"slug_kwd":      slugs,
+				"available_int": 1, // merged dataset-level page only
+			}, fields, offset, len(slugs), (&types.OrderByExpr{}).Asc("id"))
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, chunks...)
+			offset += len(chunks)
+			if len(chunks) == 0 || int64(offset) >= total {
+				break
+			}
+		}
+	}
+	return rows, nil
+}
+
+// CurrentWikiPages reads the pages the engine holds now, keyed by slug_kwd. A
+// restore uses it to see which pages it actually has to write: restoring a version
+// after editing a single page should move that page, not rewrite every other page
+// in the dataset.
+func (s *DatasetArtifactService) CurrentWikiPages(ctx context.Context, tenantID, datasetID string, pages []WikiPageIdentity) (map[string]WikiPageState, error) {
+	rows, err := s.wikiPageRows(ctx, tenantID, datasetID, pages, wikiPageStateFields)
+	if err != nil {
+		return nil, err
+	}
+	state := make(map[string]WikiPageState, len(rows))
+	for _, row := range rows {
+		key := common.FirstEngineString(row["slug_kwd"])
+		if key == "" {
+			continue
+		}
+		state[key] = WikiPageState{
+			ID:       common.FirstEngineString(row["id"]),
+			Content:  common.FirstEngineString(row["content_with_weight"]),
+			Title:    common.FirstEngineString(row["title_kwd"]),
+			Summary:  common.FirstEngineString(row["summary_with_weight"]),
+			Topic:    common.FirstEngineString(row["topic_kwd"]),
+			Outlinks: canonicalWikiPageList(row["outlinks_kwd"]),
+		}
+	}
+	return state, nil
+}
+
+// ExistingWikiPages returns the ids of the pages the engine still holds, keyed by
+// slug_kwd, reading nothing but the ids. A restore uses it to keep rebuilding the
+// pages an index loss dropped, even when their history has not moved since the
+// version it is putting back.
+func (s *DatasetArtifactService) ExistingWikiPages(ctx context.Context, tenantID, datasetID string, pages []WikiPageIdentity) (map[string]string, error) {
+	rows, err := s.wikiPageRows(ctx, tenantID, datasetID, pages, wikiPageExistenceFields)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]string, len(rows))
+	for _, row := range rows {
+		key := common.FirstEngineString(row["slug_kwd"])
+		if key != "" {
+			ids[key] = common.FirstEngineString(row["id"])
+		}
+	}
+	return ids, nil
+}
+
+// HoldsPage reports whether the engine already holds the page a version describes
+// as far as the comparison can tell: the body, the headers a page edit moves with
+// it - title, summary and topic - and the page's links all equal. A page that
+// differs in any of them is written back, because the restore has to put the
+// version's page back.
+//
+// The rest of what a snapshot carries - entity names, related pages and the source
+// ids - is written back with the page but not compared. Those fields are derived or
+// cumulative: the compiler regenerates the names from the body on every run and
+// unions the source ids across every contribution the page has, so a difference
+// there does not mean the page moved - it means a later compile looked at the same
+// page again. Comparing them would rewrite pages nothing moved, and each such
+// rewrite would write the version's older lists back. A snapshot written before the
+// history stored whole pages carries a body and nothing else; the headers it lacks
+// are not compared either, because the restore does not write what it does not
+// carry - counting them would rewrite that page on every restore without ever
+// converging.
+func (st WikiPageState) HoldsPage(snapshot map[string]interface{}) bool {
+	return len(st.DifferingFields(snapshot)) == 0
+}
+
+// DifferingFields names the fields in which the engine's page disagrees with the
+// snapshot, in the order the comparison reads them: the body, the three headers
+// HoldsPage documents, then the links. A field the snapshot does not carry is
+// skipped, so a body-only snapshot compares its body alone.
+//
+// A restore logs them: "the page was written back" is not actionable on its own,
+// while "only its topic differed" names either a page edit the history never
+// recorded or a snapshot the compiler stored in another shape than the engine's
+// row - the two cases a reader can act on, and the two a bare count hides.
+func (st WikiPageState) DifferingFields(snapshot map[string]interface{}) []string {
+	var differing []string
+	for _, field := range []struct {
+		key  string
+		held string
+	}{
+		{"content_with_weight", st.Content},
+		{"title_kwd", st.Title},
+		{"summary_with_weight", st.Summary},
+		{"topic_kwd", st.Topic},
+	} {
+		value, carried := snapshot[field.key]
+		if !carried {
+			continue
+		}
+		if field.held != common.FirstEngineString(value) {
+			differing = append(differing, field.key)
+		}
+	}
+	// The links are a list, so they compare by membership: their order belongs to
+	// the row that was written, and a page carrying the same links in another order
+	// has not moved. They are compared at all because they move without the body -
+	// UpdateWikiPage edits them on their own - and a restore that skipped such a
+	// page would report success while leaving the newer links in place.
+	if value, carried := snapshot["outlinks_kwd"]; carried {
+		if st.Outlinks != canonicalWikiPageList(value) {
+			differing = append(differing, "outlinks_kwd")
+		}
+	}
+	return differing
+}
+
+// canonicalWikiPageList renders a page's list field so two sources compare by
+// membership rather than by order: the engine returns a list in whatever order the
+// row was written, and a difference in position is not a difference in the page.
+func canonicalWikiPageList(value interface{}) string {
+	var items []string
+	switch typed := value.(type) {
+	case string:
+		if typed != "" {
+			items = []string{typed}
+		}
+	case []string:
+		items = typed
+	case []interface{}:
+		items = make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok && text != "" {
+				items = append(items, text)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), items...)
+	sort.Strings(sorted)
+	kept := sorted[:0]
+	for i, item := range sorted {
+		if i > 0 && item == sorted[i-1] {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return strings.Join(kept, "\x00")
+}
+
+// RestoreWikiPage writes a page as a version recorded it: every field the snapshot
+// carries, not only the body. A page whose summary and links still describe a later
+// edit is not the page the version described, so the whole document moves together.
+//
+// The caller has already located the engine row through CurrentWikiPages: id names
+// it, and an empty id rebuilds the page - a restore has to put back the pages the
+// version had and not only fix the ones that survived, and the snapshot is the only
+// thing that remembers them.
+func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID string, page WikiPageIdentity, id string, snapshot map[string]interface{}) error {
 	docEngine := engine.Get()
 	if docEngine == nil {
-		return false, fmt.Errorf("document engine is not initialized")
+		return fmt.Errorf("document engine is not initialized")
 	}
-	if len(page) == 0 {
-		return false, nil
+	if len(snapshot) == 0 {
+		return nil
 	}
-	slugKwd := pageType + "/" + slug
-	filter := map[string]interface{}{
-		"type_kwd":      []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{pageType},
-		"slug_kwd":      []string{slugKwd},
-		"available_int": 1, // merged dataset-level page only
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
-	if err != nil {
-		return false, err
-	}
-
-	fields := make(map[string]interface{}, len(restorableWikiPageFields)+2)
-	for _, key := range restorableWikiPageFields {
-		if value, ok := page[key]; ok {
-			fields[key] = value
-		}
-	}
-	// The identity travels with the content so a rebuilt page is addressable by
-	// the same slug the snapshot was written under.
-	fields["slug_kwd"] = slugKwd
-	fields["page_type_kwd"] = pageType
-	fields["available_int"] = 1
-
+	fields := wikiPageRestoreFields(page, snapshot)
 	indexName := wikiIndexName(tenantID)
-	if len(chunks) > 0 {
-		id, _ := chunks[0]["id"].(string)
-		if id == "" {
-			return false, fmt.Errorf("wiki page chunk has no id")
-		}
+	if id != "" {
 		cond := map[string]interface{}{"id": id, "kb_id": datasetID}
-		if err := docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID); err != nil {
-			return false, err
-		}
-		return true, nil
+		return docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID)
 	}
-
 	fields["id"] = common.GenerateUUID()
 	fields["kb_id"] = datasetID
 	fields["type_kwd"] = CompileKwdWikiPage
-	if _, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, ""); err != nil {
-		return false, err
+	// The rest of the row's identity, spelled the way the compiler writes a merged
+	// page (see mergedChunkMap): doc_id names the dataset on a dataset-level row,
+	// compile_kwd is the scope the compiled-artifact filters select on, and
+	// scope_kwd is the dataset/document discriminator the clean paths read.
+	//
+	// doc_id is not decoration: the engine's bulk writer drops a document that has
+	// no doc_id ("Skipping chunk without doc_id or id") and reports no error, so a
+	// rebuilt page would be recorded in the history while nothing was written - and
+	// the next restore would rebuild it again.
+	fields["doc_id"] = datasetID
+	fields["compile_kwd"] = compileKwdWiki
+	fields["scope_kwd"] = "dataset"
+	_, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, "")
+	return err
+}
+
+// compileKwdWiki is the compile_kwd of every dataset-level wiki row (the compiler
+// writes types.CanonicalCompilationKind("wiki")). A rebuilt page has to carry it:
+// the compiled-artifact filters select a wiki page as "compile_kwd = wiki AND
+// type_kwd = wiki_page", so a row without it is invisible to every later read.
+const compileKwdWiki = "wiki"
+
+// wikiPageRestoreFields is the engine document a restore writes: the snapshot's own
+// fields plus the identity that keeps the page addressable.
+func wikiPageRestoreFields(page WikiPageIdentity, snapshot map[string]interface{}) map[string]interface{} {
+	fields := make(map[string]interface{}, len(restorableWikiPageFields)+3)
+	for _, key := range restorableWikiPageFields {
+		if value, ok := snapshot[key]; ok {
+			fields[key] = value
+		}
 	}
-	return true, nil
+	fields["slug_kwd"] = page.Key()
+	fields["page_type_kwd"] = page.PageType
+	fields["available_int"] = 1
+	return fields
 }
 
 // WikiTopicItem is a single topic entry returned by ListWikiTopics.
@@ -583,13 +884,13 @@ func (s *DatasetArtifactService) wikiTopicsWithKeywordPages(ctx context.Context,
 			break
 		}
 		for _, c := range batch {
-			topic := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+			topic := kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"]))
 			if topic == "" {
 				continue
 			}
-			if containsFold(firstStringValue(c["title_kwd"]), lowerKeyword) ||
-				containsFold(firstStringValue(c["slug_kwd"]), lowerKeyword) ||
-				containsFold(firstStringValue(c["summary_with_weight"]), lowerKeyword) {
+			if containsFold(common.FirstEngineString(c["title_kwd"]), lowerKeyword) ||
+				containsFold(common.FirstEngineString(c["slug_kwd"]), lowerKeyword) ||
+				containsFold(common.FirstEngineString(c["summary_with_weight"]), lowerKeyword) {
 				matching[topic] = true
 			}
 		}
@@ -626,7 +927,7 @@ func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
 	}
 	byKey := make(map[string]*aggregate)
 	for _, c := range chunks {
-		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+		t := kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"]))
 		if t == "" {
 			continue
 		}
@@ -675,12 +976,14 @@ type WikiGraphEntity struct {
 	Type           string   `json:"type"`
 	Weight         int      `json:"weight"`
 	SourceChunkIDs []string `json:"source_chunk_ids"`
+	SourceDocIDs   []string `json:"-"`
 }
 
 // WikiGraphRelation is a single wiki graph relation.
 type WikiGraphRelation struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	SourceDocIDs []string `json:"-"`
 }
 
 // GetWikiGraph returns an incremental wiki graph slice for a dataset. keywords
@@ -742,7 +1045,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		orderBy = (&types.OrderByExpr{}).Desc("weight_int")
 	}
 	entityChunks, _, err := s.searchCompiledWithMatch(ctx, tenantID, datasetID, entityFilter,
-		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "content_with_weight"},
+		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "source_doc_ids", "content_with_weight"},
 		0, limit, orderBy, matchExprs)
 	if err != nil {
 		return nil, err
@@ -762,9 +1065,9 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
 		// "wiki_topic"); strip the prefix. slug_kwd stores the full
 		// "<page_type>/<slug>" form; preserve nested slug segments.
-		fullSlug := firstStringValue(c["slug_kwd"])
+		fullSlug := common.FirstEngineString(c["slug_kwd"])
 		bareSlug := fullSlug
-		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
+		pageType := strings.TrimPrefix(common.FirstEngineString(c["entity_type_kwd"]), "wiki_")
 		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
@@ -772,7 +1075,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// name / aliases / description live in the content_with_weight payload
 		// (as Python writes them); the columns they replaced exist in no mapping.
 		payload := wikiEntityPayload(c)
-		name := firstStringValue(c["title_kwd"])
+		name := common.FirstEngineString(c["title_kwd"])
 		if v := payloadString(payload, "name"); v != "" {
 			name = v
 		}
@@ -788,13 +1091,14 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			Type:           entityType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
+			SourceDocIDs:   toStringSlice(c["source_doc_ids"]),
 		})
 	}
 	if len(fromKwds) > 0 {
 		relationFilter["from_kwd"] = fromKwds
 		relChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
 			relationFilter,
-			[]string{"from_kwd", "to_kwd"}, 0, 10000, nil)
+			[]string{"from_kwd", "to_kwd", "source_doc_ids"}, 0, 10000, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -803,8 +1107,9 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			// form in ES; expose them as bare slugs so the frontend's
 			// nodesBySlug (keyed on the entity's bare slug) can resolve edges.
 			graph.Relations = append(graph.Relations, WikiGraphRelation{
-				From: bareWikiSlug(firstStringValue(c["from_kwd"])),
-				To:   bareWikiSlug(firstStringValue(c["to_kwd"])),
+				From:         bareWikiSlug(common.FirstEngineString(c["from_kwd"])),
+				To:           bareWikiSlug(common.FirstEngineString(c["to_kwd"])),
+				SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 			})
 		}
 	}
@@ -821,7 +1126,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 func wikiEntitySlugs(entityChunks []map[string]interface{}) []string {
 	slugs := make([]string, 0, len(entityChunks))
 	for _, c := range entityChunks {
-		if slug := firstStringValue(c["slug_kwd"]); slug != "" {
+		if slug := common.FirstEngineString(c["slug_kwd"]); slug != "" {
 			slugs = append(slugs, slug)
 		}
 	}
@@ -925,8 +1230,8 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 		NewlyUploaded:       len(newlyUploadedIDs),
 		RemovedDocIDs:       removedIDs,
 		NewlyUploadedDocIDs: newlyUploadedIDs,
-		InvolvedDocIDs:      sortedSetKeys(involved),
-		EligibleDocIDs:      sortedSetKeys(eligible),
+		InvolvedDocIDs:      append([]string{}, slices.Sorted(maps.Keys(involved))...),
+		EligibleDocIDs:      append([]string{}, slices.Sorted(maps.Keys(eligible))...),
 	}, nil
 }
 
@@ -1065,15 +1370,6 @@ func setDifference(left, right map[string]struct{}) []string {
 	return ids
 }
 
-func sortedSetKeys(set map[string]struct{}) []string {
-	ids := make([]string, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -1137,11 +1433,12 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 
 // SkillTreeItem is a single skill-tree page summary.
 type SkillTreeItem struct {
-	Kwd      string `json:"kwd"`
-	Title    string `json:"title"`
-	PageType string `json:"page_type"`
-	Outlinks int    `json:"outlinks"`
-	Inlinks  int    `json:"inlinks"`
+	Kwd          string   `json:"kwd"`
+	Title        string   `json:"title"`
+	PageType     string   `json:"page_type"`
+	Outlinks     int      `json:"outlinks"`
+	Inlinks      int      `json:"inlinks"`
+	SourceDocIDs []string `json:"-"`
 }
 
 // GetSkillTree returns the skill tree of a dataset.
@@ -1151,7 +1448,7 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 		filter["kwd"] = []string{kwd}
 	}
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "outlinks_int", "inlinks_int"}, 0, 10000, nil)
+		[]string{"kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "outlinks_int", "inlinks_int", "source_doc_ids"}, 0, 10000, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1159,11 +1456,12 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 	for _, c := range chunks {
 		outlinks, inlinks := intValue(c["outlinks_int"]), intValue(c["inlinks_int"])
 		items = append(items, SkillTreeItem{
-			Kwd:      firstStringValue(c["kwd"]),
-			Title:    firstStringValue(c["title_kwd"]),
-			PageType: types.WikiPageCategory(c),
-			Outlinks: outlinks,
-			Inlinks:  inlinks,
+			Kwd:          common.FirstEngineString(c["kwd"]),
+			Title:        common.FirstEngineString(c["title_kwd"]),
+			PageType:     types.WikiPageCategory(c),
+			Outlinks:     outlinks,
+			Inlinks:      inlinks,
+			SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 		})
 	}
 	return items, total, nil
@@ -1171,18 +1469,19 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 
 // SkillPageDetail is the full skill page payload.
 type SkillPageDetail struct {
-	Kwd       string   `json:"kwd"`
-	Title     string   `json:"title"`
-	ContentMd string   `json:"content_md"`
-	Outlinks  []string `json:"outlinks"`
-	Inlinks   []string `json:"inlinks"`
+	Kwd          string   `json:"kwd"`
+	Title        string   `json:"title"`
+	ContentMd    string   `json:"content_md"`
+	Outlinks     []string `json:"outlinks"`
+	Inlinks      []string `json:"inlinks"`
+	SourceDocIDs []string `json:"source_doc_ids"`
 }
 
 // GetSkillPage returns a single skill page by keyword.
 func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, datasetID, kwd string) (*SkillPageDetail, error) {
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
 		map[string]interface{}{"compile_kwd": []string{CompileKwdSkillAll}, "kwd": []string{kwd}},
-		[]string{"kwd", "title_kwd", "content_with_weight", "outlinks_kwd", "inlinks_kwd"}, 0, 1, nil)
+		[]string{"kwd", "title_kwd", "content_with_weight", "outlinks_kwd", "inlinks_kwd", "source_doc_ids"}, 0, 1, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1191,12 +1490,36 @@ func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, dat
 	}
 	c := chunks[0]
 	return &SkillPageDetail{
-		Kwd:       firstStringValue(c["kwd"]),
-		Title:     firstStringValue(c["title_kwd"]),
-		ContentMd: firstStringValue(c["content_with_weight"]),
-		Outlinks:  toStringSlice(c["outlinks_kwd"]),
-		Inlinks:   toStringSlice(c["inlinks_kwd"]),
+		Kwd:          common.FirstEngineString(c["kwd"]),
+		Title:        common.FirstEngineString(c["title_kwd"]),
+		ContentMd:    common.FirstEngineString(c["content_with_weight"]),
+		Outlinks:     toStringSlice(c["outlinks_kwd"]),
+		Inlinks:      toStringSlice(c["inlinks_kwd"]),
+		SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 	}, nil
+}
+
+// SkillSourceDocGroups returns the source documents for skill rows targeted by
+// kwd. An empty kwd selects all skill rows in the dataset.
+func (s *DatasetArtifactService) SkillSourceDocGroups(ctx context.Context, tenantID, datasetID, kwd string) ([][]string, error) {
+	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdSkillAll}}
+	if kwd != "" {
+		filter["kwd"] = []string{kwd}
+	}
+	groups := make([][]string, 0)
+	for offset := 0; ; offset += 1000 {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"source_doc_ids"}, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, chunk := range chunks {
+			groups = append(groups, toStringSlice(chunk["source_doc_ids"]))
+		}
+		if len(chunks) == 0 || int64(offset+len(chunks)) >= total {
+			break
+		}
+	}
+	return groups, nil
 }
 
 // DeleteSkills deletes skills of a dataset, optionally scoped by keyword.
@@ -1229,30 +1552,11 @@ func (s *DatasetArtifactService) DeleteSkills(ctx context.Context, tenantID, dat
 	return len(ids), nil
 }
 
-// firstStringValue returns the first string in a possibly-list ES field value.
-func firstStringValue(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []interface{}:
-		if len(t) > 0 {
-			if s, ok := t[0].(string); ok {
-				return s
-			}
-		}
-	case []string:
-		if len(t) > 0 {
-			return t[0]
-		}
-	}
-	return ""
-}
-
 // wikiEntityPayload decodes the canvas payload a wiki_entity row stores in
 // content_with_weight (Python `_wiki_entity_payload`); the payload is
 // authoritative for name/aliases/description/type.
 func wikiEntityPayload(row map[string]interface{}) map[string]interface{} {
-	raw := firstStringValue(row["content_with_weight"])
+	raw := common.FirstEngineString(row["content_with_weight"])
 	if strings.TrimSpace(raw) == "" {
 		return nil
 	}

@@ -230,8 +230,9 @@ type ChatbotCompletionRequest struct {
 	// Reasoning / Internet arrive as bool OR 0/1 number depending on the
 	// widget. Internet is normalised by normalizeInternetFlag before reaching
 	// the pipeline (chat_pipeline.go); Reasoning is passed through verbatim as
-	// the 0..4 agentic-RAG level so medium/high/ultra levels are not collapsed
-	// to a bool — resolveReasoningLevel reads it directly.
+	// the 0..6 reasoning level so the depth levels (2/3/4) and the
+	// engine-selecting ones (5 and 6) are not collapsed to a bool —
+	// resolveReasoningLevel reads it directly.
 	Reasoning any `json:"reasoning"`
 	Internet  any `json:"internet"`
 	// DocIDs is an optional comma-separated document filter,

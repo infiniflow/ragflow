@@ -73,6 +73,7 @@ import { useDeleteInstance, useLazyInstanceDetails } from './hooks';
 import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
+  canManageProviderInstance,
 } from './interface';
 
 const GUIDE_URL =
@@ -131,7 +132,7 @@ interface ModelGroupsProps {
   models: (GPUStackModel & { running?: boolean })[];
   selected?: Set<string>;
   onToggle?: (name: string) => void;
-  onKindChange: (name: string, kind: GPUStackModelKind) => void;
+  onKindChange?: (name: string, kind: GPUStackModelKind) => void;
   onRemove?: (name: string) => void;
   t: TranslateFn;
 }
@@ -153,7 +154,7 @@ function ModelRow({
     [model.name, onToggle],
   );
   const handleKindChange = useCallback(
-    (kind: string) => onKindChange(model.name, kind as GPUStackModelKind),
+    (kind: string) => onKindChange?.(model.name, kind as GPUStackModelKind),
     [model.name, onKindChange],
   );
   const handleRemove = useCallback(
@@ -188,21 +189,27 @@ function ModelRow({
           })}
         </span>
       )}
-      <Select value={model.kind} onValueChange={handleKindChange}>
-        <SelectTrigger
-          className="w-40 shrink-0"
-          aria-label={t('gpustack.changeType', { name: model.name })}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {GPUSTACK_MODEL_KINDS.map((kind) => (
-            <SelectItem key={kind} value={kind}>
-              {t(`gpustack.kind_${kind}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {onKindChange ? (
+        <Select value={model.kind} onValueChange={handleKindChange}>
+          <SelectTrigger
+            className="w-40 shrink-0"
+            aria-label={t('gpustack.changeType', { name: model.name })}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GPUSTACK_MODEL_KINDS.map((kind) => (
+              <SelectItem key={kind} value={kind}>
+                {t(`gpustack.kind_${kind}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <span className="w-40 shrink-0 text-sm text-text-secondary">
+          {t(`gpustack.kind_${model.kind}`)}
+        </span>
+      )}
       {onRemove && (
         <ConfirmDeleteDialog onOk={handleRemove}>
           <Button
@@ -290,10 +297,11 @@ export const GPUStackInstanceCard = forwardRef<
     Record<string, GPUStackModelKind>
   >({});
   const [saving, setSaving] = useState(false);
+  const canManage = isDraft || canManageProviderInstance(instance);
 
   const { instanceNameSet } = useFetchInstanceNameSet(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
-    providerName,
+    isDraft ? providerName : instance.provider_id || providerName,
     instance.id,
     isDraft,
     open,
@@ -304,8 +312,8 @@ export const GPUStackInstanceCard = forwardRef<
     isSuccess: instanceModelsLoaded,
     isFetchedAfterMount: instanceModelsFetched,
   } = useFetchInstanceModels(
-    providerName,
-    isDraft ? '' : instance.instance_name,
+    isDraft ? providerName : instance.provider_id || providerName,
+    isDraft ? '' : instance.id,
   );
   const { loading: discovering, listProviderModels } = useListProviderModels();
   const { addProviderInstance } = useAddProviderInstance();
@@ -315,7 +323,8 @@ export const GPUStackInstanceCard = forwardRef<
   const { patchInstanceModel } = usePatchInstanceModel();
   const handleDelete = useDeleteInstance(
     providerName,
-    instance.instance_name,
+    instance.provider_id,
+    instance.id,
     isDraft,
     onDelete,
   );
@@ -370,10 +379,10 @@ export const GPUStackInstanceCard = forwardRef<
   // A saved connection always opens showing what the server serves right now.
   const discoveredOnOpen = useRef(false);
   useEffect(() => {
-    if (isDraft || !open || discoveredOnOpen.current) return;
+    if (isDraft || !canManage || !open || discoveredOnOpen.current) return;
     discoveredOnOpen.current = true;
     discover();
-  }, [discover, isDraft, open]);
+  }, [canManage, discover, isDraft, open]);
 
   const withKindOverride = useCallback(
     (model: GPUStackModel) => ({
@@ -466,6 +475,8 @@ export const GPUStackInstanceCard = forwardRef<
           addInstanceModel({
             provider_name: providerName,
             instance_name: instance.instance_name,
+            provider_id: instance.provider_id,
+            instance_id: instance.id,
             model_name: model.name,
             model_type: modelTypesFromKind(model.kind),
             max_tokens: model.maxTokens,
@@ -482,7 +493,9 @@ export const GPUStackInstanceCard = forwardRef<
     try {
       const ret = await updateProviderInstance({
         provider_name: providerName,
+        provider_id: instance.provider_id,
         id: instance.id,
+        instance_id: instance.id,
         instance_name: instance.instance_name,
         base_url: baseUrl.trim(),
         ...(apiKey ? { api_key: apiKey } : {}),
@@ -521,6 +534,8 @@ export const GPUStackInstanceCard = forwardRef<
       deleteInstanceModels({
         provider_name: providerName,
         instance_name: instance.instance_name,
+        provider_id: instance.provider_id,
+        instance_id: instance.id,
         model_name: [name],
       }),
     [deleteInstanceModels, instance.instance_name, providerName],
@@ -531,6 +546,8 @@ export const GPUStackInstanceCard = forwardRef<
       return patchInstanceModel({
         provider_name: providerName,
         instance_name: instance.instance_name,
+        provider_id: instance.provider_id,
+        instance_id: instance.id,
         model_name: name,
         max_tokens: saved?.max_tokens ?? 0,
         model_type: modelTypesFromKind(kind),
@@ -733,7 +750,7 @@ export const GPUStackInstanceCard = forwardRef<
             </span>
           )}
         </Button>
-        {open && (
+        {open && canManage && (
           <>
             <Button
               variant="outline"
@@ -757,15 +774,17 @@ export const GPUStackInstanceCard = forwardRef<
             </Button>
           </>
         )}
-        <ConfirmDeleteDialog onOk={handleDelete}>
-          <Button
-            variant="delete"
-            size="icon-sm"
-            aria-label={t('deleteInstance')}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </ConfirmDeleteDialog>
+        {canManage && (
+          <ConfirmDeleteDialog onOk={handleDelete}>
+            <Button
+              variant="delete"
+              size="icon-sm"
+              aria-label={t('deleteInstance')}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </ConfirmDeleteDialog>
+        )}
       </div>
 
       {open && (
@@ -797,7 +816,7 @@ export const GPUStackInstanceCard = forwardRef<
           {discovered && discovered.length === 0 && added.length === 0 && (
             <EmptyModels t={t} />
           )}
-          {notAdded.length > 0 && (
+          {canManage && notAdded.length > 0 && (
             <div className="flex flex-col gap-3">
               <h3 className="text-sm font-medium text-text-primary">
                 {t('gpustack.availableTitle')} ({notAdded.length})
@@ -839,8 +858,8 @@ export const GPUStackInstanceCard = forwardRef<
                     ? added
                     : added.map((model) => ({ ...model, running: undefined }))
                 }
-                onKindChange={changeSavedKind}
-                onRemove={removeModel}
+                onKindChange={canManage ? changeSavedKind : undefined}
+                onRemove={canManage ? removeModel : undefined}
                 t={t}
               />
             )}

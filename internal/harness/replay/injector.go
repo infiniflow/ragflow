@@ -97,16 +97,6 @@ func FindEventsOfType(evts []*events.Event, typ events.EventType) []*events.Even
 	return result
 }
 
-// EventsContains checks if any event has the given type.
-func EventsContains(evts []*events.Event, typ events.EventType) bool {
-	for _, ev := range evts {
-		if ev.Type == typ {
-			return true
-		}
-	}
-	return false
-}
-
 // EventCount counts events of a given type.
 func EventCount(evts []*events.Event, typ events.EventType) int {
 	count := 0

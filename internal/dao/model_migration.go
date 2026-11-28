@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,9 +31,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -349,7 +352,22 @@ func migrateTenantModelInstances(ctx context.Context, db *gorm.DB) error {
 	}
 
 	rows = filterExistingTenantModelInstances(rows, existing)
+	// The over-length filter runs before the dedup. Dedup compares canonical
+	// keys and a legacy {"api_key":K,"is_tools":true} wrapper canonicalizes to
+	// K, so an over-length wrapper and the bounded plain key of the same
+	// provider share one canonical key. The source query has no ORDER BY, so
+	// dedup could keep the over-length wrapper and drop the plain key; the
+	// filter would then drop the wrapper as well and the provider would end
+	// up with no instance at all. Filtering first keeps the bounded plain key.
+	rows, overlength := dropOverlengthTenantModelInstanceKeys(rows)
 	rows = dedupTenantModelInstances(rows)
+	for _, row := range overlength {
+		common.Warn("Skipping tenant_llm api key migration: the key exceeds the tenant_model_instance.api_key bound",
+			zap.String("tenant_id", row.TenantID),
+			zap.String("provider_id", row.ProviderID),
+			zap.Int("api_key_chars", utf8.RuneCountInString(row.APIKey.String)),
+			zap.Int("bound", tenantModelInstanceAPIKeyMaxLen))
+	}
 	if len(rows) == 0 {
 		return nil
 	}
@@ -433,6 +451,33 @@ func dedupTenantModelInstances(rows []tenantLLMSourceRecord) []tenantLLMSourceRe
 		}
 	}
 	return result
+}
+
+// tenantModelInstanceAPIKeyMaxLen is the character bound the
+// tenant_model_instance.api_key column declares (varchar(4096)). The
+// pre-backfill widening spec gives upgrades the same bound, but this backfill
+// copies whatever tenant_llm still holds — where api_key is TEXT and a legacy
+// provider key can exceed the bound — so over-length rows are filtered before
+// the INSERT: in strict mode one over-length key fails the whole backfill
+// transaction and, with the source row kept, fails every later startup the
+// same way, and a non-strict session would store the credential silently
+// truncated. The source row stays in tenant_llm untouched either way.
+const tenantModelInstanceAPIKeyMaxLen = 4096
+
+// dropOverlengthTenantModelInstanceKeys splits the backfill rows into the ones
+// that fit the tenant_model_instance.api_key bound and the ones that do not.
+// The key is measured in characters, matching how MySQL counts a varchar
+// length. Skipped rows are returned so the caller can log them: the credential
+// is neither dropped from the database nor stored truncated here.
+func dropOverlengthTenantModelInstanceKeys(rows []tenantLLMSourceRecord) (kept, overlength []tenantLLMSourceRecord) {
+	for _, row := range rows {
+		if utf8.RuneCountInString(row.APIKey.String) > tenantModelInstanceAPIKeyMaxLen {
+			overlength = append(overlength, row)
+			continue
+		}
+		kept = append(kept, row)
+	}
+	return kept, overlength
 }
 
 // migrateTenantModels ports TenantModelStage combined with ModelTypeMergeStage.
@@ -618,28 +663,13 @@ func loadFactoryLLMInfos() []factoryLLMInfo {
 	return payload.FactoryLLMInfos
 }
 
-// locateLLMFactoriesFile finds conf/llm_factories.json by walking up from the
-// working directory and falling back to the executable's directory.
+// locateLLMFactoriesFile finds conf/llm_factories.json, in the same directory
+// ConfDir resolves (the app bundle's copy, an install beside the binary, or the
+// source tree).
 func locateLLMFactoriesFile() string {
-	candidates := []string{filepath.Join("conf", "llm_factories.json")}
-	if wd, err := os.Getwd(); err == nil {
-		dir := wd
-		for depth := 0; depth < 5; depth++ {
-			candidates = append(candidates, filepath.Join(dir, "conf", "llm_factories.json"))
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "conf", "llm_factories.json"))
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
+	path := filepath.Join(utility.ConfDir(), "llm_factories.json")
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return path
 	}
 	return ""
 }
@@ -1108,7 +1138,7 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 		if columnType.Name() != "model_type" {
 			continue
 		}
-		return strings.Contains(strings.ToLower(columnType.DatabaseTypeName()), "int"), nil
+		return common.ContainsFold(columnType.DatabaseTypeName(), "int"), nil
 	}
 	return false, nil
 }
@@ -1247,12 +1277,7 @@ func normalizeStoredModelIDs(ctx context.Context, db *gorm.DB) error {
 
 // sortedTableNames returns a stable ordering so the migration is deterministic.
 func sortedTableNames(columns map[string][]string) []string {
-	names := make([]string, 0, len(columns))
-	for name := range columns {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(columns))
 }
 
 func normalizeModelIDStringColumn(ctx context.Context, db *gorm.DB, table, column string) error {
@@ -1427,12 +1452,7 @@ func populateTenantModelIDColumns(ctx context.Context, db *gorm.DB) error {
 }
 
 func sortedTenantModelIDTables() []string {
-	names := make([]string, 0, len(tenantModelIDFields))
-	for name := range tenantModelIDFields {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(tenantModelIDFields))
 }
 
 func ensureTenantModelIDColumn(ctx context.Context, db *gorm.DB, table, column string) error {

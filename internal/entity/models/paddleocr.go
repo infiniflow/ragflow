@@ -149,7 +149,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 
 	// One generous deadline bounds the whole OCR operation (submit + poll +
 	// result download), so the poll loop below can no longer spin forever.
-	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, paddleOCRCallTimeout(ocrConfig))
 	defer cancel()
 
 	var req *http.Request

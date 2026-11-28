@@ -21,9 +21,10 @@ jest.mock('react-i18next', () => ({
 const VersionList = [{ id: 'v1', name: 'v1 title', alias: 'jin' }];
 let mockCatalog: any[] = [];
 let mockCatalogLoading = false;
+let mockBuiltinOptions = [{ label: 'General', value: 'general' }];
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchBuiltinPipelines: () => ({
-    options: [{ label: 'General', value: 'general' }],
+    options: mockBuiltinOptions,
     loading: false,
   }),
 }));
@@ -41,9 +42,31 @@ beforeEach(() => {
     { id: 'pipe-2', name: 'Empty Flow', versions: [] },
   ];
   mockCatalogLoading = false;
+  mockBuiltinOptions = [{ label: 'General', value: 'general' }];
 });
 
 describe('ParserTreeSelect', () => {
+  it.each(['outline', 'summary', 'enriched'])(
+    'selects %s directly as a built-in parsing mode',
+    (id) => {
+      const { title } = require(
+        `../../../../internal/ingestion/pipeline/template/ingestion_pipeline_${id}.json`,
+      );
+      mockBuiltinOptions.push({ label: title.en, value: id });
+      const onChange = jest.fn();
+      render(<ParserTreeSelect value={`builtin:${id}`} onChange={onChange} />);
+
+      const option = mockTreeProps.data.find(
+        (node: any) => node.id === `builtin:${id}`,
+      );
+      expect(option.title).toBe(title.en);
+      expect(option.children).toBeUndefined();
+      expect(mockTreeProps.renderSelected(option)).toBe(option.label);
+      act(() => mockTreeProps.onChange(option.id));
+      expect(onChange).toHaveBeenCalledWith('builtin', id, undefined);
+    },
+  );
+
   it('builds pipeline branches with version leaves and builtin root leaves', () => {
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,

@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -553,12 +555,12 @@ func (s *gitlabSyncSession) nextCodeFilesPage(ctx context.Context) ([]gitlabBuff
 		}
 		fileURL := s.connector.fileURL(s.project.DefaultBranch, item.Path)
 		fetchRef := gitlabFetchReference{ProjectID: s.project.ID, FilePath: item.Path, Ref: s.project.DefaultBranch}
-		fetchKey, _ := json.Marshal(fetchRef)
+		fetchKey := utility.MustJSON(fetchRef)
 		doc := SourceDocument{
 			SourceID:           fileURL,
 			SemanticIdentifier: item.Name,
 			Extension:          gitlabFileExt(item.Name),
-			FetchRef:           &FetchReference{Key: string(fetchKey), SizeHint: 0},
+			FetchRef:           &FetchReference{Key: fetchKey, SizeHint: 0},
 			UpdatedAt:          updatedAt,
 			Metadata: map[string]any{
 				"type":    "CodeFile",

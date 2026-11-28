@@ -39,7 +39,7 @@ const searchBm25ChunksToolDescription = `Lexical full-text search tool: pure BM2
 Use it to recall chunks containing your keywords with relevance ranking (term frequency × rarity), which complements grep_chunks' exact regex matching (grep requires the whole pattern to literally match; BM25 also recalls partial/fuzzy keyword co-occurrence) while staying grounded in literal terms unlike semantic search.
 
 ## Required Input Behavior
-"queries" must contain 1-5 short KEYWORD queries — entities, names, phrases, or term combinations (e.g. "马元义 斩", "Ralph Bronner MOCA"). Do NOT send full sentences; split into focused term queries instead.
+"queries" must contain 1-5 short KEYWORD queries — entities, names, phrases, or term combinations (e.g. "town name archive", "foundation annual report 1987"). Do NOT send full sentences; split into focused term queries instead.
 
 ## Output (XML)
 Returns an XML <search_results count="N" query="..."> document (unified with grep_chunks / search_chunks). Each hit is a <chunk> element with rank, chunk_id, doc_id, page_num, chunk_index, dataset_id, doc_name and score attributes, plus a <match_snippet> element — a single-line window spanning from snippetContextRunes runes BEFORE the earliest keyword hit to that many runes AFTER the latest one. Snippets are for relevance triage only — call list_chunks with anchor_chunk_ids for the authoritative full-text deep read.`
@@ -62,14 +62,13 @@ const searchBm25DefaultTopN = 12
 // SearchBm25ChunksTool performs lexical BM25 retrieval over 1-5 keyword
 // queries, merging results by chunk id. Backs onto runtime.GetBm25Service().
 type SearchBm25ChunksTool struct {
-	tenantID   string
 	datasetIDs []string
 }
 
 // NewSearchBm25ChunksTool returns a SearchBm25ChunksTool scoped to the given
-// tenant and datasets, implementing eino's InvokableTool.
-func NewSearchBm25ChunksTool(tenantID string, datasetIDs []string) *SearchBm25ChunksTool {
-	return &SearchBm25ChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
+// datasets, implementing eino's InvokableTool.
+func NewSearchBm25ChunksTool(datasetIDs []string) *SearchBm25ChunksTool {
+	return &SearchBm25ChunksTool{datasetIDs: datasetIDs}
 }
 
 // Info returns the tool metadata with a JSON-schema parameter block, mirroring
@@ -180,7 +179,6 @@ func (k *SearchBm25ChunksTool) invokableRun(ctx context.Context, argumentsInJSON
 		DatasetIDs: datasetIDs,
 		DocScope:   docScope,
 		TopN:       topN,
-		TenantID:   k.tenantID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("search_bm25_chunks: %w", err)

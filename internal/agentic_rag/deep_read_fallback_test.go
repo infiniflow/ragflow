@@ -41,7 +41,6 @@ func TestFetchScopedPrefersRegexpPushdown(t *testing.T) {
 	adapter := NewGrepAdapter(fe)
 
 	got, err := adapter.fetchScoped(context.Background(), runtime.GrepRequest{
-		TenantID:   "t",
 		DatasetIDs: []string{"kb1"},
 		DocScope:   []string{"d1"},
 	}, []string{"id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "chunk_order_int"}, true)
@@ -68,7 +67,6 @@ func TestFetchScopedFallsBackToMetadataFilter(t *testing.T) {
 	adapter := NewGrepAdapter(fe)
 
 	got, err := adapter.fetchScoped(context.Background(), runtime.GrepRequest{
-		TenantID:   "t",
 		DatasetIDs: []string{"kb1"},
 		DocScope:   []string{"d1"},
 	}, []string{"id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "chunk_order_int"}, true)

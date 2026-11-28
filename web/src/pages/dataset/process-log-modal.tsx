@@ -14,6 +14,10 @@ import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 import { IngestionEventItem } from '@/interfaces/database/ingestion';
 import { formatTime } from '@/utils/date';
+import {
+  IngestionProgressSummary,
+  useIngestionProgress,
+} from './ingestion-progress';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -43,6 +47,8 @@ interface ProcessLogModalProps {
   logInfo: ILogInfo;
   title: string;
   translateKey?: string;
+  datasetId?: string;
+  logId?: string;
 }
 
 const MissingStorageFilePattern =
@@ -104,8 +110,16 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   logInfo: initData,
   title,
   translateKey,
+  datasetId,
+  logId,
 }) => {
   const { t } = useTranslate(translateKey || 'knowledgeDetails');
+  const {
+    data: progress,
+    error: progressError,
+    idle: progressIdle,
+    loading: progressLoading,
+  } = useIngestionProgress(datasetId, logId, visible);
   const { t: tc } = useTranslation();
   const blackKeyList = [
     'loadPreviousEvents',
@@ -163,6 +177,17 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
       className="process-log-modal"
     >
       <div className=" rounded-lg">
+        {/* Ingestion progress only applies to dataset runs with both ids. */}
+        {datasetId && logId ? (
+          <IngestionProgressSummary
+            datasetId={datasetId}
+            logId={logId}
+            data={progress}
+            error={progressError}
+            idle={progressIdle}
+            loading={progressLoading}
+          />
+        ) : null}
         <div className="flex flex-wrap ">
           {Object?.keys(logInfo).map((key) => {
             if (
@@ -174,46 +199,48 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
             if (key === 'events') {
               return (
                 <div className="w-full mt-2" key={key}>
-                  <InfoItem
-                    label={t('details')}
-                    value={
-                      <div
-                        ref={eventListRef}
-                        onScroll={handleEventScroll}
-                        className="w-full whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto p-2.5"
-                      >
-                        {logInfo.isLoadingPreviousEvents && (
-                          <div className="text-text-secondary text-xs mb-1">
-                            Loading earlier events…
+                  <details className="mt-3">
+                    <summary className="text-text-secondary text-sm cursor-pointer">
+                      {tc('knowledgeDetails.ingestionProgress.viewFullLog')}
+                    </summary>
+                    <div
+                      ref={eventListRef}
+                      onScroll={handleEventScroll}
+                      className="mt-2 w-full whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto p-2.5"
+                    >
+                      {logInfo.isLoadingPreviousEvents && (
+                        <div className="text-text-secondary text-xs mb-1">
+                          {tc(
+                            'knowledgeDetails.ingestionProgress.loadingEarlierEvents',
+                          )}
+                        </div>
+                      )}
+                      {logInfo.events?.map((event) => {
+                        const time = formatTime(event.ts);
+                        return (
+                          <div
+                            className={
+                              event.event_type === 3
+                                ? 'text-text-secondary'
+                                : undefined
+                            }
+                            key={event.id}
+                          >
+                            {time && (
+                              <span
+                                className="text-text-secondary mr-1"
+                                data-testid="ingestion-event-time"
+                              >
+                                {time}
+                              </span>
+                            )}
+                            {replaceText(event.message)}
                           </div>
-                        )}
-                        {logInfo.events?.map((event) => {
-                          const time = formatTime(event.ts);
-                          return (
-                            <div
-                              className={
-                                event.event_type === 3
-                                  ? 'text-text-secondary'
-                                  : undefined
-                              }
-                              key={event.id}
-                            >
-                              {time && (
-                                <span
-                                  className="text-text-secondary mr-1"
-                                  data-testid="ingestion-event-time"
-                                >
-                                  {time}
-                                </span>
-                              )}
-                              {replaceText(event.message)}
-                            </div>
-                          );
-                        })}
-                        {eventCount > 0 && missingStorageFileHint}
-                      </div>
-                    }
-                  />
+                        );
+                      })}
+                      {eventCount > 0 && missingStorageFileHint}
+                    </div>
+                  </details>
                 </div>
               );
             }

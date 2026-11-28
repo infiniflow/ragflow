@@ -1,25 +1,25 @@
 ---
 sidebar_position: 7
-title: "Retrieval Testing: Retrieval Test"
-sidebar_label: "Retrieval Testing: Retrieval Test"
+title: "Retrieval"
+sidebar_label: "Retrieval"
 slug: /retrieval_testing
 sidebar_custom_props:
   categoryIcon: LucideTextSearch
 ---
 
-# Retrieval Testing: Retrieval Test
+# Retrieval
 
-## Retrieval Testing Overview
+## Retrieval Overview
 
-**Retrieval Testing** is used to verify whether a dataset can recall the expected chunks based on user queries. After documents complete parsing, it is recommended to use typical questions in **Retrieval Testing** to test retrieval results first. Confirm whether the recalled chunks are correct, whether the content is complete, and whether the ranking is reasonable before using the dataset in **Chat**, **Search**, or **Agent**.
+**Retrieval** is used to verify whether a dataset can recall the expected chunks based on user queries. After documents complete parsing, it is recommended to use typical questions in **Retrieval** to test retrieval results first. Confirm whether the recalled chunks are correct, whether the content is complete, and whether the ranking is reasonable before using the dataset in **Chat**, **Search**, or **Agent**.
 
-Retrieval testing can also help troubleshoot Q&A result problems. If the correct chunk can already be recalled but the final answer is still unsatisfactory, further check the model, prompt, or application configuration. If the target chunk is not recalled, continue checking document parsing, chunks, metadata, and retrieval parameters.
+Retrieval can also help troubleshoot Q&A result problems. If the correct chunk can already be recalled but the final answer is still unsatisfactory, further check the model, prompt, or application configuration. If the target chunk is not recalled, continue checking document parsing, chunks, metadata, and retrieval parameters.
 
 > Tip: Documents used for testing must have completed parsing and be enabled.
 
 ## Configure Retrieval Parameters
 
-The **Setting** area on the **Retrieval testing** page is used to adjust retrieval parameters for the current test. You can modify parameters and run tests repeatedly to compare recall results under different configurations. The main parameters include:
+The **Setting** area on the **Retrieval** page is used to adjust retrieval parameters for the current test. You can modify parameters and run tests repeatedly to compare recall results under different configurations. The main parameters include:
 
 - **Similarity threshold**: Candidate chunks below this threshold are filtered out. Raising the threshold narrows the recall range and makes results stricter; lowering the threshold expands the recall range. The default value displayed in the UI is `20`, meaning a threshold of 20%. Enter the percentage value shown by the control.
 - **Keyword similarity weight**: Sets the full-text weight in hybrid retrieval. For example, `0.7` means full-text weight `0.7` and vector weight `0.3`. Increase it for keyword matching; decrease it for semantic matching.
@@ -29,9 +29,9 @@ The **Setting** area on the **Retrieval testing** page is used to adjust retriev
 - **Rerank candidates**: Sets the candidate pool for ranking or reranking. The default is `64`, and the range is `64–256`. It must be at least **Top N**, which controls the final number of returned results.
 - **Top N**: Sets the maximum number of final results returned. For example, if **Top N** is set to `10`, up to 10 eligible results are returned.
 
-> Note: Parameter changes in **Retrieval Testing** are only used for the current test and are not automatically synchronized to **Chat Assistant** or **Agent**. After suitable parameters are determined, configure the corresponding parameters in the application that actually uses the dataset or in the **Retrieval** component.
+> Note: Parameter changes in **Retrieval** are only used for the current test and are not automatically synchronized to **Chat Assistant** or **Agent**. After suitable parameters are determined, configure the corresponding parameters in the application that actually uses the dataset or in the **Retrieval** component.
 
-## Execute Retrieval Testing
+## Execute Retrieval
 
 Enter the query to test under the **Setting** area, then click **Run** to execute retrieval. It is recommended to use questions close to real user expressions and prepare multiple types of queries to check recall for different content.
 
@@ -52,7 +52,7 @@ When viewing retrieval results, focus on:
 
 The upper-right corner of **Results** provides a **File** filter. You can select a specified document and view only retrieval results from that document. When a dataset contains many documents, this helps check recall for a specific document.
 
-The focus of retrieval testing is not to compare a single score in isolation, but to confirm whether the needed chunks can be accurately recalled and reasonably ranked under the current retrieval configuration.
+The focus of retrieval is not to compare a single score in isolation, but to confirm whether the needed chunks can be accurately recalled and reasonably ranked under the current retrieval configuration.
 
 ![Retrieval results and file filter](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/execute_retrieval_test.jpg)
 

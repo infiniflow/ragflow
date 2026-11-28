@@ -196,6 +196,9 @@ func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, group
 	if existing == nil {
 		return nil, nil
 	}
+	if err := authorizeCompilationTemplateGroupOwner(userID, existing); err != nil {
+		return nil, err
+	}
 
 	if err = validateGroupPayload(req, false); err != nil {
 		return nil, err
@@ -248,6 +251,9 @@ func (s *CompilationTemplateGroupService) DeleteGroup(ctx context.Context, group
 	}
 	if existing == nil {
 		return false, nil
+	}
+	if err := authorizeCompilationTemplateGroupOwner(userID, existing); err != nil {
+		return false, err
 	}
 	if err = s.templateDAO.UpdateStatusByGroup(ctx, dao.DB, groupID, string(entity.StatusInvalid)); err != nil {
 		return false, err

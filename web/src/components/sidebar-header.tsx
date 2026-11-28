@@ -22,7 +22,7 @@ export function SidebarHeader({
 
 interface SecondarySidebarHeaderProps {
   title: string;
-  onCollapse: () => void;
+  onCollapse?: () => void;
 }
 
 export function SecondarySidebarHeader({
@@ -40,15 +40,17 @@ export function SecondarySidebarHeader({
       >
         {title}
       </TruncatedText>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={t('sidebar.collapseSidebar')}
-        title={t('sidebar.collapseSidebar')}
-        onClick={onCollapse}
-      >
-        <LucidePanelLeftClose className="size-4" />
-      </Button>
+      {onCollapse && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t('sidebar.collapseSidebar')}
+          title={t('sidebar.collapseSidebar')}
+          onClick={onCollapse}
+        >
+          <LucidePanelLeftClose className="size-4" />
+        </Button>
+      )}
     </SidebarHeader>
   );
 }

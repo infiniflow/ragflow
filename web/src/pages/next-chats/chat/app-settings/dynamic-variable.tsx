@@ -45,6 +45,7 @@ export function DynamicVariableForm({
           {t('chat.variable')}
         </FormLabel>
         <Button
+          disabled={form.formState.disabled}
           variant="ghost"
           size="icon-sm"
           className="border-0"
@@ -96,6 +97,7 @@ export function DynamicVariableForm({
                       <FormControl>
                         <Switch
                           checked={field.value}
+                          disabled={field.disabled}
                           onCheckedChange={field.onChange}
                         ></Switch>
                       </FormControl>
@@ -105,6 +107,7 @@ export function DynamicVariableForm({
                 />
 
                 <Button
+                  disabled={form.formState.disabled}
                   variant="ghost"
                   size="icon-sm"
                   className="border-0"

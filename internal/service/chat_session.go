@@ -138,6 +138,11 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, chatID, sessi
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
 	}
+	sessionUserID, err := chatSessionListOwner(ctx, chatID, sessionUserID, s.permissionChecker)
+	if err != nil {
+		_, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return nil, normalizedErr
+	}
 
 	// List chat sessions
 	sessions, total, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, nil, sessionID, name, sessionUserID, terms, page, pageSize, sessionHistoryOptions(options...))
@@ -192,6 +197,10 @@ func (s *ChatSessionService) GetSession(ctx context.Context, chatID, sessionID s
 	if session.DialogID != chatID {
 		return nil, common.CodeDataError, errors.New("session does not belong to this chat")
 	}
+	if err = authorizeChatSessionOwner(ctx, chatID, session, permission.OperationUpdate, s.permissionChecker); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, normalizedErr
+	}
 	if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
@@ -211,7 +220,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 	if userID == "" {
 		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
 	}
-	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationCreate); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationUse); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -232,10 +241,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 		}
 		name = strings.TrimSpace(nameStr)
 	}
-	nameRunes := []rune(name)
-	if len(nameRunes) > 255 {
-		name = string(nameRunes[:255])
-	}
+	name = utility.TruncateRunes(name, 255)
 
 	prologue := ""
 	if dialog.PromptConfig != nil {
@@ -277,7 +283,6 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, "", code, normalizedErr
 	}
-
 	if len(req) == 0 {
 		return map[string]interface{}{}, "success", common.CodeSuccess, nil
 	}
@@ -286,26 +291,12 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			chatRef := permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}
-			sessionScope, err := s.permissionChecker.Scope(ctx, permission.ScopeQuery{
-				Kind:      permission.ResourceKindChatSession,
-				Parent:    chatRef,
-				Operation: permission.OperationDelete,
-				Entry:     &chatRef,
-				EntryOp:   permission.OperationRead,
-			})
+			ownerFilter, err := chatSessionOwnerFilter(ctx, chatID, permission.OperationDelete, "", s.permissionChecker)
 			if err != nil {
 				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return nil, "", code, normalizedErr
 			}
-			sessionIDs = sessionScope.ResourceIDs
-			if sessionScope.Mode == permission.ScopeNone {
-				sessionIDs = []string{}
-			}
-			if len(sessionIDs) == 0 {
-				return map[string]interface{}{}, "success", common.CodeSuccess, nil
-			}
-			sessions, _, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, "", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, dao.ConversationHistoryOptions{NoHistory: true})
+			sessions, _, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, nil, "", "", ownerFilter, []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, dao.ConversationHistoryOptions{NoHistory: true})
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}
@@ -333,7 +324,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 			continue
 		}
 
-		if werr := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sid}, permission.OperationDelete); werr != nil {
+		if werr := authorizeChatSessionOwner(ctx, chatID, session, permission.OperationDelete, s.permissionChecker); werr != nil {
 			_, normalizedErr := permissionresponse.NormalizeHidden(werr)
 			errorsList = append(errorsList, fmt.Sprintf("%s: %s", normalizedErr, sid))
 			continue
@@ -344,6 +335,11 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 		if err = s.chatSessionDAO.DeleteByID(ctx, dao.DB, sid); err != nil {
 			return nil, "", common.CodeServerError, err
 		}
+
+		// Drop the mode 8 thread mapping and revoke its handle (see the plan, §5.2). The
+		// in-flight turn (if any) is guarded at its mapping write, which checks the handle
+		// is still alive.
+		cleanupCodexThread(ctx, sid)
 
 		successCount++
 	}
@@ -487,11 +483,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, chatID, sessionI
 		if !ok || strings.TrimSpace(nameStr) == "" {
 			return nil, common.CodeDataError, errors.New("`name` can not be empty")
 		}
-		req["name"] = strings.TrimSpace(nameStr)
-		nameRunes := []rune(req["name"].(string))
-		if len(nameRunes) > 255 {
-			req["name"] = string(nameRunes[:255])
-		}
+		req["name"] = utility.TruncateRunes(strings.TrimSpace(nameStr), 255)
 	}
 
 	updateFields := make(map[string]interface{})
@@ -530,7 +522,6 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, chatID, s
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, sessionHistoryOptions())
 	if err != nil || session.DialogID != chatID {
 		if err != nil && !isChatSessionNotFound(err) {
@@ -539,7 +530,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, chatID, s
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	if werr := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); werr != nil {
+	if werr := authorizeChatSessionOwner(ctx, chatID, session, permission.OperationDelete, s.permissionChecker); werr != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(werr)
 		return nil, code, normalizedErr
 	}
@@ -601,7 +592,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, chatID, 
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); err != nil {
+	if err = authorizeChatSessionFeedback(ctx, chatID, session, s.permissionChecker); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -1013,7 +1004,7 @@ func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, di
 		ID:         session.ID,
 		ChatID:     session.DialogID,
 		Name:       session.Name,
-		Messages:   messages,
+		Messages:   messagesForDisplay(messages),
 		UserID:     session.UserID,
 		Source:     session.Source,
 		Avatar:     avatar,
@@ -1136,8 +1127,8 @@ func (s *ChatSessionService) ChatCompletions(
 		}
 	}
 
-	// Correlate every log line this request emits (retrieval, model calls)
-	// with the conversation turn's session id.
+	// Correlate every log line this request emits (agent, delivery gate,
+	// auditor, tools, retrieval) with the conversation turn's session id.
 	ctx = common.WithSessionID(ctx, sessionID)
 
 	common.Info("ChatCompletions started")
@@ -1177,9 +1168,17 @@ func (s *ChatSessionService) ChatCompletions(
 			if session.DialogID != chatID {
 				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
-			if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRun); err != nil {
-				code, normalizedErr := permissionresponse.NormalizeHidden(err)
-				return fail(common.NewCodedError(code, normalizedErr.Error()))
+			authorizedChannelSession, _ := ctx.Value(channelChatSessionContextKey{}).(string)
+			// The validated channel grants use of its conversation across API key rotations.
+			if authorizedChannelSession != sessionID || session.Source != entity.ChatSessionSourceChatChannel {
+				if err = authorizeChatSessionConversation(ctx, chatID, session, s.permissionChecker); err != nil {
+					code, normalizedErr := permissionresponse.NormalizeHidden(err)
+					return fail(common.NewCodedError(code, normalizedErr.Error()))
+				}
+				if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRun); err != nil {
+					code, normalizedErr := permissionresponse.NormalizeHidden(err)
+					return fail(common.NewCodedError(code, normalizedErr.Error()))
+				}
 			}
 		} else if storeHistoryMessages {
 			session, err = s.createSessionForCompletion(ctx, chatID, dialog)
@@ -1187,9 +1186,9 @@ func (s *ChatSessionService) ChatCompletions(
 				return fail(err)
 			}
 			sessionID = session.ID
-			// Fresh-session requests carry no session_id, so the correlation
-			// tag has to be (re)applied with the id the server just
-			// allocated.
+			// Fresh-session requests (e.g. the benchmark) carry no session_id,
+			// so the correlation tag has to be (re)applied with the id the
+			// server just allocated.
 			ctx = common.WithSessionID(ctx, sessionID)
 		}
 
@@ -1290,6 +1289,12 @@ func (s *ChatSessionService) ChatCompletions(
 						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
+					// The stored content stays what the MODEL produced (the next turn
+					// replays it), but the presentation copy is what the user actually saw:
+					// the streamed reasoning plus the backend-rewritten answer, which is
+					// what the client merges in (see mergeAnswerChunk). Without it a reload
+					// would render the raw provenance text instead of the citations.
+					s.setAssistantDisplay(session, displayText(fullAnswer.String(), result.Answer), messageID)
 					messages := s.getSessionMessagesAsSlice(session)
 					if len(messages) > 0 {
 						message := messages[len(messages)-1]
@@ -1318,9 +1323,14 @@ func (s *ChatSessionService) ChatCompletions(
 							break
 						}
 					}
-					// Synchronize the in-memory session snapshot with the final
-					// event before building the response. This does not write
-					// through to the DAO.
+					// Turn compaction: progressive persistence has been
+					// writing every delta into the assistant message, and for
+					// an agentic run those deltas are the WHOLE ReAct
+					// trajectory — the intermediate narration between tool
+					// calls, not just the answer. The next turn re-enters
+					// AsyncChat with this session as its history, so the
+					// stored message must end up holding the turn's final
+					// answer alone.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
 					attachTurnCost(finalLegacyAnswer, result)
@@ -1362,9 +1372,13 @@ func (s *ChatSessionService) ChatCompletions(
 				}
 			} else {
 				if result.Final {
-					// Synchronize the in-memory session snapshot with the final
-					// event before building the response. This does not write
-					// through to the DAO.
+					// Turn compaction, same as the legacy branch: progressive
+					// persistence wrote every delta into the assistant
+					// message, and for an agentic run those deltas are the
+					// whole ReAct trajectory — the narration between tool
+					// calls, not just the answer. The next user input
+					// re-enters AsyncChat with this session as history, so the
+					// stored message must hold the final answer alone.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					if strings.Contains(result.Answer, "**ERROR**") {
 						ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
@@ -1383,6 +1397,43 @@ func (s *ChatSessionService) ChatCompletions(
 						ans["prompt"] = result.Prompt
 						if result.CreatedAt != 0 {
 							ans["created_at"] = result.CreatedAt
+						}
+						// Retrieval accounting, same rule as the non-stream path.
+						if len(result.ToolCallCounts) > 0 {
+							ans["tool_call_counts"] = result.ToolCallCounts
+						}
+						if len(result.ToolCallErrors) > 0 {
+							ans["tool_call_errors"] = result.ToolCallErrors
+						}
+						if len(result.ToolErrorSamples) > 0 {
+							ans["tool_error_samples"] = result.ToolErrorSamples
+						}
+						if len(result.RetrievedDocIDs) > 0 {
+							ans["retrieved_docids"] = result.RetrievedDocIDs
+						}
+						if len(result.ServedDocIDs) > 0 {
+							ans["served_docids"] = result.ServedDocIDs
+						}
+						if result.DeepReadChunks > 0 {
+							ans["deep_read_chunks"] = result.DeepReadChunks
+						}
+						if result.ShallowReadChunks > 0 {
+							ans["shallow_read_chunks"] = result.ShallowReadChunks
+						}
+						if len(result.DeepReadChunkIDs) > 0 {
+							ans["deep_read_chunk_ids"] = result.DeepReadChunkIDs
+						}
+						if len(result.ShallowReadChunkIDs) > 0 {
+							ans["shallow_read_chunk_ids"] = result.ShallowReadChunkIDs
+						}
+						if result.Compactions > 0 {
+							ans["compactions"] = result.Compactions
+						}
+						if result.Usage != nil {
+							ans["usage"] = result.Usage
+						}
+						if result.ElapsedSeconds > 0 {
+							ans["elapsed_seconds"] = result.ElapsedSeconds
 						}
 						ans["final"] = true
 						attachTurnCost(ans, result)
@@ -1429,7 +1480,8 @@ func (s *ChatSessionService) ChatCompletions(
 				// Citations ship ONLY on the final event: the intermediate
 				// deltas have nothing to cite yet, and an empty
 				// `reference: {chunks: []}` on every chunk just buries the
-				// real payload.
+				// real payload (and once the agentic reference exists it
+				// would leak onto thinking deltas).
 				delete(ans, "reference")
 				ans["start_to_think"] = result.StartToThink
 				ans["end_to_think"] = result.EndToThink
@@ -1502,8 +1554,17 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	var audioBinary interface{}
 	var prompt string
 	var createdAt float64
-	var usage *ChatTurnUsage
+	var usage *TurnUsage
 	var elapsedMs float64
+	var elapsedSeconds float64
+	var toolCallCounts map[string]int
+	var toolCallErrors map[string]int
+	var toolErrorSamples map[string]string
+	var retrievedDocIDs []string
+	var servedDocIDs []string
+	var deepReadChunks, shallowReadChunks int
+	var deepReadChunkIDs, shallowReadChunkIDs []string
+	var compactions int
 	for result := range resultChan {
 		if result.Final {
 			// The final event carries the complete (decorated) answer;
@@ -1517,6 +1578,17 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 			createdAt = result.CreatedAt
 			usage = result.Usage
 			elapsedMs = result.ElapsedMs
+			elapsedSeconds = result.ElapsedSeconds
+			toolCallCounts = result.ToolCallCounts
+			toolCallErrors = result.ToolCallErrors
+			toolErrorSamples = result.ToolErrorSamples
+			retrievedDocIDs = result.RetrievedDocIDs
+			servedDocIDs = result.ServedDocIDs
+			deepReadChunks = result.DeepReadChunks
+			shallowReadChunks = result.ShallowReadChunks
+			deepReadChunkIDs = result.DeepReadChunkIDs
+			shallowReadChunkIDs = result.ShallowReadChunkIDs
+			compactions = result.Compactions
 		} else if result.Answer != "" {
 			answer.WriteString(result.Answer)
 		}
@@ -1543,6 +1615,44 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	}
 	if elapsedMs > 0 {
 		ans["elapsed_ms"] = elapsedMs
+	}
+	// Retrieval accounting for benchmark clients (agentic runs only). Omitted
+	// when empty so a classic pipeline response keeps its historical shape.
+	if len(toolCallCounts) > 0 {
+		ans["tool_call_counts"] = toolCallCounts
+	}
+	if len(toolCallErrors) > 0 {
+		ans["tool_call_errors"] = toolCallErrors
+	}
+	if len(toolErrorSamples) > 0 {
+		ans["tool_error_samples"] = toolErrorSamples
+	}
+	if len(retrievedDocIDs) > 0 {
+		ans["retrieved_docids"] = retrievedDocIDs
+	}
+	if len(servedDocIDs) > 0 {
+		ans["served_docids"] = servedDocIDs
+	}
+	if deepReadChunks > 0 {
+		ans["deep_read_chunks"] = deepReadChunks
+	}
+	if shallowReadChunks > 0 {
+		ans["shallow_read_chunks"] = shallowReadChunks
+	}
+	// The chunk identifiers behind those counts: the counts say how much the
+	// run read, the ids say which chunks — the one fact that separates a
+	// passage read and never used from a passage never read.
+	if len(deepReadChunkIDs) > 0 {
+		ans["deep_read_chunk_ids"] = deepReadChunkIDs
+	}
+	if len(shallowReadChunkIDs) > 0 {
+		ans["shallow_read_chunk_ids"] = shallowReadChunkIDs
+	}
+	if compactions > 0 {
+		ans["compactions"] = compactions
+	}
+	if elapsedSeconds > 0 {
+		ans["elapsed_seconds"] = elapsedSeconds
 	}
 	return ans
 }
@@ -1668,6 +1778,9 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 		Message:  messagesJSON,
 		Source:   entity.ChatSessionSourceChatChannel,
 	}
+	if userID := permission.UserIDFromContext(ctx); userID != "" {
+		session.UserID = new(userID)
+	}
 	if err = s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
 		session, rereadErr := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 		if rereadErr == nil {
@@ -1781,15 +1894,74 @@ func (s *ChatSessionService) appendAssistantToSession(session *entity.ChatSessio
 	session.Message, _ = json.Marshal(messages)
 }
 
-// compactSessionAssistant replaces the assistant content in the in-memory
-// session snapshot with a non-blank final answer. It does not write to the DAO;
-// any persistence is handled by the caller. A blank final leaves the accumulated
-// content unchanged.
+// compactSessionAssistant rewrites the session's stored assistant message to
+// the turn's FINAL answer, which is what the next turn must see.
+//
+// Streaming persistence (appendAssistantToSession on every delta) deliberately
+// keeps partial text in the session so a client that refreshes mid-stream still
+// sees what was produced — but for an agentic run those deltas are the ReAct
+// trajectory: the thinking and narration the agent emitted between tool calls,
+// tens of thousands of tokens of it. The next user input re-enters
+// AsyncChat with this session as its history, so leaving the trajectory there
+// means every turn pays for, and is steered by, every earlier turn's dead ends.
+//
+// A turn therefore ends compacted to question + final answer. A blank final
+// (an error result, or a run that produced nothing) leaves the streamed text
+// standing rather than blanking the message the user can already see.
 func (s *ChatSessionService) compactSessionAssistant(session *entity.ChatSession, final, messageID string) {
 	if session == nil || strings.TrimSpace(final) == "" {
 		return
 	}
 	s.appendAssistantToSession(session, final, messageID)
+}
+
+// displayText is the text the USER saw, as opposed to what the model produced: the
+// streamed reasoning block (everything up to and including </think>) followed by the
+// backend-rewritten answer. It mirrors how the client merges the final frame
+// (mergeAnswerChunk, web/src/utils/chat.ts): the reasoning stays, the rest is replaced.
+func displayText(raw, marked string) string {
+	if marked == "" {
+		return raw
+	}
+	if end := strings.LastIndex(raw, "</think>"); end >= 0 &&
+		!strings.Contains(marked, "<think>") && !strings.Contains(marked, "</think>") {
+		return raw[:end+len("</think>")] + "\n\n" + marked
+	}
+	return marked
+}
+
+// setAssistantDisplay records the presentation copy of the turn's assistant message: what
+// the message should LOOK like when the session is read back, citations included. The
+// message's CONTENT is left as the model produced it — that is what the next turn replays
+// — and the read API swaps this in (see messagesForDisplay).
+func (s *ChatSessionService) setAssistantDisplay(session *entity.ChatSession, display, messageID string) {
+	if session == nil || strings.TrimSpace(display) == "" {
+		return
+	}
+	messages := parseMessages(session.Message)
+	if len(messages) == 0 || s.getLastRole(messages) != "assistant" {
+		return
+	}
+	last := messages[len(messages)-1]
+	if id := stringValue(last["id"]); id != "" && messageID != "" && id != messageID {
+		return
+	}
+	last["content_display"] = display
+	session.Message, _ = json.Marshal(messages)
+}
+
+// messagesForDisplay swaps each message's stored presentation copy over its content, so
+// the read API shows the user exactly what the turn showed them (citations included)
+// while the session row keeps the model's raw output for replay. Messages without a
+// presentation copy are returned as stored.
+func messagesForDisplay(messages []map[string]interface{}) []map[string]interface{} {
+	for _, m := range messages {
+		if display, ok := m["content_display"].(string); ok && display != "" {
+			m["content"] = display
+			delete(m, "content_display")
+		}
+	}
+	return messages
 }
 
 // getSessionMessagesAsSlice returns the session's messages as a slice of maps.
@@ -1876,8 +2048,26 @@ type sseAnswerChunk struct {
 	// What the turn cost. Only the final event carries it: a delta is partial
 	// and would need merging, and a zero total would render as "0 tokens",
 	// which reads as a measurement rather than an absence.
-	Usage     *ChatTurnUsage `json:"usage,omitempty"`
-	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
+	Usage     *TurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64    `json:"elapsed_ms,omitempty"`
+	// Agentic turn accounting (modes 5 and 8). The final DeltaResult carries
+	// these, but this struct is hand-written: a field the producer sets and
+	// this does not copy is silently dropped from the STREAM, even though the
+	// non-stream path returns the map untouched.
+	ElapsedSeconds      float64        `json:"elapsed_seconds,omitempty"`
+	ToolCallCounts      map[string]int `json:"tool_call_counts,omitempty"`
+	ToolCallErrors      map[string]int `json:"tool_call_errors,omitempty"`
+	ToolErrorSamples    interface{}    `json:"tool_error_samples,omitempty"`
+	RetrievedDocIDs     []string       `json:"retrieved_docids,omitempty"`
+	ServedDocIDs        []string       `json:"served_docids,omitempty"`
+	DeepReadChunks      int            `json:"deep_read_chunks,omitempty"`
+	ShallowReadChunks   int            `json:"shallow_read_chunks,omitempty"`
+	DeepReadChunkIDs    []string       `json:"deep_read_chunk_ids,omitempty"`
+	ShallowReadChunkIDs []string       `json:"shallow_read_chunk_ids,omitempty"`
+	// Compactions counts the context compactions an agentic engine performed this turn
+	// (mode 8 only). The struct is hand-written, so a producer field not copied in
+	// sseMarshalChunk is silently dropped from the stream.
+	Compactions int `json:"compactions,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order:
@@ -1966,10 +2156,10 @@ func sanitizeJSONFloats(v interface{}) interface{} {
 // sseMarshalChunk converts an answer map to the ordered sseAnswerChunk struct
 // and marshals it with Python-compatible JSON formatting (spaces, field order).
 func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
-	// Reference is emitted only when the producer set one: the delta branch
-	// deletes the key so intermediate chunks stay reference-free, and silently
-	// re-adding an empty `{"chunks": []}` here would undo that — every
-	// intermediate chunk would carry a citation payload it cannot back.
+	// Reference is emitted only when the producer set one: the agentic delta
+	// branch deletes the key so intermediate chunks stay reference-free, and
+	// silently re-adding an empty `{"chunks": []}` here would undo that —
+	// every thinking chunk would carry a citation payload it cannot back.
 	ref := map[string]interface{}{"chunks": []interface{}{}}
 	if raw, hasRef := ans["reference"]; hasRef {
 		if m, ok := raw.(map[string]interface{}); ok && m != nil {
@@ -1990,8 +2180,8 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 
 	// These two are built from the map rather than from a struct field, so a
 	// value that is absent stays absent.
-	var usage *ChatTurnUsage
-	if u, ok := ans["usage"].(*ChatTurnUsage); ok {
+	var usage *TurnUsage
+	if u, ok := ans["usage"].(*TurnUsage); ok {
 		usage = u
 	}
 	elapsedMs, _ := ans["elapsed_ms"].(float64)
@@ -2011,6 +2201,25 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 		StartToThink: startToThink,
 		EndToThink:   endToThink,
 		ThinkEvent:   ans["think_event"],
+	}
+	if v, ok := ans["elapsed_seconds"].(float64); ok {
+		chunk.ElapsedSeconds = v
+	}
+	chunk.ToolCallCounts, _ = ans["tool_call_counts"].(map[string]int)
+	chunk.ToolCallErrors, _ = ans["tool_call_errors"].(map[string]int)
+	chunk.ToolErrorSamples = ans["tool_error_samples"]
+	chunk.RetrievedDocIDs, _ = ans["retrieved_docids"].([]string)
+	chunk.ServedDocIDs, _ = ans["served_docids"].([]string)
+	if v, ok := ans["deep_read_chunks"].(int); ok {
+		chunk.DeepReadChunks = v
+	}
+	if v, ok := ans["shallow_read_chunks"].(int); ok {
+		chunk.ShallowReadChunks = v
+	}
+	chunk.DeepReadChunkIDs, _ = ans["deep_read_chunk_ids"].([]string)
+	chunk.ShallowReadChunkIDs, _ = ans["shallow_read_chunk_ids"].([]string)
+	if v, ok := ans["compactions"].(int); ok {
+		chunk.Compactions = v
 	}
 	wrapper := sseWrapper{Code: 0, Message: "success", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)

@@ -17,7 +17,6 @@ package handler
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -32,6 +31,7 @@ import (
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -292,7 +292,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			} else {
 				event["event"] = "partial"
 			}
-			data, _ := json.Marshal(event)
+			data := utility.MustJSON(event)
 			if _, err := c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data)); err != nil {
 				return err
 			}
@@ -302,7 +302,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 		if err = asrModel.TranscribeWithSender(ctx, &tmpPath, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
-			data, _ := json.Marshal(errEvent)
+			data := utility.MustJSON(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
 			c.Writer.Flush()
 			return
@@ -311,7 +311,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			// Drivers are expected to terminate the stream with "[DONE]"; send
 			// it here when they do not, so clients always see a completion event.
 			doneEvent := map[string]interface{}{"event": "done", "text": "[DONE]"}
-			data, _ := json.Marshal(doneEvent)
+			data := utility.MustJSON(doneEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
 			c.Writer.Flush()
 		}

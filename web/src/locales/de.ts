@@ -290,12 +290,12 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       chunkMethodTab: 'Chunk-Methode',
       testResults: 'Ergebnisse',
       testSetting: 'Einstellung',
-      retrievalTesting: 'Abruftest',
+      retrievalTesting: 'Abruf',
       retrievalTestingDescription:
-        'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
+        'Führen Sie einen Abruf durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       Parse: 'Analysieren',
       dataset: 'Datensatz',
-      testing: 'Abruftest',
+      testing: 'Abruf',
       files: 'Dateien',
       configuration: 'Konfiguration',
       knowledgeGraph: 'Wissensgraph',
@@ -326,7 +326,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       noTestResultsForNotRuned:
         'Es wurde noch kein Test durchgeführt. Ergebnisse werden hier angezeigt.',
       testingDescription:
-        'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
+        'Führen Sie einen Abruf durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
         'RAGFlow verwendet beim Abruf entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinusähnlichkeit oder, wenn ein Reranker-Modell ausgewählt ist, eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichtetem Reranking-Score. Dieser Parameter legt den Schwellenwert für die Ähnlichkeit zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einem Ähnlichkeitswert unter diesem Schwellenwert wird aus den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 20 festgelegt. Das bedeutet, dass nur Chunks mit einem hybriden Ähnlichkeitswert von 20 oder höher abgerufen werden. Wenn die Gewichtung der Vektorähnlichkeit auf 0 gesetzt ist, gilt dieser Schwellenwert nicht.',
@@ -1388,7 +1388,7 @@ Beispiel: Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'Img2txt',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },
@@ -2055,7 +2055,7 @@ Beispiel: Virtual Hosted Style`,
       }`,
       datatype: 'MIME-Typ der HTTP-Anfrage',
       insertVariableTip: 'Eingabe / Variablen einfügen',
-      historyVersion: 'Versionsverlauf',
+      historyVersion: 'Versionen',
       version: {
         created: 'Erstellt',
         details: 'Versionsdetails',
@@ -2203,7 +2203,7 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
       titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
       outputFormat: 'Ausgabeformat',

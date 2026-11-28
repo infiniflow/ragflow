@@ -208,7 +208,8 @@ export function ReferenceImageList({
           chunk,
         } as ImageItem;
       })
-      .filter((item): item is ImageItem => item !== null);
+      .filter((item): item is ImageItem => item !== null)
+      .sort((a, b) => a.index - b.index);
   }, [messageContent, referenceChunks]);
 
   const imageCount = images?.length || 0;

@@ -66,9 +66,10 @@ type SearchResult struct {
 // match expressions) because regex matching is a distinct retrieval mode with
 // no vector or text relevance scoring.
 type RegexpSearchRequest struct {
-	// TenantID is the single tenant whose chunks are searched. Multi-tenant
-	// regexp requests are unsupported.
-	TenantID string
+	// IndexNames are the physical chunk indexes searched, one per dataset
+	// tenant (e.g. ragflow_<tenant>). Mapping a dataset to its tenant index is
+	// the caller's job, exactly as it is for SearchRequest.IndexNames.
+	IndexNames []string
 	// KbIDs are the knowledge base IDs to filter the search to.
 	KbIDs []string // Knowledge base IDs filter
 

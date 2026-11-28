@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/utility"
 )
 
 func agentRunEventMessage(ev canvas.RunEvent, fallback string) string {
@@ -38,11 +39,10 @@ func agentRunEventMessage(ev canvas.RunEvent, fallback string) string {
 }
 
 func convertAgentRunErrorToMessage(ev canvas.RunEvent) canvas.RunEvent {
-	data, _ := json.Marshal(map[string]string{
+	ev.Type = "message"
+	ev.Data = utility.MustJSON(map[string]string{
 		"content": agentRunEventMessage(ev, "Agent run failed."),
 	})
-	ev.Type = "message"
-	ev.Data = string(data)
 	return ev
 }
 

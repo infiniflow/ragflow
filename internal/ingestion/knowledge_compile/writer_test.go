@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
@@ -15,7 +18,7 @@ type recordingPageCommitter struct {
 	inputs []file.PageEditCommitInput
 }
 
-func (c *recordingPageCommitter) RecordPageEdit(_ context.Context, input file.PageEditCommitInput) (*entity.FileCommit, error) {
+func (c *recordingPageCommitter) RecordPageEdit(_ context.Context, _ *gorm.DB, input file.PageEditCommitInput) (*entity.FileCommit, error) {
 	c.inputs = append(c.inputs, input)
 	return &entity.FileCommit{ID: "commit-1"}, nil
 }
@@ -56,6 +59,208 @@ func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
 	}
 	if input.OldContent != "" || input.NewContent != "# Alpha\n\nBody" {
 		t.Fatalf("unexpected generated page content: %+v", input)
+	}
+}
+
+// TestWriteMergedAttributesGeneratedPageToItsUploader pins who a generated page
+// revision belongs to. The compile worker has no request identity, so it reads
+// the uploader of the page's source documents; a page merged from documents
+// several users uploaded, and a page whose documents are unknown, fall back to
+// the dataset's owner rather than recording nobody.
+func TestWriteMergedAttributesGeneratedPageToItsUploader(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Document{}, &entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "tenant-1", Name: "dataset", EmbdID: "embd@Builtin",
+		Permission: "me", CreatedBy: "owner-1",
+	}).Error; err != nil {
+		t.Fatalf("seed dataset: %v", err)
+	}
+	for _, doc := range []struct{ id, createdBy string }{
+		{"doc-1", "user-1"},
+		{"doc-2", "user-1"},
+		{"doc-3", "user-2"},
+	} {
+		name := doc.id
+		if err := db.Create(&entity.Document{
+			ID: doc.id, KbID: "kb-1", Name: &name, CreatedBy: doc.createdBy,
+			UserID: doc.createdBy, ParserID: "naive", ParserConfig: entity.JSONMap{},
+			Type: "text", Suffix: "txt",
+		}).Error; err != nil {
+			t.Fatalf("seed document %s: %v", doc.id, err)
+		}
+	}
+
+	committer := &recordingPageCommitter{}
+	w := engineWriter{eng: &fakeEngine{}, db: db, commitService: committer}
+	page := func(slug string, sourceDocIDs ...string) kccommon.Product {
+		meta := map[string]any{"kind": "page", "slug": slug, "page_type": "entity"}
+		if len(sourceDocIDs) > 0 {
+			meta["source_doc_ids"] = sourceDocIDs
+		}
+		return kccommon.Product{Variant: kccommon.VariantWiki, Content: "# " + slug, Meta: meta}
+	}
+	products := []kccommon.Product{
+		page("entity/one-uploader", "doc-1", "doc-2"),
+		page("entity/two-uploaders", "doc-1", "doc-3"),
+		page("entity/no-source"),
+	}
+
+	if err := w.WriteMerged(t.Context(), "tenant-1", "kb-1", products); err != nil {
+		t.Fatalf("WriteMerged: %v", err)
+	}
+	if len(committer.inputs) != 3 {
+		t.Fatalf("generated page commits = %d, want 3", len(committer.inputs))
+	}
+	want := map[string]string{
+		"one-uploader":  "user-1",
+		"two-uploaders": "owner-1",
+		"no-source":     "owner-1",
+	}
+	for _, input := range committer.inputs {
+		if input.AuthorID != want[input.Slug] {
+			t.Errorf("page %s: author = %q, want %q", input.Slug, input.AuthorID, want[input.Slug])
+		}
+	}
+}
+
+// TestDeleteMergedWikiPagesAttributesTheRemovalToItsUploader covers the other
+// half of the history: a page leaving the dataset is a commit too, and it names
+// the uploader of the page's source documents. A document-delete removal
+// usually has no document row left to read, so the dataset's owner names it.
+func TestDeleteMergedWikiPagesAttributesTheRemovalToItsUploader(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Document{}, &entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "tenant-1", Name: "dataset", EmbdID: "embd@Builtin",
+		Permission: "me", CreatedBy: "owner-1",
+	}).Error; err != nil {
+		t.Fatalf("seed dataset: %v", err)
+	}
+	name := "kept.txt"
+	if err := db.Create(&entity.Document{
+		ID: "doc-1", KbID: "kb-1", Name: &name, CreatedBy: "user-1", UserID: "user-1",
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, Type: "text", Suffix: "txt",
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	committer := &recordingPageCommitter{}
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id": "page-1", "compile_kwd": "wiki_page", "available_int": 1,
+			"slug_kwd": "entity/alpha", "page_type_kwd": "entity", "title_kwd": "Alpha",
+			"content_with_weight": "# Alpha", "source_doc_ids": []string{"doc-1"},
+		},
+		{
+			// Its document is already gone: nothing left to name the uploader.
+			"id": "page-2", "compile_kwd": "wiki_page", "available_int": 1,
+			"slug_kwd": "entity/beta", "page_type_kwd": "entity", "title_kwd": "Beta",
+			"content_with_weight": "# Beta", "source_doc_ids": []string{"doc-gone"},
+		},
+	}}
+	w := engineWriter{eng: eng, db: db, commitService: committer}
+
+	if err := w.DeleteMergedWikiPages(t.Context(), "tenant-1", "kb-1", []string{"page-1", "page-2"}); err != nil {
+		t.Fatalf("DeleteMergedWikiPages: %v", err)
+	}
+	if len(committer.inputs) != 2 {
+		t.Fatalf("removal commits = %d, want 2", len(committer.inputs))
+	}
+	want := map[string]string{"alpha": "user-1", "beta": "owner-1"}
+	for _, input := range committer.inputs {
+		if input.AuthorID != want[input.Slug] {
+			t.Errorf("page %s: author = %q, want %q", input.Slug, input.AuthorID, want[input.Slug])
+		}
+		if input.NewContent != "" {
+			t.Errorf("page %s: removal kept content %q", input.Slug, input.NewContent)
+		}
+	}
+}
+
+// TestPagedRemovalSweepsOrderTheirRows covers the pagination contract of the two
+// sweeps that walk a dataset a batch at a time. An unordered offset scan can hand
+// the same row back twice and skip another between requests, and a page skipped by
+// the clear sweep never gets the removal commit that keeps it out of a later
+// restore - the version being restored would then rebuild a page it never held.
+func TestPagedRemovalSweepsOrderTheirRows(t *testing.T) {
+	page := map[string]interface{}{
+		"id": "page-1", "compile_kwd": "wiki", "type_kwd": "wiki_page", "available_int": 1,
+		"slug_kwd": "entity/alpha", "entity_type_kwd": "entity", "title_kwd": "Alpha",
+		"content_with_weight": "# Alpha",
+	}
+
+	clear := &fakeEngine{searchChunks: []map[string]interface{}{page}}
+	clearWriter := engineWriter{eng: clear, commitService: &recordingPageCommitter{}}
+	clearWriter.recordAllWikiPageRemovals(t.Context(), "tenant-1", "kb-1", "clear", false)
+	if clear.lastSearchReq == nil || clear.lastSearchReq.OrderBy == nil {
+		t.Fatal("the clear sweep paginates without an order, so a page can be skipped between batches")
+	}
+
+	strip := &fakeEngine{searchChunks: []map[string]interface{}{
+		{"id": "page-2", "source_doc_ids": []string{"doc-gone", "doc-kept"}},
+	}}
+	stripWriter := engineWriter{eng: strip}
+	if err := stripWriter.StripMergedSources(t.Context(), "tenant-1", "kb-1", []string{"doc-gone"}); err != nil {
+		t.Fatalf("StripMergedSources: %v", err)
+	}
+	if len(strip.searchReqs) == 0 || strip.searchReqs[0].OrderBy == nil {
+		t.Fatal("the source strip paginates without an order, so a row can be skipped between batches")
+	}
+}
+
+// TestDeleteMergedWikiPagesReadsTheNewPageShape covers the rows the compiler
+// writes now: the category sits in entity_type_kwd beside compile_kwd="wiki", and
+// page_type_kwd is not set. Reading the old column skipped every one of them, so a
+// page leaving the dataset left no commit behind - and a restore had nothing to
+// bring it back from.
+func TestDeleteMergedWikiPagesReadsTheNewPageShape(t *testing.T) {
+	committer := &recordingPageCommitter{}
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id": "page-1", "compile_kwd": "wiki", "type_kwd": "wiki_page", "available_int": 1,
+			"slug_kwd": "topic/People/Writers", "entity_type_kwd": "topic", "title_kwd": "Writers",
+			"content_with_weight": "# Writers",
+		},
+	}}
+	w := engineWriter{eng: eng, commitService: committer}
+
+	if err := w.DeleteMergedWikiPages(t.Context(), "tenant-1", "kb-1", []string{"page-1"}); err != nil {
+		t.Fatalf("DeleteMergedWikiPages: %v", err)
+	}
+	if len(committer.inputs) != 1 {
+		t.Fatalf("removal commits = %d, want 1", len(committer.inputs))
+	}
+	input := committer.inputs[0]
+	if input.PageType != "topic" || input.Slug != "People/Writers" {
+		t.Errorf("removal names page %q of type %q, want topic / People/Writers", input.Slug, input.PageType)
+	}
+	// The row is named by columns the scan has to ask for: a projection that leaves
+	// compile_kwd/type_kwd out makes a compiler-written row look like a non-page.
+	if eng.lastSearchReq == nil {
+		t.Fatal("the removal scan issued no search request")
+	}
+	projected := make(map[string]bool, len(eng.lastSearchReq.SelectFields))
+	for _, field := range eng.lastSearchReq.SelectFields {
+		projected[field] = true
+	}
+	for _, field := range []string{"compile_kwd", "type_kwd", "entity_type_kwd", "page_type_kwd"} {
+		if !projected[field] {
+			t.Errorf("removal scan does not select %s, so its rows cannot be recognised as pages", field)
+		}
+	}
+	if input.NewContent != "" {
+		t.Errorf("removal kept content %q", input.NewContent)
 	}
 }
 

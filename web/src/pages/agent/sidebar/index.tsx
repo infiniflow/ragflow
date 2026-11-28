@@ -1,9 +1,11 @@
-import { SecondarySidebarHeader } from '@/components/sidebar-header';
-import { Button } from '@/components/ui/button';
+import {
+  SecondarySidebar,
+  SecondarySidebarMenu,
+} from '@/components/secondary-sidebar';
 import { AgentQuery } from '@/constants/agent';
-import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {
+  ClipboardClock,
   LucideFrame,
   LucideMessageSquareMore,
   LucideSettings,
@@ -15,6 +17,7 @@ import { useIsPipeline } from '../hooks/use-is-pipeline';
 
 enum AgentMenuKey {
   Canvas = 'canvas',
+  VersionHistory = 'version-history',
   Launch = 'launch',
   Setting = 'setting',
 }
@@ -38,6 +41,9 @@ export function AgentSidebar({
     useMatch({ path: `${Routes.Agent}/:id`, end: true }),
   );
   const isLaunch = Boolean(useMatch({ path: Routes.AgentExplore, end: true }));
+  const isVersionHistory = Boolean(
+    useMatch({ path: Routes.AgentVersionHistory, end: true }),
+  );
   const isSetting = Boolean(useMatch({ path: Routes.AgentSetting, end: true }));
 
   const items = useMemo(() => {
@@ -66,6 +72,14 @@ export function AgentSidebar({
     }
 
     list.push({
+      key: AgentMenuKey.VersionHistory,
+      icon: <ClipboardClock className="size-4 shrink-0" />,
+      label: t('flow.historyVersion'),
+      path: `${Routes.Agent}/${id}/version-history`,
+      active: isVersionHistory,
+    });
+
+    list.push({
       key: AgentMenuKey.Setting,
       icon: <LucideSettings className="size-4 shrink-0" />,
       label: t('flow.setting'),
@@ -76,36 +90,23 @@ export function AgentSidebar({
     return list.map((item) => ({
       ...item,
       to: { pathname: item.path, search },
+      onSelect: onMenuSelect,
     }));
-  }, [id, isCanvas, isLaunch, isPipeline, isSetting, searchParams, t]);
+  }, [
+    id,
+    isCanvas,
+    isLaunch,
+    isPipeline,
+    isSetting,
+    isVersionHistory,
+    onMenuSelect,
+    searchParams,
+    t,
+  ]);
 
   return (
-    <aside className="flex w-64 flex-col">
-      <SecondarySidebarHeader title={title} onCollapse={onCollapse} />
-
-      <nav className="overflow-y-auto px-5 pb-5 pt-1">
-        <ul className="space-y-2">
-          {items.map((item) => (
-            <li key={item.key}>
-              <Button
-                asLink
-                block
-                variant="ghost"
-                to={item.to}
-                aria-current={item.active ? 'page' : undefined}
-                className={cn(
-                  'relative h-10 justify-start gap-2.5 px-3 text-base',
-                  item.active && 'bg-bg-card text-text-primary',
-                )}
-                onClick={onMenuSelect}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </aside>
+    <SecondarySidebar title={title} onCollapse={onCollapse}>
+      <SecondarySidebarMenu items={items} navigationLabel={title} />
+    </SecondarySidebar>
   );
 }

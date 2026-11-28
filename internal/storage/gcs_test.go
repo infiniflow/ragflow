@@ -82,3 +82,48 @@ func TestGCSStoragePutCancelsUpload(t *testing.T) {
 		})
 	}
 }
+
+// TestGCSStorageRemoveBucketMissingIsNoop pins that removing an already
+// absent bucket succeeds, matching every other storage backend. Callers drop
+// their pre-delete BucketExists probe and rely on this idempotency.
+func TestGCSStorageRemoveBucketMissingIsNoop(t *testing.T) {
+	client, err := gcs.NewClient(t.Context(), option.WithoutAuthentication(), option.WithHTTPClient(&http.Client{
+		Transport: gcsRoundTripper(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Header:     http.Header{"Content-Type": {"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"code":404,"message":"Not Found","status":"NOT_FOUND"}}`)),
+			}, nil
+		}),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	if err := (&GCSStorage{client: client}).RemoveBucket(t.Context(), "missing-bucket"); err != nil {
+		t.Fatalf("RemoveBucket on missing bucket = %v, want nil", err)
+	}
+}
+
+// TestGCSStorageRemoveBucketPropagatesBackendError guards that the missing-
+// bucket tolerance does not swallow an unrelated backend failure.
+func TestGCSStorageRemoveBucketPropagatesBackendError(t *testing.T) {
+	client, err := gcs.NewClient(t.Context(), option.WithoutAuthentication(), option.WithHTTPClient(&http.Client{
+		Transport: gcsRoundTripper(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     http.Header{"Content-Type": {"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"code":403,"message":"permission denied","status":"PERMISSION_DENIED"}}`)),
+			}, nil
+		}),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	if err := (&GCSStorage{client: client}).RemoveBucket(t.Context(), "broken-bucket"); err == nil {
+		t.Fatal("RemoveBucket swallowed a 403 response")
+	}
+}

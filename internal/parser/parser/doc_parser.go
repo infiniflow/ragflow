@@ -28,6 +28,7 @@ import (
 var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
+	wordOptions        wordParserOptions
 	textOnly           bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
@@ -51,6 +52,7 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
+	p.wordOptions.configure(setup)
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
 	}
@@ -61,6 +63,9 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 
 // ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := checkWPSLicense(ctx, filename); err != nil {
+		return ParseResult{Err: err}
+	}
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
@@ -69,10 +74,7 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	text, _, err := extractDocText(irJSON, mdText, plainText)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
-	}
+	irJSON, irChanged := p.wordOptions.prepareIR(irJSON, nil)
 
 	// Prefer the structured IR, which office_oxide recovers table
 	// (and list) structure for. Emitting structured sections lets the chunker
@@ -86,18 +88,14 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		if !p.textOnly {
 			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 		}
-		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
-			if sink != nil && sink.err != nil {
-				return ParseResult{Err: sink.err}
-			}
-			if p.RemoveHeaderFooter {
-				// extractDOCXHeaderFooterTexts operates best-effort: for DOCX files
-				// misnamed with a .doc extension it extracts header/footer XML parts.
-				// For native OLE2 .doc binaries without a ZIP structure, it returns
-				// an empty map and preserves sections safely.
-				hfTexts := extractDOCXHeaderFooterTexts(data)
-				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
-			}
+		// Once the structured IR changes, use it as the only text source.
+		// If RemoveHeaderFooter dropped the only sections in the IR, keep the
+		// structured path rather than falling back to flattened plain text.
+		sections := buildDOCXJSONSectionsCore(irJSON, sink, !p.RemoveHeaderFooter)
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
+		if len(sections) > 0 || irChanged || (p.RemoveHeaderFooter && len(buildDOCXJSONSectionsCore(irJSON, nil, true)) > 0) {
 			if p.RemoveTOC {
 				outlines := extractDOCXOutlines(irJSON)
 				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
@@ -111,8 +109,13 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 				Warnings: sink.warnings(),
 			}
 		}
-		if sink != nil && sink.err != nil {
-			return ParseResult{Err: sink.err}
+	}
+
+	var text string
+	if !irChanged {
+		text, _, err = extractDocText(irJSON, mdText, plainText)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 		}
 	}
 	if strings.TrimSpace(text) == "" {

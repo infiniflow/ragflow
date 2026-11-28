@@ -309,6 +309,10 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
+	// General chunking is synchronous and its output count is unknown until
+	// the final split, so report a single terminal position rather than a
+	// synthetic in-flight progress bar.
+	runtime.ReportProgressDetail(ctx, "chunk:final", uint32(len(chunks)), uint32(len(chunks)))
 	attachPDFOutline(chunks, upstream.File)
 	return chunkOutputs(chunks), nil
 }
@@ -672,6 +676,13 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 		// rows, and a colspan is not duplicated. CellTexts would skip every
 		// Covered slot, dropping a data rowspan from the context entirely.
 		rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsData), td.HeaderRows
+		// A header-only segment has no data row to contribute, and BuildTableData
+		// keeps HeaderRows==1 even when every cell was empty and the grid is nil,
+		// so headerCount can meet or exceed len(rows). Return instead of slicing
+		// past the grid.
+		if len(rows) <= headerCount {
+			return "", false
+		}
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))

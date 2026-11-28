@@ -668,29 +668,31 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-
 	if len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
 
-	_, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	_, err := s.getKnowledgebaseByID(ctx, datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 
 	docIDs, duplicateMessages := service.CheckDuplicateIDs(req.DocumentIDs, "document")
-	successCount := 0
-
+	docs := make([]*entity.Document, 0, len(docIDs))
 	for _, docID := range docIDs {
 		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil || doc == nil {
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
+		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
+		}
+		docs = append(docs, doc)
+	}
+	successCount := 0
 
+	for _, doc := range docs {
 		if err = s.cancelAllTasksOfDoc(ctx, doc); err != nil {
 			if errors.Is(err, document.ErrParseNotRunning) {
 				return &service.StopParsingResponse{
@@ -772,10 +774,6 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 }
 
 func (s *ChunkService) Parse(ctx context.Context, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if err := s.checkDatasetAccess(ctx, datasetID, permission.OperationRun); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
@@ -800,6 +798,11 @@ func (s *ChunkService) Parse(ctx context.Context, datasetID string, req *service
 		doc := docByID[docID]
 		if doc == nil || doc.KbID != datasetID {
 			notFound = append(notFound, docID)
+			continue
+		}
+		if err := service.CheckDocumentWrite(ctx, docID, datasetID, permission.OperationRun, ""); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
 		}
 	}
 	if len(notFound) > 0 {
@@ -897,6 +900,12 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 		}
 	}
 
+	// An unusable prefix matches nothing. Ignoring it would answer with the whole
+	// document, which reads as a successful search.
+	rawPrefix := strings.TrimSpace(req.ChunkIDPrefix)
+	prefix := service.NormalizeChunkIDPrefix(rawPrefix)
+	invalidPrefix := rawPrefix != "" && prefix == ""
+
 	// Build search request - same as retrieval test but filtered by doc_id.
 	// KbIDs is pinned to the document's own dataset: searching every KB of the
 	// tenant also returned rows whose KB context is a different dataset (chunks
@@ -946,16 +955,28 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 	if len(req.ChunkIDs) > 0 {
 		searchReq.Filter["id"] = req.ChunkIDs
 	}
+	// Only the engine can match a prefix before the page window is cut. The filter
+	// keeps the list shape, so the one prefix stays a degenerate list.
+	if prefix != "" {
+		searchReq.Filter["id_prefix"] = []string{prefix}
+	}
 
 	// Add available_int filter if specified
 	if req.AvailableInt != nil {
 		searchReq.Filter["available_int"] = *req.AvailableInt
 	}
 
-	// Execute search through unified engine interface
-	searchResp, err := s.docEngine.Search(ctx, searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
+	// Execute search through unified engine interface. An unusable prefix is
+	// answered as the empty set without asking the engine.
+	var searchResp *types.SearchResult
+	if invalidPrefix {
+		searchResp = &types.SearchResult{}
+	} else {
+		var searchErr error
+		searchResp, searchErr = s.docEngine.Search(ctx, searchReq)
+		if searchErr != nil {
+			return nil, fmt.Errorf("search failed: %w", searchErr)
+		}
 	}
 
 	chunks := make([]map[string]interface{}, 0, len(searchResp.Chunks))
@@ -1114,12 +1135,6 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, datasetID, documentID s
 		return fmt.Errorf("req is null")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, permission.OperationUpdate)
-	if err != nil {
-		return err
-	}
-	targetTenantID := kb.TenantID
-
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, documentID)
 	if err != nil || doc == nil {
@@ -1128,9 +1143,14 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, datasetID, documentID s
 	if doc.KbID != datasetID {
 		return fmt.Errorf("document does not belong to this dataset")
 	}
-	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentWrite(ctx, documentID, datasetID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		return err
 	}
+	kb, err := s.getKnowledgebaseByID(ctx, datasetID)
+	if err != nil || kb == nil {
+		return fmt.Errorf("knowledge base not found")
+	}
+	targetTenantID := kb.TenantID
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
@@ -1227,13 +1247,6 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		return fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, permission.OperationUpdate)
-	if err != nil {
-		return err
-	}
-	targetTenantID := kb.TenantID
-	language := datasetLanguageOf(kb)
-
 	// Verify document belongs to dataset
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocumentID)
@@ -1243,9 +1256,15 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if doc.KbID != req.DatasetID {
 		return fmt.Errorf("document does not belong to this dataset")
 	}
-	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentWrite(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		return err
 	}
+	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
+	if err != nil || kb == nil {
+		return fmt.Errorf("knowledge base not found")
+	}
+	targetTenantID := kb.TenantID
+	language := datasetLanguageOf(kb)
 
 	// Fetch existing chunk first
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1569,12 +1588,12 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, permission.ErrResourceNotFound
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, permission.OperationUpdate)
-	if err != nil {
+	if err = service.CheckDocumentWrite(ctx, req.DocID, doc.KbID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		return 0, err
 	}
-	if err = service.CheckDocumentAccess(ctx, req.DocID, doc.KbID, permission.OperationUpdate); err != nil {
-		return 0, err
+	kb, err := s.getKnowledgebaseByID(ctx, doc.KbID)
+	if err != nil || kb == nil {
+		return 0, fmt.Errorf("knowledge base not found")
 	}
 	targetTenantID := kb.TenantID
 
@@ -1702,25 +1721,18 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
-	if err := s.checkDatasetAccess(ctx, req.DatasetID, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
-	}
-
 	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
 	if err != nil || kb == nil {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+		return nil, addChunkError{code: common.CodeNotFound, message: "Resource not found"}
 	}
-
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
 	}
-	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentWrite(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
-
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
 		return nil, addChunkError{code: common.CodeDataError, message: "`content` is required"}
@@ -1874,7 +1886,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	if historyVersion > 0 {
 		chunkversion.AppendAddBaseline(ctx, dao.DB, req.DatasetID, req.DocumentID, chunkID, historyVersion,
-			chunkSnapshotMeta(kb, datasetLanguageOf(kb)), chunkData)
+			chunkSnapshotMeta(kb, datasetLanguageOf(kb)), chunkData, permission.UserIDFromContext(ctx))
 	}
 
 	tokenNum := int64(s.numTokens(req.Content))

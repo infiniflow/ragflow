@@ -246,6 +246,7 @@ func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 	f := &entity.File{
 		ID:        id,
 		ParentID:  parentID,
+		UserID:    "tenant-1",
 		TenantID:  "tenant-1",
 		CreatedBy: "tenant-1",
 		Name:      name,
@@ -382,8 +383,8 @@ func TestFileService_MoveFilesRejectsInaccessibleSource(t *testing.T) {
 	}
 
 	err := testFileService().MoveFiles(fileTestContext(t, "user-1", "user-1"), []string{foreignFile.ID}, "", "renamed.pdf")
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("MoveFiles error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("MoveFiles error = %v, want resource not found for a cross-tenant file", err)
 	}
 	stored, err := dao.NewFileDAO().GetByID(t.Context(), db, foreignFile.ID)
 	if err != nil {

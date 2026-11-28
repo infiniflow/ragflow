@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # Configure the Indexer Component
 
-**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker, Transformer, or Compiler and use the pipeline with a Dataset to index documents.
+**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker, Extractor, or Compiler and use the pipeline with a Dataset to index documents.
 
 Click the Indexer node to open its panel. Review **Search method**, adjust **Filename embedding weight**, and select **Field** as described below.
 
@@ -35,7 +35,7 @@ Select the content to embed:
 - **Questions**: Questions generated for the chunk.
 - **Augmented context**: The generated summary.
 
-For Questions or Augmented context, first enable the corresponding function in Transformer. This setting selects embedding content; it does not replace the configured search methods.
+For Questions or Augmented context, first enable the corresponding function in Extractor. This setting selects embedding content; it does not replace the configured search methods.
 
 ![Indexer search methods, filename embedding weight, and Field options](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_indexer_embedding_field.jpg)
 
@@ -45,4 +45,4 @@ The model comes from the connected Dataset, rather than an independent model sel
 
 ## Apply and Validate
 
-Click **Save draft**, resolve any **Checklist** issues, and publish a version. [Apply it to a test Dataset](./connect_the_pipeline_to_a_knowledge_base.md), parse a sample document, and check both the stored chunks and retrieval results. If **Field** is Questions or Augmented context, also check that the upstream Transformer generated the corresponding content.
+Click **Save draft**, resolve any **Checklist** issues, and publish a version. [Apply it to a test Dataset](./connect_the_pipeline_to_a_knowledge_base.md), parse a sample document, and check both the stored chunks and retrieval results. If **Field** is Questions or Augmented context, also check that the upstream Extractor generated the corresponding content.

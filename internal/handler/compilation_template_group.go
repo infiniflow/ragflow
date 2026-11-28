@@ -17,7 +17,11 @@
 package handler
 
 import (
+	"errors"
+	"strings"
+
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -62,7 +66,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	accessUserID := c.Query("access_user_id")
 	orderby := c.DefaultQuery("orderby", "create_time")
-	desc := c.DefaultQuery("desc", "true") != "false"
+	desc := !strings.EqualFold(c.DefaultQuery("desc", "true"), "false")
 	terms := orderTermsFromQuery(c, orderby, desc)
 
 	groups, err := h.compilationTemplateGroupService.ListSaved(ctx, accessUserID, keywords, scope, terms)
@@ -175,6 +179,10 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 	}
 	group, err := h.compilationTemplateGroupService.UpdateGroup(c.Request.Context(), id, &req)
 	if err != nil {
+		if errors.Is(err, permission.ErrPermissionDenied) {
+			common.RespondError(c, common.CodeForbidden, "Permission denied")
+			return
+		}
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -201,6 +209,10 @@ func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
 	common.SetOperationResource(c, "compilation_template_group_id", id)
 	ok, err := h.compilationTemplateGroupService.DeleteGroup(c.Request.Context(), id)
 	if err != nil {
+		if errors.Is(err, permission.ErrPermissionDenied) {
+			common.RespondError(c, common.CodeForbidden, "Permission denied")
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}

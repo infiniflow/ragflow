@@ -35,7 +35,7 @@ const RadioGroupItem = React.forwardRef<
         'transition-all outline-none border border-border-button bg-bg-component',
         'hover:border-border-default hover:bg-border-default',
         'focus-visible:border-border-default focus-visible:bg-border-default',
-        'aria-[invalid]:border-state-error aria-[invalid]:bg-state-error/5 aria-[invalid]:text-state-error',
+        'aria-[invalid=true]:border-state-error aria-[invalid=true]:bg-state-error/5 aria-[invalid=true]:text-state-error',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}

@@ -41,7 +41,7 @@ func (stubEngine) GetType() string { return "stub" }
 // silently disable every production merge; this catches it by asserting the
 // exact deps the ingestor provides actually reach the consumer's reader/writer.
 func TestNewKnowledgeCompileConsumerWiresStorage(t *testing.T) {
-	ingestor := newUnitIngestor("test-kc-wiring", 1, nil)
+	ingestor := newUnitIngestor("test-kc-wiring", 1)
 	// Provide the deps the production path threads through WithStorage and
 	// assert they propagate verbatim to the consumer (not just the flag).
 	eng := stubEngine{}

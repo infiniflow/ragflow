@@ -62,7 +62,7 @@ describe('isValidPipelineConnection', () => {
     ).toBe(false);
   });
 
-  it('allows a chunker to feed non-chunker operators', () => {
+  it('allows a chunker to feed the next pipeline stages', () => {
     expect(
       isValidPipelineConnection(Operator.TokenChunker, Operator.Tokenizer),
     ).toBe(true);
@@ -74,13 +74,13 @@ describe('isValidPipelineConnection', () => {
     ).toBe(true);
   });
 
-  it('leaves unrelated pairs unrestricted', () => {
+  it('enforces downstream stage order', () => {
     expect(isValidPipelineConnection(Operator.File, Operator.Parser)).toBe(
       true,
     );
     expect(
       isValidPipelineConnection(Operator.Tokenizer, Operator.Extractor),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isValidPipelineConnection(Operator.Extractor, Operator.Compiler),
     ).toBe(true);
@@ -106,39 +106,41 @@ describe('isSingleInstanceOperator', () => {
 describe('buildPipelineNextOperators', () => {
   const noOperator = () => false;
 
-  it('always offers Extractor, which is multi-instance', () => {
+  it('offers only the Parser when no source operator is known', () => {
     const hasExtractor = (operator: Operator) =>
       operator === Operator.Extractor;
     expect(
       buildPipelineNextOperators(undefined, hasExtractor).operators,
-    ).toContain(Operator.Extractor);
+    ).toEqual([Operator.Parser]);
   });
 
   it('offers Compiler only when none is on the canvas', () => {
-    const offered = buildPipelineNextOperators(undefined, noOperator).operators;
+    const offered = buildPipelineNextOperators(
+      Operator.TokenChunker,
+      noOperator,
+    ).operators;
     expect(offered).toContain(Operator.Compiler);
 
     const hasCompiler = (operator: Operator) => operator === Operator.Compiler;
     expect(
-      buildPipelineNextOperators(undefined, hasCompiler).operators,
+      buildPipelineNextOperators(Operator.TokenChunker, hasCompiler).operators,
     ).not.toContain(Operator.Compiler);
   });
 
-  it('hides the whole chunker group once any chunker is on the canvas', () => {
+  it('hides both chunker variants once one is on the canvas', () => {
     const hasTokenChunker = (operator: Operator) =>
       operator === Operator.TokenChunker;
     const result = buildPipelineNextOperators(
       Operator.TokenChunker,
       hasTokenChunker,
     );
-    expect(result.showChunker).toBe(false);
-    expect(result.chunkerOperators).toEqual([]);
+    expect(result.operators).not.toContain(Operator.TitleChunker);
+    expect(result.operators).not.toContain(Operator.TokenChunker);
   });
 
-  it('offers both chunker variants while the chunker slot is free', () => {
-    const result = buildPipelineNextOperators(Operator.Tokenizer, noOperator);
-    expect(result.showChunker).toBe(true);
-    expect(result.chunkerOperators).toEqual([
+  it('offers both chunker variants as first-level options after Parser', () => {
+    const result = buildPipelineNextOperators(Operator.Parser, noOperator);
+    expect(result.operators).toEqual([
       Operator.TokenChunker,
       Operator.TitleChunker,
     ]);

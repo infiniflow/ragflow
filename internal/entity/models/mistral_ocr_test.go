@@ -248,7 +248,7 @@ func TestMistralOCRMarkdownRendersTitleBlocksAsHeadings(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	want := "# Annual Report\n\n## Summary\n\n# Plain Title\n\nBody text."
-	if got := result.markdown(); got != want {
+	if got := result.Pages[0].markdown(); got != want {
 		t.Fatalf("markdown =\n%q\nwant\n%q", got, want)
 	}
 }
@@ -282,16 +282,31 @@ func TestMistralOCRFileJoinsPagesAndInlinesTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OCRFile: %v", err)
 	}
-	want := strings.Join([]string{
-		"# Title",
-		"hello world",
-		"<table><tr><td>a</td></tr></table>",
-		"## Second",
-		"<table><tr><td>b</td></tr></table>",
-		"closing",
-	}, "\n\n")
+	wantPages := []string{
+		"# Title\n\nhello world\n\n<table><tr><td>a</td></tr></table>",
+		"## Second\n\n<table><tr><td>b</td></tr></table>\n\nclosing",
+	}
+	want := strings.Join(wantPages, "\n\n")
 	if got := *resp.Text; got != want {
 		t.Fatalf("text =\n%s\nwant\n%s", got, want)
+	}
+	if len(resp.Pages) != len(wantPages) {
+		t.Fatalf("OCR pages = %v, want %d", resp.Pages, len(wantPages))
+	}
+	for i, page := range resp.Pages {
+		if page.Index != i || !page.KeepPagePosition || !reflect.DeepEqual(page.Blocks, []OCRBlock{{Text: wantPages[i]}}) {
+			t.Errorf("unexpected OCR page %d: %+v", i, page)
+		}
+	}
+}
+
+func TestMistralOCRRejectsMissingPageIndex(t *testing.T) {
+	var response mistralOCRResponse
+	if err := json.Unmarshal([]byte(`{"pages":[{"markdown":"body"}]}`), &response); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := response.fileResponse(); err == nil || !strings.Contains(err.Error(), "invalid page index") {
+		t.Fatalf("error = %v, want invalid page index", err)
 	}
 }
 

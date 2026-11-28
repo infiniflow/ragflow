@@ -18,6 +18,8 @@ package opensearch
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -81,4 +83,102 @@ func TestNewEngine_MTLSValidation(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to read OpenSearch CA certificate") {
 		t.Fatalf("expected non-existent CA cert error, got %v", err)
 	}
+}
+
+func TestNewEngine_VersionValidation(t *testing.T) {
+	cases := []struct {
+		name            string
+		infoBody        string
+		wantErrContains string
+	}{
+		{
+			name:            "rejects OpenSearch 2.10",
+			infoBody:        `{"version":{"distribution":"opensearch","number":"2.10.0"}}`,
+			wantErrContains: "requires OpenSearch >= 2.19",
+		},
+		{
+			name:            "rejects OpenSearch 2.17",
+			infoBody:        `{"version":{"distribution":"opensearch","number":"2.17.1"}}`,
+			wantErrContains: "requires OpenSearch >= 2.19",
+		},
+		{
+			name:            "rejects OpenSearch 2.18",
+			infoBody:        `{"version":{"distribution":"opensearch","number":"2.18.0"}}`,
+			wantErrContains: "requires OpenSearch >= 2.19",
+		},
+		{
+			name:            "rejects Elasticsearch compatibility mode 7.10.2",
+			infoBody:        `{"version":{"distribution":"opensearch","number":"7.10.2"}}`,
+			wantErrContains: "compatibility.override_main_response_version",
+		},
+		{
+			name:            "rejects non-OpenSearch distribution",
+			infoBody:        `{"version":{"distribution":"elasticsearch","number":"8.17.0"}}`,
+			wantErrContains: "unsupported OpenSearch distribution",
+		},
+		{
+			name:            "rejects empty version",
+			infoBody:        `{"version":{"distribution":"opensearch","number":""}}`,
+			wantErrContains: "requires OpenSearch >= 2.19",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			templateCalled := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodGet && r.URL.Path == "/" {
+					_, _ = w.Write([]byte(tc.infoBody))
+					return
+				}
+				templateCalled = true
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			}))
+			defer server.Close()
+
+			_, err := NewEngine(t.Context(), config.OpenSearchConfig{
+				Hosts: server.URL,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrContains) {
+				t.Fatalf("NewEngine() error = %v, want substring %q", err, tc.wantErrContains)
+			}
+			if templateCalled {
+				t.Fatalf("NewEngine() must fail fast before issuing template or mapping requests")
+			}
+		})
+	}
+
+	t.Run("accepts OpenSearch 2.19 and proceeds to template setup", func(t *testing.T) {
+		var paths []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			paths = append(paths, r.Method+" "+r.URL.Path)
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/":
+				_, _ = w.Write([]byte(`{"version":{"distribution":"opensearch","number":"2.19.0"}}`))
+			case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/_index_template/"):
+				_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/_cat/indices/"):
+				_, _ = w.Write([]byte(`[]`))
+			default:
+				_, _ = w.Write([]byte(`{}`))
+			}
+		}))
+		defer server.Close()
+
+		eng, err := NewEngine(t.Context(), config.OpenSearchConfig{
+			Hosts: server.URL,
+		})
+		if err != nil {
+			t.Fatalf("NewEngine() unexpected error for 2.19.0: %v", err)
+		}
+		if eng == nil {
+			t.Fatal("NewEngine() returned nil engine for 2.19.0")
+		}
+		if len(paths) < 3 {
+			t.Fatalf("expected info + template setup calls, got %v", paths)
+		}
+	})
 }

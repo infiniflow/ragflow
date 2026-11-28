@@ -43,6 +43,7 @@ interface IProps
   extends IModalProps<IChangeParserRequestBody>, IDocumentPipelineDialogProps {
   loading: boolean;
   saveDisabled?: boolean;
+  readOnly?: boolean;
 }
 
 export function DocumentPipelineDialog({
@@ -54,6 +55,7 @@ export function DocumentPipelineDialog({
   parserConfig,
   loading,
   saveDisabled = false,
+  readOnly = false,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -136,6 +138,7 @@ export function DocumentPipelineDialog({
                     onChange={handleParserSelect}
                     outdated={versionOutdated}
                     invalid={fieldState.invalid || parserOptionMissing}
+                    disabled={readOnly}
                   />
                   <FormMessage />
                   {parserOptionMissing && (
@@ -161,6 +164,7 @@ export function DocumentPipelineDialog({
                     | undefined
                 }
                 fixedFileFormats
+                readOnly={readOnly}
               />
             )}
           </form>
@@ -169,7 +173,8 @@ export function DocumentPipelineDialog({
           <ButtonLoading
             type="submit"
             form={FormId}
-            disabled={saveDisabled}
+            disabled={readOnly || saveDisabled}
+            className={readOnly ? 'hidden' : undefined}
             loading={
               loading || (operatorNodesLoading && operatorNodes.length === 0)
             }

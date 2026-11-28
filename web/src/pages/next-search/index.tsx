@@ -27,7 +27,7 @@ import './index.less';
 import { SearchEmbedButton } from './search-embed-button';
 import SearchHome from './search-home';
 import { SearchSetting } from './search-setting';
-import { SearchSidebar } from './search-sidebar';
+import { SearchSidebar } from './sidebar';
 import SearchingPage from './searching';
 
 export default function SearchPage() {
@@ -71,7 +71,7 @@ export default function SearchPage() {
         />
       )}
 
-      <section className="min-h-0 min-w-0 flex-1 pt-3">
+      <section className="min-h-0 min-w-0 flex-1 pt-2.5">
         <PageFrame>
           <header className="flex shrink-0 justify-end p-5">
             <SearchEmbedButton />

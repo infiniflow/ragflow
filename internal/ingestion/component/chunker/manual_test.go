@@ -482,8 +482,8 @@ func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
 			if got, want := c.param.TitleChunkerParam.Method, "group"; got != want {
 				t.Errorf("Method = %q, want %q (ManualChunker pins method=group)", got, want)
 			}
-			if got := c.param.TitleChunkerParam.ChunkTokenCap; got != 0 {
-				t.Errorf("ChunkTokenCap = %d, want 0 (stripped before Update)", got)
+			if got := c.param.TitleChunkerParam.ChunkTokenCap; got != 512 {
+				t.Errorf("ChunkTokenCap = %d, want 512 (stripped before Update)", got)
 			}
 			if got := c.param.TitleChunkerParam.IncludeHeadingContent; got != false {
 				t.Errorf("IncludeHeadingContent = %v, want false (stripped before Update)", got)

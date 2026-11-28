@@ -81,6 +81,98 @@ export enum DataSourceKey {
   SHAREPOINT = 'sharepoint',
 }
 
+export enum DataSourceCategory {
+  KnowledgeAndLearning = 'knowledgeAndLearning',
+  FileStorage = 'fileStorage',
+  ObjectStorage = 'objectStorage',
+  MessagingAndEmail = 'messagingAndEmail',
+  DevelopmentAndProjectManagement = 'developmentAndProjectManagement',
+  BusinessApplications = 'businessApplications',
+  DatabasesAndApis = 'databasesAndApis',
+  WebAndSocial = 'webAndSocial',
+  Other = 'other',
+}
+
+export const DataSourceCategoryGroups: Array<{
+  category: DataSourceCategory;
+  sources: DataSourceKey[];
+}> = [
+  {
+    category: DataSourceCategory.KnowledgeAndLearning,
+    sources: [
+      DataSourceKey.NOTION,
+      DataSourceKey.CONFLUENCE,
+      DataSourceKey.SHAREPOINT,
+      DataSourceKey.MOODLE,
+      DataSourceKey.ZOTERO,
+    ],
+  },
+  {
+    category: DataSourceCategory.FileStorage,
+    sources: [
+      DataSourceKey.GOOGLE_DRIVE,
+      DataSourceKey.ONEDRIVE,
+      DataSourceKey.DROPBOX,
+      DataSourceKey.BOX,
+      DataSourceKey.SEAFILE,
+      DataSourceKey.WEBDAV,
+    ],
+  },
+  {
+    category: DataSourceCategory.ObjectStorage,
+    sources: [
+      DataSourceKey.S3,
+      DataSourceKey.R2,
+      DataSourceKey.GOOGLE_CLOUD_STORAGE,
+      DataSourceKey.AZURE_BLOB,
+      DataSourceKey.OCI_STORAGE,
+    ],
+  },
+  {
+    category: DataSourceCategory.MessagingAndEmail,
+    sources: [
+      DataSourceKey.SLACK,
+      DataSourceKey.TEAMS,
+      DataSourceKey.DISCORD,
+      DataSourceKey.GMAIL,
+      DataSourceKey.OUTLOOK,
+      DataSourceKey.IMAP,
+    ],
+  },
+  {
+    category: DataSourceCategory.DevelopmentAndProjectManagement,
+    sources: [
+      DataSourceKey.GITHUB,
+      DataSourceKey.GITLAB,
+      DataSourceKey.BITBUCKET,
+      DataSourceKey.AZURE_DEVOPS,
+      DataSourceKey.JIRA,
+      DataSourceKey.ASANA,
+    ],
+  },
+  {
+    category: DataSourceCategory.BusinessApplications,
+    sources: [
+      DataSourceKey.SALESFORCE,
+      DataSourceKey.ZENDESK,
+      DataSourceKey.AIRTABLE,
+    ],
+  },
+  {
+    category: DataSourceCategory.DatabasesAndApis,
+    sources: [
+      DataSourceKey.MYSQL,
+      DataSourceKey.POSTGRESQL,
+      DataSourceKey.BIGQUERY,
+      DataSourceKey.REST_API,
+    ],
+  },
+  {
+    category: DataSourceCategory.WebAndSocial,
+    sources: [DataSourceKey.SITEMAP, DataSourceKey.RSS, DataSourceKey.XQUIK],
+  },
+];
+
 type DataSourceFeatureVisibility = {
   syncDeletedFiles?: boolean;
 };

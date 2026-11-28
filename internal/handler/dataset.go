@@ -632,6 +632,22 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 	common.RespondSuccess(c, result, "success")
 }
 
+// GetIngestionProgress handles GET
+// /api/v1/datasets/:dataset_id/ingestions/:log_id/progress.
+func (h *DatasetsHandler) GetIngestionProgress(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.RespondError(c, errorCode, errorMessage)
+		return
+	}
+	result, code, err := h.datasetsService.GetIngestionProgress(c.Request.Context(), c.Param("dataset_id"), c.Param("log_id"))
+	if err != nil {
+		common.RespondError(c, code, err.Error())
+		return
+	}
+	common.RespondSuccess(c, result, "success")
+}
+
 // ListIngestionMessages handles GET
 // /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
 func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
@@ -998,55 +1014,6 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	common.RespondSuccess(c, st, "success")
 }
 
-// datasetResourceChecker is the single-resource surface used by the
-// omitted-dataset fallback. It is injectable so every omitted dataset can be
-// verified in tests.
-type datasetResourceChecker interface {
-	FilterResources(ctx context.Context, refs []permission.ResourceRef, op permission.Operation) ([]permission.ResourceRef, error)
-	CheckResource(ctx context.Context, ref permission.ResourceRef, op permission.Operation) error
-}
-
-// checkOmittedDatasets checks every dataset the batch load did not answer for,
-// in request order, returning the first error. A single omitted dataset that
-// becomes readable must not mask the denial of a later one.
-func checkOmittedDatasets(ctx context.Context, checker datasetResourceChecker, refs []permission.ResourceRef, allowed map[string]bool) error {
-	for _, ref := range refs {
-		if allowed[ref.ID] {
-			continue
-		}
-		if err := checker.CheckResource(ctx, ref, permission.OperationRead); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// checkDatasetRefsReadable authorizes all refs using one shared batch load,
-// falling back to ordered single-resource checks on batch failure or for any
-// dataset the batch did not answer for.
-func checkDatasetRefsReadable(ctx context.Context, checker datasetResourceChecker, refs []permission.ResourceRef) error {
-	accessible, err := checker.FilterResources(ctx, refs, permission.OperationRead)
-	if err != nil {
-		// The batch loader resolves resources together, so one dataset's
-		// invalid state can mask the first request-order error. Fall back to
-		// ordered single-resource checks to preserve the previous error.
-		for _, ref := range refs {
-			if checkErr := checker.CheckResource(ctx, ref, permission.OperationRead); checkErr != nil {
-				return checkErr
-			}
-		}
-		return nil
-	}
-	if len(accessible) == len(refs) {
-		return nil
-	}
-	allowed := make(map[string]bool, len(accessible))
-	for _, ref := range accessible {
-		allowed[ref.ID] = true
-	}
-	return checkOmittedDatasets(ctx, checker, refs, allowed)
-}
-
 // checkDatasetsReadable verifies read access to every requested dataset with
 // one shared resource load instead of one authorization round-trip per dataset.
 func checkDatasetsReadable(ctx context.Context, db *gorm.DB, datasetIDs []string) error {
@@ -1065,7 +1032,7 @@ func checkDatasetsReadable(ctx context.Context, db *gorm.DB, datasetIDs []string
 	if len(refs) == 0 {
 		return nil
 	}
-	return checkDatasetRefsReadable(ctx, permission.NewDatabaseChecker(db), refs)
+	return permission.CheckResources(ctx, permission.NewDatabaseChecker(db), refs, permission.OperationRead)
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
@@ -1239,6 +1206,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
+	if !filterSearchResponse(c, &resp.Chunks, &resp.DocAggs) {
+		return
+	}
 	common.RespondSuccess(c, resp, "success")
 }
 
@@ -1309,6 +1279,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 
+	if !filterSearchResponse(c, &resp.Chunks, &resp.DocAggs) {
+		return
+	}
 	common.RespondSuccess(c, resp, "success")
 }
 

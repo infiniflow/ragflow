@@ -28,7 +28,11 @@ export const defaultMemoryModelForm = {
   memory_type: [],
   memory_size: 0,
 };
-export const MemoryModelForm = () => {
+export const MemoryModelForm = ({
+  readOnly = false,
+}: {
+  readOnly?: boolean;
+}) => {
   const { t } = useTranslation();
   const { data } = useFetchMemoryMessageList();
   const { data: configData } = useMemorySettingContext();
@@ -49,7 +53,7 @@ export const MemoryModelForm = () => {
             <EmbeddingSelect
               field={field}
               isEdit={false}
-              disabled={data?.messages?.total_count > 0}
+              disabled={readOnly || data?.messages?.total_count > 0}
               resourceTenantId={resourceTenantId}
               accessUserId={accessUserId}
             />
@@ -65,11 +69,12 @@ export const MemoryModelForm = () => {
           required: true,
           horizontal: true,
           type: FormFieldType.Custom,
-          disabled: data?.messages?.total_count > 0,
+          disabled: readOnly || data?.messages?.total_count > 0,
           render: (field) => (
             <ModelTreeSelect
               value={field.value}
               onChange={field.onChange}
+              disabled={readOnly || data?.messages?.total_count > 0}
               placeholder={t('memories.selectModel')}
               resourceTenantId={resourceTenantId}
               accessUserId={accessUserId}
@@ -86,7 +91,7 @@ export const MemoryModelForm = () => {
           horizontal: true,
           placeholder: t('memories.memoryTypePlaceholder'),
           tooltip: t('memories.memoryTypeTooltip'),
-          disabled: data?.messages?.total_count > 0,
+          disabled: readOnly || data?.messages?.total_count > 0,
           options: MemoryOptions(t),
           customValidate: (value) => {
             if (!value.includes(MemoryType.Raw) || !value.length) {
@@ -105,6 +110,7 @@ export const MemoryModelForm = () => {
           horizontal: true,
           tooltip: t('memory.config.memorySizeTooltip'),
           required: false,
+          disabled: readOnly,
         }}
       />
     </>

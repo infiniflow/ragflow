@@ -17,7 +17,6 @@
 package file
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -32,12 +31,6 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
-
-type failingObjectCheckStorage struct{ storage.Storage }
-
-func (f failingObjectCheckStorage) ObjectExists(context.Context, string, string) (bool, error) {
-	return false, errors.New("storage unavailable")
-}
 
 func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	db := setupFolderTestDB(t)
@@ -83,25 +76,6 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	}
 }
 
-func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
-	db := setupFolderTestDB(t)
-	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
-	if err != nil {
-		t.Fatal(err)
-	}
-	insertFolderTestFile(t, "file-1", folder.ID, "tracked")
-	factory := storage.GetStorageFactory()
-	previous := factory.GetStorage()
-	factory.SetStorage(failingObjectCheckStorage{storage.NewMemoryStorage()})
-	t.Cleanup(func() { factory.SetStorage(previous) })
-	if err := testFileService().deleteFolderRecursive(t.Context(), folder); err == nil {
-		t.Fatal("expected storage check error")
-	}
-	if _, err := testFileService().fileDAO.GetByID(t.Context(), db, "file-1"); err != nil {
-		t.Fatalf("file record deleted after storage check failed: %v", err)
-	}
-}
-
 func TestDeleteFolderContinuesWhenStorageIsMissing(t *testing.T) {
 	db := setupFolderTestDB(t)
 	service := testFileService()
@@ -135,8 +109,8 @@ func TestDeleteFilesAuthorizesEveryDescendantBeforeDeleting(t *testing.T) {
 	}
 
 	err := testFileService().DeleteFiles(fileTestContext(t, "user-1", "user-1"), []string{"folder"})
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("DeleteFiles error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("DeleteFiles error = %v, want resource not found for a cross-tenant descendant", err)
 	}
 	for _, id := range []string{"folder", "child-folder", "foreign-child"} {
 		if _, err := dao.NewFileDAO().GetByID(t.Context(), db, id); err != nil {
@@ -163,7 +137,7 @@ func TestFileService_CheckFileTreeAccessBatchesWideSubtrees(t *testing.T) {
 		t.Fatalf("seed wide file tree: %v", err)
 	}
 
-	root := &entity.File{ID: "tree-root", ParentID: "tree-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "/", Type: FileTypeFolder}
+	root := &entity.File{ID: "tree-root", ParentID: "tenant-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "tree", Type: FileTypeFolder}
 	if err := testFileService().checkFileTreeAccess(fileTestContext(t, "owner", "tenant-1"), root, permission.OperationDelete); err != nil {
 		t.Fatalf("check permissions for wide subtree: %v", err)
 	}

@@ -49,7 +49,7 @@ func TestRecordTerminalPipelineLogPreservesRunIdentity(t *testing.T) {
 	task := &entity.IngestionTask{
 		ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &pipelineLogID,
 	}
-	ingestor := newUnitIngestor("test", 1, nil)
+	ingestor := newUnitIngestor("test", 1)
 	ingestor.recordTerminalPipelineLog(t.Context(), task, string(entity.TaskStatusFail), "boom")
 
 	var run entity.PipelineOperationLog

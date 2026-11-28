@@ -32,6 +32,7 @@ export function WikiDetailContent({
     displayedContent,
     referenceDocuments,
     isDirty,
+    canEdit,
     isOpen,
     open,
     setIsOpen,
@@ -53,6 +54,7 @@ export function WikiDetailContent({
   const toolbar = (
     <WikiDetailToolbar
       isDirty={isDirty}
+      canEdit={canEdit}
       selectedArtifact={selectedArtifact}
       selectedVersion={selectedVersion}
       onCancelEdit={handleCancelEdit}
@@ -82,6 +84,7 @@ export function WikiDetailContent({
         displayedContent={displayedContent}
         referenceDocuments={referenceDocuments}
         isVersionView={isVersionView}
+        canEdit={canEdit}
         commitDetail={commitDetail}
         onContentChange={handleContentChange}
         onWikiLinkClick={handleMarkdownLinkClick}

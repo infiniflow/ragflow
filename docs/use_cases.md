@@ -65,7 +65,7 @@ Use the following checks with the example policies:
 | What document do I need for hotel reimbursement? | Identifies the itemized invoice requirement and cites its source. |
 | Are personal holiday costs reimbursable? | Does not invent a policy when the documents do not establish one. |
 
-Open the citations and verify the actual passages. A plausible answer is insufficient if the cited text does not support it. If an exception is missed, use Dataset retrieval testing to check whether both the general rule and the exception are retrieved.
+Open the citations and verify the actual passages. A plausible answer is insufficient if the cited text does not support it. If an exception is missed, use Dataset retrieval to check whether both the general rule and the exception are retrieved.
 
 **Completion check:** The assistant answers the documented policy questions, applies the sales exception, provides supporting citations, and does not invent an answer to the unsupported question.
 
@@ -256,7 +256,7 @@ Sharing a Dataset does not share the owner's Chat or conversations. Each member 
 1. As the member, upload a short service note containing a recognizable test fact, such as `Model A requires a five-second reset-button press`.
 2. Parse the note and wait for completion. Parsing uses the models configured for the Dataset or its pipeline in the owner's workspace.
 3. Ask a question about the new fact in the member's Chat and check the citation.
-4. As the owner, confirm that the same note and its parsed content are available in the shared Dataset. Use **Retrieval testing** to ask “How long should I press the reset button on Model A?” and check that the results contain the five-second instruction.
+4. As the owner, confirm that the same note and its parsed content are available in the shared Dataset. Use **Retrieval** to ask “How long should I press the reset button on Model A?” and check that the results contain the five-second instruction.
 
 If the member cannot see the Dataset, confirm invitation acceptance and the saved sharing scope. If parsing fails because a model is unavailable, the owner should check the Dataset's model configuration.
 

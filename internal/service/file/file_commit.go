@@ -19,6 +19,7 @@ package file
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -121,8 +122,16 @@ func normalizeCommitRenames(changes []entity.FileChange) ([]entity.FileChange, e
 	return normalized, nil
 }
 
-// CreateCommit creates a new commit for a workspace folder
-func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+// CreateCommit creates a new commit for a workspace folder through the
+// caller-supplied db handle. Pass dao.DB for a standalone write, or a
+// transaction handle to join a larger unit of work; a nil db falls back to
+// dao.DB. Both the read of the latest commit and
+// all writes use the same handle, so a caller's uncommitted rows are visible.
+// Object storage writes stay inside the transaction (best-effort on failure).
+func (s *FileCommitService) CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	if db == nil {
+		db = dao.DB
+	}
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return nil, errors.New("commit message is required")
@@ -136,7 +145,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	}
 	changes = normalizedChanges
 	// 1. Get the latest commit for this folder
-	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
+	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, db, folderID)
 
 	// 2. Build tree state from latest commit
 	treeState := make(map[string]interface{})
@@ -166,7 +175,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 
 	// All DB operations run inside a single transaction.
 	var treeStr string
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Authorize the named files against the rows this transaction is about
 		// to write, holding them so a concurrent move cannot relocate a file
 		// between the ancestry check and the update below.
@@ -349,12 +358,23 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 // concurrent move would otherwise be able to relocate a file (or one of its
 // ancestors) after the parent chain was checked and before the write.
 func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.DB, folderID string, changes []entity.FileChange, treeState map[string]interface{}) error {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
 	var folder entity.File
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", folderID).First(&folder).Error; err != nil {
 		return fmt.Errorf("resolve commit folder %s: %w", folderID, err)
 	}
 	if folder.Type != FileTypeFolder {
 		return fmt.Errorf("%w: %s is not a folder", permission.ErrResourceNotFound, folderID)
+	}
+	if folder.TenantID != tenantID || FileOwnerUserID(&folder, userID, tenantID) != userID {
+		return permission.ErrPermissionDenied
 	}
 
 	operations := make(map[string][]string, len(changes))
@@ -390,6 +410,9 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 			file, ok := existing[id]
 			if !ok {
 				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
+			}
+			if file.TenantID != tenantID || FileOwnerUserID(file, userID, tenantID) != userID {
+				return permission.ErrPermissionDenied
 			}
 			scoped[id] = file
 		} else {
@@ -514,6 +537,24 @@ type PageEditCommitInput struct {
 	// nil and the snapshot falls back to the body, exactly as the history stored
 	// pages before it carried whole documents.
 	Page map[string]any
+	// CreateTime pins the entry's timestamp instead of taking the database clock.
+	// A restore uses it to land its entries no later than the version row that
+	// closes the restore: a later stamp would sit outside the very version the
+	// entries describe, and restoring that version would then read the state they
+	// replaced.
+	CreateTime *int64
+	// PageChanged says the whole page moved even when the body did not. A page
+	// carries more than its text - title, summary, topic, links - and an edit that
+	// only moves those is still an edit: the engine holds a different page
+	// afterwards.
+	//
+	// Without it such an edit records no version, because the body diff is what the
+	// no-op test looks at and an unchanged body reads as "nothing happened". That
+	// stays right for a body-only caller, whose only evidence is the body; a caller
+	// that compared the whole page (a restore, which reads the engine row first)
+	// knows better and says so here. The entry then stores an empty diff: the text
+	// did not move, and a renderer showing nothing is the honest answer.
+	PageChanged bool
 }
 
 // pageSnapshot is the object a page commit stores: the whole page, plus the
@@ -553,8 +594,20 @@ const (
 // knowledgebase boundaries.
 //
 // This path is independent of the workspace File tree (it does not require a
-// File record or a tree_state snapshot).
-func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommitInput) (*entity.FileCommit, error) {
+// File record or a tree_state snapshot). The db handle is caller-supplied: pass
+// dao.DB for a standalone write, or nil to fall back to dao.DB. The parent
+// lookup and the database clock read use the same handle as the write. The page
+// snapshot is stored best-effort before the transaction, as before.
+//
+// A caller-owned transaction handle is accepted only when the transaction is
+// wrapped in WithPageCommitLock, which holds the per-page lock until the caller
+// commits or rolls back. Without that wrapper the lock would end before the
+// caller's commit and a concurrent edit could fork the parent chain, so it is
+// rejected. Standalone callers need no wrapper.
+func (s *FileCommitService) RecordPageEdit(ctx context.Context, db *gorm.DB, in PageEditCommitInput) (*entity.FileCommit, error) {
+	if db == nil {
+		db = dao.DB
+	}
 	// Parent chain: previous commit that touched the same page file key.
 	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
 
@@ -571,7 +624,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		operation = "delete"
 	}
 	diffText := unifiedDiff(in.OldContent, in.NewContent)
-	if diffText == "" && operation != "delete" {
+	if diffText == "" && operation != "delete" && !in.PageChanged {
 		return nil, nil
 	}
 	// A delete stores no body: the page is gone, and the snapshot it would write
@@ -599,20 +652,36 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		item.ContentAfterLocation = &contentAfterLocation
 	}
 
-	var commit *entity.FileCommit
 	// Serialize parent selection with insertion in process so two concurrent
 	// edits on the same page cannot both read the same parent and fork the
 	// chain. This is backend-agnostic (works identically on MySQL and SQLite)
 	// and cheaper than row-level DB locks.
-	mu := pageCommitLock(fileID)
-	mu.Lock()
-	defer mu.Unlock()
+	//
+	// A standalone db handle is committed inside this function, so taking the
+	// lock here covers the commit. A caller-owned transaction handle, however,
+	// commits after this function returns; taking the lock here would release
+	// it before that commit and let a concurrent edit fork the chain. Such
+	// callers must wrap the transaction in WithPageCommitLock so the lock spans
+	// the commit; the context token tells us the lock is already held (and must
+	// not be re-acquired, since the mutex is not reentrant).
+	if heldFileID, ok := ctx.Value(pageCommitLockKey{}).(string); ok {
+		if heldFileID != fileID {
+			return nil, fmt.Errorf("page commit lock held for %q, not %q", heldFileID, fileID)
+		}
+	} else if _, isTx := db.Statement.ConnPool.(gorm.TxCommitter); isTx {
+		return nil, fmt.Errorf("passing a transaction handle to RecordPageEdit requires WithPageCommitLock")
+	} else {
+		mu := pageCommitLock(fileID)
+		mu.Lock()
+		defer mu.Unlock()
+	}
 
 	item.Seq = uint(pageCommitSeq.Add(1))
 
+	var commit *entity.FileCommit
 	// Read the parent inside the lock, on the shared connection, so it always
 	// reflects the previously committed edit for this page.
-	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
+	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, db, fileID)
 	if perr != nil {
 		return nil, fmt.Errorf("failed to resolve page commit parent: %w", perr)
 	}
@@ -635,13 +704,21 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	// dataset_version.create_time, so a commit stamped a few milliseconds ahead of
 	// it by a fast local clock would fall outside the very version it was written
 	// for - and the page would read as missing at that version. The local clock
-	// stays as the fallback for a dialect the database clock cannot answer.
-	if stamp, err := entity.DBTimeMillis(dao.DB); err == nil {
-		commit.CreateTime = &stamp
-		item.CreateTime = &stamp
+	// stays as the fallback for a dialect the database clock cannot answer. A
+	// caller that already knows which version row its entry belongs to pins the
+	// stamp instead, so the entry cannot land after that row.
+	stamp := in.CreateTime
+	if stamp == nil {
+		if dbStamp, err := entity.DBTimeMillis(db); err == nil {
+			stamp = &dbStamp
+		}
+	}
+	if stamp != nil {
+		commit.CreateTime = stamp
+		item.CreateTime = stamp
 	}
 
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cerr := tx.Create(commit).Error; cerr != nil {
 			return fmt.Errorf("failed to create page commit: %w", cerr)
 		}
@@ -731,6 +808,27 @@ func pageCommitLock(fileID string) *sync.Mutex {
 	return v.(*sync.Mutex)
 }
 
+// pageCommitLockKey is the context key carrying the fileID whose page lock the
+// caller already holds. It lets RecordPageEdit avoid re-locking a non-reentrant
+// mutex when invoked inside WithPageCommitLock.
+type pageCommitLockKey struct{}
+
+// WithPageCommitLock runs fn while holding the per-page serialization lock for
+// the page identified by datasetID/pageType/slug. Callers that pass a
+// transaction handle to RecordPageEdit MUST wrap the transaction with this
+// function: the lock is then held until fn returns, i.e. after the caller
+// commits or rolls back, so a concurrent edit cannot resolve the parent from
+// committed data while this transaction's parent write is still uncommitted.
+// Standalone callers need not use this wrapper — RecordPageEdit takes the lock
+// itself for them.
+func WithPageCommitLock(ctx context.Context, datasetID, pageType, slug string, fn func(context.Context) error) error {
+	fileID := wikiFileID(datasetID, pageType, slug)
+	mu := pageCommitLock(fileID)
+	mu.Lock()
+	defer mu.Unlock()
+	return fn(context.WithValue(ctx, pageCommitLockKey{}, fileID))
+}
+
 // ListPageCommits lists audit commits for a specific wiki/skill page and
 // returns them in the row shape the wiki version-history UI consumes
 // (Python list_page_commits parity), including author nicknames.
@@ -774,6 +872,13 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 		}
 	}
 
+	// The page's own chain numbers the edits a reader sees: the first one is v1,
+	// and a later page of the history keeps the absolute number instead of
+	// restarting at 1. Read here rather than stored, because the chain is what
+	// orders the edits - a commit row only knows its clock.
+	numbered, _ := s.PageCommitPositions(ctx, datasetID, []PageRef{{PageType: pageType, Slug: slug}})
+	positions := numbered[WikiPageKey(pageType, slug)]
+
 	rows := make([]*entity.WikiPageCommit, 0, len(commits))
 	for _, c := range commits {
 		row := &entity.WikiPageCommit{
@@ -782,6 +887,9 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 			CreateTime:   c.CreateTime,
 			CreateDate:   c.CreateDate,
 			UserNickname: nicknames[c.AuthorID],
+		}
+		if position, ok := positions[c.ID]; ok {
+			row.Version = &position
 		}
 		if c.Title != nil {
 			row.Title = *c.Title
@@ -792,6 +900,174 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 		rows = append(rows, row)
 	}
 	return rows, total, nil
+}
+
+// PageRef names one wiki page: its type and bare slug.
+type PageRef struct {
+	PageType string
+	Slug     string
+}
+
+// PageChainEntry is one commit in a page's own chain, oldest first.
+type PageChainEntry struct {
+	CommitID string
+	// CreateTime is the commit's stamp; nil for a row the column predates.
+	CreateTime *int64
+	Operation  string
+}
+
+// PageChains reads the commit chain of every page named, oldest first, keyed by
+// WikiPageKey. One query covers all of them, so a version or a restore that names
+// hundreds of pages costs what one page costs.
+//
+// The error belongs to the batch: a partial answer would number some pages and
+// leave others unnumbered for no visible reason.
+func (s *FileCommitService) PageChains(ctx context.Context, datasetID string, pages []PageRef) (map[string][]PageChainEntry, error) {
+	if datasetID == "" || len(pages) == 0 || dao.DB == nil {
+		return nil, nil
+	}
+	fileIDs := make([]string, 0, len(pages))
+	pageKeys := make(map[string]string, len(pages))
+	for _, page := range pages {
+		if page.PageType == "" || page.Slug == "" {
+			continue
+		}
+		fileID := wikiFileID(datasetID, page.PageType, page.Slug)
+		if _, seen := pageKeys[fileID]; seen {
+			continue
+		}
+		pageKeys[fileID] = WikiPageKey(page.PageType, page.Slug)
+		fileIDs = append(fileIDs, fileID)
+	}
+	if len(fileIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.commitDAO.PageCommitRows(ctx, dao.DB, datasetID, fileIDs)
+	if err != nil {
+		return nil, err
+	}
+	chains := make(map[string][]PageChainEntry, len(fileIDs))
+	for _, row := range rows {
+		key, ok := pageKeys[row.FileID]
+		if !ok || row.CommitID == "" {
+			continue
+		}
+		entry := PageChainEntry{CommitID: row.CommitID, Operation: row.Operation.String}
+		if row.CreateTime.Valid {
+			at := row.CreateTime.Int64
+			entry.CreateTime = &at
+		}
+		chains[key] = append(chains[key], entry)
+	}
+	return chains, nil
+}
+
+// ChainPositions numbers a page's chain: its first edit is v1. A commit that
+// touched the page twice repeats in the chain and is counted once.
+func ChainPositions(chain []PageChainEntry) map[string]int {
+	positions := make(map[string]int, len(chain))
+	position := 0
+	for _, entry := range chain {
+		if entry.CommitID == "" {
+			continue
+		}
+		if _, seen := positions[entry.CommitID]; seen {
+			continue
+		}
+		position++
+		positions[entry.CommitID] = position
+	}
+	return positions
+}
+
+// PageCommitPositions numbers several pages' chains in one query, keyed by
+// WikiPageKey and then by commit id. Each page numbers its edits from v1.
+func (s *FileCommitService) PageCommitPositions(ctx context.Context, datasetID string, pages []PageRef) (map[string]map[string]int, error) {
+	chains, err := s.PageChains(ctx, datasetID, pages)
+	if err != nil {
+		return nil, err
+	}
+	positions := make(map[string]map[string]int, len(chains))
+	for key, chain := range chains {
+		positions[key] = ChainPositions(chain)
+	}
+	return positions, nil
+}
+
+// WikiPageKey is how one page is keyed across the history: the page type and the
+// bare slug. The key is built rather than read because the two are stored apart -
+// the page type in page_type_kwd beside a bare slug_kwd, or both joined as
+// "page_type/slug" inside slug_kwd - and a key that does not match what
+// PageContentsUntil reports would silently prune every page away.
+func WikiPageKey(pageType, slug string) string {
+	if pageType == "" {
+		return strings.TrimPrefix(slug, "/")
+	}
+	return pageType + "/" + strings.TrimPrefix(slug, pageType+"/")
+}
+
+// PageSlugsChangedSince names the pages whose commit chain moved at or after the
+// given time, keyed by WikiPageKey. A restore uses it to leave the pages that
+// cannot differ from the state it is putting back alone: only a page whose history
+// moved past the anchor holds something the anchor does not describe.
+//
+// A row written before the page columns existed names its page only through the
+// file key, and splitWikiPageFileID is what reads that shape back - the same
+// helper PageContentsUntil uses, so a page is named the same way on both sides and
+// the key a restore compares against matches. Skipping those rows would report the
+// page as unmoved, and the restore would leave the edit in place.
+func (s *FileCommitService) PageSlugsChangedSince(ctx context.Context, datasetID string, sinceMillis int64) (map[string]struct{}, error) {
+	if datasetID == "" {
+		return nil, nil
+	}
+	var rows []struct {
+		FileID      string
+		SlugKwd     sql.NullString
+		PageTypeKwd sql.NullString
+	}
+	if err := dao.DB.WithContext(ctx).
+		Table("file_commit_item AS item").
+		Select("DISTINCT item.file_id, item.slug_kwd, item.page_type_kwd").
+		Joins("JOIN file_commit AS commit_row ON commit_row.id = item.commit_id").
+		Where("commit_row.folder_id = ? AND commit_row.create_time IS NOT NULL AND commit_row.create_time >= ?", datasetID, sinceMillis).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	changed := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		pageType, slug, ok := splitWikiPageFileID(datasetID, wikiPageCommitRow{
+			FileID:      row.FileID,
+			PageTypeKwd: row.PageTypeKwd,
+			SlugKwd:     row.SlugKwd,
+		})
+		if !ok {
+			continue
+		}
+		changed[WikiPageKey(pageType, slug)] = struct{}{}
+	}
+	return changed, nil
+}
+
+// PageCommitAt names the commit a page's chain stood at atMillis: the newest entry
+// at or before the moment, for a caller that has the moment but not the commit.
+// A deletion there means the page did not exist then, so nothing is named; a row
+// with no clock cannot be placed and is passed over.
+func PageCommitAt(chain []PageChainEntry, atMillis int64) (string, bool) {
+	if atMillis <= 0 {
+		return "", false
+	}
+	for i := len(chain) - 1; i >= 0; i-- {
+		entry := chain[i]
+		if entry.CreateTime == nil || *entry.CreateTime > atMillis {
+			continue
+		}
+		// The newest entry at or before the anchor decides, whatever it says.
+		if entry.Operation == "delete" || entry.CommitID == "" {
+			return "", false
+		}
+		return entry.CommitID, true
+	}
+	return "", false
 }
 
 // unifiedDiff produces a standard unified diff that can be parsed by the

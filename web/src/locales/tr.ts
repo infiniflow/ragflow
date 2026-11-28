@@ -576,12 +576,12 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       chunkMethodTab: 'Parçalama yöntemi',
       testResults: 'Sonuçlar',
       testSetting: 'Ayar',
-      retrievalTesting: 'Alım testi',
+      retrievalTesting: 'Alım',
       retrievalTestingDescription:
-        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
+        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için alım yapın.",
       Parse: 'Ayrıştır',
       dataset: 'Dataset',
-      testing: 'Alım testi',
+      testing: 'Alım',
       files: 'dosyalar',
       configuration: 'Yapılandırma',
       nextConfiguration: 'Dataset yapılandırması',
@@ -614,7 +614,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       noTestResultsForNotRuned:
         'Henüz test çalıştırılmadı. Sonuçlar burada görünecek.',
       testingDescription:
-        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için bir alım testi yapın.",
+        "RAGFlow'nun LLM için hedeflenen içeriği alıp alamadığını kontrol etmek için alım yapın.",
       similarityThreshold: 'Benzerlik eşiği',
       similarityThresholdTip:
         'RAGFlow, getirme sırasında ağırlıklı anahtar kelime benzerliği ile ağırlıklı vektör kosinüs benzerliğinin bir kombinasyonunu veya bir yeniden sıralayıcı model seçildiğinde ağırlıklı anahtar kelime benzerliği ile ağırlıklı yeniden sıralama puanının bir kombinasyonunu kullanır. Bu parametre, kullanıcı sorgusu ile parçalar arasındaki benzerlik eşiğini belirler. Benzerlik puanı bu eşiğin altında olan parçalar sonuçlardan çıkarılır. Varsayılan eşik 20 olarak ayarlanmıştır. Bu, yalnızca hibrit benzerlik puanı 20 veya daha yüksek olan parçaların getirileceği anlamına gelir. Vektör benzerliği ağırlığı 0 olarak ayarlanırsa bu eşik uygulanmaz.',
@@ -2518,7 +2518,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         rerank: 'Yeniden sıralama',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
         decision: 'Karar',
@@ -3704,7 +3704,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       mergePath: 'Yolu birleştir',
       mergePathTip:
         'Etkinleştirildiğinde, bir değişkenden hemen sonra gelen nokta soneki {node@result.name} gibi bir yol sorgusuyla birleştirilir.',
-      historyVersion: 'Sürüm geçmişi',
+      historyVersion: 'Sürümler',
       version: {
         created: 'Oluşturuldu',
         details: 'Sürüm ayrıntıları',
@@ -3948,7 +3948,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       qAChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       tableChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       pageChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
-      extractor: 'Dönüştürücü',
+      extractor: 'Çıkarıcı',
       extractorDescription:
         'Belge parçalarından yapılandırılmış içgörüler çıkarmak için LLM kullanır.',
       compiler: 'Derleyici',

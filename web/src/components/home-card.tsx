@@ -126,9 +126,9 @@ export function HomeCard({
                       </div>
                     )}
                   </section>
-                ) : (
+                ) : data.update_time ? (
                   <Time time={data.update_time}></Time>
-                )}
+                ) : null}
                 {sharedBadge}
               </div>
             </section>

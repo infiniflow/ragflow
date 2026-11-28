@@ -115,13 +115,10 @@ func Init(cfg *PoolConfig) error {
 		cfg = &PoolConfig{}
 	}
 
-	// Set default values
+	// Set default values. ResourceDir() resolves RAGFLOW_DICT_PATH first, then the
+	// tree a packaged build ships next to (or inside) the binary.
 	if cfg.DictPath == "" {
-		if env := common.GetEnv(common.EnvRAGFlowDictPath); env != "" {
-			cfg.DictPath = env
-		} else {
-			cfg.DictPath = "/usr/share/infinity/resource"
-		}
+		cfg.DictPath = common.ResourceDir()
 	}
 	if cfg.MinSize <= 0 {
 		cfg.MinSize = runtime.NumCPU() * 2

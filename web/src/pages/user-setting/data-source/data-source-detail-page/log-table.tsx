@@ -16,7 +16,6 @@
 
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -31,10 +30,11 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
 import { useLogListDataSource } from '../hooks';
 import { getDataSourceLogsTableColumns } from '../log-columns';
 
@@ -43,6 +43,7 @@ export const DataSourceLogsTable = ({
 }: {
   autoRefresh: boolean;
 }) => {
+  const { t } = useTranslation();
   const { data, pagination, setPagination } = useLogListDataSource(autoRefresh);
   const { navigateToDataset } = useNavigatePage();
   const [now, setNow] = useState(() => Date.now());
@@ -87,63 +88,61 @@ export const DataSourceLogsTable = ({
   });
 
   return (
-    <div className="w-full">
-      <Table className="table-fixed">
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  className={header.column.columnDef.meta?.headerClassName}
+    <PaginatedTableLayout
+      tableClassName="table-fixed"
+      pagination={
+        <RAGFlowPagination
+          {...pick(pagination, 'current', 'pageSize')}
+          total={pagination.total}
+          onChange={(page, pageSize) => {
+            setPagination({ page, pageSize });
+          }}
+        />
+      }
+    >
+      <TableHeader>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <TableRow key={headerGroup.id}>
+            {headerGroup.headers.map((header) => (
+              <TableHead
+                key={header.id}
+                className={header.column.columnDef.meta?.headerClassName}
+              >
+                {flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                )}
+              </TableHead>
+            ))}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody className="relative min-w-[1280px] overflow-auto">
+        {table.getRowModel().rows?.length ? (
+          table.getRowModel().rows.map((row) => (
+            <TableRow
+              key={row.id}
+              data-state={row.getIsSelected() && 'selected'}
+              className="group"
+            >
+              {row.getVisibleCells().map((cell) => (
+                <TableCell
+                  key={cell.id}
+                  className={cell.column.columnDef.meta?.cellClassName}
                 >
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </TableHead>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
               ))}
             </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody className="relative min-w-[1280px] overflow-auto">
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() && 'selected'}
-                className="group"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cell.column.columnDef.meta?.cellClassName}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                {t('common.noData')}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-      <div className="flex items-center justify-end mt-4">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...pick(pagination, 'current', 'pageSize')}
-            total={pagination.total}
-            onChange={(page, pageSize) => {
-              setPagination({ page, pageSize });
-            }}
-          ></RAGFlowPagination>
-        </div>
-      </div>
-    </div>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={columns.length} className="h-24 text-center">
+              {t('common.noData')}
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </PaginatedTableLayout>
   );
 };

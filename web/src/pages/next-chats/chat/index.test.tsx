@@ -75,6 +75,9 @@ jest.mock('@/hooks/use-chat-request', () => ({
   useFetchChat: () => ({ data: { name: 'Chat app', icon: '' } }),
   useRemoveSessions: () => ({ removeSessions: mockRemoveSessions }),
 }));
+jest.mock('@/hooks/use-user-setting-request', () => ({
+  useFetchUserInfo: () => ({ data: { id: 'user-1' } }),
+}));
 jest.mock('../hooks/use-click-card', () => ({
   useHandleClickConversationCard: () => ({
     handleConversationCardClick: mockHandleConversationCardClick,
@@ -235,11 +238,17 @@ describe('Chat layout navigation', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('uses the existing Embed into webpage dialog entry', () => {
+  it('uses the existing Embed into webpage dialog entry inside the page frame', () => {
     renderChat();
 
+    const embedButton = screen.getByTestId('chat-detail-embed-open');
+    const pageFrame = embedButton.closest('article');
+    expect(pageFrame).not.toBeNull();
+    expect(pageFrame).toContainElement(
+      screen.getByTestId('chat-detail-content-frame'),
+    );
     expect(screen.getByText('common.embedIntoSite')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('chat-detail-embed-open'));
+    fireEvent.click(embedButton);
 
     expect(mockShowEmbedModal).toHaveBeenCalledTimes(1);
   });

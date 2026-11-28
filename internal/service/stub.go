@@ -22,16 +22,65 @@ import (
 	"context"
 	"fmt"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	serverconfig "ragflow/internal/server/config"
 
 	"gorm.io/gorm"
 )
 
+func checkAgentSessionDeleteAccess(ctx context.Context, agentID string) (string, bool, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   agentID,
+	}, permission.OperationUse); err != nil {
+		return "", false, err
+	}
+	return permission.UserIDFromContext(ctx), true, nil
+}
+
+func checkAgentDeleteAccess(ctx context.Context, canvasID string) error {
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   canvasID,
+	}, permission.OperationDelete)
+}
+
+// CheckDocumentWrite checks whether the caller can write the document.
+func CheckDocumentWrite(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	if datasetOperation != "" {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, datasetOperation); err != nil {
+			return err
+		}
+	}
+	if documentOperation == "" {
+		return nil
+	}
+	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: documentID}, documentOperation)
+}
+
+// CheckDocumentManage preserves the community permission checks.
+func CheckDocumentManage(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	if datasetOperation != "" {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, datasetOperation); err != nil {
+			return err
+		}
+	}
+	if documentOperation == "" {
+		return nil
+	}
+	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: documentID}, documentOperation)
+}
+
 // configExtras is empty in the community edition.
 type configExtras struct{}
+
+func ingestionErrorCode(error) string { return "" }
 
 // loadConfigExtras returns no additional settings in the community edition.
 func loadConfigExtras(context.Context) (configExtras, error) { return configExtras{}, nil }
@@ -48,6 +97,12 @@ func (h *AdminClient) InitHTTPClientEE() error { return nil }
 // enterprise feature, so every gp- model reference fails resolution.
 func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.ModelType) (*entity.TenantModel, error) {
 	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
+}
+
+// modelGroupDisplayName is unsupported in the community edition: model groups
+// are an enterprise feature, so a gp- reference has no group name to resolve.
+func modelGroupDisplayName(_ context.Context, _, _ string) (string, error) {
+	return "", fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
 }
 
 func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelProvider, *entity.TenantModelInstance, []*entity.TenantModel) error {
@@ -159,4 +214,79 @@ func ResolveLoginTenantID(_ context.Context, _ *entity.User) (string, error) {
 // does not otherwise change community behavior.
 func defaultTierResolver(_ context.Context, _ string) (common.Tier, error) {
 	return common.TierDefault, nil
+}
+
+func logChatCompletion(_ context.Context, _ *entity.Chat, _ []map[string]any, _ bool, in <-chan AsyncChatResult) <-chan AsyncChatResult {
+	return in
+}
+
+func prepareAgentOutput(ctx context.Context) (context.Context, error) { return ctx, ctx.Err() }
+
+func filterAgentOutput(_ context.Context, answer, thinking string, reference map[string]any) (string, string, map[string]any) {
+	return answer, thinking, reference
+}
+
+func (*ChatPipelineService) filterChatOutput(_ context.Context, _ *entity.Chat, _ bool, input <-chan AsyncChatResult) <-chan AsyncChatResult {
+	return input
+}
+
+func filterAskOutput(_ context.Context, input <-chan AskDelta) <-chan AskDelta { return input }
+
+func logAgentCompletion(_ context.Context, _, _ string, _ any, in <-chan canvas.RunEvent) <-chan canvas.RunEvent {
+	return in
+}
+
+func withAgentEventLog(ctx context.Context, _, _, _, _ string, _ map[string]any) context.Context {
+	return ctx
+}
+
+// ── mode 8 (Codex) ───────────────────────────────────────────────────────────
+// The community edition ships no mode 8 engine: internal/codexagent, the MCP
+// bridge wiring and the Codex pipeline live in the *_ee.go files. These stubs
+// keep the shared dispatch compiling, and every mode-8 request degrades to the
+// regular pipeline because codexConfigured always reports false.
+
+// ── mode 8 (Codex) ───────────────────────────────────────────────────────────
+// The community edition ships no mode 8 engine: internal/codexagent, the MCP
+// bridge wiring and the Codex pipeline live in the *_ee.go files. These stubs
+// keep the shared dispatch compiling, and every mode-8 request degrades to the
+// regular pipeline because codexConfigured always reports false.
+
+// SetCodexConfig ignores the mode 8 configuration in the community edition.
+func SetCodexConfig(cfg *serverconfig.CodexConfig) {}
+
+// InstallCodexKVStore is a no-op in the community edition.
+func InstallCodexKVStore() {}
+
+// InstallCodexWebSearchResolver is a no-op in the community edition.
+func InstallCodexWebSearchResolver() {}
+
+// codexConfigured reports whether mode 8 can run. The community edition has no
+// Codex engine, so it is always false and the turn falls back to the pipeline.
+func codexConfigured() bool { return false }
+
+// cleanupCodexThread drops a session's Codex thread mapping. The community
+// edition never creates one, so this is a no-op.
+func cleanupCodexThread(ctx context.Context, sessionID string) {}
+
+// codexResponsesCapable reports whether the dialog model speaks the Responses
+// API. Unused in the community edition (mode 8 is never selected), but declared
+// so the shared dispatch compiles.
+func (s *ChatPipelineService) codexResponsesCapable(ctx context.Context, userID string, chat *entity.Chat) bool {
+	return false
+}
+
+// codexAgent runs one mode 8 turn. The community edition never reaches it:
+// codexConfigured() is false, so the dispatcher keeps the regular pipeline.
+func (s *ChatPipelineService) codexAgent(
+	ctx context.Context,
+	userID string,
+	chat *entity.Chat,
+	messages []map[string]interface{},
+	stream bool,
+	kwargs map[string]interface{},
+	useWebSearch bool,
+	quote bool,
+) (<-chan AsyncChatResult, error) {
+	return nil, fmt.Errorf("codex (mode 8) is not available in the community edition")
 }

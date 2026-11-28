@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -240,5 +241,34 @@ func TestOpenDataLoaderItems_TableCellsFallbackSparseRows(t *testing.T) {
 	}
 	if got, _ := json.Marshal(items[0]); !strings.Contains(string(got), "z") {
 		t.Fatalf("item = %s, want sparse row text", string(got))
+	}
+}
+
+// A table that carries markup is built from it alone; its cells are not read.
+// A cells-only table is read by the rows that exist, so one far-off row index
+// does not become a scan of that length. Both cases would otherwise hold an
+// ingestion worker for as long as the scan takes.
+func TestOpenDataLoaderItems_FarOffCellRowIsNotScanned(t *testing.T) {
+	farOff := []any{
+		map[string]any{"row": 0.0, "content": "from cells"},
+		map[string]any{"row": 1e12, "content": "far"},
+	}
+	done := make(chan []map[string]any, 2)
+	go func() {
+		items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "html": "<table><tr><td>from markup</td></tr></table>", "cells": farOff}, nil)
+		done <- items
+		items, _ = openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "cells": farOff}, nil)
+		done <- items
+	}()
+	for _, want := range [][][]string{{{"from markup"}}, {{"from cells"}, {"far"}}} {
+		select {
+		case items := <-done:
+			td, _ := items[0]["table"].(*entity.TableData)
+			if len(items) != 1 || td == nil || !reflect.DeepEqual(td.CellTexts(), want) {
+				t.Fatalf("items = %v, want table rows %v", items, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the table was not built within 5s: the row index is being scanned")
+		}
 	}
 }

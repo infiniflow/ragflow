@@ -194,9 +194,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if err != nil {
 		return nil, err
 	}
-	if len(datasets.tenantIDs) != 1 {
-		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
-	}
+	// The datasets may span tenants: a team-shared dataset stays in the sharing
+	// tenant's index while the conversation reading it lives in the caller's.
+	// Both legs below are already per-dataset (nlp searches one index per tenant,
+	// and the embedding-model validation requires a single base model), so the
+	// scope is the full tenant set, not one tenant.
 	// Dataset authorization must use the caller identity established by the
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
 	userID := permission.UserIDFromContext(ctx)
@@ -229,13 +231,13 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		_, permissionErr := permissionresponse.Normalize(err)
 		return nil, permissionErr
 	}
+	refs := make([]permission.ResourceRef, 0, len(datasets.kbIDs))
 	for _, datasetID := range datasets.kbIDs {
-		if err := checker.CheckResource(ctx, permission.ResourceRef{
-			Kind: permission.ResourceKindDataset, ID: datasetID,
-		}, permission.OperationUse); err != nil {
-			_, permissionErr := permissionresponse.Normalize(err)
-			return nil, permissionErr
-		}
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID})
+	}
+	if err := permission.CheckResources(ctx, checker, refs, permission.OperationUse); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
 	}
 	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
@@ -291,9 +293,64 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	nlpReq.RerankModel = rerankModel
 	nlpReq.RankFeature = &rankFeature
 
-	res, err := a.svc.Retrieval(ctx, nlpReq)
-	if err != nil {
-		return nil, err
+	// Group failover: when exactly one of the embedding/rerank references is
+	// a gp- group, an invocation failure flips that group's current member
+	// inactive and the retrieval retries on the next member. The pipeline up
+	// to this point is read-only, so the engine query replays safely. With
+	// both behind groups the failing side cannot be attributed to one group,
+	// so failover covers the single-group case — the same contract as
+	// DatasetService.SearchDatasets.
+	embdRef := ""
+	if kb := datasets.kbs[0]; kb != nil {
+		embdRef = kb.EmbdID
+		if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
+			embdRef = *kb.TenantEmbdID
+		}
+	}
+	failoverType, failoverRef := nlp.RetrievalFailoverTarget(embdRef, req.RerankID)
+
+	var res *nlp.RetrievalResult
+	if failoverType == 0 {
+		res, err = a.svc.Retrieval(ctx, nlpReq)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		type retrievalModels struct {
+			embedding *modelModule.EmbeddingModel
+			rerank    *modelModule.RerankModel
+		}
+		resolveModels := func(ctx context.Context) (*retrievalModels, error) {
+			embeddingModel, rerr := a.resolveEmbeddingModel(ctx, datasets.kbs[0])
+			if rerr != nil {
+				return nil, rerr
+			}
+			rerankModel, rerr := a.resolveRerankModel(ctx, req, datasets.kbs[0].TenantID)
+			if rerr != nil {
+				return nil, rerr
+			}
+			return &retrievalModels{embedding: embeddingModel, rerank: rerankModel}, nil
+		}
+		// Only flip when the failing side is the model behind the group:
+		// document engine outages and request errors say nothing about the
+		// member's health, so they must not deactivate a healthy member.
+		failoverCanRetry := nlp.RetrievalFailoverCanRetry(failoverType)
+		retErr := dao.InvokeWithGroupFailover(ctx, db, datasets.kbs[0].TenantID, failoverType, failoverRef,
+			resolveModels, nil,
+			func(ctx context.Context, resolved *retrievalModels) error {
+				attempt := *nlpReq
+				attempt.EmbeddingModel = resolved.embedding
+				attempt.RerankModel = resolved.rerank
+				r, invErr := a.svc.Retrieval(ctx, &attempt)
+				if invErr != nil {
+					return invErr
+				}
+				res = r
+				return nil
+			}, failoverCanRetry)
+		if retErr != nil {
+			return nil, retErr
+		}
 	}
 	if res == nil || len(res.Chunks) == 0 {
 		return []RetrievalChunk{}, nil

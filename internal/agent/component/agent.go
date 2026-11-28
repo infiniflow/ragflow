@@ -36,8 +36,10 @@ import (
 	"maps"
 	"ragflow/internal/dao"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -53,6 +55,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/modelcontext"
 
 	"go.uber.org/zap"
 )
@@ -138,6 +141,11 @@ type AgentParam struct {
 	// so downstream Message templates like {Agent:X@structured} resolve.
 	OutputStructure map[string]any
 	visualFiles     []string // image URIs resolved from VisualFilesVar for this invocation
+	// modelGroup carries gp- failover wiring for this invocation: the
+	// original reference, the tenant, and the pre-resolution credentials.
+	// nil when the model is not a gp- group reference.
+	modelGroup    *agentModelGroup
+	contextLength int
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -209,19 +217,41 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// the final model response, so max_rounds=1 can complete a tool call and
 	// produce its answer instead of failing with "exceeds max steps".
 	maxSteps := p.MaxRounds*2 + 1
+	contextLength := chat.EffectiveContextLength(p.contextLength)
+	outputTokens := min(1024, contextLength/4)
+	if p.MaxTokens != nil && *p.MaxTokens > 0 {
+		outputTokens = *p.MaxTokens
+	}
 	if hasCodeExecTool(p.Tools) {
 		// CodeExec user-code failures return a non-zero tool result, allowing
 		// one repair attempt without changing other agents' step budget.
 		maxSteps += 2
 	}
 
+	var toolCallingModel model.ToolCallingChatModel = &roundLimitedChatModel{
+		ToolCallingChatModel: chatModel,
+		modelName:            p.ModelID,
+		remaining:            maxSteps / 2,
+		maxRetries:           p.MaxRetries,
+		initialDelay:         p.DelayAfterError,
+		contextLength:        contextLength,
+		outputTokens:         outputTokens,
+	}
+	if p.modelGroup != nil {
+		// gp- group reference: wrap the round limiter with failover so a
+		// retryably failing member is flipped inactive and the next active
+		// member is retried with a freshly resolved chat model. The wrapper
+		// sits outside the limiter so the per-member retry budget (and the
+		// round budget) stays intact per member.
+		toolCallingModel = newGroupFailoverChatModel(toolCallingModel, *p.modelGroup, func(ctx context.Context, driver, modelName, apiKey, baseURL string) (model.ToolCallingChatModel, error) {
+			member := p
+			member.ModelID, member.Driver, member.APIKey, member.BaseURL = modelName, driver, apiKey, baseURL
+			return buildAgentChatModel(ctx, member)
+		})
+	}
+
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: &roundLimitedChatModel{
-			ToolCallingChatModel: chatModel,
-			remaining:            maxSteps / 2,
-			maxRetries:           p.MaxRetries,
-			initialDelay:         p.DelayAfterError,
-		},
+		ToolCallingModel: toolCallingModel,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -303,9 +333,13 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 // The reserved final model step must answer rather than schedule more tools.
 type roundLimitedChatModel struct {
 	model.ToolCallingChatModel
-	remaining    int
-	maxRetries   int
-	initialDelay time.Duration
+	modelName        string
+	remaining        int
+	maxRetries       int
+	initialDelay     time.Duration
+	contextLength    int
+	outputTokens     int
+	toolSchemaTokens int
 }
 
 func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
@@ -313,12 +347,37 @@ func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolC
 	if err != nil {
 		return nil, err
 	}
+	schemaTokens, err := agentToolSchemaTokens(tools)
+	if err != nil {
+		return nil, err
+	}
 	return &roundLimitedChatModel{
 		ToolCallingChatModel: bound,
+		modelName:            m.modelName,
 		remaining:            m.remaining,
 		maxRetries:           m.maxRetries,
 		initialDelay:         m.initialDelay,
+		contextLength:        m.contextLength,
+		outputTokens:         m.outputTokens,
+		toolSchemaTokens:     schemaTokens,
 	}, nil
+}
+
+// withSwappedModel returns a copy carrying a new underlying member model
+// while preserving round accounting and retry configuration. Group failover
+// uses it to rebind a freshly resolved member without resetting the
+// tool-call budget the limiter has already spent.
+func (m *roundLimitedChatModel) withSwappedModel(inner model.ToolCallingChatModel, modelName string) *roundLimitedChatModel {
+	return &roundLimitedChatModel{
+		ToolCallingChatModel: inner,
+		modelName:            modelName,
+		remaining:            m.remaining,
+		maxRetries:           m.maxRetries,
+		initialDelay:         m.initialDelay,
+		contextLength:        m.contextLength,
+		outputTokens:         m.outputTokens,
+		toolSchemaTokens:     m.toolSchemaTokens,
+	}
 }
 
 func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
@@ -331,11 +390,16 @@ func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option
 
 func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	input = m.roundInput(input)
+	input, fitErr := m.fitAnySearchInput(input)
+	if fitErr != nil {
+		return nil, fitErr
+	}
 	opts = m.roundOptions(opts)
+	inner := m.modelForObservation(ctx)
 	var response *schema.Message
 	err := common.RetryWithBackoff(ctx, m.maxRetries, m.initialDelay, func() error {
 		var err error
-		response, err = m.ToolCallingChatModel.Generate(ctx, input, opts...)
+		response, err = inner.Generate(ctx, input, opts...)
 		return err
 	})
 	if err != nil {
@@ -346,8 +410,105 @@ func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Me
 
 func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	input = m.roundInput(input)
+	input, fitErr := m.fitAnySearchInput(input)
+	if fitErr != nil {
+		return nil, fitErr
+	}
 	opts = m.roundOptions(opts)
-	return retryChatModelStream(ctx, m.ToolCallingChatModel, input, opts, m.maxRetries, m.initialDelay)
+	return retryChatModelStream(ctx, m.modelForObservation(ctx), input, opts, m.maxRetries, m.initialDelay)
+}
+
+// modelForObservation preserves the original model path when no Agent sink is installed.
+func (m *roundLimitedChatModel) modelForObservation(ctx context.Context) model.ToolCallingChatModel {
+	if !runtime.HasAgentNodeObserver(ctx) {
+		return m.ToolCallingChatModel
+	}
+	return &observedAgentChatModel{ToolCallingChatModel: m.ToolCallingChatModel, modelName: m.modelName}
+}
+
+type observedAgentChatModel struct {
+	model.ToolCallingChatModel
+	modelName string
+	attempt   uint32
+}
+
+func (m *observedAgentChatModel) begin(ctx context.Context) (context.Context, func(any, error)) {
+	m.attempt++
+	return runtime.ObserveAgentNode(ctx, "model:"+m.modelName, m.modelName, "ModelCall", m.attempt, map[string]any{"model": m.modelName})
+}
+
+func (m *observedAgentChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (response *schema.Message, err error) {
+	ctx, finish := m.begin(ctx)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			finish(nil, fmt.Errorf("model panic: %v", recovered))
+			panic(recovered)
+		}
+		finish(agentChatModelOutput(response), err)
+	}()
+	return m.ToolCallingChatModel.Generate(ctx, input, opts...)
+}
+
+func (m *observedAgentChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	ctx, finish := m.begin(ctx)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			finish(nil, fmt.Errorf("model panic: %v", recovered))
+			panic(recovered)
+		}
+	}()
+	stream, err := m.ToolCallingChatModel.Stream(ctx, input, opts...)
+	if err != nil {
+		finish(nil, err)
+		return nil, err
+	}
+	var mu sync.Mutex
+	var chunks []any
+	var lastChunk any
+	truncated, completed := false, false
+	complete := func(err error) {
+		mu.Lock()
+		if completed {
+			mu.Unlock()
+			return
+		}
+		completed = true
+		output := map[string]any{"chunks": chunks, "last_chunk": lastChunk, "truncated": truncated}
+		mu.Unlock()
+		finish(output, err)
+	}
+	stopCancellation := context.AfterFunc(ctx, func() { complete(ctx.Err()) })
+	return schema.StreamReaderWithConvert(stream, func(message *schema.Message) (*schema.Message, error) {
+		if message != nil {
+			snapshot, cut := common.AgentEventSnapshot(agentChatModelOutput(message))
+			mu.Lock()
+			if !completed {
+				truncated = truncated || cut
+				lastChunk = snapshot
+				if len(chunks) < 64 {
+					chunks = append(chunks, snapshot)
+				} else {
+					truncated = true
+				}
+			}
+			mu.Unlock()
+		}
+		return message, nil
+	}, schema.WithOnEOF(func() (any, error) { stopCancellation(); complete(ctx.Err()); return nil, io.EOF }), schema.WithErrWrapper(func(err error) error { stopCancellation(); complete(err); return err })), nil
+}
+
+func agentChatModelOutput(message *schema.Message) any {
+	if message == nil {
+		return nil
+	}
+	output := map[string]any{"content": message.Content, "thinking": message.ReasoningContent, "tool_calls": extractToolCalls(message)}
+	if meta := message.ResponseMeta; meta != nil {
+		output["finish_reason"] = meta.FinishReason
+		if usage := meta.Usage; usage != nil {
+			output["usage"] = map[string]any{"prompt_tokens": usage.PromptTokens, "completion_tokens": usage.CompletionTokens, "total_tokens": usage.TotalTokens}
+		}
+	}
+	return output
 }
 
 // retryChatModelStream retries only before the first message reaches the
@@ -1164,6 +1325,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 
 	var err error
+	preDriver, preKey, preURL := p.Driver, p.APIKey, p.BaseURL
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, err
@@ -1186,6 +1348,21 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = resolved
 		}
 	}
+	tenantID := ""
+	if state != nil {
+		tenantID, _ = state.GetSysString("tenant_id")
+	}
+	if _, isGroup := common.ParseGroupModelRef(originalModelID); isGroup {
+		p.modelGroup = &agentModelGroup{
+			modelRef: originalModelID,
+			tenantID: tenantID,
+			db:       db,
+			driver:   preDriver,
+			apiKey:   preKey,
+			baseURL:  preURL,
+		}
+	}
+	p.contextLength = modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	p.visualFiles, err = resolveAgentVisualFiles(state, p.VisualFilesVar)
 	if err != nil {
 		return nil, fmt.Errorf("Agent: resolve visual_files_var: %w", err)
@@ -1342,7 +1519,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			content = cleaned
 		} else {
 			common.Warn("component: Agent: outputs.structured set but no parseable JSON matching schema",
-				zap.Strings("expected_keys", sortedMapKeys(structuredExpectedKeySet(p.OutputStructure))))
+				zap.Strings("expected_keys", slices.Sorted(maps.Keys(structuredExpectedKeySet(p.OutputStructure)))))
 		}
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
@@ -2076,15 +2253,6 @@ func jsonValueMatchesSchemaType(v any, typ string) bool {
 	default:
 		return true
 	}
-}
-
-func sortedMapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is

@@ -1,120 +1,60 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { lowerFirst } from 'lodash';
-import {
-  Box,
-  ChartPie,
-  Component,
-  MessageCircleCode,
-  PencilRuler,
-  Sparkle,
-} from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-export enum MenuItemKey {
-  Recommended = 'Recommended',
-  Agent = 'Agent',
-  CustomerSupport = 'Customer Support',
-  Marketing = 'Marketing',
-  ConsumerApp = 'Consumer App',
-  Other = 'Other',
-}
+import { TemplateMenuItemKey, TemplateMenuItems } from './constant';
 
 export function SideBar({
   change,
-  selected = MenuItemKey.Recommended,
+  selected = TemplateMenuItemKey.Recommended,
 }: {
-  change: (keyword: string) => void;
-  selected?: string;
+  change: (keyword: TemplateMenuItemKey) => void;
+  selected?: TemplateMenuItemKey;
 }) {
   const { t } = useTranslation();
 
-  const handleMenuClick = (key: string) => {
-    change(key);
-  };
-
-  const menuItems = useMemo(
-    () => [
-      {
-        // section: 'All Templates',
-        section: '',
-        items: [
-          {
-            icon: Sparkle,
-            label: t('flow.' + lowerFirst(MenuItemKey.Recommended)),
-            key: MenuItemKey.Recommended,
-          },
-          {
-            icon: Box,
-            label: t('flow.' + lowerFirst(MenuItemKey.Agent)),
-            key: MenuItemKey.Agent,
-          },
-          {
-            icon: MessageCircleCode,
-            label: t(
-              'flow.' +
-                lowerFirst(MenuItemKey.CustomerSupport).replace(' ', ''),
-            ),
-            key: MenuItemKey.CustomerSupport,
-          },
-          {
-            icon: ChartPie,
-            label: t('flow.' + lowerFirst(MenuItemKey.Marketing)),
-            key: MenuItemKey.Marketing,
-          },
-          {
-            icon: Component,
-            label: t(
-              'flow.' + lowerFirst(MenuItemKey.ConsumerApp.replace(' ', '')),
-            ),
-            key: MenuItemKey.ConsumerApp,
-          },
-          {
-            icon: PencilRuler,
-            label: t('flow.' + lowerFirst(MenuItemKey.Other)),
-            key: MenuItemKey.Other,
-          },
-        ],
-      },
-    ],
-    [t],
+  const handleMenuClick = useCallback(
+    (key: TemplateMenuItemKey) => () => {
+      change(key);
+    },
+    [change],
   );
 
   return (
-    <aside className="w-[303px] bg-text-title-invert border-r flex flex-col">
-      <div className="flex-1 overflow-auto">
-        {menuItems.map((section, idx) => (
-          <div key={idx}>
-            {section.section && (
-              <h2
-                className="p-6 text-sm font-semibold hover:bg-muted/50 cursor-pointer"
-                onClick={() => handleMenuClick('')}
-              >
-                {section.section}
-              </h2>
-            )}
-            {section.items.map((item, itemIdx) => {
-              const active = selected === item.key;
-              return (
+    <aside className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg-base">
+      <h2 className="hidden px-2 text-base font-medium text-text-primary md:block md:px-3">
+        {t('flow.createFromTemplate')}
+      </h2>
+      <nav className="mt-4 flex-1 overflow-auto py-1">
+        <ul className="flex flex-col items-center gap-2 md:items-stretch md:gap-5">
+          {TemplateMenuItems.map((item) => {
+            const active = selected === item.key;
+            const label = t(`flow.${item.labelKey}`);
+
+            return (
+              <li key={item.key} className="w-full md:w-auto">
                 <Button
-                  key={itemIdx}
-                  variant={active ? 'secondary' : 'ghost'}
+                  block
+                  variant="ghost"
+                  aria-label={label}
                   className={cn(
-                    'w-full justify-start gap-4 px-6 py-8 relative rounded-none',
+                    'h-10 text-base max-md:size-10 max-md:p-0 max-md:justify-center justify-start gap-2.5 px-2 md:px-3',
+                    active && 'bg-bg-card text-text-primary',
                   )}
-                  onClick={() => handleMenuClick(item.key)}
+                  onClick={handleMenuClick(item.key)}
                 >
-                  <item.icon className="w-6 h-6" />
-                  <span>{item.label}</span>
-                  {active && (
-                    <div className="absolute right-0 w-[5px] h-[66px] bg-primary rounded-l-xl shadow-[0_0_5.94px_#7561ff,0_0_11.88px_#7561ff,0_0_41.58px_#7561ff,0_0_83.16px_#7561ff,0_0_142.56px_#7561ff,0_0_249.48px_#7561ff]" />
-                  )}
+                  <span className="flex min-w-0 items-center gap-2.5 max-md:gap-0">
+                    <item.icon className="size-4 shrink-0" />
+                    <span className="hidden min-w-0 truncate md:inline">
+                      {label}
+                    </span>
+                  </span>
                 </Button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </aside>
   );
 }

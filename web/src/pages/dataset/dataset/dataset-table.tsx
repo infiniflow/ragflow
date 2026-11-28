@@ -25,12 +25,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
-import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { t } from 'i18next';
+import {
+  useFetchDocumentList,
+  useGetDocumentFilter,
+} from '@/hooks/use-document-request';
+import dayjs from 'dayjs';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
+import { ResourceMetadata } from '@/components/resource-metadata';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
+import { hasManagePermissionPermission } from '@/ee/utils/permission-util';
 import ProcessLogModal from '../process-log-modal';
 import {
   ChangeParserDialog,
@@ -39,7 +44,18 @@ import {
 import { useShowLog } from './hooks';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
+import { hasEditPermission } from '@/ee/utils/permission-util';
 import { useRenameDocument } from './use-rename-document';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
+import { formatBytes } from '@/utils/file-util';
+import { useTranslation } from 'react-i18next';
+
+function formatDatasetCreateTime(createTime?: number) {
+  if (!createTime) {
+    return '';
+  }
+  return dayjs(createTime).format('DD/MM/YYYY HH:mm:ss');
+}
 
 export type DatasetTableProps = Pick<
   ReturnType<typeof useFetchDocumentList>,
@@ -57,6 +73,9 @@ export function DatasetTable({
   setRowSelection,
   showManageMetadataModal,
 }: DatasetTableProps) {
+  const { t } = useTranslation();
+  const { knowledgeBase } = useKnowledgeBaseContext();
+  const { parsingCount, pendingCount } = useGetDocumentFilter();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -85,7 +104,8 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { showLog, logInfo, logVisible, hideLog, datasetId, logId } =
+    useShowLog(documents);
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
@@ -94,7 +114,6 @@ export function DatasetTable({
     showLog,
     setRowSelection,
   });
-
   const currentPagination = useMemo(() => {
     return {
       pageIndex: (pagination.current || 1) - 1,
@@ -111,6 +130,8 @@ export function DatasetTable({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: (row) =>
+      hasEditPermission(row.original.operator_permission ?? 0),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     getRowId: (row) => row.id, // Use document ID instead of row index
@@ -125,9 +146,30 @@ export function DatasetTable({
     rowCount: pagination.total ?? 0,
   });
 
+  const metadataItems = [
+    {
+      key: 'size',
+      content: formatBytes(knowledgeBase?.size ?? 0),
+    },
+    {
+      key: 'pending',
+      content: t('knowledgeDetails.filesPending', { count: pendingCount }),
+    },
+    {
+      key: 'parsing',
+      content: t('knowledgeDetails.filesParsing', { count: parsingCount }),
+    },
+  ];
+
   return (
     <>
-      <DatasetTableLayout
+      <PaginatedTableLayout
+        footerLeading={
+          <ResourceMetadata
+            createTime={formatDatasetCreateTime(knowledgeBase?.create_time)}
+            items={metadataItems}
+          />
+        }
         pagination={
           <RAGFlowPagination
             {...pick(pagination, 'current', 'pageSize')}
@@ -184,13 +226,18 @@ export function DatasetTable({
             </TableRow>
           )}
         </TableBody>
-      </DatasetTableLayout>
+      </PaginatedTableLayout>
       {changeParserVisible && (
         <ChangeParserDialog
           record={changeParserRecord}
           onOk={onChangeParserOk}
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
+          readOnly={
+            !hasManagePermissionPermission(
+              changeParserRecord.operator_permission ?? 0,
+            )
+          }
         />
       )}
 
@@ -218,6 +265,8 @@ export function DatasetTable({
           visible={logVisible}
           onCancel={() => hideLog()}
           logInfo={logInfo}
+          datasetId={datasetId}
+          logId={logId}
         />
       )}
     </>

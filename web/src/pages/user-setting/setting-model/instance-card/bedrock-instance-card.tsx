@@ -59,6 +59,7 @@ import {
   InstanceSavePayload,
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
+  canManageProviderInstance,
 } from './interface';
 import {
   applySavedCredentialEdits,
@@ -149,9 +150,10 @@ export const BedrockInstanceCard = forwardRef<
 
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
-      isDraft ? '' : providerName,
+      isDraft ? '' : instance.provider_id || providerName,
       isDraft ? '' : instance.id,
     );
+  const canManage = canManageProviderInstance(instance);
 
   const FormSchema = useMemo(
     () =>
@@ -517,7 +519,8 @@ export const BedrockInstanceCard = forwardRef<
     } else {
       await deleteProviderInstance({
         provider_name: providerName,
-        instances: [instance.instance_name],
+        provider_id: instance.provider_id,
+        instances: [instance.id],
       });
     }
   }, [
@@ -953,18 +956,22 @@ export const BedrockInstanceCard = forwardRef<
                   {draftName || instance.instance_name}
                 </span>
               </div>
-              <ConfirmDeleteDialog onOk={handleDelete}>
-                <Button
-                  variant="delete"
-                  size="icon-sm"
-                  aria-label={tSetting('deleteInstance')}
-                  data-testid="instance-delete"
-                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </ConfirmDeleteDialog>
-              <InstanceSaveButton onSave={handleSave} saving={saving} />
+              {canManage && (
+                <ConfirmDeleteDialog onOk={handleDelete}>
+                  <Button
+                    variant="delete"
+                    size="icon-sm"
+                    aria-label={tSetting('deleteInstance')}
+                    data-testid="instance-delete"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </ConfirmDeleteDialog>
+              )}
+              {canManage && (
+                <InstanceSaveButton onSave={handleSave} saving={saving} />
+              )}
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent
@@ -977,10 +984,10 @@ export const BedrockInstanceCard = forwardRef<
               {instanceDetails && (
                 <div className="pt-3">
                   <ModelsSection
-                    providerName={providerName}
+                    providerName={instance.provider_id || providerName}
                     instanceName={instance.instance_name || '__draft__'}
                     instance={{ ...instance, ...(instanceDetails ?? {}) }}
-                    hideActions={false}
+                    hideActions={!canManage}
                     hideIfEmpty={false}
                     instanceDetailsLoaded
                     getFormValues={getModelFormValues}

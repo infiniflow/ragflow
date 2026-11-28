@@ -72,7 +72,7 @@ func newFixturePostgresConnector(t *testing.T, config map[string]any, expect fun
 func TestPostgreSQLConnectorOpenSyncCustomQuery(t *testing.T) {
 	query := "SELECT * FROM products WHERE status = 'active'"
 	updatedAt := mustTime(t, "2026-01-02T03:04:05Z")
-	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active') AS ragflow_src ORDER BY ragflow_src.id ASC"
+	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active' ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 	connector := newFixturePostgresConnector(t, map[string]any{
 		"host":             "127.0.0.1",
 		"port":             "5432",
@@ -142,7 +142,7 @@ func TestPostgreSQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src " +
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src " +
 			"WHERE ragflow_src.updated_at >= '2026-01-01T00:00:00Z' AND ragflow_src.updated_at <= '2026-01-02T00:00:00Z' " +
 			"ORDER BY ragflow_src.updated_at ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
@@ -184,10 +184,10 @@ func TestPostgreSQLConnectorOpenSyncAllTables(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")).WillReturnRows(
 			sqlmock.NewRows([]string{"table_name"}).AddRow("products").AddRow("orders"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."orders") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."orders" ) AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(2, "Order"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products" ) AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Product"),
 		)
 	})
@@ -228,7 +228,7 @@ func TestPostgreSQLConnectorOpenPrune(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT ragflow_src.id FROM (SELECT * FROM products) AS ragflow_src"
+		expected := "SELECT ragflow_src.id FROM (SELECT * FROM products ) AS ragflow_src"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
 			sqlmock.NewRows([]string{"id"}).AddRow(3).AddRow(4),
 		)
@@ -305,7 +305,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")).WillReturnRows(
 			sqlmock.NewRows([]string{"table_name"}).AddRow("MixedCase"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."MixedCase") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."MixedCase" ) AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Item"),
 		)
 	})
@@ -376,7 +376,7 @@ func TestPostgreSQLConnectorFileExtension(t *testing.T) {
 // extension is applied to produced documents.
 func TestPostgreSQLConnectorOpenSyncCustomFileExtension(t *testing.T) {
 	query := "SELECT * FROM products WHERE status = 'active'"
-	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active') AS ragflow_src ORDER BY ragflow_src.id ASC"
+	expected := "SELECT * FROM (SELECT * FROM products WHERE status = 'active' ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 	connector := newFixturePostgresConnector(t, map[string]any{
 		"host":            "127.0.0.1",
 		"port":            "5432",
@@ -430,7 +430,7 @@ func TestPostgreSQLConnectorOpenSyncCheckpointEmitted(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src " +
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src " +
 			"WHERE ragflow_src.updated_at >= '2026-01-01T00:00:00Z' AND ragflow_src.updated_at <= '2026-01-02T00:00:00Z' " +
 			"ORDER BY ragflow_src.updated_at ASC, ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
@@ -482,7 +482,7 @@ func TestPostgreSQLConnectorOpenSyncResumeSkipsToAnchor(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "A").AddRow(2, "B").AddRow(3, "C"),
 		)
@@ -531,7 +531,7 @@ func TestPostgreSQLConnectorOpenSyncResumeMultiTable(t *testing.T) {
 		)
 		// Tables run sorted (orders, products), and the anchor is in the last
 		// table, so orders is skipped without being executed.
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products" ) AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "P1").AddRow(3, "P3"),
 		)
 	})
@@ -570,7 +570,7 @@ func TestPostgreSQLConnectorOpenSyncResumeAnchorMissing(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "A"),
 		)
@@ -654,8 +654,8 @@ func TestPostgreSQLConnectorOpenSyncOrderingFallback(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		ordered := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
-		unordered := "SELECT * FROM (SELECT * FROM products) AS ragflow_src"
+		ordered := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		unordered := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src"
 		mock.ExpectQuery(regexp.QuoteMeta(ordered)).WillReturnError(
 			&pgconn.PgError{Code: "42703", Message: "column ragflow_src.id does not exist"},
 		)
@@ -694,7 +694,7 @@ func TestPostgreSQLConnectorOpenSyncResumeOrderingFallback(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		ordered := "SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC"
+		ordered := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src ORDER BY ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(ordered)).WillReturnError(
 			&pgconn.PgError{Code: "42703", Message: "column ragflow_src.id does not exist"},
 		)
@@ -732,10 +732,10 @@ func TestPostgreSQLConnectorOpenSyncCheckpointQueryName(t *testing.T) {
 		)
 		// Tables run sorted (orders, products); orders holds the last document
 		// and products is empty, so the checkpoint must still point at orders.
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."orders") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."orders" ) AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "A"),
 		)
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products" ) AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}),
 		)
 	})
@@ -782,7 +782,7 @@ func TestPostgreSQLConnectorOpenSyncIncrementalResumeComposite(t *testing.T) {
 			"password": "secret",
 		},
 	}, func(mock sqlmock.Sqlmock) {
-		expected := "SELECT * FROM (SELECT * FROM products) AS ragflow_src " +
+		expected := "SELECT * FROM (SELECT * FROM products ) AS ragflow_src " +
 			"WHERE ragflow_src.updated_at >= '2026-01-01T00:00:00Z' AND ragflow_src.updated_at <= '2026-01-02T00:00:00Z' " +
 			"ORDER BY ragflow_src.updated_at ASC, ragflow_src.id ASC"
 		mock.ExpectQuery(regexp.QuoteMeta(expected)).WillReturnRows(

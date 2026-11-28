@@ -8,8 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
-import { ChunkVersionBadge } from '@/ee/pages/chunk/components/chunk-card/chunk-version-badge';
+import { ChunkDetailEntry } from '@/ee/pages/chunk/components/chunk-card/chunk-detail-entry';
 import { ChunkVersionEntry } from '@/ee/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/chunk-version-entry';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
@@ -24,6 +23,7 @@ import styles from './index.module.less';
 
 interface IProps {
   item: IChunk;
+  canEditDocument: boolean;
   checked: boolean;
   switchChunk: (available?: number, chunkIds?: string[]) => Promise<void>;
   editChunk: (chunkId: string) => void;
@@ -37,6 +37,7 @@ interface IProps {
 
 const ChunkCard = ({
   item,
+  canEditDocument,
   checked,
   handleCheckboxClick,
   editChunk,
@@ -48,7 +49,6 @@ const ChunkCard = ({
   t: imageCacheKey,
 }: IProps) => {
   const { t } = useTranslation();
-  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
 
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
@@ -96,21 +96,22 @@ const ChunkCard = ({
         selected && 'bg-text-primary/15',
       )}
     >
-      {/* Corner row: the chunk type and, where the edition keeps a chunk history,
-          the version the text shown is at. The history entry is an action on the
-          chunk rather than a label of it, so it sits in the action column below
-          instead of in this strip. */}
+      {/* Corner row: the chunk type, then the entry into its details - which the
+          enterprise build also uses to name the chunk by id. The version the text
+          is at is one of those details, so it is not printed on the card. The
+          type keeps its own box and spacing; the entry takes what the card can
+          spare. */}
       <div
         className="
-        absolute top-0 right-0 flex items-center gap-0.5 pr-2
+        absolute top-0 right-0 flex max-w-[70%] items-center gap-0.5 pr-2
         leading-none text-xs text-text-disabled
         bg-bg-card rounded-bl-2xl rounded-tr-lg
         border-l-0.5 border-b-0.5 border-border-button"
       >
-        <span className="pl-4 py-1 mr-2">
+        <span className="shrink-0 pl-4 py-1 mr-2">
           {t(`chunk.docType.${chunkType}`)}
         </span>
-        <ChunkVersionBadge chunk={item} />
+        <ChunkDetailEntry chunk={item} />
       </div>
 
       <div className="flex items-start justify-between gap-2.5">
@@ -118,6 +119,7 @@ const ChunkCard = ({
           className="mt-1"
           onCheckedChange={handleCheck}
           checked={checked}
+          disabled={!canEditDocument}
         />
 
         {/* Using <Tooltip> instead of <Popover> to avoid flickering when hovering over the image */}
@@ -177,8 +179,8 @@ const ChunkCard = ({
               checked={enabled}
               onCheckedChange={onChange}
               aria-readonly
-              className="!m-0"
-              disabled={datasetEditButtonDisabled || switching}
+              className="!m-0 !mt-[22px]"
+              disabled={!canEditDocument || switching}
             />
             <Button
               variant="ghost"
@@ -186,7 +188,7 @@ const ChunkCard = ({
               aria-label={t('common.edit')}
               title={t('common.edit')}
               onClick={handleEditClick}
-              disabled={datasetEditButtonDisabled}
+              disabled={!canEditDocument}
             >
               <PenLine className="size-4" />
             </Button>
@@ -200,7 +202,7 @@ const ChunkCard = ({
               aria-label={t('common.delete')}
               title={t('common.delete')}
               onClick={handleDeleteClick}
-              disabled={datasetEditButtonDisabled}
+              disabled={!canEditDocument}
             >
               <Trash2 className="size-4 text-state-error" />
             </Button>

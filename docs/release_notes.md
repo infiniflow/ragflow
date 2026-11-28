@@ -103,7 +103,7 @@ Released on Sep 10, 2026.
 
 ### Improvements
 - New RERANK_TOKEN_LIMIT_MODE configuration ([#19404](https://github.com/infiniflow/ragflow/pull/19404))
-- Highlight in retrieval testing and search ([#18981](https://github.com/infiniflow/ragflow/pull/18981))
+- Highlight in retrieval and search ([#18981](https://github.com/infiniflow/ragflow/pull/18981))
 - Similarity threshold displayed as a percentage ([#18974](https://github.com/infiniflow/ragflow/pull/18974))
 
 ### UI/UX
@@ -657,7 +657,7 @@ Released on December 27, 2025.
   - Supports voice input/output.
   - Supports configuring multiple **Retrieval** components per **Agent** component.
 - Ingestion pipeline
-  - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
+  - Supports extracting table of contents in the **Extractor** component to improve long-context RAG performance.
 - Dataset
   - Supports configuring context window for images and tables.
   - Introduces parent-child chunking strategy.
@@ -993,7 +993,7 @@ Released on May 26, 2025.
 
 - Cross-language search is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English datasets.
 - Agent component: A new Code component supports Python and JavaScript scripts, enabling developers to handle more complex tasks like dynamic data processing.
-- Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
+- Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval can retrieve images directly, instead of texts extracted from images.
 - Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
 
 > The following features have been contributed by our community:
@@ -1142,7 +1142,7 @@ Adds a key option `"meta_fields"` to the [Update document](./references/python_a
 
 #### Added documents
 
-- [Run retrieval test](./guides/dataset/retrieval_testing.md)
+- [Run retrieval](./guides/dataset/retrieval_testing.md)
 
 ## v0.16.0
 
@@ -1152,7 +1152,7 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing.
-- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration).
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration-component).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
@@ -1175,12 +1175,12 @@ The **Tag dataset** feature is *unavailable* on the [Infinity](https://github.co
 - [Retrieval component](./guides/agent/agent_workflow/basic_component.md#retrieval-component)
 - [Categorize component](./guides/agent/agent_workflow/flow_components.md#categorize-component)
 - [Keyword component]
-- [Message component](./guides/agent/agent_workflow/dialogue_component.md#reply-message-component)
+- [Message component](./guides/agent/agent_workflow/dialogue_component.md#message-component)
 - [Rewrite component]
 - [Switch component](./guides/agent/agent_workflow/flow_components.md#switch-component)
 - [Concentrator component]
 - [Template component]
-- [Iteration component](./guides/agent/agent_workflow/flow_components.md#iteration)
+- [Iteration component](./guides/agent/agent_workflow/flow_components.md#iteration-component)
 - [Note component]
 
 ## v0.15.1

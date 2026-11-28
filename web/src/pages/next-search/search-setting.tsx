@@ -15,6 +15,7 @@
  */
 
 import AvatarNameDescription from '@/components/avatar-name-description';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
@@ -51,6 +52,7 @@ import {
 } from '../next-searches/hooks';
 import { RerankFormFields } from '@/components/rerank';
 import { resolveInitialLlmSetting } from './llm-setting-defaults';
+import { canManageSearch } from '@/ee/pages/next-searches/search-dropdown-guard';
 import {
   SearchSettingFormData,
   useRevalidatePersistedModels,
@@ -63,6 +65,7 @@ interface SearchSettingProps {
 }
 
 function SearchSetting({ onClose, data }: SearchSettingProps) {
+  const canEdit = canManageSearch(data?.operator_permission ?? 0);
   const { search_config } = data || {};
   const { llm_setting } = search_config || {};
   const { t } = useTranslation();
@@ -146,6 +149,7 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
   const onSubmit = async (
     formData: IUpdateSearchProps & { tenant_id: string },
   ) => {
+    if (!canEdit) return;
     try {
       setFormSubmitLoading(true);
       const {
@@ -202,30 +206,58 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
       setFormSubmitLoading(false);
     }
   };
+
+  const handleFormSubmit = formMethods.handleSubmit(
+    (data) => {
+      onSubmit(data as unknown as IUpdateSearchProps);
+    },
+    (error) => {
+      console.error(error, formMethods.getValues());
+    },
+  );
+
+  const searchActions = (
+    <>
+      <Button type="button" variant="transparent" onClick={handleCancel}>
+        {t('search.cancelText')}
+      </Button>
+      {canEdit && (
+        <Button
+          data-testid="search-settings-save"
+          type="submit"
+          disabled={formSubmitLoading}
+        >
+          {formSubmitLoading && (
+            <div className="size-4">
+              <Spin size="small" />
+            </div>
+          )}
+          {t('search.okText')}
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
       <ModelResourceAccessUserIdContext.Provider value={data?.user_id ?? null}>
-        <section
-          className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col p-5 text-text-primary"
-          data-testid="search-detail-settings"
-        >
-          <div className="mb-8 shrink-0 text-base text-text-primary">
-            {t('search.searchSettings')}
-          </div>
-          <Form {...formMethods}>
-            <form
-              onSubmit={formMethods.handleSubmit(
-                (data) => {
-                  onSubmit(data as unknown as IUpdateSearchProps);
-                },
-                (error) => {
-                  console.error(error, formMethods.getValues());
-                },
-              )}
-              className="flex min-h-0 flex-1 flex-col"
+        <Form {...formMethods}>
+          <form
+            onSubmit={handleFormSubmit}
+            className="flex h-full min-h-0 flex-col"
+          >
+            <SettingsFormLayout
+              className="text-text-primary"
+              data-testid="search-detail-settings"
+              header={
+                <div className="mb-8 text-base text-text-primary">
+                  {t('search.searchSettings')}
+                </div>
+              }
+              actions={searchActions}
             >
-              <div className="scrollbar-auto min-h-0 flex-1 overflow-y-auto p-1 text-text-secondary">
-                <div className="space-y-6">
+              <fieldset disabled={!canEdit} className="contents">
+                <div className="space-y-6 p-1 text-text-secondary">
                   <AvatarNameDescription avatarField="avatar" />
 
                   <KnowledgeBaseFormField
@@ -326,31 +358,10 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
                     )}
                   />
                 </div>
-              </div>
-              <div className="flex shrink-0 justify-end gap-2 pt-4">
-                <Button
-                  type="button"
-                  variant="transparent"
-                  onClick={handleCancel}
-                >
-                  {t('search.cancelText')}
-                </Button>
-                <Button
-                  data-testid="search-settings-save"
-                  type="submit"
-                  disabled={formSubmitLoading}
-                >
-                  {formSubmitLoading && (
-                    <div className="size-4">
-                      <Spin size="small" />
-                    </div>
-                  )}
-                  {t('search.okText')}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </section>
+              </fieldset>
+            </SettingsFormLayout>
+          </form>
+        </Form>
       </ModelResourceAccessUserIdContext.Provider>
     </ModelResourceTenantIdContext.Provider>
   );

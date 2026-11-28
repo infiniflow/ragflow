@@ -26,7 +26,7 @@ export function JsonPreview({ value }: JsonPreviewProps) {
 
   return (
     <section
-      className="min-h-0 min-w-0 flex-1 p-5"
+      className="min-h-0 min-w-0 flex-1"
       aria-label={t('knowledgeCompilation.jsonPreview')}
     >
       <JsonEditor

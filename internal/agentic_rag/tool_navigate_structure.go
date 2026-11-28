@@ -109,14 +109,17 @@ var navStructureRoute = func(ctx context.Context, tenantID, kbID, query string, 
 // routeDocIDsForQuery routes the query across the bound datasets and returns the
 // top doc_ids, deduped across datasets and capped at limit. docScope is pushed
 // into the route so the ranking budget is spent inside the turn's documents.
-func routeDocIDsForQuery(ctx context.Context, tenantID, query string, datasetIDs, docScope []string, limit int) []string {
+func routeDocIDsForQuery(ctx context.Context, query string, datasetIDs, docScope []string, limit int) []string {
 	if limit <= 0 {
 		limit = navQueryRouteDocs
 	}
 	seen := map[string]bool{}
 	var out []string
+	// Each dataset routes in its own tenant index (a shared dataset lives in the
+	// sharing tenant, not the conversation's).
+	tenants := DatasetTenants(ctx, datasetIDs)
 	for _, kbID := range datasetIDs {
-		routed, err := navStructureRoute(ctx, tenantID, kbID, query, docScope, limit)
+		routed, err := navStructureRoute(ctx, tenants[kbID], kbID, query, docScope, limit)
 		if err != nil {
 			common.DebugCtx(ctx, "navigate_structure: query route failed",
 				zap.String("kb_id", kbID), zap.Error(err))
@@ -199,7 +202,7 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 		return nil, nil
 	}
 	req := &enginetypes.SearchRequest{
-		IndexNames:         []string{indexNameFor(tenantID, "")},
+		IndexNames:         IndexNamesFor(ctx, []string{kbID}),
 		KbIDs:              []string{kbID},
 		SelectFields:       []string{"content_with_weight", "compilation_template_kind_kwd", "type_kwd", "knowledge_graph_kwd"},
 		Filter:             map[string]interface{}{"doc_id": []string{docID}, "knowledge_graph_kwd": shapeKwds},
@@ -252,15 +255,6 @@ func navStringList(v any) []string {
 		}
 	}
 	return nil
-}
-
-// indexNameFor resolves the document/structure search index: the tenant's
-// default "ragflow_<tenant_id>" unless a tenant overrides index_name.
-func indexNameFor(tenantID, configured string) string {
-	if configured != "" {
-		return configured
-	}
-	return "ragflow_" + tenantID
 }
 
 // normalizeKindKey applies the API's kind normalization (page_index / graph ->
@@ -753,18 +747,18 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID string, ki
 	if !read || len(nodes) == 0 {
 		return "", 0, 0, false
 	}
-	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, tenantID, ids) }
+	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, datasetIDs, ids) }
 	return renderTocDrilldown(query, nodes, rels, loader), len(nodes), len(rels), true
 }
 
 // structureNodeLoader fetches chunk texts by id for the drill-down snippet pass.
-func structureNodeLoader(ctx context.Context, tenantID string, ids []string) []chunkWithText {
+func structureNodeLoader(ctx context.Context, datasetIDs, ids []string) []chunkWithText {
 	de := engine.Get()
 	if de == nil || len(ids) == 0 {
 		return nil
 	}
 	req := &enginetypes.SearchRequest{
-		IndexNames:   []string{indexNameFor(tenantID, "")},
+		IndexNames:   IndexNamesFor(ctx, datasetIDs),
 		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "id"},
 		Filter:       map[string]interface{}{"id": ids},
 		Limit:        len(ids),
@@ -1012,7 +1006,7 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	// spent inside the turn's documents.
 	routedByQuery := false
 	if len(docIDs) == 0 {
-		docIDs = routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, docScope, navQueryRouteDocs)
+		docIDs = routeDocIDsForQuery(ctx, text, datasetIDs, docScope, navQueryRouteDocs)
 		if len(docIDs) == 0 {
 			return navStructEmpty("route first with navigate_tree"), nil
 		}

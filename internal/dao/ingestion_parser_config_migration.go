@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	parserchunk "ragflow/internal/parser/chunk"
 	parserpkg "ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -622,7 +623,11 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 				// engine name that branch reads instead of failing the migration.
 				writes.setSetup(target.parserNode, "pdf", "parse_method", "paddleocr")
 				return nil
-			case "mistral ocr", "somark", "opendataloader":
+			case "mistral ocr":
+				if !models.IsMistralOCRModelReference(trimmed) {
+					return fmt.Errorf("layout_recognize %q is not a Mistral OCR model reference", trimmed)
+				}
+			case "somark", "opendataloader":
 				// These OCR selectors cannot be resolved by the Go ingestion
 				// dispatcher. Preserve them by stopping rather than sending them to
 				// generic VLM chat.
@@ -913,13 +918,11 @@ func convertIngestionChunkTokenNum(config map[string]any, target builtinIngestio
 		}
 		writes.set(target.chunkerNode, "chunk_token_size", size)
 	case "TitleChunker":
-		// Known semantic difference: Python used chunk_token_num as the merge
-		// target of rag/app/{book,laws,paper}.py while Go's chunk_token_cap is a
-		// hard ceiling on an emitted chunk. 0 disables the ceiling in Go, which
-		// is what Python's "no cap" guard did, so it carries over; a non-zero
-		// value must be inside the range the chunker accepts or the component
-		// would refuse to build.
-		if size != 0 && (size < 128 || size > 8000) {
+		// Python's chunk_token_num was a naive_merge target; Go's
+		// chunk_token_cap is a hard ceiling. Values outside the accepted range,
+		// including 0, are not valid caps in Go, so drop the setting and keep
+		// the template default (512).
+		if size < 128 || size > 8000 {
 			row.retire("chunk_token_num", fmt.Sprintf("%d is outside the title chunker's accepted 128..8000 range", size))
 			return
 		}

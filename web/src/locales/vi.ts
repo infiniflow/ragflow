@@ -92,7 +92,8 @@ export default {
       reselectParserAfterUploadHint:
         'Tiếp tục tải lên, hệ thống sẽ tự động chuyển các tệp này sang cấu hình phân tích tích hợp được hỗ trợ.',
       dataset: 'Dữ liệu',
-      testing: 'Kiểm tra truy hồi',
+      retrievalTesting: 'Truy hồi',
+      testing: 'Truy hồi',
       files: 'Các tệp',
       configuration: 'Cấu hình',
       name: 'Tên',
@@ -118,7 +119,7 @@ export default {
       processDuration: 'Thời gian xử lý',
       progressMsg: 'Thông báo tiến trình',
       testingDescription:
-        'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.Vui lòng lưu ý rằng các thay đổi được thực hiện ở đây sẽ không được lưu tự động. Nếu bạn điều chỉnh các cài đặt mặc định ở đây, chẳng hạn như trọng số tương tự của từ khóa, hãy đảm bảo rằng bạn cập nhật các cài đặt liên quan theo cách đồng bộ trong cài đặt trợ lý trò chuyện hoặc cài đặt toán tử thu hồi.',
+        'Thực hiện truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.Vui lòng lưu ý rằng các thay đổi được thực hiện ở đây sẽ không được lưu tự động. Nếu bạn điều chỉnh các cài đặt mặc định ở đây, chẳng hạn như trọng số tương tự của từ khóa, hãy đảm bảo rằng bạn cập nhật các cài đặt liên quan theo cách đồng bộ trong cài đặt trợ lý trò chuyện hoặc cài đặt toán tử thu hồi.',
       similarityThreshold: 'Ngưỡng tương đồng',
       similarityThresholdTip:
         'Trong quá trình truy hồi, RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosin vectơ có trọng số, hoặc kết hợp giữa độ tương đồng từ khóa có trọng số và điểm tái xếp hạng có trọng số khi một mô hình tái xếp hạng được chọn. Tham số này đặt ngưỡng tương đồng giữa truy vấn của người dùng và các đoạn. Mọi đoạn có điểm tương đồng thấp hơn ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 20. Điều này có nghĩa là chỉ những đoạn có điểm tương đồng kết hợp từ 20 trở lên mới được truy hồi. Nếu trọng số tương đồng vectơ được đặt thành 0, ngưỡng này không được áp dụng.',
@@ -802,6 +803,7 @@ export default {
       destinationFolder: 'Thư mục đích',
     },
     flow: {
+      historyVersion: 'Phiên bản',
       cite: 'Hiển thị trích dẫn',
       citeTip: 'Mẹo dẫn nguồn',
       name: 'Tên',

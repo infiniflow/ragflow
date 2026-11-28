@@ -16,7 +16,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { normalizeOperatorForm } from '@/utils/pipeline-operator';
+import { mergeOperatorFormWithPrefilledVisionModel } from '@/utils/pipeline-operator';
 import { memo, useCallback, useMemo } from 'react';
 import { FieldErrors } from 'react-hook-form';
 import PipelineOperatorForm from './pipeline-operator-form';
@@ -38,6 +38,7 @@ type PipelineOperatorTabsProps = {
   // Dataset-side embeddings show a fixed set of parser file types; only the
   // canvas parser allows add/remove.
   fixedFileFormats?: boolean;
+  readOnly?: boolean;
 };
 
 const PipelineOperatorTabs = ({
@@ -48,6 +49,7 @@ const PipelineOperatorTabs = ({
   operatorValues,
   operatorFormErrors,
   fixedFileFormats,
+  readOnly = false,
 }: PipelineOperatorTabsProps) => {
   const getOperatorId = useCallback((node: RAGFlowNodeType) => {
     return (
@@ -69,7 +71,11 @@ const PipelineOperatorTabs = ({
         ...node,
         data: {
           ...node.data,
-          form: normalizeOperatorForm(operatorId, values),
+          form: mergeOperatorFormWithPrefilledVisionModel(
+            operatorId,
+            node.data?.form,
+            values,
+          ),
         },
       };
     });
@@ -105,12 +111,14 @@ const PipelineOperatorTabs = ({
         const tabValue = getTabValue(node, index);
         return (
           <TabsContent key={tabValue} value={tabValue}>
-            <PipelineOperatorForm
-              node={node}
-              onValuesChange={handleValuesChange(node)}
-              externalErrors={operatorFormErrors?.[getOperatorId(node)]}
-              fixedFileFormats={fixedFileFormats}
-            />
+            <fieldset disabled={readOnly} className="m-0 border-0 p-0">
+              <PipelineOperatorForm
+                node={node}
+                onValuesChange={handleValuesChange(node)}
+                externalErrors={operatorFormErrors?.[getOperatorId(node)]}
+                fixedFileFormats={fixedFileFormats}
+              />
+            </fieldset>
           </TabsContent>
         );
       })}

@@ -1,14 +1,22 @@
-import { DataTable } from '@/components/data-table';
 import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
+import { ResourceMetadata } from '@/components/resource-metadata';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Switch } from '@/components/ui/switch';
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { RunningStatus } from '@/constants/knowledge';
 import { Pagination } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
@@ -26,6 +34,7 @@ import {
   SortingState,
   VisibilityState,
   createColumnHelper,
+  flexRender,
   getCoreRowModel,
   getExpandedRowModel,
   getFilteredRowModel,
@@ -47,12 +56,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
+import { canWriteMemory } from '@/ee/pages/memories/memory-dropdown-guard';
 
 export type MemoryTableProps = {
   messages: Array<IMessageInfo>;
   total: number;
   pagination: Pagination;
   setPagination: (params: { page: number; pageSize: number }) => void;
+  operatorPermission: number;
+  hasRoleWrite: boolean;
+  createTime?: string;
 };
 
 const columnHelper = createColumnHelper<IMessageInfo>();
@@ -116,7 +129,11 @@ export function MemoryTable({
   total,
   pagination,
   setPagination,
+  operatorPermission,
+  hasRoleWrite,
+  createTime,
 }: MemoryTableProps) {
+  const canWrite = hasRoleWrite && canWriteMemory(operatorPermission);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -263,7 +280,7 @@ export function MemoryTable({
         cell: ({ row }) => (
           <StatusSwitch
             row={row}
-            disabled={disabledRowFunc(row)}
+            disabled={!canWrite || disabledRowFunc(row)}
             onUpdate={handleClickUpdateMessageState}
           />
         ),
@@ -317,22 +334,24 @@ export function MemoryTable({
             >
               <TextSelect />
             </Button>
-            <Button
-              variant={'delete'}
-              disabled={disabledRowFunc(row)}
-              className="bg-transparent"
-              aria-label="Edit"
-              onClick={() => {
-                handleClickDeleteMessage(row.original);
-              }}
-            >
-              <Eraser />
-            </Button>
+            {canWrite && (
+              <Button
+                variant={'delete'}
+                disabled={disabledRowFunc(row)}
+                className="bg-transparent"
+                aria-label="Edit"
+                onClick={() => {
+                  handleClickDeleteMessage(row.original);
+                }}
+              >
+                <Eraser />
+              </Button>
+            )}
           </div>
         ),
       },
     ],
-    [handleClickDeleteMessage],
+    [canWrite, handleClickDeleteMessage],
   );
 
   const currentPagination = useMemo(() => {
@@ -373,16 +392,68 @@ export function MemoryTable({
     rowCount: total,
   });
 
+  const handlePageChange = React.useCallback(
+    (page: number, pageSize: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
+
   return (
-    <div className="w-full">
-      <DataTable
-        table={table}
-        columnsLength={columns.length}
-        rootClassName="max-h-[calc(100vh-292px)]"
-        bodyClassName="relative"
-        rowClassName="group"
-        emptyContent={<Empty type={EmptyType.Data} />}
-      />
+    <>
+      <PaginatedTableLayout
+        footerLeading={<ResourceMetadata createTime={createTime} />}
+        pagination={
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={handlePageChange}
+          />
+        }
+      >
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id}>
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody className="relative">
+          {table.getRowModel().rows.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && 'selected'}
+                className="group"
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cell.column.columnDef.meta?.cellClassName}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center">
+                <Empty type={EmptyType.Data} />
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </PaginatedTableLayout>
       {showDeleteDialog && (
         <ConfirmDeleteDialog
           onOk={handleDeleteMessage}
@@ -474,16 +545,6 @@ export function MemoryTable({
           logInfo={logInfo as unknown as ILogInfo}
         />
       )}
-
-      <div className="flex items-center justify-end  absolute bottom-3 right-3">
-        <RAGFlowPagination
-          {...pick(pagination, 'current', 'pageSize')}
-          total={total}
-          onChange={(page, pageSize) => {
-            setPagination({ page, pageSize });
-          }}
-        />
-      </div>
-    </div>
+    </>
   );
 }

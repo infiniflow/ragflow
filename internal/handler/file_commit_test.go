@@ -39,7 +39,7 @@ import (
 
 // mockFileCommitSvc implements FileCommitServiceInterface for testing
 type mockFileCommitSvc struct {
-	createCommitFn          func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
+	createCommitFn          func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	listCommitsFn           func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	getCommitFn             func(ctx context.Context, commitID string) (*entity.FileCommit, error)
 	getPageCommitDetailFn   func(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
@@ -52,9 +52,9 @@ type mockFileCommitSvc struct {
 	listPageCommitsFn       func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error)
 }
 
-func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 	if m.createCommitFn != nil {
-		return m.createCommitFn(ctx, folderID, authorID, message, changes)
+		return m.createCommitFn(ctx, db, folderID, authorID, message, changes)
 	}
 	return &entity.FileCommit{
 		ID:        "commit-1",
@@ -159,6 +159,10 @@ func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
 func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommitSvc, *FileCommitHandler) {
 	mock := &mockFileCommitSvc{}
 	h := NewFileCommitHandler(mock)
+	// These tests focus on commit routing and response mapping. Source-page
+	// authorization requires a real compiled page index, so inject an allow
+	// result here.
+	h.wikiPageAccessChecker = func(*gin.Context, string, string, string) bool { return true }
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
@@ -232,7 +236,7 @@ func setupFileCommitTestNoAuth() *gin.Engine {
 
 func TestFileCommit_CreateCommit_Success(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		if folderID != "folder-1" {
 			t.Errorf("expected folder-1, got %s", folderID)
 		}
@@ -280,7 +284,7 @@ func TestFileCommit_CreateCommit_Success(t *testing.T) {
 
 func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		return nil, fmt.Errorf("%w: f1", file.ErrDeleteLiveFile)
 	}
 
@@ -305,7 +309,7 @@ func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
 
 func TestFileCommit_CreateCommit_InvalidRenameIsBadRequest(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		return nil, fmt.Errorf("%w: f1", file.ErrInvalidRenameTarget)
 	}
 
@@ -330,7 +334,7 @@ func TestFileCommit_CreateCommit_InvalidRenameIsBadRequest(t *testing.T) {
 
 func TestFileCommit_CreateCommit_RejectsFileOutsideFolder(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		return nil, fmt.Errorf("%w: file f2 is outside folder %s", permission.ErrPermissionDenied, folderID)
 	}
 
@@ -418,6 +422,42 @@ func TestFileCommit_ListCommits_Success(t *testing.T) {
 	data, _ := resp["data"].(map[string]interface{})
 	if total, _ := data["total"].(float64); total != 2 {
 		t.Errorf("expected total 2, got %v", total)
+	}
+}
+
+// Python clients serialise a boolean query parameter as desc=False, so the
+// value must be read case-insensitively like the chat and document lists do.
+func TestFileCommit_ListCommits_DescIsCaseInsensitive(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  bool
+	}{
+		{"", true},
+		{"&desc=true", true},
+		{"&desc=True", true},
+		{"&desc=false", false},
+		{"&desc=False", false},
+		{"&desc=FALSE", false},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			r, mock := setupFileCommitTest("user-1")
+			var gotDesc *bool
+			mock.listCommitsFn = func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
+				gotDesc = &desc
+				return nil, 0, nil
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits?page=1&page_size=10"+tc.query, nil)
+			r.ServeHTTP(w, req)
+
+			if gotDesc == nil {
+				t.Fatalf("ListCommits was not called: %d %s", w.Code, w.Body.String())
+			}
+			if *gotDesc != tc.want {
+				t.Errorf("desc = %v, want %v", *gotDesc, tc.want)
+			}
+		})
 	}
 }
 

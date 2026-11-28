@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
 // The decision-model backend answers the filter's per-passage question over
@@ -198,10 +199,7 @@ func (b *decisionBackend) split(text string) []string {
 	// The cap applies here too: this segment is what gets sent, and a passage
 	// taller than the cap must not reach the endpoint whole just because it
 	// arrived through the sub-segment path.
-	if len([]rune(text)) > b.maxChars {
-		return []string{string([]rune(text)[:b.maxChars])}
-	}
-	return []string{text}
+	return []string{utility.TruncateRunes(text, b.maxChars)}
 }
 
 // splitWhole mirrors decisionhead.SplitWhole's contract — one segment, the text the
@@ -261,9 +259,7 @@ func (b *decisionBackend) judge(ctx context.Context, question string, segments [
 		texts := make([]string, 0, end-start)
 		for i := start; i < end; i++ {
 			text := out[i].Segment
-			if len([]rune(text)) > b.maxChars {
-				text = string([]rune(text)[:b.maxChars])
-			}
+			text = utility.TruncateRunes(text, b.maxChars)
 			texts = append(texts, text)
 		}
 		sent := time.Now()
@@ -460,11 +456,11 @@ func (b *decisionBackend) ask(ctx context.Context, question, intent, passage str
 // firstRunes is the error-message slice: enough of a body to see what came
 // back, never enough to flood a log line.
 func firstRunes(s string, n int) string {
-	r := []rune(strings.TrimSpace(s))
-	if len(r) <= n {
-		return string(r)
+	trimmed := strings.TrimSpace(s)
+	if truncated := utility.TruncateRunes(trimmed, n); truncated != trimmed {
+		return truncated + "..."
 	}
-	return string(r[:n]) + "..."
+	return trimmed
 }
 
 // envStringDefault reads a string env var.

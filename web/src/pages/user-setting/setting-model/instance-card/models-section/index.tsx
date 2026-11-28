@@ -99,11 +99,15 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
+  // Use persisted IDs so same-named instances under different providers do
+  // not resolve to each other's models or share a React Query cache entry.
+  const providerID = isDraftInstance ? '' : (instance?.provider_id ?? '');
+  const instanceID = isDraftInstance ? '' : (instance?.id ?? '');
   const {
     data: instanceModels,
     loading: instanceModelsLoading,
     isSuccess: instanceModelsSucceeded,
-  } = useFetchInstanceModels(providerName, instanceName);
+  } = useFetchInstanceModels(providerID, instanceID);
 
   useLayoutEffect(() => {
     if (
@@ -267,7 +271,9 @@ export function ModelsSection(props: ModelsSectionProps) {
     batchLoading,
   } = useModelMutations({
     providerName,
+    providerID,
     instanceName,
+    instanceID,
     isDraftInstance,
     hideActions,
     resolveCreds,
@@ -294,9 +300,12 @@ export function ModelsSection(props: ModelsSectionProps) {
     providerFeatureKeys,
   } = useModelEdit({
     providerName,
+    providerID,
     instanceName,
+    instanceID,
     isModelAdded,
     isDraftInstance,
+    defaultToolsEnabled: isDraftInstance,
     updateCatalogModel,
     clearCatalogOverride,
     updateDraftModel,

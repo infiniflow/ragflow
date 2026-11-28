@@ -107,10 +107,12 @@ func TestSinkPropagatesCacheFailureAndMissingCache(t *testing.T) {
 type sinkTestCache struct {
 	writes int
 	err    error
+	data   []byte
 }
 
 func (c *sinkTestCache) Put(_ context.Context, format, mime string, data []byte) (entity.MediaRef, error) {
 	c.writes++
+	c.data = data
 	return entity.MediaRef{Format: format, MIME: mime, Size: int64(len(data)), SHA256: strings.Repeat("a", 64), Kind: entity.MediaKindKV, Scope: "test"}, c.err
 }
 func (*sinkTestCache) Get(context.Context, entity.MediaRef) ([]byte, error) { panic("unused") }

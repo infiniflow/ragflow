@@ -43,6 +43,52 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+
+#ifdef _WIN32
+constexpr char kPathSeparator = '\\';
+#else
+constexpr char kPathSeparator = '/';
+#endif
+
+// The dictionary path arrives canonicalized, so on Windows it carries the \\?\
+// prefix. That form only accepts backslashes, and appending "/rag/huqie.txt"
+// would produce a path no syscall opens — so the separator follows the
+// platform and an existing trailing separator is never doubled.
+// A canonicalized directory arrives with the \\?\ prefix, which only the Win32
+// API understands: OpenCC and the wordnet loader join their own sub-paths with
+// forward slashes, and that combination opens nothing. The dictionary never
+// needs the long-path form, so the prefix is dropped here.
+std::string StripLongPathPrefix(std::string path) {
+#ifdef _WIN32
+    if (path.rfind("\\\\?\\UNC\\", 0) == 0) {
+        return "\\\\" + path.substr(8);
+    }
+    if (path.rfind("\\\\?\\", 0) == 0) {
+        return path.substr(4);
+    }
+#endif
+    return path;
+}
+
+std::string JoinPath(const std::string &base, const std::string &relative) {
+    std::string path = StripLongPathPrefix(base);
+    if (!path.empty() && path.back() != '/' && path.back() != '\\') {
+        path += kPathSeparator;
+    }
+    path += relative;
+#ifdef _WIN32
+    // DICT_PATH & friends are written with forward slashes, and a \\?\-prefixed
+    // path is rejected by the Win32 API unless every separator is a backslash.
+    std::replace(path.begin(), path.end(), '/', '\\');
+#endif
+    return path;
+}
+
+bool PathExists(const std::string &path) { return fs::exists(path); }
+
+} // namespace
+
 static const std::string DICT_PATH = "rag/huqie.txt";
 static const std::string POS_DEF_PATH = "rag/pos-id.def";
 static const std::string TRIE_PATH = "rag/huqie.trie";
@@ -686,7 +732,7 @@ RAGAnalyzer::RAGAnalyzer(const RAGAnalyzer &other)
     : dict_path_(other.dict_path_), own_dict_(false), trie_(other.trie_), pos_table_(other.pos_table_), wordnet_lemma_(other.wordnet_lemma_),
       stemmer_(std::make_unique<Stemmer>()),
       // OpenCC keeps mutable conversion buffers, so each analyzer needs its own converter.
-      opencc_(other.opencc_ ? std::make_unique<::OpenCC>((fs::path(other.dict_path_) / OPENCC_PATH).string()) : nullptr),
+      opencc_(other.opencc_ ? std::make_unique<::OpenCC>(JoinPath(other.dict_path_, OPENCC_PATH)) : nullptr),
       lowercase_string_buffer_(term_string_buffer_limit_), fine_grained_(other.fine_grained_) {
     InitStemmer(STEM_LANG_ENGLISH);
 }
@@ -736,40 +782,38 @@ void RAGAnalyzer::SetLanguage(const std::string &language) {
 }
 
 int32_t RAGAnalyzer::Load() {
-    fs::path root(dict_path_);
-
-    fs::path dict_path(root / DICT_PATH);
-    printf("Validate dict file: %s\n", dict_path.string().c_str());
-    if (!fs::exists(dict_path)) {
-        printf("Invalid dict file: %s\n", dict_path.string().c_str());
+    const std::string dict_path = JoinPath(dict_path_, DICT_PATH);
+    printf("Validate dict file: %s\n", dict_path.c_str());
+    if (!PathExists(dict_path)) {
+        printf("Invalid dict file: %s\n", dict_path.c_str());
         return -1;
     }
 
-    fs::path pos_def_path(root / POS_DEF_PATH);
-    printf("Validate pos file: %s\n", pos_def_path.string().c_str());
-    if (!fs::exists(pos_def_path)) {
-        printf("Invalid pos file: %s\n", pos_def_path.string().c_str());
+    const std::string pos_def_path = JoinPath(dict_path_, POS_DEF_PATH);
+    printf("Validate pos file: %s\n", pos_def_path.c_str());
+    if (!PathExists(pos_def_path)) {
+        printf("Invalid pos file: %s\n", pos_def_path.c_str());
         return -2;
     }
     own_dict_ = true;
     trie_ = new DartsTrie();
-    pos_table_ = new POSTable(pos_def_path.string());
-    printf("Load pos file: %s\n", pos_def_path.string().c_str());
+    pos_table_ = new POSTable(pos_def_path);
+    printf("Load pos file: %s\n", pos_def_path.c_str());
     if (pos_table_->Load() != 0) {
-        printf("Fail to load pos file: %s\n", pos_def_path.string().c_str());
+        printf("Fail to load pos file: %s\n", pos_def_path.c_str());
         return -3;
     }
 
-    fs::path trie_path(root / TRIE_PATH);
-    printf("Validate trie file: %s\n", trie_path.string().c_str());
-    if (fs::exists(trie_path)) {
-        printf("Load trie file: %s\n", trie_path.string().c_str());
-        trie_->Load(trie_path.string());
+    const std::string trie_path = JoinPath(dict_path_, TRIE_PATH);
+    printf("Validate trie file: %s\n", trie_path.c_str());
+    if (PathExists(trie_path)) {
+        printf("Load trie file: %s\n", trie_path.c_str());
+        trie_->Load(trie_path);
     } else {
         // Build trie
         try {
-            printf("Build trie file: %s\n", dict_path.string().c_str());
-            std::ifstream from(dict_path.string());
+            printf("Build trie file: %s\n", dict_path.c_str());
+            std::ifstream from(dict_path);
             std::string line;
             re2::RE2 re_pattern(R"([\r\n]+)");
             std::string split_pattern("([ \t])");
@@ -796,24 +840,24 @@ int32_t RAGAnalyzer::Load() {
             printf("Fail to build trie: %s\n", e.what());
             return -4;
         }
-        printf("Save trie file: %s\n", trie_path.string().c_str());
-        trie_->Save(trie_path.string());
+        printf("Save trie file: %s\n", trie_path.c_str());
+        trie_->Save(trie_path);
     }
 
-    fs::path lemma_path(root / WORDNET_PATH);
-    if (!fs::exists(lemma_path)) {
-        printf("Fail to load wordnet: %s\n", lemma_path.string().c_str());
+    const std::string lemma_path = JoinPath(dict_path_, WORDNET_PATH);
+    if (!PathExists(lemma_path)) {
+        printf("Fail to load wordnet: %s\n", lemma_path.c_str());
         return -5;
     }
 
-    wordnet_lemma_ = new WordNetLemmatizer(lemma_path.string());
+    wordnet_lemma_ = new WordNetLemmatizer(lemma_path);
 
-    fs::path opencc_path(root / OPENCC_PATH);
+    const std::string opencc_path = JoinPath(dict_path_, OPENCC_PATH);
     try {
-        printf("Load OpenCC config from: %s\n", opencc_path.string().c_str());
-        opencc_ = std::make_unique<::OpenCC>(opencc_path.string());
+        printf("Load OpenCC config from: %s\n", opencc_path.c_str());
+        opencc_ = std::make_unique<::OpenCC>(opencc_path);
     } catch (const std::exception &e) {
-        printf("Fail to load OpenCC config from %s: %s\n", opencc_path.string().c_str(), e.what());
+        printf("Fail to load OpenCC config from %s: %s\n", opencc_path.c_str(), e.what());
         return -7;
     }
 

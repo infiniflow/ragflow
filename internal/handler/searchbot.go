@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -227,6 +228,9 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
+	if !filterSearchResponse(c, &result.Chunks, &result.DocAggs) {
+		return
+	}
 	common.RespondSuccess(c, result, "success")
 }
 
@@ -515,8 +519,7 @@ func sseAnswer(answer string, refs interface{}, final bool, message string) stri
 			Final:     final,
 		},
 	}
-	b, _ := json.Marshal(payload)
-	return fmt.Sprintf("data: %s\n\n", string(b))
+	return fmt.Sprintf("data: %s\n\n", utility.MustJSON(payload))
 }
 
 // sseError matches Python bot_api.py error format:
@@ -531,8 +534,7 @@ func sseError(message string) string {
 			Reference: []map[string]interface{}{},
 		},
 	}
-	b, _ := json.Marshal(payload)
-	return fmt.Sprintf("data: %s\n\n", string(b))
+	return fmt.Sprintf("data: %s\n\n", utility.MustJSON(payload))
 }
 
 // sseMarker matches Python dialog_service.py think-tag marker format:
@@ -549,8 +551,7 @@ func sseMarker(marker string) string {
 		d.EndToThink = true
 	}
 	payload := ssePayload{Code: 0, Message: "success", Data: d}
-	b, _ := json.Marshal(payload)
-	return fmt.Sprintf("data: %s\n\n", string(b))
+	return fmt.Sprintf("data: %s\n\n", utility.MustJSON(payload))
 }
 
 type SSEWriter interface {

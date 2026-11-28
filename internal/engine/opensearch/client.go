@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
 	"ragflow/internal/utility"
@@ -37,14 +36,12 @@ import (
 
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
-	"go.uber.org/zap"
 )
 
 type Engine struct {
-	client              *opensearch.Client
-	apiClient           *opensearchapi.Client
-	config              *config.OpenSearchConfig
-	hybridSearchEnabled bool
+	client    *opensearch.Client
+	apiClient *opensearchapi.Client
+	config    *config.OpenSearchConfig
 }
 
 func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, error) {
@@ -119,17 +116,14 @@ func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, 
 		return nil, fmt.Errorf("OpenSearch returned nil info response")
 	}
 
+	if err := validateOpenSearchVersion(infoResp.Version.Distribution, infoResp.Version.Number); err != nil {
+		return nil, err
+	}
+
 	engine := &Engine{
 		client:    client,
 		apiClient: apiClient,
 		config:    &osConfig,
-	}
-
-	if supportsHybridSearch(infoResp.Version.Number) {
-		engine.hybridSearchEnabled = true
-	} else {
-		common.Warn("OpenSearch hybrid search is disabled (requires OpenSearch >= 2.10)",
-			zap.String("version", infoResp.Version.Number))
 	}
 
 	// Create two index templates for different index types
@@ -181,32 +175,67 @@ func parseAddresses(hosts string) []string {
 	return addrs
 }
 
-// supportsHybridSearch reports whether the OpenSearch cluster version supports
-// phase results processors (normalization-processor) in search pipelines (>= 2.10).
-func supportsHybridSearch(version string) bool {
+const (
+	minOpenSearchMajor = 2
+	minOpenSearchMinor = 19
+)
+
+// parseOpenSearchMajorMinor parses the leading major.minor integers from an
+// OpenSearch version string (e.g. "2.19.7" or "3.9.0").
+func parseOpenSearchMajorMinor(version string) (major, minor int, ok bool) {
 	parts := strings.Split(version, ".")
 	if len(parts) < 2 {
-		return false
+		return 0, 0, false
 	}
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return false
+		return 0, 0, false
 	}
-	minor, err := strconv.Atoi(parts[1])
+	minor, err = strconv.Atoi(parts[1])
 	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
+// isSupportedOpenSearchVersion reports whether the OpenSearch cluster version
+// meets the minimum supported baseline (>= 2.19, including 2.19 LTS and 3.x).
+// OpenSearch 2.19 is the first release where RAGFlow's top-level cosinesimil
+// knn_vector mappings work on the default Faiss engine with a unified
+// (1 + cos) / 2 score space, radial min_score support, and sorted hybrid fixes.
+func isSupportedOpenSearchVersion(version string) bool {
+	major, minor, ok := parseOpenSearchMajorMinor(version)
+	if !ok {
 		return false
 	}
 	// Guard against Elasticsearch 7.10.2 compatibility mode where major is reported as 7.
 	if major == 7 {
 		return false
 	}
-	if major > 2 {
+	if major > minOpenSearchMajor {
 		return true
 	}
-	if major == 2 && minor >= 10 {
-		return true
+	return major == minOpenSearchMajor && minor >= minOpenSearchMinor
+}
+
+// validateOpenSearchVersion enforces the minimum OpenSearch version (>= 2.19)
+// at engine startup and returns an actionable error for unsupported versions
+// or clusters reporting Elasticsearch compatibility mode.
+func validateOpenSearchVersion(distribution, version string) error {
+	if distribution != "" && !strings.EqualFold(distribution, "opensearch") {
+		return fmt.Errorf("unsupported OpenSearch distribution %q (version %q): RAGFlow requires OpenSearch >= %d.%d",
+			distribution, version, minOpenSearchMajor, minOpenSearchMinor)
 	}
-	return false
+	major, _, ok := parseOpenSearchMajorMinor(version)
+	if ok && major == 7 {
+		return fmt.Errorf("unsupported OpenSearch version %q (Elasticsearch compatibility mode detected): disable compatibility.override_main_response_version and use OpenSearch >= %d.%d",
+			version, minOpenSearchMajor, minOpenSearchMinor)
+	}
+	if !isSupportedOpenSearchVersion(version) {
+		return fmt.Errorf("unsupported OpenSearch version %q: RAGFlow requires OpenSearch >= %d.%d (2.19 LTS or 3.x)",
+			version, minOpenSearchMajor, minOpenSearchMinor)
+	}
+	return nil
 }
 
 // normalizeDynamicMapping rewrites ES-only "dynamic": "runtime" to true so

@@ -24,6 +24,10 @@ import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
 import Search1APICrawlForm from '../form/search1api-crawl-form';
 import Search1APIForm from '../form/search1api-form';
+import SpecStreamExtractForm from '../form/specstream-extract-form';
+import SpecStreamForm from '../form/specstream-form';
+import AnySearchExtractForm from '../form/anysearch-extract-form';
+import AnySearchSearchForm from '../form/anysearch-search-form';
 import YouComForm from '../form/youcom-form';
 import PerplexityForm from '../form/perplexity-form';
 import ListOperationsForm from '../form/list-operations-form';
@@ -101,6 +105,18 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.Search1APICrawl]: {
     component: Search1APICrawlForm,
+  },
+  [Operator.SpecStreamSearch]: {
+    component: SpecStreamForm,
+  },
+  [Operator.SpecStreamExtract]: {
+    component: SpecStreamExtractForm,
+  },
+  [Operator.AnySearchSearch]: {
+    component: AnySearchSearchForm,
+  },
+  [Operator.AnySearchExtract]: {
+    component: AnySearchExtractForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,

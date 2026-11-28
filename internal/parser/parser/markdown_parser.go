@@ -886,6 +886,24 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 		buf.WriteString("](")
 		buf.Write(t.Destination)
 		buf.WriteByte(')')
+	case *ast.Link:
+		// gomarkdown keeps the URL on Destination, not in a child Text node, so
+		// the default branch dropped it. Keep the Markdown form, as for images.
+		// An autolink's text already is its URL.
+		var label bytes.Buffer
+		for _, c := range t.GetChildren() {
+			walkLeaf(c, &label)
+		}
+		dest := bytes.TrimPrefix(t.Destination, []byte("mailto:"))
+		if len(dest) == 0 || bytes.Equal(label.Bytes(), dest) {
+			buf.Write(label.Bytes())
+			return
+		}
+		buf.WriteByte('[')
+		buf.Write(label.Bytes())
+		buf.WriteString("](")
+		buf.Write(t.Destination)
+		buf.WriteByte(')')
 	case *ast.Code:
 		buf.Write(t.Literal)
 	case *ast.CodeBlock:
