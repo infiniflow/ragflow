@@ -32,9 +32,14 @@ reads the key from `RAGFLOW_API_KEY`. Change the URL for a remote server.
   `RAGFLOW_MCP_HOST_API_KEY`; startup fails if it is empty. Only for
   trusted clients.
 
-In Docker, set `RAGFLOW_MCP_HOST=0.0.0.0` and connect to
-`http://<docker-host>:${SVR_MCP_PORT}/mcp`. That exposes the port to the
-network, so firewall it. Keep keys out of command lines and committed files.
+In Docker, setting `RAGFLOW_MCP_HOST=0.0.0.0` alone does not publish the
+listener. Uncomment the MCP port mapping in `docker/docker-compose.yml`
+(`0.0.0.0:${SVR_MCP_PORT}:${RAGFLOW_MCP_PORT:-9382}`), then recreate the
+container (`docker compose up -d --force-recreate`). Connect locally at
+`http://<docker-host>:${SVR_MCP_PORT}/mcp`. For remote clients, terminate
+TLS with a reverse proxy or tunnel and point `.mcp.json` at an `https://`
+URL; do not expose the plain HTTP listener publicly. Keep keys out of
+command lines and committed files.
 
 ## Tools
 

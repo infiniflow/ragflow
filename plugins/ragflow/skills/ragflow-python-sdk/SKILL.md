@@ -13,7 +13,7 @@ References: `docs/references/python_api_reference.md`,
 `docs/references/http_api_reference.md`, `sdk/python/ragflow_sdk/`.
 
 ```bash
-pip install ragflow-sdk
+pip install ragflow-sdk openai
 ```
 
 ```python
@@ -72,9 +72,19 @@ Agents work the same way via `rag.list_agents()` and agent sessions.
 ## OpenAI-compatible endpoint
 
 ```python
+import os
 from openai import OpenAI
+
+RAGFLOW_API_KEY = os.environ["RAGFLOW_API_KEY"]
+chat_id = assistant.id  # from create_chat above
 client = OpenAI(api_key=RAGFLOW_API_KEY, base_url=f"http://<host>/api/v1/openai/{chat_id}/chat")
-client.chat.completions.create(model="model", messages=[...], extra_body={"reference": True})
+# OpenAI SDK merges extra_body into the top-level JSON; nest once so the
+# server sees {"extra_body": {"reference": true}}.
+client.chat.completions.create(
+    model="model",
+    messages=[{"role": "user", "content": "How many vacation days do new hires get?"}],
+    extra_body={"extra_body": {"reference": True}},
+)
 ```
 
 ## Errors

@@ -22,6 +22,9 @@ sudo sysctl -w vm.max_map_count=262144   # persist in /etc/sysctl.conf
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/docker
 git checkout v1.0.0                      # or another release tag
+# Before first `up`: set a unique ADMIN_DEFAULT_PASSWORD in docker/.env
+# (used only when the superuser is created) and restrict host access to
+# ADMIN_SVR_HTTP_PORT (default 9381).
 docker compose -f docker-compose.yml up -d
 ```
 
@@ -34,7 +37,7 @@ docker compose -f docker-compose.yml up -d
 
 ```bash
 docker ps
-docker logs -f ragflow-cpu
+docker compose logs ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz   # add SVR_WEB_HTTP_PORT if changed
 ```
 
@@ -58,4 +61,5 @@ Wait for the health check to return 200 before opening
 - Elasticsearch crash-looping usually means `vm.max_map_count` is too low
   (on Docker Desktop, set it inside its Linux VM).
 - After editing `.env` or `service_conf.yaml.template`, recreate the
-  containers (`docker compose up -d` again).
+  containers so the entrypoint re-renders the template:
+  `docker compose up -d --force-recreate`.
