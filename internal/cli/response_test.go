@@ -223,3 +223,54 @@ func TestCommonResponseTableBorders(t *testing.T) {
 		t.Errorf("table output = %q, want %q", output, want)
 	}
 }
+
+func TestCommonResponseTableUnicodeWidth(t *testing.T) {
+	response := &CommonResponse{
+		Data:         []map[string]interface{}{{"éé": "中", "名称": "éééé"}},
+		OutputFormat: OutputFormatTable,
+	}
+	output, panicValue := capturePrintOut(t, response.PrintOut)
+	if panicValue != nil {
+		t.Fatalf("print table: %v", panicValue)
+	}
+	want := "+----+------+\n| éé | 名称 |\n+----+------+\n| 中 | éééé |\n+----+------+\n"
+	if output != want {
+		t.Errorf("table output = %q, want %q", output, want)
+	}
+}
+
+func TestCommonResponseTableWidthLimit(t *testing.T) {
+	cases := []struct {
+		name       string
+		value      string
+		width      int
+		plainValue string
+	}{
+		{"ASCII", strings.Repeat("a", 257), 257, strings.Repeat("a", 253) + "..."},
+		{"accented", strings.Repeat("é", 257), 257, strings.Repeat("é", 253) + "..."},
+		{"CJK", strings.Repeat("中", 129), 258, strings.Repeat("中", 126) + "... "},
+	}
+	for _, tc := range cases {
+		for _, format := range []OutputFormat{OutputFormatPlain, OutputFormatTable} {
+			t.Run(tc.name+"/"+string(format), func(t *testing.T) {
+				response := &CommonResponse{
+					Data:         []map[string]interface{}{{"name": tc.value}},
+					OutputFormat: format,
+				}
+				output, panicValue := capturePrintOut(t, response.PrintOut)
+				if panicValue != nil {
+					t.Fatalf("print table: %v", panicValue)
+				}
+				want := "name" + strings.Repeat(" ", 252) + "\n" + tc.plainValue + "\n"
+				if format == OutputFormatTable {
+					border := "+" + strings.Repeat("-", tc.width+2) + "+\n"
+					want = border + "| name" + strings.Repeat(" ", tc.width-3) + "|\n" +
+						border + "| " + tc.value + " |\n" + border
+				}
+				if output != want {
+					t.Errorf("table output = %q, want %q", output, want)
+				}
+			})
+		}
+	}
+}
