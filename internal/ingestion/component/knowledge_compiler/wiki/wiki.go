@@ -109,8 +109,10 @@ type wikiExtract struct {
 }
 
 type wikiMapActiveSnapshot struct {
-	Chunks map[string]wikiMapActiveChunk `json:"chunks"`
-	Plan   []wikiPlanPage                `json:"plan"`
+	Chunks               map[string]wikiMapActiveChunk `json:"chunks"`
+	Plan                 []wikiPlanPage                `json:"plan"`
+	TemplateID           string                        `json:"template_id"`
+	ConceptPagesDisabled bool                          `json:"concept_pages_disabled"`
 }
 
 type wikiMapActiveChunk struct {
