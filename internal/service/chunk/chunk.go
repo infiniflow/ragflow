@@ -215,6 +215,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Filled by the search_id block below, then used to resolve retrieval
 	// parameters.
 	var searchConfig map[string]interface{}
+	var searchTenantID string
 	filter := req.Filter
 	tenantRerankID := req.TenantRerankID
 	rerankID := req.RerankID
@@ -234,6 +235,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		}
 		if cfg, ok := searchConfigMap(searchDetail["search_config"]); ok && cfg != nil {
 			searchConfig = cfg
+			searchTenantID, _ = searchDetail["tenant_id"].(string)
 			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
 				rerankCandidatesCount = 100
 				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
@@ -406,17 +408,26 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		zap.String("tenantID", tenantIDs[0]),
 		zap.String("modelName", modelName))
 
-	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
+	rerankField := "rerank_id"
+	selectedRerankID := rerankID
 	if tenantRerankID != nil && *tenantRerankID != "" {
-		rerankModel, getErr = modelFactory.NewRerankModel(modelCtx, *tenantRerankID)
-		if getErr != nil {
-			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", getErr)
+		rerankField = "tenant_rerank_id"
+		selectedRerankID = tenantRerankID
+	}
+	if selectedRerankID != nil && *selectedRerankID != "" {
+		rerankCtx := modelCtx
+		// AskService may already have copied the saved reference into the request.
+		if saved, ok := searchConfig[rerankField].(string); ok &&
+			strings.TrimSpace(saved) == strings.TrimSpace(*selectedRerankID) {
+			if strings.TrimSpace(searchTenantID) == "" {
+				return nil, fmt.Errorf("search %s has no tenant", *req.SearchID)
+			}
+			rerankCtx = permission.WithIdentity(ctx, permission.UserIDFromContext(ctx), searchTenantID)
 		}
-	} else if rerankID != nil && *rerankID != "" {
-		rerankModel, getErr = modelFactory.NewRerankModel(modelCtx, *rerankID)
+		rerankModel, getErr = modelFactory.NewRerankModel(rerankCtx, *selectedRerankID)
 		if getErr != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", getErr)
+			return nil, fmt.Errorf("failed to get rerank model by %s: %w", rerankField, getErr)
 		}
 	}
 

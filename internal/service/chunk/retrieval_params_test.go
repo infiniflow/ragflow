@@ -18,10 +18,65 @@ package chunk
 
 import (
 	"math"
+	"strings"
 	"testing"
 
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func TestRetrievalTestResolvesSavedRerankerInSearchTenant(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	if err := db.AutoMigrate(&entity.Search{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatal(err)
+	}
+	insertChunkTestKB(t, "kb", "dataset-team")
+	insertChunkTestUserTenant(t, "team", "team")
+	insertChunkTestUserTenant(t, "member", "dataset-team")
+	insertChunkTestUserTenant(t, "member", "team")
+	insertChunkTestUserTenant(t, "member", "member")
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb").
+		Update("embd_id", "BAAI/bge-large-en-v1.5@embed@Builtin").Error; err != nil {
+		t.Fatal(err)
+	}
+	valid := string(entity.StatusValid)
+	app := &entity.Search{ID: "app", TenantID: "team", CreatedBy: "member", Status: &valid,
+		SearchConfig: entity.JSONMap{"tenant_rerank_id": " team-model "}}
+	for _, row := range []any{
+		app,
+		&entity.TenantModelProvider{ID: "team-provider", UserID: "team", TenantID: "team", ProviderName: "Xinference"},
+		&entity.TenantModelInstance{ID: "team-instance", ProviderID: "team-provider", InstanceName: "local", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "team-model", ProviderID: "team-provider", InstanceID: "team-instance", ModelName: "test-reranker", ModelType: int(entity.ModelTypeRerank), Status: "active"},
+		&entity.TenantModel{ID: "other-team-model", ProviderID: "team-provider", InstanceID: "team-instance", ModelName: "other-reranker", ModelType: int(entity.ModelTypeRerank), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+	chunkTestContext(t, "member", "team")
+	chunkTestContext(t, "member", "dataset-team")
+	ctx := chunkTestContext(t, "member", "member")
+	svc := &ChunkService{kbDAO: dao.NewKnowledgebaseDAO(), searchService: service.NewSearchService()}
+	// Page 2 is rejected after resolving the reranker and before querying the index.
+	req := &service.RetrievalTestRequest{Question: "example", Datasets: []string{"kb"}, SearchID: &app.ID, Page: intPtr(2)}
+	if _, err := svc.RetrievalTest(ctx, req); err == nil || !strings.Contains(err.Error(), "Pagination is not supported when rerank_mdl is specified") {
+		t.Errorf("saved reranker returned %v, want rerank pagination error", err)
+	}
+
+	opts := service.BuildAskStreamOptions(app.ID, app.SearchConfig)
+	req.TenantRerankID = opts.TenantRerankID
+	if _, err := svc.RetrievalTest(ctx, req); err == nil || !strings.Contains(err.Error(), "Pagination is not supported when rerank_mdl is specified") {
+		t.Errorf("saved reranker forwarded by Ask returned %v, want rerank pagination error", err)
+	}
+
+	otherModel := "other-team-model"
+	req.TenantRerankID = &otherModel
+	if _, err := svc.RetrievalTest(ctx, req); err == nil || !strings.Contains(err.Error(), "can use only its owner's model configuration") {
+		t.Errorf("explicit model override returned %v, want active tenant ownership error", err)
+	}
+}
 
 func floatPtr(v float64) *float64 { return &v }
 

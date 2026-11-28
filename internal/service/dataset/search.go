@@ -3,6 +3,7 @@ package dataset
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
@@ -145,6 +146,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	// Override request fields with values from saved search config
 	var chatID string
+	rerankCtx := permission.WithTenantID(ctx, tenantIDs[0])
+	rerankFailoverTenantID := tenantIDs[0]
 	if searchID != "" {
 		if d.searchService == nil {
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
@@ -203,6 +206,15 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			}
 			if scRerankID, ok := searchConfig["rerank_id"].(string); ok {
 				rerankID = scRerankID
+				if rerankID != "" {
+					searchTenantID, _ := searchDetail["tenant_id"].(string)
+					searchTenantID = strings.TrimSpace(searchTenantID)
+					if searchTenantID == "" {
+						return nil, fmt.Errorf("search %s has no tenant", searchID)
+					}
+					rerankCtx = permission.WithIdentity(ctx, userID, searchTenantID)
+					rerankFailoverTenantID = searchTenantID
+				}
 			}
 			chatID, _ = searchConfig["chat_id"].(string)
 		} else {
@@ -368,7 +380,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		// Get rerank model if rerankID is specified
 		var rerankModel *modelModule.RerankModel
 		if rerankID != "" {
-			rerankModel, err = modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
+			rerankModel, err = modelFactory.NewRerankModel(rerankCtx, rerankID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 			}
@@ -394,7 +406,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 		var rerankModel *modelModule.RerankModel
 		if rerankID != "" {
-			m, rerr := modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
+			m, rerr := modelFactory.NewRerankModel(rerankCtx, rerankID)
 			if rerr != nil {
 				return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rerr)
 			}
@@ -407,7 +419,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// so they must not deactivate a healthy member.
 	failoverCanRetry := nlp.RetrievalFailoverCanRetry(failoverType)
 	var result *service.SearchDatasetsResponse
-	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantIDs[0], failoverType, failoverRef,
+	failoverTenantID := tenantIDs[0]
+	if failoverType == entity.ModelTypeRerank {
+		failoverTenantID = rerankFailoverTenantID
+	}
+	err = dao.InvokeWithGroupFailover(ctx, dao.DB, failoverTenantID, failoverType, failoverRef,
 		resolveModels, nil,
 		func(ctx context.Context, resolved *retrievalModels) error {
 			resp, invErr := runRetrieval(ctx, resolved.embedding, resolved.rerank)
