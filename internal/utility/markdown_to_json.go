@@ -36,9 +36,10 @@
 // the following intentional or incidental differences exist (all documented so
 // the divergences are auditable against the Python golden behavior):
 //
-//  1. (Fixed here) Closed ATX headings: Python's CommonMark strips BOTH the
-//     leading and the trailing '#' run ("## Title ##" -> "Title"). This port
-//     now strips the trailing '#' too, in headingRawText.
+//  1. Closed ATX headings need no special handling: goldmark's Heading.Lines
+//     already applies CommonMark's closing-'#' rule, so "## Title ##" yields
+//     "Title" while "# C#" keeps the '#' of its text, as Python's CommonMark
+//     does. headingRawText adds no '#' trimming of its own.
 //
 //  2. Heading text is taken from the raw source line (goldmark's
 //     Heading.Lines) instead of goldmark's inline-parsed text, so inline
@@ -424,16 +425,17 @@ func toBlock(n ast.Node, src []byte) mdBlock {
 	}
 }
 
-// headingRawText renders the heading's raw source line without the ATX
-// markers, keeping inline Markdown (e.g. asterisks) intact like CommonMark's
-// block.strings (goldmark's inline text would strip emphasis). Both leading
-// and trailing '#' runs are removed (deviation #1 fixed: Python's CommonMark
-// strips the closing '#' sequence too).
+// headingRawText renders the heading's raw source line, keeping inline
+// Markdown (e.g. asterisks) intact like CommonMark's block.strings (goldmark's
+// inline text would strip emphasis).
+//
+// goldmark's Heading.Lines() already holds the CommonMark heading text: it
+// excludes the ATX opening marker and the optional closing '#' run ("## Title
+// ##" -> "Title "). Trimming '#' again here would instead eat a '#' that
+// belongs to the text — "# C#" -> "C", "# #hashtag" -> "hashtag" — which the
+// Python markdown_to_json pipeline (CommonMark) keeps.
 func headingRawText(n *ast.Heading, src []byte) string {
-	raw := strings.TrimSpace(rawLines(n, src, "\n"))
-	raw = strings.TrimLeft(raw, "#")
-	raw = strings.TrimRight(raw, "#")
-	return strings.TrimSpace(raw)
+	return strings.TrimSpace(rawLines(n, src, "\n"))
 }
 
 // rawLines joins a node's source lines (sep between lines). For fenced code

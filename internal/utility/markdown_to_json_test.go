@@ -102,6 +102,27 @@ func TestDictify_ClosedHeadingStripsTrailingHashes(t *testing.T) {
 	}
 }
 
+func TestDictify_HeadingTextKeepsOwnHashes(t *testing.T) {
+	// CommonMark removes the ATX closing '#' run but keeps a '#' that is part
+	// of the heading text. The Python markdown_to_json pipeline parses with
+	// CommonMark, so these keys must be preserved exactly.
+	md := "# C#\n\n## F#\n\nbody\n"
+	got := Dictify(md)
+	if len(got) != 1 || got[0].k != "C#" {
+		t.Fatalf("root heading = %+v, want key \"C#\"", got)
+	}
+	children, ok := got[0].v.(OMap)
+	if !ok || len(children) != 1 || children[0].k != "F#" {
+		t.Fatalf("child heading = %+v, want key \"F#\"", got[0].v)
+	}
+
+	// A leading '#' in the heading text is text too: "# #hashtag" is the
+	// heading "#hashtag", not "hashtag".
+	if lead := Dictify("# #hashtag\n\nbody\n"); len(lead) != 1 || lead[0].k != "#hashtag" {
+		t.Fatalf("leading-hash heading = %+v, want key \"#hashtag\"", lead)
+	}
+}
+
 func TestMergeDicts_Order(t *testing.T) {
 	d1 := OMap{{"A", []any{"x"}}}
 	d2 := OMap{{"A", []any{"y"}}, {"B", "b"}}
