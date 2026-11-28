@@ -1,7 +1,7 @@
-import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { IFile } from '@/interfaces/database/file-manager';
 import { OnChangeFn, RowSelectionState } from '@tanstack/react-table';
 import { FolderInput, Link2, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UseHandleConnectToKnowledgeReturnType } from './hooks';
 import { useHandleDeleteFile } from './use-delete-file';
@@ -22,7 +22,12 @@ export function useBulkOperateFile({
   }) {
   const { t } = useTranslation();
 
-  const { selectedIds } = useSelectedIds(rowSelection, files);
+  // A row can be checked while the debounced search still shows the old list.
+  const selectedIds = useMemo(
+    () =>
+      (files ?? []).filter(({ id }) => rowSelection[id]).map(({ id }) => id),
+    [files, rowSelection],
+  );
 
   const { handleRemoveFile } = useHandleDeleteFile();
 
@@ -56,5 +61,5 @@ export function useBulkOperateFile({
     },
   ];
 
-  return { list };
+  return { list, selectedCount: selectedIds.length };
 }
