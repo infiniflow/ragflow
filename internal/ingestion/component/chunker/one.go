@@ -188,6 +188,13 @@ func buildOneChunkFromItems(items, chunks []schema.ChunkDoc, pdfCandidate bool) 
 	var img string
 	var mediaRef *entity.MediaRef
 	mergePositions := pdfCandidate && !hasOneChunkSpreadsheetItems(src)
+	// A PDF's blocks can arrive in any order (multi-column layouts, layout
+	// models that emit per-region results): Python's one.py sorts its sections
+	// by (page, top, left) before joining them, and the general chunker applies
+	// the same sort. Join in reading order so the single chunk is not scrambled.
+	if mergePositions {
+		src = sortPDFUnits(src)
+	}
 	pdfSources := make([]json.RawMessage, 0, len(src))
 	posSources := make([]json.RawMessage, 0, len(src))
 	for _, it := range src {

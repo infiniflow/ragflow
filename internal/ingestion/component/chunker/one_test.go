@@ -116,6 +116,41 @@ func TestOneChunker_JSONMultipleMerges(t *testing.T) {
 	}
 }
 
+// TestOneChunker_KeepsReadingOrderForOutOfOrderPDFItems pins that the single
+// chunk is assembled in physical reading order, not in upstream order. Python's
+// one.py sorts its sections by (page, top, left) before joining them, and the
+// general chunker applies the same sort; the One chunker joined whatever order
+// the parser emitted, so a layout whose blocks arrive out of order produced a
+// single chunk with scrambled text.
+func TestOneChunker_KeepsReadingOrderForOutOfOrderPDFItems(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "columns.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text":           "SECOND block on page one.",
+				"_pdf_positions": [][]float64{{1, 10, 200, 400, 500}},
+			},
+			{
+				"text":           "FIRST block on page one.",
+				"_pdf_positions": [][]float64{{1, 10, 200, 10, 100}},
+			},
+			{
+				"text":           "Block on page two.",
+				"_pdf_positions": [][]float64{{2, 10, 200, 10, 100}},
+			},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	want := "FIRST block on page one.\nSECOND block on page one.\nBlock on page two."
+	if got := chunks[0]["text"]; got != want {
+		t.Fatalf("text = %q, want reading order %q", got, want)
+	}
+}
+
 // TestOneChunker_PreservesPositions verifies that when a single upstream
 // item carries PDF coordinates, the OneChunker preserves both Positions
 // and PDFPositions (with their coordinate values) on the output chunk.
