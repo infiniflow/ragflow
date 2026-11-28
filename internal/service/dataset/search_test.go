@@ -2,14 +2,69 @@ package dataset
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 )
+
+func TestSearchDatasetsResolvesSavedRerankerInSearchTenant(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.Search{}); err != nil {
+		t.Fatal(err)
+	}
+	insertCreateDatasetTenant(t, "team")
+	insertCreateDatasetTenant(t, "member")
+	ensureDatasetTestMembership(t, "member", "team", "normal")
+	ensureDatasetTestMembership(t, "other-member", "team", "normal")
+
+	valid := string(entity.StatusValid)
+	app := &entity.Search{ID: "app", TenantID: "team", CreatedBy: "member", Status: &valid,
+		SearchConfig: entity.JSONMap{"rerank_id": "team-model"}}
+	for _, row := range []any{
+		&entity.Knowledgebase{ID: "kb", TenantID: "team", CreatedBy: "team", Permission: "team", Status: &valid},
+		app,
+		&entity.TenantModelProvider{ID: "team-provider", UserID: "team", TenantID: "team", ProviderName: "Xinference"},
+		&entity.TenantModelInstance{ID: "team-instance", ProviderID: "team-provider", InstanceName: "local", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "team-model", ProviderID: "team-provider", InstanceID: "team-instance", ModelName: "test-reranker", ModelType: int(entity.ModelTypeRerank), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	svc := &DatasetService{kbDAO: dao.NewKnowledgebaseDAO(), searchService: service.NewSearchService()}
+	// Reranking rejects page 2 after resolving the model and before querying the index.
+	req := &service.SearchDatasetsRequest{
+		Question: "example", DatasetIDs: []string{"kb"}, SearchID: &app.ID, Page: iptr(2),
+	}
+	ctx := withDatasetTestContext(t.Context(), "member", "member")
+	if _, err := svc.SearchDatasets(ctx, req); err == nil || !strings.Contains(err.Error(), "Pagination is not supported when rerank_mdl is specified") {
+		t.Errorf("search with saved team model returned %v, want rerank pagination error", err)
+	}
+
+	otherCtx := withDatasetTestContext(t.Context(), "other-member", "team")
+	if _, err := svc.SearchDatasets(otherCtx, req); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Errorf("search without app access returned %v, want permission denied", err)
+	}
+
+	if err := db.Model(app).Update("search_config", entity.JSONMap{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	req.RerankID = sptr("team-model")
+	if _, err := svc.SearchDatasets(ctx, req); err == nil || !strings.Contains(err.Error(), "can use only its owner's model configuration") {
+		t.Errorf("search with request-supplied team model returned %v, want active tenant ownership error", err)
+	}
+}
 
 func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	page := 2
