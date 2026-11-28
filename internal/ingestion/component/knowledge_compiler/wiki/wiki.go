@@ -109,8 +109,10 @@ type wikiExtract struct {
 }
 
 type wikiMapActiveSnapshot struct {
-	Chunks map[string]wikiMapActiveChunk `json:"chunks"`
-	Plan   []wikiPlanPage                `json:"plan"`
+	Chunks               map[string]wikiMapActiveChunk `json:"chunks"`
+	Plan                 []wikiPlanPage                `json:"plan"`
+	TemplateID           string                        `json:"template_id"`
+	ConceptPagesDisabled bool                          `json:"concept_pages_disabled"`
 }
 
 type wikiMapActiveChunk struct {
@@ -733,7 +735,12 @@ func (p *wikiPipeline) runPlan() (wikiPlan, error) {
 	return p.runLegacyPlan()
 }
 
-// runEntityPlan builds one page for every reduced entity or concept. Entity
+func (p *wikiPipeline) conceptPagesDisabled() bool {
+	disabled, _ := p.param.TemplateConfig["disable_concept_pages"].(bool)
+	return disabled && !p.param.PlanEnabled()
+}
+
+// runEntityPlan builds pages from reduced entities and any enabled concepts. Entity
 // mode already has a canonical identity from MAP/REDUCE, so a PLAN LLM call
 // would only repeat fields that the compiler can derive deterministically.
 func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
@@ -741,7 +748,10 @@ func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
 		return wikiPlan{}, err
 	}
 
-	plan := wikiPlan{Pages: buildWikiEntityPlanPages(p.reduced)}
+	plan := wikiPlan{Pages: buildWikiEntityPlanPages(p.reduced, !p.conceptPagesDisabled())}
+	if len(plan.Pages) == 0 && p.conceptPagesDisabled() {
+		return plan, nil
+	}
 	plan.Pages = assembleWikiPlanRelatedPages(plan.Pages, p.reduced.Relations)
 	plan.Pages = normalizeWikiPlanPages(plan.Pages, p.reduced)
 	plan.Pages = normalizeWikiPlanPageLinks(plan.Pages)
@@ -756,7 +766,7 @@ func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
 // buildWikiEntityPlanPages projects MAP/REDUCE identities into deterministic
 // page metadata. Topic assignment uses source-chunk overlap with MAP topics;
 // the page itself remains one-to-one with the extracted entity or concept.
-func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
+func buildWikiEntityPlanPages(reduced wikiExtract, includeConcepts bool) []wikiPlanPage {
 	pages := make([]wikiPlanPage, 0, len(reduced.Entities)+len(reduced.Concepts))
 	for _, entity := range reduced.Entities {
 		name := strings.TrimSpace(entity.Name)
@@ -772,6 +782,9 @@ func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
 			EntityNames: appcommon.DeduplicateTrimmed(append([]string{name}, entity.Aliases...)),
 			Priority:    len(pages) + 1,
 		})
+	}
+	if !includeConcepts {
+		return pages
 	}
 	for _, concept := range reduced.Concepts {
 		term := strings.TrimSpace(concept.Term)
@@ -907,6 +920,9 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 // order regardless of completion order (no concurrent append to a shared slice).
 // When no submitter is wired, jobs run serially (historic default).
 func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
+	if len(p.plan.Pages) == 0 && p.conceptPagesDisabled() {
+		return nil, nil
+	}
 	allPages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
 	if len(allPages) == 0 {
 		return nil, nil
@@ -1340,7 +1356,7 @@ func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) 
 	}
 	if hit, err := p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, page.Slug); err != nil {
 		return nil, err
-	} else if hit != nil {
+	} else if hit != nil && p.allowsWikiPageCandidate(*hit) {
 		return hit, nil
 	}
 	cands, err := p.deps.WikiPages.FindSimilarPages(p.ctx, p.tenantID, p.datasetID, queryVec, wikiPlanSearchTopK)
@@ -1359,6 +1375,9 @@ func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) 
 	maybe := make([]common.WikiPageCandidate, 0, len(cands))
 	for i := range cands {
 		cand := cands[i]
+		if !p.allowsWikiPageCandidate(cand) {
+			continue
+		}
 		if cand.Score >= wikiPlanUpdateThreshold {
 			return &cand, nil
 		}
@@ -1377,6 +1396,11 @@ func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) 
 		return p.resolveMaybePlanPage(page, maybe)
 	}
 	return nil, nil
+}
+
+func (p *wikiPipeline) allowsWikiPageCandidate(candidate common.WikiPageCandidate) bool {
+	return !p.conceptPagesDisabled() ||
+		(normKey(candidate.PageType) != "concept" && !strings.HasPrefix(normKey(candidate.Slug), "concept/"))
 }
 
 func (p *wikiPipeline) expandTopicNeighborCandidates(page wikiPlanPage, candidates []common.WikiPageCandidate) []common.WikiPageCandidate {

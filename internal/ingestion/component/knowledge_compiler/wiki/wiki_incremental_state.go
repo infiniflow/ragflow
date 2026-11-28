@@ -118,6 +118,8 @@ func (p *wikiPipeline) buildActiveMapState(plan []wikiPlanPage) (*common.WikiMap
 		return nil, nil
 	}
 	p.nextActiveState.Plan = append([]wikiPlanPage(nil), plan...)
+	p.nextActiveState.TemplateID = p.param.TemplateID
+	p.nextActiveState.ConceptPagesDisabled = p.conceptPagesDisabled()
 	payload, err := json.Marshal(p.nextActiveState)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: encode active MAP state: %w", err)

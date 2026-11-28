@@ -35,6 +35,45 @@ func TestReduceExtracts_MergesProvenance(t *testing.T) {
 	}
 }
 
+func TestEntityWikiSkipsConceptPagesWhenDisabled(t *testing.T) {
+	p := &wikiPipeline{
+		ctx:       t.Context(),
+		datasetID: "dataset",
+		param:     common.Param{TemplateConfig: map[string]any{"disable_concept_pages": true}},
+		deps: common.Deps{
+			Embed: reconcileEmbedStub{},
+			WikiPages: wikiStoreStub{similar: []common.WikiPageCandidate{
+				{Slug: "concept/warranty", Title: "Warranty", PageType: "concept", Score: 1},
+			}},
+		},
+		reduced: wikiExtract{
+			Entities:  []wikiEntity{{Name: "Acme", Type: "brand"}},
+			Concepts:  []wikiConcept{{Term: "Warranty"}},
+			Relations: []wikiRelation{{From: "Acme", To: "Warranty", Type: "offers"}},
+		},
+	}
+	plan, err := p.runPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Pages) != 1 || plan.Pages[0].Slug != "entity/brand/acme" || plan.Pages[0].Action != "CREATE" {
+		t.Fatalf("plan = %#v, want a new entity page", plan.Pages)
+	}
+	if len(plan.Pages[0].RelatedKB) != 0 || len(p.reduced.Concepts) != 1 {
+		t.Fatalf("plan = %#v, extract = %#v, want concept retained without a page link", plan.Pages, p.reduced)
+	}
+
+	p.reduced.Entities = nil
+	p.plan, err = p.runPlan()
+	if err != nil || len(p.plan.Pages) != 0 {
+		t.Fatalf("concept-only plan = %#v, err = %v, want no pages", p.plan, err)
+	}
+	pages, err := p.runRefine()
+	if err != nil || len(pages) != 0 {
+		t.Fatalf("concept-only refine = %#v, err = %v, want no pages", pages, err)
+	}
+}
+
 func TestRunPlan_EntityModeBuildsPagesFromReducedExtract(t *testing.T) {
 	p := &wikiPipeline{
 		ctx: context.Background(),

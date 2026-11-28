@@ -388,6 +388,106 @@ func TestDirtyWikiEmptyPlanRetractsProducts(t *testing.T) {
 	}
 }
 
+func TestDirtyWikiDisabledConceptsPreserveOwnedPagesAndSections(t *testing.T) {
+	for _, newNamespace := range []bool{false, true} {
+		t.Run(fmt.Sprint("new-namespace-", newNamespace), func(t *testing.T) {
+			eng, _, request := dirtyWikiReconcileSetup(t)
+			expected := make(map[string]bool)
+			for _, fixture := range []struct {
+				id, slug, category string
+				owners             any
+				keep               bool
+			}{
+				{"owned", "concept/owned", "concept", []string{"disabled"}, true},
+				{"bare", "bare", "concept", []any{"disabled"}, true},
+				{"bare-legacy", "legacy", "concept", []string{"disabled"}, true},
+				{"canonical", "concept/canonical", "", []string{"disabled"}, true},
+				{"historical", "concept/historical", "", nil, true},
+				{"other", "concept/other", "concept", []string{"enabled"}, false},
+				{"removed-template", "concept/removed", "concept", []string{"removed"}, false},
+				{"entity", "entity/obsolete", "entity", []string{"disabled"}, false},
+				{"shared", "concept/shared", "concept", []string{"enabled", "disabled"}, true},
+			} {
+				row := dirtyWikiReconcilePage(fixture.id, fixture.slug)
+				row["entity_type_kwd"] = fixture.category
+				row["compilation_template_ids"] = fixture.owners
+				if fixture.id == "bare-legacy" {
+					row["compile_kwd"] = "wiki_page"
+					row["page_type_kwd"] = row["entity_type_kwd"]
+					delete(row, "entity_type_kwd")
+				}
+				eng.rows[fixture.id] = row
+				eng.rows[fixture.id+"-section"] = dirtyWikiReconcileSection(fixture.id+"-section", fixture.id)
+				expected[fixture.id] = fixture.keep
+			}
+			state := dirtyWikiReconcileState(t, "new-config-namespace")
+			state.Payload = []byte(`{"plan":[],"template_id":"disabled","concept_pages_disabled":true}`)
+			states := []kc.WikiMapActiveState{state, dirtyWikiReconcileState(t, "enabled-state")}
+			states[1].Payload = []byte(`{"plan":[],"template_id":"enabled","concept_pages_disabled":false}`)
+			var affected, removed []string
+			if !newNamespace {
+				affected = []string{"concept/owned", "concept/canonical", "concept/historical", "concept/shared", "bare", "legacy"}
+				removed = append([]string(nil), affected...)
+			}
+			if err := replaceDirtyWikiProducts(t.Context(), request, nil, affected, removed, states, false); err != nil {
+				t.Fatal(err)
+			}
+			for id, keep := range expected {
+				for _, productID := range []string{id, id + "-section"} {
+					if (eng.rows[productID] != nil) != keep {
+						t.Errorf("product %s present = %t, want %t", productID, eng.rows[productID] != nil, keep)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDirtyWikiConceptPreservationYieldsToReplacement(t *testing.T) {
+	for _, fullReplace := range []bool{false, true} {
+		for _, fixture := range []struct {
+			name, slug string
+			legacy     bool
+		}{
+			{name: "canonical", slug: "concept/shared"},
+			{name: "bare", slug: "shared"},
+			{name: "bare-legacy", slug: "shared", legacy: true},
+		} {
+			t.Run(fmt.Sprintf("full-replace-%t/%s", fullReplace, fixture.name), func(t *testing.T) {
+				eng, _, request := dirtyWikiReconcileSetup(t)
+				eng.rows["old"] = dirtyWikiReconcilePage("old", fixture.slug)
+				eng.rows["old"]["entity_type_kwd"] = "concept"
+				if fixture.legacy {
+					eng.rows["old"]["compile_kwd"] = "wiki_page"
+					eng.rows["old"]["page_type_kwd"] = "concept"
+					delete(eng.rows["old"], "entity_type_kwd")
+				}
+				eng.rows["old"]["compilation_template_ids"] = []string{"disabled"}
+				eng.rows["old-section"] = dirtyWikiReconcileSection("old-section", "old")
+				state := dirtyWikiReconcileState(t, "disabled-state")
+				state.Payload = []byte(`{"plan":[],"template_id":"disabled","concept_pages_disabled":true}`)
+				var rows []map[string]any
+				states := []kc.WikiMapActiveState{state}
+				if !fullReplace {
+					regenerated := dirtyWikiReconcilePage("new", "concept/shared")
+					regenerated["compilation_template_ids"] = []string{"enabled"}
+					rows = []map[string]any{regenerated, dirtyWikiReconcileSection("new-section", "new")}
+					states = append(states, dirtyWikiReconcileState(t, "enabled-state", "concept/shared"))
+				}
+				if err := replaceDirtyWikiProducts(t.Context(), request, rows, nil, nil, states, fullReplace); err != nil {
+					t.Fatal(err)
+				}
+				if eng.rows["old"] != nil || eng.rows["old-section"] != nil {
+					t.Fatal("replacement retained obsolete concept page or section")
+				}
+				if !fullReplace && (eng.rows["new"] == nil || eng.rows["new-section"] == nil) {
+					t.Fatal("replacement lost regenerated concept page or section")
+				}
+			})
+		}
+	}
+}
+
 func TestDirtyWikiSharedSlugRemainsInOtherTemplate(t *testing.T) {
 	eng, publisher, request := dirtyWikiReconcileSetup(t)
 	eng.rows["shared"] = dirtyWikiReconcilePage("shared", "entity/shared")

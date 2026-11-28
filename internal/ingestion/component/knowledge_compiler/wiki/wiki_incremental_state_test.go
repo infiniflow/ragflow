@@ -1,6 +1,85 @@
 package wiki
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+)
+
+func TestBuildActiveMapStateRecordsCurrentConceptPolicy(t *testing.T) {
+	for _, topicMode := range []bool{false, true} {
+		t.Run(map[bool]string{false: "entity", true: "topic"}[topicMode], func(t *testing.T) {
+			pipeline := &wikiPipeline{
+				activeStateKey: "new-config-state",
+				tenantID:       "tenant",
+				datasetID:      "dataset",
+				docID:          "document",
+				deps:           common.Deps{WikiMapVersions: &memoryWikiMapVersionStore{}},
+				param: common.Param{
+					TemplateID:     "template",
+					Plan:           &topicMode,
+					TemplateConfig: map[string]any{"disable_concept_pages": true},
+				},
+			}
+			state, err := pipeline.buildActiveMapState([]wikiPlanPage{{Slug: "entity/acme", PageType: "entity"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var snapshot map[string]any
+			if err := json.Unmarshal(state.Payload, &snapshot); err != nil {
+				t.Fatal(err)
+			}
+			if snapshot["template_id"] != "template" || snapshot["concept_pages_disabled"] != !topicMode {
+				t.Fatalf("snapshot = %s, want current template and effective entity-mode policy", state.Payload)
+			}
+			if len(snapshot["plan"].([]any)) != 1 || state.Key != "new-config-state" {
+				t.Fatalf("snapshot lost its complete plan or new namespace: %+v", state)
+			}
+		})
+	}
+}
+
+func TestConceptPolicyChangeCreatesNewActiveState(t *testing.T) {
+	store := &claimGuidanceCacheStore{activeStates: map[string][]byte{}}
+	pipeline := &wikiPipeline{
+		ctx:       t.Context(),
+		tenantID:  "tenant-1",
+		datasetID: "kb-1",
+		docID:     "doc-1",
+		deps:      common.Deps{WikiMapVersions: store},
+		param: common.Param{
+			TemplateID:     "template",
+			TemplateConfig: map[string]any{"disable_concept_pages": false},
+		},
+	}
+	if err := pipeline.runVersionedMap(); err != nil {
+		t.Fatal(err)
+	}
+	oldState, err := pipeline.buildActiveMapState([]wikiPlanPage{{Slug: "concept/old", PageType: "concept"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.activeStates[oldState.Key] = oldState.Payload
+	pipeline.param.TemplateConfig["disable_concept_pages"] = true
+	if err := pipeline.runVersionedMap(); err != nil {
+		t.Fatal(err)
+	}
+	if pipeline.activeStateKey == oldState.Key || len(pipeline.previousActiveState.Plan) != 0 {
+		t.Fatal("concept policy change did not create a new active-state namespace")
+	}
+	newState, err := pipeline.buildActiveMapState(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(newState.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot["template_id"] != "template" || snapshot["concept_pages_disabled"] != true {
+		t.Fatalf("new namespace lost ownership or policy: %s", newState.Payload)
+	}
+}
 
 func TestSelectAffectedPagesIncludesOldAndNewMembership(t *testing.T) {
 	pipeline := &wikiPipeline{

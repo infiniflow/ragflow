@@ -14,7 +14,12 @@
  *  limitations under the License.
  */
 
-import { sortSectionNames } from './utils';
+import { buildTemplateSchema } from './schema';
+import {
+  sortSectionNames,
+  transformDetailToForm,
+  transformTemplateToPayload,
+} from './utils';
 
 describe('sortSectionNames', () => {
   it('prioritizes known sections and preserves remaining order and duplicates', () => {
@@ -29,4 +34,23 @@ describe('sortSectionNames', () => {
       ]),
     ).toEqual(['entity', 'relation', 'claim', 'claim', 'concept', 'claim']);
   });
+});
+
+describe('Wiki concept page setting', () => {
+  it.each([undefined, true, false])(
+    'round-trips the saved value %s',
+    (saved) => {
+      const form = transformDetailToForm({
+        id: 'wiki',
+        name: 'Product wiki',
+        description: '',
+        kind: 'wiki',
+        config: { mode: 'entity', disable_concept_pages: saved },
+      });
+      const schema = buildTemplateSchema((key) => key);
+      const payload = transformTemplateToPayload(schema.parse(form));
+      expect(form.config.disable_concept_pages).toBe(saved === true);
+      expect(payload.config.disable_concept_pages).toBe(saved === true);
+    },
+  );
 });

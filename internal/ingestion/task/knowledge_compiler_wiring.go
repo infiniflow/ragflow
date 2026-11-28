@@ -332,10 +332,10 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 }
 
 func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
-	var plannedSlugs map[string]struct{}
+	var activePlan dirtyWikiActivePlan
 	if !fullReplace {
 		var err error
-		plannedSlugs, err = dirtyWikiPlannedSlugs(request, activeStates)
+		activePlan, err = dirtyWikiPlannedSlugs(request, activeStates)
 		if err != nil {
 			return err
 		}
@@ -349,7 +349,7 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 		IndexNames:   []string{indexName},
 		KbIDs:        []string{request.DatasetID},
 		Limit:        10000,
-		SelectFields: []string{"id", "compile_kwd", "type_kwd", "slug_kwd", "parent_kwd"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "slug_kwd", "parent_kwd", "entity_type_kwd", "page_type_kwd", "compilation_template_ids"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
 			"type_kwd":      []string{"wiki_page", "wiki_section"},
@@ -366,6 +366,7 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 	}
 	newIDs := make(map[string]struct{}, len(rows))
 	newPageSlugs := make(map[string]struct{})
+	regeneratedConcepts := make(map[string]struct{})
 	newPageIDs := make(map[string]struct{})
 	for _, row := range rows {
 		if id := anyString(row["id"]); id != "" {
@@ -373,6 +374,9 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 		}
 		if enginetypes.CompilationRowType(row) == "wiki_page" {
 			newPageSlugs[anyString(row["slug_kwd"])] = struct{}{}
+			if slug := dirtyWikiConceptSlug(row); slug != "" {
+				regeneratedConcepts[slug] = struct{}{}
+			}
 			if id := anyString(row["id"]); id != "" {
 				newPageIDs[id] = struct{}{}
 			}
@@ -394,7 +398,7 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 		removed[slug] = struct{}{}
 	}
 	for _, slug := range append(append([]string(nil), affectedSlugs...), removedSlugs...) {
-		_, stillPlanned := plannedSlugs[slug]
+		_, stillPlanned := activePlan.slugs[slug]
 		_, wasRemoved := removed[slug]
 		_, regenerated := newPageSlugs[slug]
 		if !fullReplace && wasRemoved && stillPlanned && !regenerated {
@@ -417,7 +421,11 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 			}
 			currentPageIDs[anyString(row["id"])] = struct{}{}
 			slug := anyString(row["slug_kwd"])
-			_, stillPlanned := plannedSlugs[slug]
+			_, regenerated := regeneratedConcepts[dirtyWikiConceptSlug(row)]
+			if !regenerated && activePlan.preservesConceptPage(row) {
+				continue
+			}
+			_, stillPlanned := activePlan.slugs[slug]
 			if _, ok := affected[slug]; ok || !stillPlanned {
 				affectedPageIDs[anyString(row["id"])] = struct{}{}
 			}
@@ -480,34 +488,83 @@ func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, requ
 // The snapshots carry complete plans, including pages omitted by incremental
 // REFINE. Compare their union with stored products after a template changes its
 // cache namespace; the new namespace has no prior plan to report removed slugs.
-func dirtyWikiPlannedSlugs(request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) (map[string]struct{}, error) {
-	if len(states) == 0 {
-		return nil, fmt.Errorf("Wiki dirty compile: complete active plans are required")
+type dirtyWikiActivePlan struct {
+	slugs                         map[string]struct{}
+	conceptPagesDisabledTemplates map[string]struct{}
+	preserveUnownedConcepts       bool
+}
+
+// Normalize only concept identity so a regenerated canonical slug also replaces
+// an older bare-slug concept that would otherwise be preserved by its policy.
+func dirtyWikiConceptSlug(row map[string]any) string {
+	slug := strings.TrimSpace(anyString(row["slug_kwd"]))
+	if strings.HasPrefix(slug, "concept/") {
+		return slug
 	}
-	slugs := make(map[string]struct{})
+	if strings.EqualFold(strings.TrimSpace(enginetypes.WikiPageCategory(row)), "concept") {
+		if slug != "" && !strings.Contains(slug, "/") {
+			return "concept/" + slug
+		}
+		return slug
+	}
+	return ""
+}
+
+func (plan dirtyWikiActivePlan) preservesConceptPage(row map[string]any) bool {
+	if dirtyWikiConceptSlug(row) == "" {
+		return false
+	}
+	owners := appcommon.DeduplicateTrimmed(anyStrings(row["compilation_template_ids"]))
+	if len(owners) == 0 {
+		return plan.preserveUnownedConcepts
+	}
+	for _, owner := range owners {
+		if _, disabled := plan.conceptPagesDisabledTemplates[owner]; disabled {
+			return true
+		}
+	}
+	return false
+}
+
+func dirtyWikiPlannedSlugs(request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) (dirtyWikiActivePlan, error) {
+	plan := dirtyWikiActivePlan{
+		slugs:                         make(map[string]struct{}),
+		conceptPagesDisabledTemplates: make(map[string]struct{}),
+	}
+	if len(states) == 0 {
+		return plan, fmt.Errorf("Wiki dirty compile: complete active plans are required")
+	}
 	for _, state := range states {
 		if state.Key == "" || state.TenantID != request.TenantID || state.DatasetID != request.DatasetID || state.DocumentID != request.DocumentID {
-			return nil, fmt.Errorf("Wiki dirty compile: active plan has invalid scope")
+			return plan, fmt.Errorf("Wiki dirty compile: active plan has invalid scope")
 		}
 		var snapshot struct {
-			Plan json.RawMessage `json:"plan"`
+			Plan                 json.RawMessage `json:"plan"`
+			TemplateID           string          `json:"template_id"`
+			ConceptPagesDisabled bool            `json:"concept_pages_disabled"`
 		}
 		if err := json.Unmarshal(state.Payload, &snapshot); err != nil {
-			return nil, fmt.Errorf("Wiki dirty compile: decode active plan: %w", err)
+			return plan, fmt.Errorf("Wiki dirty compile: decode active plan: %w", err)
 		}
 		if len(snapshot.Plan) == 0 {
-			return nil, fmt.Errorf("Wiki dirty compile: active snapshot is missing its complete plan")
+			return plan, fmt.Errorf("Wiki dirty compile: active snapshot is missing its complete plan")
+		}
+		if snapshot.ConceptPagesDisabled {
+			plan.preserveUnownedConcepts = true
+			if templateID := strings.TrimSpace(snapshot.TemplateID); templateID != "" {
+				plan.conceptPagesDisabledTemplates[templateID] = struct{}{}
+			}
 		}
 		var pages []struct {
 			Slug     string `json:"slug"`
 			PageType string `json:"page_type"`
 		}
 		if err := json.Unmarshal(snapshot.Plan, &pages); err != nil {
-			return nil, fmt.Errorf("Wiki dirty compile: decode planned pages: %w", err)
+			return plan, fmt.Errorf("Wiki dirty compile: decode planned pages: %w", err)
 		}
 		for _, page := range pages {
 			if strings.TrimSpace(page.Slug) == "" {
-				return nil, fmt.Errorf("Wiki dirty compile: planned page has no slug")
+				return plan, fmt.Errorf("Wiki dirty compile: planned page has no slug")
 			}
 			// Match the chunk writer's full <page_type>/<slug> identity. Plans
 			// already normalize an omitted page type to concept.
@@ -519,10 +576,10 @@ func dirtyWikiPlannedSlugs(request knowledge_compile.WikiDirtyRequest, states []
 				}
 				slug = pageType + "/" + slug
 			}
-			slugs[slug] = struct{}{}
+			plan.slugs[slug] = struct{}{}
 		}
 	}
-	return slugs, nil
+	return plan, nil
 }
 
 func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states []kc.WikiMapActiveState) error {
