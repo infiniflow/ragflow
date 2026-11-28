@@ -19,9 +19,10 @@ package vastbase
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -93,7 +94,7 @@ func buildFilter(condition map[string]interface{}, kind string, columns map[stri
 		return "", nil, fmt.Errorf("vastbase: _id is not a filterable column, use id")
 	}
 	filter := &filterBuilder{}
-	for _, rawKey := range sortedKeys(condition) {
+	for _, rawKey := range slices.Sorted(maps.Keys(condition)) {
 		key := rawKey
 		if kind == "memory" {
 			key = mapMemoryField(key)
@@ -350,14 +351,4 @@ func isEmptyFilterValue(value interface{}) bool {
 		return rv.Float() == 0
 	}
 	return false
-}
-
-// sortedKeys lists a map's keys in sorted order for deterministic SQL.
-func sortedKeys(source map[string]interface{}) []string {
-	keys := make([]string, 0, len(source))
-	for key := range source {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

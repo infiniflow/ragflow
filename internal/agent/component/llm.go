@@ -714,22 +714,22 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 }
 
 func (c *LLMComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	inv, req, p, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+	inv, req, p, fo, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
 	if earlyOut != nil {
 		return earlyOut, nil
 	}
-	resp, err := inv.Invoke(ctx, db, req)
+	resp, usedReq, err := invokeChatWithGroupFailover(ctx, db, fo, inv, req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
-	return c.postProcessResponse(ctx, db, inv, req, p, resp)
+	return c.postProcessResponse(ctx, db, inv, usedReq, p, resp)
 }
 
 func (c *LLMComponent) invokeStreamNow(ctx context.Context, db *gorm.DB, inputs map[string]any, sink runtime.AgentDeltaSink) (map[string]any, error) {
-	inv, req, p, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+	inv, req, p, fo, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -740,9 +740,8 @@ func (c *LLMComponent) invokeStreamNow(ctx context.Context, db *gorm.DB, inputs 
 		return earlyOut, nil
 	}
 
-	var resp *ChatInvokeResponse
-	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+	resp, usedReq, err := streamChatWithGroupFailover(ctx, db, fo, inv, req,
+		func(delta string, isThink bool) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -754,29 +753,29 @@ func (c *LLMComponent) invokeStreamNow(ctx context.Context, db *gorm.DB, inputs 
 				}
 			}
 			return nil
+		},
+		func(thinking, content string) error {
+			if sink != nil {
+				if thinking != "" {
+					sink("", thinking)
+				}
+				if content != "" {
+					sink(content, "")
+				}
+			}
+			return nil
 		})
-	} else {
-		resp, err = inv.Invoke(ctx, db, req)
-		if err == nil && resp != nil && sink != nil {
-			if resp.Thinking != "" {
-				sink("", resp.Thinking)
-			}
-			if resp.Content != "" {
-				sink(resp.Content, "")
-			}
-		}
-	}
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
-	return c.postProcessResponse(ctx, db, inv, req, p, resp)
+	return c.postProcessResponse(ctx, db, inv, usedReq, p, resp)
 }
 
 func (c *LLMComponent) prepareChatRequest(
 	ctx context.Context,
 	db *gorm.DB,
 	inputs map[string]any,
-) (ChatInvoker, ChatInvokeRequest, LLMParam, map[string]any, error) {
+) (ChatInvoker, ChatInvokeRequest, LLMParam, chatGroupFailover, map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
 
 	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
@@ -785,9 +784,13 @@ func (c *LLMComponent) prepareChatRequest(
 	// driver, causing 400s for custom-added models.
 	var err error
 	originalModelID := p.ModelID
+	// Pre-resolution values so a gp- group flip can re-run resolution exactly
+	// as this attempt did. Non-group references make the failover helpers
+	// collapse to a single attempt.
+	fo := chatGroupFailover{modelRef: originalModelID, driver: p.Driver, apiKey: p.APIKey, baseURL: p.BaseURL}
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
-		return nil, ChatInvokeRequest{}, p, nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+		return nil, ChatInvokeRequest{}, p, fo, nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
 	// Resolve the model's context window (content_length) for message
 	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
@@ -800,6 +803,7 @@ func (c *LLMComponent) prepareChatRequest(
 			tenantID = tid
 		}
 	}
+	fo.tenantID = tenantID
 	contentLength := modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	if contentLength <= 0 {
 		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
@@ -811,10 +815,10 @@ func (c *LLMComponent) prepareChatRequest(
 			zap.String("model_name", p.ModelID))
 	}
 	if p.ModelID == "" {
-		return nil, ChatInvokeRequest{}, p, nil, &ParamError{Field: "model_id", Reason: "required"}
+		return nil, ChatInvokeRequest{}, p, fo, nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
 	if p.UserPrompt == "" && p.SystemPrompt == "" {
-		return nil, ChatInvokeRequest{}, p, nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
+		return nil, ChatInvokeRequest{}, p, fo, nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
 	}
 	// Resolve {{cpn_id@var}} references in the system and user
 	// prompts against the canvas state attached to ctx. When the
@@ -861,7 +865,7 @@ func (c *LLMComponent) prepareChatRequest(
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
-			return nil, ChatInvokeRequest{}, p, nil, err
+			return nil, ChatInvokeRequest{}, p, fo, nil, err
 		}
 		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
@@ -934,7 +938,7 @@ func (c *LLMComponent) prepareChatRequest(
 		// does not duplicate it.
 		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
-			return nil, ChatInvokeRequest{}, p, map[string]any{"content": fitErr}, nil
+			return nil, ChatInvokeRequest{}, p, fo, map[string]any{"content": fitErr}, nil
 		}
 		msgs = fitted
 	}
@@ -966,7 +970,7 @@ func (c *LLMComponent) prepareChatRequest(
 		MaxTokens:        p.MaxTokens,
 		Thinking:         p.Thinking,
 	}
-	return inv, req, p, nil, nil
+	return inv, req, p, fo, nil, nil
 }
 
 func (c *LLMComponent) postProcessResponse(
@@ -1070,7 +1074,7 @@ func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[strin
 			return
 		}
 
-		inv, req, _, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+		inv, req, _, fo, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
 		if err != nil {
 			select {
 			case out <- map[string]any{"error": err.Error()}:
@@ -1093,9 +1097,8 @@ func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[strin
 			return
 		}
 
-		var resp *ChatInvokeResponse
-		if streamer, ok := inv.(chat.StreamingInvoker); ok {
-			resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+		resp, _, err := streamChatWithGroupFailover(ctx, db, fo, inv, req,
+			func(delta string, isThink bool) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
@@ -1114,21 +1117,19 @@ func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[strin
 				case <-ctx.Done():
 					return ctx.Err()
 				}
-			})
-		} else {
-			resp, err = inv.Invoke(ctx, db, req)
-			if err == nil && resp != nil {
+			},
+			func(thinking, content string) error {
 				chunk := map[string]any{
-					"thinking": resp.Thinking,
-					"content":  resp.Content,
+					"thinking": thinking,
+					"content":  content,
 				}
 				select {
 				case out <- chunk:
+					return nil
 				case <-ctx.Done():
-					return
+					return ctx.Err()
 				}
-			}
-		}
+			})
 
 		if err != nil {
 			select {
@@ -1274,18 +1275,11 @@ var dataImageRe = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0
 // enhancement (Python's _extract_data_images covers the recursive
 // case).
 func extractDataImages(values []string) []string {
-	seen := make(map[string]struct{})
-	var out []string
+	var matches []string
 	for _, v := range values {
-		for _, m := range dataImageRe.FindAllString(v, -1) {
-			if _, dup := seen[m]; dup {
-				continue
-			}
-			seen[m] = struct{}{}
-			out = append(out, m)
-		}
+		matches = append(matches, dataImageRe.FindAllString(v, -1)...)
 	}
-	return out
+	return common.Deduplicate(matches)
 }
 
 // collectSysFiles splits sys.files from canvas state into text parts

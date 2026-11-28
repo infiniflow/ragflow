@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/core/schema"
 )
@@ -165,7 +166,7 @@ func (m *middleware[M]) newSearchTool() core.Tool {
 							score += 10
 							continue
 						}
-						if strings.Contains(strings.ToLower(part), kw) {
+						if common.ContainsFold(part, kw) {
 							score += 5
 						}
 					}

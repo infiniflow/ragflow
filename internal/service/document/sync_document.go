@@ -178,7 +178,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// link 'file' 2 'file_system'
-	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID, kbFolder.UserID); err != nil {
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// write metadata and do `auto_parse` (or not)
@@ -201,6 +201,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 
 // updateSyncDocument updates an existing synced document and file-manager row.
 func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, filename, location, filetype, contentHash string) (service.DocumentUpsertResult, error) {
+	previousSource := *doc
 	suffix := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
 	updates := map[string]any{
 		"name":        filename,
@@ -222,6 +223,7 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 	if err := s.publishSyncDocument(ctx, doc, location); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
+	cleanupPreviewArtifacts(ctx, &previousSource)
 	// update new updated file
 	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
 		return service.DocumentUpsertResult{}, err
@@ -324,7 +326,7 @@ func (s *DocumentService) updateSyncDocumentFile(ctx context.Context, input serv
 		if folderErr != nil {
 			return folderErr
 		}
-		return s.addFileFromKB(ctx, doc, kbFolder.ID, input.TaskContext.Knowledgebase.TenantID)
+		return s.addFileFromKB(ctx, doc, kbFolder.ID, input.TaskContext.Knowledgebase.TenantID, kbFolder.UserID)
 	}
 
 	name := ""
@@ -367,17 +369,7 @@ func syncDocumentFilename(name, extension, fallback string) string {
 		name += extension
 	}
 
-	if len(name) <= 255 {
-		return name
-	}
-
-	ext := filepath.Ext(name)
-	baseLimit := 255 - len(ext)
-	if baseLimit < 1 {
-		return name[:255]
-	}
-
-	return name[:baseLimit] + ext
+	return utility.TruncateFilename(name, 255)
 }
 
 // syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.

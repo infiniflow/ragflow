@@ -223,6 +223,7 @@ const (
 	TokenGroup
 	TokenGroups
 	TokenFeatures
+	TokenDeploy
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

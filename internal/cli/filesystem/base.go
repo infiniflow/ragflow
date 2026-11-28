@@ -18,6 +18,7 @@ package filesystem
 
 import (
 	stdctx "context"
+	"strings"
 )
 
 // Provider is the interface for all context providers
@@ -136,7 +137,7 @@ func normalizePath(path string) string {
 		}
 	}
 
-	return joinStrings(result, "/")
+	return strings.Join(result, "/")
 }
 
 // Helper functions to avoid importing strings package in basic operations
@@ -162,19 +163,5 @@ func splitString(s string, sep byte) []string {
 		}
 	}
 	result = append(result, s[start:])
-	return result
-}
-
-func joinStrings(strs []string, sep string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	if len(strs) == 1 {
-		return strs[0]
-	}
-	result := strs[0]
-	for i := 1; i < len(strs); i++ {
-		result += sep + strs[i]
-	}
 	return result
 }

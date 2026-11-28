@@ -61,7 +61,9 @@ export function AgenticTemplateFormField({
               size="sm"
               onClick={handleReset}
               disabled={
-                defaultContent === undefined || value === defaultContent
+                field.disabled ||
+                defaultContent === undefined ||
+                value === defaultContent
               }
             >
               {t('chat.resetToDefault')}

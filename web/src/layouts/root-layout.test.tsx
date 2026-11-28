@@ -8,6 +8,19 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/ee/layouts/components/header-enterprise', () => ({
   EnterpriseHeaderUpgradeBadge: () => null,
+  EnterpriseSidebarTenantSwitcher: () => null,
+}));
+
+jest.mock('@/ee/layouts/root-layout-shell', () => ({
+  RootLayoutBanner: () => null,
+  RootLayoutContent: ({ children }: { children?: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  useRootLayoutChrome: () => ({ showHeader: true }),
+}));
+
+jest.mock('@/ee/layouts/components/app-sidebar/organization-nav-group', () => ({
+  OrganizationNavGroup: () => null,
 }));
 
 jest.mock('./components/app-sidebar/nav-item', () => ({

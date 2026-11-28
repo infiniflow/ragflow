@@ -4,7 +4,7 @@
 //
 // Without the native PDF backend there is nothing to crop, so the engine is
 // always nil and chunks pass through unchanged. The signatures mirror the
-// cgo file so token.go can call them unconditionally.
+// cgo file so untagged callers can call them unconditionally.
 package chunker
 
 import (
@@ -23,3 +23,10 @@ func newPDFEngineFromUpstream(_ context.Context, _ *gorm.DB, _ schema.ChunkerFro
 func cropImageChunks(_ context.Context, _ deepdoctype.PDFEngine, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 	return chunks
 }
+
+// There is no preview to make, so a chunk never needs a crop and none of its
+// positions counts as a crop region. That keeps the inline image fallback
+// applied immediately instead of deferring it to a crop that cannot run.
+func needsCrop(_ schema.ChunkDoc) bool { return false }
+
+func hasCropRegion(_ schema.ChunkDoc) bool { return false }

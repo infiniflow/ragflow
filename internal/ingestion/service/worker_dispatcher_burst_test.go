@@ -49,7 +49,7 @@ func TestWorkerDispatcherBurstCompletesEveryTask(t *testing.T) {
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
-	ingestor := newUnitIngestor("test-worker-burst", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-worker-burst", concurrency)
 	firstTaskStarted := make(chan struct{})
 	releaseFirstTask := make(chan struct{})
 	var firstTask sync.Once

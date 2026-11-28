@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/utility"
 )
 
@@ -205,6 +206,39 @@ func TestRunRetriesInvalidJSON(t *testing.T) {
 	}
 	if len(outputs.Products) != 3 {
 		t.Fatalf("products = %d, want root, child, and relation", len(outputs.Products))
+	}
+}
+
+func TestRunReportsBatchGenerateUnit(t *testing.T) {
+	// The generation counter advances once per batch (including a batch whose
+	// JSON retries were exhausted), so it must be reported as a batch unit,
+	// not as a number of generated entities.
+	var details []runtime.ProgressDetail
+	base := runtime.WithProgressDetailCallback(t.Context(), func(_ string, d runtime.ProgressDetail) {
+		details = append(details, d)
+	})
+	ctx := runtime.BindComponentDetail(base, "mindmap")
+	_, err := Run(ctx, common.Deps{
+		Chat:     &retryChat{},
+		TenantID: "t1",
+		Progress: progress.Window{Span: 1},
+	}, common.Param{}, common.Inputs{
+		Chunks: []common.Chunk{{ID: "c1", Text: "source text"}},
+		DocID:  "d1",
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(details) == 0 {
+		t.Fatal("no progress detail reported")
+	}
+	for _, d := range details {
+		if d.Unit != "batch:generate" {
+			t.Fatalf("unit = %q, want batch:generate (counter tracks batches, not entities)", d.Unit)
+		}
+		if d.Total != 1 || d.Current == 0 {
+			t.Fatalf("position = %d/%d, want a batch position", d.Current, d.Total)
+		}
 	}
 }
 

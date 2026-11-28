@@ -143,11 +143,17 @@ func (s *AskService) Stream(ctx context.Context, llm StreamingLLM, question stri
 // apps to pass search_config retrieval options through to RetrievalTest.
 func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions) <-chan AskDelta {
 	out := make(chan AskDelta, 32)
+	ctx, err := compliance.WithOutputFilter(ctx)
+	if err != nil {
+		out <- AskDelta{Kind: AskDeltaError, Value: err.Error()}
+		close(out)
+		return out
+	}
 	go func() {
 		defer close(out)
 		s.run(ctx, llm, question, datasetIDs, opts, out)
 	}()
-	return out
+	return filterAskOutput(ctx, out)
 }
 
 func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {

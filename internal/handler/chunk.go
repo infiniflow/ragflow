@@ -24,6 +24,7 @@ import (
 	"math"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -93,7 +94,12 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, resp.Chunk, "success")
+	data, err := filterChunkResponse(ctx, resp.Chunk)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, data, "success")
 }
 
 // Parse reparse the datasets' files
@@ -140,13 +146,16 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		return
 	}
 
+	chunkIDPrefix := parseChunkIDPrefix(c)
+
 	req := service.ListChunksRequest{
-		DatasetID: datasetID,
-		DocID:     documentID,
-		ChunkIDs:  queryStringList(c, "chunk_ids"),
-		Page:      &page,
-		Size:      &size,
-		Keywords:  c.Query("keywords"),
+		DatasetID:     datasetID,
+		DocID:         documentID,
+		ChunkIDs:      queryStringList(c, "chunk_ids"),
+		ChunkIDPrefix: chunkIDPrefix,
+		Page:          &page,
+		Size:          &size,
+		Keywords:      c.Query("keywords"),
 	}
 	if ids := queryStringList(c, "id"); len(ids) > 0 {
 		req.ChunkIDs = ids
@@ -169,8 +178,21 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
+	permissionMask, permissionErr := documentOperatorPermission(ctx, documentID)
+	if permissionErr != nil {
+		respondPermissionError(c, permissionErr, false)
+		return
+	}
+	if resp.Doc != nil {
+		resp.Doc["operator_permission"] = permissionMask
+	}
 
-	common.RespondSuccess(c, resp, "success")
+	data, err := filterChunkResponse(ctx, resp)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, data, "success")
 }
 
 func queryStringList(c *gin.Context, name string) []string {
@@ -191,6 +213,18 @@ func queryStringList(c *gin.Context, name string) []string {
 		}
 	}
 	return ids
+}
+
+// parseChunkIDPrefix reads the chunk-id prefix the list matches from the start of
+// the id. Several values are joined into one string so the service sees a single
+// unusable prefix: an id lookup is one prefix, and anything else matches nothing
+// rather than widening to the whole document.
+func parseChunkIDPrefix(c *gin.Context) string {
+	values := c.QueryArray("chunk_id_prefix")
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.Join(values, ",")
 }
 
 func parseAvailableQuery(raw string) (int, bool, error) {
@@ -691,6 +725,13 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		ImageBase64:       imageBase64,
 	}
 
+	// Pin the policy before writing so a missing dictionary cannot fail after insertion.
+	ctx, err = compliance.WithOutputFilter(ctx)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+
 	resp, err := h.chunkService.AddChunk(ctx, &req)
 	if err != nil {
 		var codedErr service.ErrorCoder
@@ -707,5 +748,10 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 			common.SetOperationResource(c, "chunk_id", id)
 		}
 	}
-	common.RespondSuccess(c, resp, "success")
+	data, err := filterChunkResponse(ctx, resp)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, data, "success")
 }

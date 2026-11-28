@@ -61,6 +61,9 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		name         string
 		wantToolName string
 	}{
+		{name: "AnySearchDiscover", wantToolName: "anysearch_discover"},
+		{name: "AnySearchExtract", wantToolName: "anysearch_extract"},
+		{name: "AnySearchSearch", wantToolName: "anysearch_search"},
 		{name: "CodeExec", wantToolName: "execute_code"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
@@ -70,6 +73,8 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "Search1APICrawl", wantToolName: "search1api_crawl"},
 		{name: "Search1APISearch", wantToolName: "search1api_search"},
 		{name: "SofyaSearch", wantToolName: "sofya_search"},
+		{name: "SpecStreamExtract", wantToolName: "specstream_extract"},
+		{name: "SpecStreamSearch", wantToolName: "specstream_search"},
 		{name: "TavilyExtract", wantToolName: "tavily_extract"},
 		{name: "TavilySearch", wantToolName: "tavily_search"},
 		{name: "YahooFinance", wantToolName: "yahoo_finance"},
@@ -249,11 +254,11 @@ func TestBuildByName_YouComReadsCanvasParams(t *testing.T) {
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{
-		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"akshare", "anysearch_discover", "anysearch_extract", "anysearch_search", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
-		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
+		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya", "specstream", "specstream_extract",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance", "youcom",
 	}
@@ -342,11 +347,11 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Every entry the registry advertises.
 	names := []string{
-		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"akshare", "anysearch_discover", "anysearch_extract", "anysearch_search", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
-		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
+		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya", "specstream", "specstream_extract",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance", "youcom",
 	}

@@ -374,7 +374,7 @@ const TitleChunkerForm = ({
             label={t('flow.chunkTokenCap', 'Chunk token cap')}
             tooltip={t(
               'flow.chunkTokenCapTip',
-              'Maximum tokens per chunk. Chunks exceeding the cap are re-split on sentence boundaries (Chinese/English period, exclamation mark, question mark, newline). 0 disables the cap.',
+              'Maximum tokens per text chunk. Chunks exceeding the cap are re-split on sentence boundaries; boundary-less runs are hard-split. Tables and images are not split.',
             )}
           />
         )}

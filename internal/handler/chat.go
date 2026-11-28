@@ -348,6 +348,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"id":                         chat.ID,
 		"user_id":                    chat.UserID,
 		"tenant_id":                  chat.TenantID,
+		"operator_permission":        chat.OperatorPermission,
 		"name":                       chat.Name,
 		"description":                chat.Description,
 		"icon":                       chat.Icon,

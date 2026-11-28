@@ -26,10 +26,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/utility"
 )
 
 const perplexityToolName = "perplexity_search"
@@ -391,7 +392,7 @@ func buildPerplexityReferences(envelope map[string]any) ([]map[string]any, []map
 		if !ok {
 			continue
 		}
-		content := truncatePerplexityRunes(strings.Join(strings.Fields(searchReferenceText(result["snippet"])), " "), 10000)
+		content := utility.TruncateRunes(strings.Join(strings.Fields(searchReferenceText(result["snippet"])), " "), 10000)
 		if content == "" {
 			continue
 		}
@@ -418,13 +419,6 @@ func buildPerplexityReferences(envelope map[string]any) ([]map[string]any, []map
 		})
 	}
 	return chunks, docAggs
-}
-
-func truncatePerplexityRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func perplexityJSON(env perplexityEnvelope) string {

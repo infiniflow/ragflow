@@ -93,8 +93,9 @@ func titleSentenceSplit(text string) []string {
 	return out
 }
 
-// runePrefix returns the first n runes of s (a rune-safe prefix; never splits
-// a multi-byte character). Used by the offline/hard-split fallback.
+// runePrefix returns the first n runes of s as a prefix of the original bytes
+// (never splits a multi-byte character). Re-encoding through []rune would
+// rewrite invalid bytes as U+FFFD and break rest[len(head):] in the fallback.
 func runePrefix(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -149,7 +150,8 @@ func hardSplitByTokens(text string, cap int) []string {
 
 // enforceTitleTokenCap applies the hard token ceiling to every text chunk
 // after build_chunks. Mirrors BaseTitleChunker._enforce_token_cap
-//   - cap <= 0 disables the ceiling (chunks returned unchanged);
+//   - cap <= 0 disables the ceiling (chunks returned unchanged); ManualChunker
+//     passes 0 explicitly, while TitleChunker validation requires 128..8000;
 //   - non-text chunks (table/image) are atomic and skipped;
 //   - a text chunk already within cap is kept;
 //   - an over-cap text chunk is re-split via splitTitleChunkByCap.

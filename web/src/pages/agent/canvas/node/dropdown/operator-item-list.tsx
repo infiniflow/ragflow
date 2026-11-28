@@ -5,6 +5,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Operator } from '@/constants/agent';
+import { useOperatorItems } from '@/ee/pages/agent/use-operator-items';
 import { IModalProps } from '@/interfaces/common';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
 import OperatorIcon from '@/components/operator-icon';
@@ -36,6 +37,8 @@ export function OperatorItemList({
   const hideModal = useContext(HideModalContext);
   const onNodeCreated = useContext(OnNodeCreatedContext);
   const { t } = useTranslation();
+  const { operators: operatorItems, initializeNode } =
+    useOperatorItems(operators);
 
   const handleClick =
     (operator: Operator): React.MouseEventHandler<HTMLElement> =>
@@ -56,6 +59,10 @@ export function OperatorItemList({
         : e;
 
       const newNodeId = addCanvasNode(operator, contextData)(mockEvent);
+
+      if (newNodeId) {
+        initializeNode(newNodeId, operator);
+      }
 
       if (onNodeCreated && newNodeId) {
         onNodeCreated(newNodeId);
@@ -98,7 +105,7 @@ export function OperatorItemList({
 
   return (
     <ul className="space-y-2 text-text-primary font-normal">
-      {operators.map(renderOperatorItem)}
+      {operatorItems.map(renderOperatorItem)}
     </ul>
   );
 }

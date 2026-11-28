@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,9 +16,8 @@ import (
 
 const builtinTemplatePrefix = "ingestion_pipeline_"
 
-// builtinParserOrder matches settings.PARSERS order, projected onto
-// the canonical builtin templates shipped by Go. Templates not in this list
-// are appended deterministically after the shared parser methods.
+// builtinParserOrder defines the display order of the built-in pipeline catalog.
+// Templates not in this list are appended deterministically after these pipelines.
 var builtinParserOrder = map[string]int{
 	"general":      0,
 	"qa":           1,
@@ -31,6 +31,9 @@ var builtinParserOrder = map[string]int{
 	"one":          9,
 	"audio":        10,
 	"email":        11,
+	"outline":      12,
+	"summary":      13,
+	"enriched":     14,
 }
 
 //go:embed template/ingestion_pipeline_*.json
@@ -105,7 +108,10 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 		if !strings.HasPrefix(name, builtinTemplatePrefix) || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		raw, err := fs.ReadFile(files, filepath.Join(dir, name))
+		// io/fs paths are slash-separated on every GOOS. filepath.Join rendered
+		// "template\ingestion_pipeline_audio.json" on Windows, which embed.FS
+		// cannot resolve, so the whole builtin registry failed to load there.
+		raw, err := fs.ReadFile(files, path.Join(dir, name))
 		if err != nil {
 			return nil, err
 		}
@@ -116,6 +122,7 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 		if _, exists := templates[tpl.ParserID]; exists {
 			return nil, fmt.Errorf("duplicate parser_id %q", tpl.ParserID)
 		}
+		applyEditionTemplateDefaults(tpl)
 		templates[tpl.ParserID] = tpl
 		meta := tpl.BuiltinPipelineMeta
 		list = append(list, &meta)

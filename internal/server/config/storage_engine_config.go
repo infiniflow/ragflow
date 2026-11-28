@@ -303,6 +303,16 @@ func (c *Config) GetMinioConfig() MinioConfig {
 	return c.storageEngine.Minio
 }
 
+// SetMinioEndpoint replaces the object-store endpoint and credentials. The
+// desktop build uses it to point the process at the in-process S3 gateway,
+// which speaks plain HTTP on loopback.
+func (c *Config) SetMinioEndpoint(host, user, password string) {
+	c.storageEngine.Minio.Host = host
+	c.storageEngine.Minio.User = user
+	c.storageEngine.Minio.Password = password
+	c.storageEngine.Minio.Secure = false
+}
+
 func (m MinioConfig) ExportConfigs() map[string]interface{} {
 	var minioConfigs map[string]interface{}
 	minioConfigs = make(map[string]interface{})

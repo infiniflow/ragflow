@@ -30,12 +30,12 @@ func TestOpenDataLoaderItems_ScreenSpacePositions(t *testing.T) {
 		t.Fatalf("items = %d, want 1 (unknown type without text is skipped): %v", len(items), items)
 	}
 	got := items[0]["_pdf_positions"].([][]any)
-	want := []any{2.0, 100.0, 200.0, 712.0, 742.0}
+	want := []float64{2, 100, 200, 712, 742}
 	if len(got) != 1 || len(got[0]) != 5 {
 		t.Fatalf("positions = %#v, want one 5-column row", got)
 	}
 	for i := range want {
-		if math.Abs(got[0][i].(float64)-want[i].(float64)) > 1e-6 {
+		if v, _ := numericAny(got[0][i]); math.Abs(v-want[i]) > 1e-6 {
 			t.Fatalf("positions = %#v, want %#v", got, want)
 		}
 	}
@@ -44,7 +44,7 @@ func TestOpenDataLoaderItems_ScreenSpacePositions(t *testing.T) {
 		t.Fatalf("positions alias = %#v, want the same one-row matrix", items[0]["positions"])
 	}
 	for i := range want {
-		if math.Abs(legacy[0][i].(float64)-want[i].(float64)) > 1e-6 {
+		if v, _ := numericAny(legacy[0][i]); math.Abs(v-want[i]) > 1e-6 {
 			t.Fatalf("positions alias = %#v, want %#v", legacy, want)
 		}
 	}
@@ -67,7 +67,7 @@ func TestOpenDataLoaderItems_AllElementTypesCarryPositions(t *testing.T) {
 	}
 	for i, item := range items {
 		rows, ok := item["_pdf_positions"].([][]any)
-		if !ok || len(rows) != 1 || rows[0][0] != 1.0 {
+		if !ok || len(rows) != 1 || rows[0][0] != 1 {
 			t.Errorf("item %d (%v) positions = %#v, want one page-1 row", i, item["layout"], item["_pdf_positions"])
 		}
 	}

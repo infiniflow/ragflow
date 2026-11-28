@@ -22,7 +22,7 @@ func TestBuildIngestLogMapsIngestorAndQueue(t *testing.T) {
 		IngestorName: "ing-7",
 		NatsQueue:    "tasks.RAGFLOW",
 	})
-	ev := BuildIngestLog(ctx, task, doc, run, "running", "RUNNING", "")
+	ev := BuildIngestLog(ctx, task, doc, run, "task", "RUNNING", "")
 	if ev.IngestorName != "ing-7" {
 		t.Errorf("IngestorName = %q, want ing-7", ev.IngestorName)
 	}
@@ -34,7 +34,7 @@ func TestBuildIngestLogMapsIngestorAndQueue(t *testing.T) {
 	}
 
 	// Adversarial: empty identity must map to empty fields, no panic.
-	ev2 := BuildIngestLog(context.Background(), task, doc, run, "running", "RUNNING", "")
+	ev2 := BuildIngestLog(context.Background(), task, doc, run, "task", "RUNNING", "")
 	if ev2.IngestorName != "" || ev2.NatsQueue != "" {
 		t.Errorf("empty identity should map to empty fields, got %q/%q", ev2.IngestorName, ev2.NatsQueue)
 	}

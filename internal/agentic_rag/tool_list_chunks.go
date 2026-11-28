@@ -95,17 +95,17 @@ type deepReadService interface {
 	FetchChunksByID(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error)
 }
 
-// ListChunksTool reads the full original chunks of one document. The tenant and
-// dataset scope are injected at construction from the session.
+// ListChunksTool reads the full original chunks of one document. The dataset
+// scope is injected at construction from the session; the indexes it reads are
+// resolved from those datasets.
 type ListChunksTool struct {
-	tenantID   string
 	datasetIDs []string
 }
 
-// NewListChunksTool returns a ListChunksTool scoped to the given tenant and
-// datasets, implementing eino's runtime.InvokableTool.
-func NewListChunksTool(tenantID string, datasetIDs []string) *ListChunksTool {
-	return &ListChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
+// NewListChunksTool returns a ListChunksTool scoped to the given datasets,
+// implementing eino's runtime.InvokableTool.
+func NewListChunksTool(datasetIDs []string) *ListChunksTool {
+	return &ListChunksTool{datasetIDs: datasetIDs}
 }
 
 // Info returns the tool's metadata for the chat model. The parameter schema is
@@ -218,8 +218,7 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	}
 
 	svc := runtime.GetGrepService()
-	tenantID := l.tenantID
-	if svc == nil || tenantID == "" {
+	if svc == nil {
 		return chunksXMLEmpty(), nil
 	}
 	dr, ok := svc.(deepReadService)
@@ -231,12 +230,11 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	// that dataset, not the whole bound set. A failed resolution (e.g. the doc is
 	// no longer in the bound scope) must not fall back to an un-scoped read;
 	// return empty instead.
-	docDatasetID, err := l.resolveDocDatasetID(ctx, tenantID, docID, l.datasetIDs)
+	docDatasetID, err := l.resolveDocDatasetID(ctx, docID, l.datasetIDs)
 	if err != nil {
 		return chunksXMLEmpty(), nil
 	}
 	scope := runtime.GrepRequest{
-		TenantID:   tenantID,
 		DatasetIDs: []string{docDatasetID},
 		DocScope:   []string{docID},
 	}
@@ -312,7 +310,6 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 
 	// Pass 2: fetch full text for exactly the selected ids.
 	chunks, err := dr.FetchChunksByID(ctx, runtime.GrepRequest{
-		TenantID:   tenantID,
 		DatasetIDs: []string{docDatasetID},
 		DocScope:   []string{docID},
 		ChunkScope: selectIDs,
@@ -373,7 +370,7 @@ func anchorsWithout(anchors, keep []string) []string {
 // of the whole bound set. It returns an error when the document has no chunk
 // visible within the bound scope or the service cannot resolve the owner.
 func (l *ListChunksTool) resolveDocDatasetID(
-	ctx context.Context, tenantID, docID string, boundDatasetIDs []string,
+	ctx context.Context, docID string, boundDatasetIDs []string,
 ) (string, error) {
 	if l == nil {
 		return "", fmt.Errorf("list_chunks: nil tool")
@@ -383,7 +380,6 @@ func (l *ListChunksTool) resolveDocDatasetID(
 		return "", fmt.Errorf("list_chunks: configured grep service does not support deep read")
 	}
 	return dr.ResolveDocDatasetID(ctx, runtime.GrepRequest{
-		TenantID:   tenantID,
 		DatasetIDs: boundDatasetIDs,
 		DocScope:   []string{docID},
 	})

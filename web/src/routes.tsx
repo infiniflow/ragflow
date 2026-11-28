@@ -35,6 +35,7 @@ export enum Routes {
   Pipeline = '/pipeline',
   Explore = '/explore',
   AgentExplore = `${Routes.Agent}/:id/explore`,
+  AgentVersionHistory = `${Routes.Agent}/:id/version-history`,
   AgentSetting = `${Routes.Agent}/:id/setting`,
   Memories = '/memories',
   Memory = '/memory',
@@ -229,6 +230,11 @@ const routeConfigOptions = [
     ],
   },
   {
+    path: Routes.AgentTemplates,
+    Component: () => import('@/pages/agents/agent-templates'),
+    layout: false,
+  },
+  {
     path: Routes.Root,
     Component: () => import('@/layouts/root-layout'),
     children: [
@@ -314,11 +320,6 @@ const routeConfigOptions = [
           import('@/pages/user-setting/compilation-templates/edit-next'),
       },
       {
-        path: Routes.AgentTemplates,
-        layout: false,
-        Component: () => import('@/pages/agents/agent-templates'),
-      },
-      {
         path: `${Routes.Memory}`,
         Component: () => import('@/pages/memory'),
         children: [
@@ -334,7 +335,13 @@ const routeConfigOptions = [
       },
       {
         path: Routes.Files,
-        Component: () => import('@/pages/files'),
+        Component: () => import('@/pages/files/layout'),
+        children: [
+          {
+            index: true,
+            Component: () => import('@/pages/files'),
+          },
+        ],
       },
       {
         path: Routes.Skills,
@@ -409,6 +416,10 @@ const routeConfigOptions = [
                 path: Routes.AgentExplore,
                 Component: () => import('@/pages/agent/explore'),
                 errorElement: <FallbackComponent />,
+              },
+              {
+                path: Routes.AgentVersionHistory,
+                Component: () => import('@/pages/agent/version-history'),
               },
               {
                 path: Routes.AgentSetting,

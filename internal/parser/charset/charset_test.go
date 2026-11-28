@@ -132,7 +132,19 @@ func TestDecodeToUTF8(t *testing.T) {
 		t.Errorf("EUC-KR decode: got %q, want %q", string(out), koreanText)
 	}
 
-	// 7. XML declaration check
+	// 7. EUC-JP Japanese text: not in the fallback chain, so only the
+	// detector can pick it; GB18030 would decode it as mojibake.
+	eucjpText := "これは日本語のテキストです。東京都千代田区丸の内一丁目。"
+	eucjpBytes, err := japanese.EUCJP.NewEncoder().Bytes([]byte(eucjpText))
+	if err != nil {
+		t.Fatalf("EUC-JP encode: %v", err)
+	}
+	out, _ = DecodeToUTF8(eucjpBytes, "")
+	if string(out) != eucjpText {
+		t.Errorf("EUC-JP decode: got %q, want %q", string(out), eucjpText)
+	}
+
+	// 8. XML declaration check
 	xmlHeader := `<?xml version="1.0" encoding="GB2312"?><html><body><p>章节测试</p></body></html>`
 	xmlGBK, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(xmlHeader))
 	if err != nil {

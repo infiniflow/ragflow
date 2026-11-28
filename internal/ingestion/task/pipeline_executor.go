@@ -54,8 +54,12 @@ import (
 // indexed, and these bookkeeping inputs remain for the caller to apply to
 // document state (metadata merge + chunk/token counter bumps).
 type PipelineResult struct {
-	DocID    string
-	KbID     string
+	DocID string
+	KbID  string
+	// TenantID names the tenant whose index holds the document. The finalizer
+	// needs it to delete the chunks a re-parse dropped; the index is built from
+	// the tenant, not from the dataset.
+	TenantID string
 	Metadata map[string]any
 	// ManagedMetadataKeys lists document metadata keys owned by the pipeline
 	// (e.g. Resume mode). On re-parse, any key in this set absent from Metadata
@@ -362,8 +366,10 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	if correctedID != "" {
 		s.canvasID = correctedID
 	}
+	var savePreview func(context.Context)
 	if !s.taskCtx.IsDebug() {
 		s.persistResolvedPipeline(context.WithoutCancel(ctx))
+		ctx, savePreview = component.PrepareDocumentPreview(ctx, s.deps.DB, s.taskCtx.Doc)
 	}
 
 	pipelineOutput, pipelineDSL, err := s.runPipelineFunc(ctx, dsl)
@@ -380,6 +386,10 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	result, err := s.processOutput(ctx, pipelineOutput, start)
 	if err != nil {
 		return nil, err
+	}
+
+	if savePreview != nil {
+		savePreview(ctx)
 	}
 
 	if pipelineDSL != "" && s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil && *s.taskCtx.IngestionTask.PipelineLogID != "" {
@@ -568,6 +578,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
+		TenantID:              s.taskCtx.Tenant.ID,
 		Metadata:              metadata,
 		ManagedMetadataKeys:   managedMetadataKeys,
 		ChunkCount:            chunkCount,

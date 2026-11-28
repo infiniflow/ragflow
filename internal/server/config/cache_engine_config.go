@@ -112,6 +112,12 @@ func (c *Config) GetKvrocksConfig() KvrocksConfig {
 	return c.cacheEngine.Kvrocks
 }
 
+// SetKvrocksConfig replaces the cache backend connection settings. The desktop
+// build uses it to point the process at the RESP endpoint it just started.
+func (c *Config) SetKvrocksConfig(kvrocks KvrocksConfig) {
+	c.cacheEngine.Kvrocks = kvrocks
+}
+
 func (r KvrocksConfig) ExportConfigs() map[string]interface{} {
 	kvrocksConfigs := make(map[string]interface{})
 	kvrocksConfigs["host"] = r.Host

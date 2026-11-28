@@ -92,7 +92,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
-	tableNames := uniqueStrings(req.IndexNames)
+	tableNames := common.Deduplicate(req.IndexNames)
 	mergeTables := len(tableNames) > 1
 	candidateLimit := globalSearchCandidateLimit(req)
 	effectivePlan := plan
@@ -108,7 +108,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// mergeSearchChunks applies req's page window after merging — a
 	// per-table OFFSET would skip rows that belong in the global window.
 	tableOffset := max(req.Offset, 0)
-	tableLimit := positiveOr(req.Limit, 30)
+	tableLimit := common.PositiveOr(req.Limit, 30)
 	if mergeTables {
 		tableLimit = tableOffset + tableLimit
 		tableOffset = 0
@@ -454,9 +454,9 @@ func minimumShouldMatchCoversAllTerms(minimumShouldMatch string, terms int) bool
 // own topn (100, fixed by FulltextQueryer) starves the weighted sum when the
 // request topk is large.
 func fullTextLimit(plan searchPlan, limit int) int {
-	fulltextLimit := positiveOr(plan.text.TopN, limit)
+	fulltextLimit := common.PositiveOr(plan.text.TopN, limit)
 	if plan.fusion != nil {
-		fulltextLimit = max(fulltextLimit, positiveOr(plan.fusion.TopN, limit))
+		fulltextLimit = max(fulltextLimit, common.PositiveOr(plan.fusion.TopN, limit))
 	}
 	return fulltextLimit
 }
@@ -472,7 +472,7 @@ func (e *Engine) searchVector(ctx context.Context, tableName, kind string, outpu
 		return nil, 0, err
 	}
 	args := &sqlArgs{}
-	cte, err := e.vectorCTE(tableName, output, filterSQL, filterArgs, dense, positiveOr(dense.TopN, limit), denseSimilarity(dense), vector, args)
+	cte, err := e.vectorCTE(tableName, output, filterSQL, filterArgs, dense, common.PositiveOr(dense.TopN, limit), denseSimilarity(dense), vector, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -524,7 +524,7 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 	if err != nil {
 		return nil, 0, err
 	}
-	vectorSQL, err := e.vectorCTE(tableName, output, filterSQL, filterArgs, plan.dense, positiveOr(plan.dense.TopN, limit), denseSimilarity(plan.dense), vector, args)
+	vectorSQL, err := e.vectorCTE(tableName, output, filterSQL, filterArgs, plan.dense, common.PositiveOr(plan.dense.TopN, limit), denseSimilarity(plan.dense), vector, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -545,7 +545,7 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 	projection = append(projection, fused+" AS _score")
 	idColumn := quoteIdent(identifierColumn(kind))
 	query := fmt.Sprintf("WITH filter_fulltext AS (%s), filter_vector AS (%s) SELECT %s FROM filter_fulltext a FULL OUTER JOIN filter_vector b ON a.%s = b.%s ORDER BY _score DESC LIMIT %d OFFSET %d",
-		fulltextSQL, vectorSQL, strings.Join(projection, ", "), idColumn, idColumn, minPositive(limit, plan.fusion.TopN), offset)
+		fulltextSQL, vectorSQL, strings.Join(projection, ", "), idColumn, idColumn, common.MinPositive(limit, plan.fusion.TopN), offset)
 	rows, err := e.queryRows(ctx, query, args.values...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("vastbase: fusion search %s: %w", tableName, err)
@@ -598,7 +598,7 @@ func (e *Engine) searchMemoryFusion(ctx context.Context, tableName, kind string,
 	textWeight := 1 - vectorWeight
 	threshold := denseSimilarity(plan.dense)
 	column := quoteIdent(plan.dense.VectorColumnName)
-	numCandidates := positiveOr(plan.dense.TopN, limit) + positiveOr(plan.text.TopN, limit)
+	numCandidates := common.PositiveOr(plan.dense.TopN, limit) + common.PositiveOr(plan.text.TopN, limit)
 
 	args := &sqlArgs{}
 	filterPart := args.embedFilter(filterSQL, filterArgs)
@@ -889,7 +889,7 @@ func mergeSearchChunks(chunks []map[string]interface{}, req *types.SearchRequest
 		})
 	}
 	offset := min(max(req.Offset, 0), len(chunks))
-	limit := positiveOr(req.Limit, 30)
+	limit := common.PositiveOr(req.Limit, 30)
 	end := min(offset+limit, len(chunks))
 	return chunks[offset:end]
 }
@@ -955,43 +955,10 @@ func searchSortNumber(value interface{}, field string) (float64, bool) {
 // formatFloat renders a float as a minimal SQL literal.
 func formatFloat(value float64) string { return strconv.FormatFloat(value, 'g', -1, 64) }
 
-// minPositive returns the smaller positive value, falling back to the other
-// one when either is non-positive.
-func minPositive(first, second int) int {
-	if first <= 0 {
-		return second
-	}
-	if second <= 0 || first < second {
-		return first
-	}
-	return second
-}
-
-// positiveOr returns value when positive, otherwise fallback.
-func positiveOr(value, fallback int) int {
-	if value > 0 {
-		return value
-	}
-	return fallback
-}
-
-// uniqueStrings deduplicates while preserving first-seen order.
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
 // globalSearchCandidateLimit is the candidate range a merged search fetches
 // from every table: the page offset plus limit (default page size 30).
 func globalSearchCandidateLimit(req *types.SearchRequest) int {
-	return max(req.Offset, 0) + positiveOr(req.Limit, 30)
+	return max(req.Offset, 0) + common.PositiveOr(req.Limit, 30)
 }
 
 // expandSearchPlan raises the text and dense TopNs to at least the candidate

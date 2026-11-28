@@ -160,6 +160,7 @@ func setupChunkHandlerWithUser(userID string, mock *mockChunkSvc) (*gin.Engine, 
 }
 
 func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
@@ -168,8 +169,8 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		if permission.UserIDFromContext(ctx) != "user-1" {
 			t.Fatalf("context userID = %q, want user-1", permission.UserIDFromContext(ctx))
 		}
-		if req.DatasetID != "kb-1" || req.DocID != "doc-1" {
-			t.Fatalf("req ids = %q/%q, want kb-1/doc-1", req.DatasetID, req.DocID)
+		if req.DatasetID != "kb-owner" || req.DocID != "doc-1" {
+			t.Fatalf("req ids = %q/%q, want kb-owner/doc-1", req.DatasetID, req.DocID)
 		}
 		if req.Page == nil || *req.Page != 2 {
 			t.Fatalf("page = %v, want 2", req.Page)
@@ -183,6 +184,10 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		if !reflect.DeepEqual(req.ChunkIDs, []string{"chunk-1", "chunk-2", "chunk-3"}) {
 			t.Fatalf("chunk_ids = %#v, want %#v", req.ChunkIDs, []string{"chunk-1", "chunk-2", "chunk-3"})
 		}
+		// Passed through as typed; the service lowercases it.
+		if req.ChunkIDPrefix != "ABCD" {
+			t.Fatalf("chunk_id_prefix = %q, want ABCD", req.ChunkIDPrefix)
+		}
 		if req.AvailableInt == nil || *req.AvailableInt != 1 {
 			t.Fatalf("available_int = %v, want 1", req.AvailableInt)
 		}
@@ -195,7 +200,7 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 		}, nil
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-owner/documents/doc-1/chunks?page=2&page_size=5&keywords=AI&available=true&chunk_ids=chunk-1&chunk_ids=chunk-2%2Cchunk-3&chunk_ids=chunk-1&chunk_id_prefix=ABCD", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -208,6 +213,70 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 	}
 	if body["message"] != "success" {
 		t.Fatalf("message = %v, want success", body["message"])
+	}
+}
+
+// An unusable prefix is forwarded as one string: a second value is not a
+// parameter error, it simply matches nothing.
+func TestChunkHandlerListChunksForwardsUnusableChunkIDPrefix(t *testing.T) {
+	tooLong := "0123456789abcdef0"
+	cases := []struct{ name, query, want string }{
+		{"not an id", "chunk_id_prefix=not-an-id", "not-an-id"},
+		{"over-long", "chunk_id_prefix=" + tooLong, tooLong},
+		{"repeated parameter", "chunk_id_prefix=6877&chunk_id_prefix=abcd", "6877,abcd"},
+		{"comma separated", "chunk_id_prefix=6877,abcd", "6877,abcd"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
+
+			var forwarded string
+			mock.listFn = func(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
+				forwarded = req.ChunkIDPrefix
+				return &service.ListChunksResponse{Chunks: []map[string]interface{}{}}, nil
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?"+tc.query, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s, want 200", w.Code, w.Body.String())
+			}
+			if forwarded != tc.want {
+				t.Fatalf("chunk_id_prefix = %q, want %q", forwarded, tc.want)
+			}
+		})
+	}
+}
+
+// An empty value is no filter rather than an error: the box may send one before
+// anything usable is typed.
+func TestChunkHandlerListChunksIgnoresEmptyChunkIDPrefix(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
+
+	called := false
+	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
+		called = true
+		if req.ChunkIDPrefix != "" {
+			t.Fatalf("chunk_id_prefix = %q, want empty", req.ChunkIDPrefix)
+		}
+		return &service.ListChunksResponse{Chunks: []map[string]interface{}{}}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/chunks?chunk_id_prefix=", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s, want 200", w.Code, w.Body.String())
+	}
+	if !called {
+		t.Fatal("an empty prefix must still list the chunks")
 	}
 }
 

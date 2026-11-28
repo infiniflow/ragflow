@@ -49,12 +49,12 @@ func NewManualChunker(params map[string]any) (runtime.Component, error) {
 	// ManualChunker. The chunker's entire value-add is the physical-position
 	// resort inside the group method, so method must stay "group". The cap
 	// and the heading-content flag are title-chunker-family params that the
-	// group path does not honour (see chunkFromRecords: it passes tokenCap=0
-	// and only the hierarchy path reads include_heading_content). The
-	// operator form is not promised to apply them; we strip them here
-	// instead of accepting and silently ignoring them downstream. See issue
-	// #20139.
-	conf := map[string]any{"method": "group", "chunk_token_cap": 0}
+	// group path does not honour (see chunkFromRecords: ManualChunker passes
+	// tokenCap=0 explicitly and only the hierarchy path reads
+	// include_heading_content). The operator form is not promised to apply
+	// them; we strip them here instead of accepting and silently ignoring them
+	// downstream. See issue #20139.
+	conf := map[string]any{"method": "group"}
 	dropped := make([]string, 0, 3)
 	for k, v := range params {
 		switch k {

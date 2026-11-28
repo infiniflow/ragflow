@@ -14,6 +14,7 @@ import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
+import { formatDate } from '@/utils/date';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -29,6 +30,7 @@ import { useBulkOperateFile } from './use-bulk-operate-file';
 import { useHandleCreateFolder } from './use-create-folder';
 import { useHandleMoveFile } from './use-move-file';
 import {
+  useCurrentFolder,
   useNavigateToOtherFolder,
   useSelectBreadcrumbItems,
 } from './use-navigate-to-folder';
@@ -55,6 +57,7 @@ export default function Files() {
   const {
     pagination,
     files,
+    parent_folder,
     total,
     loading,
     setPagination,
@@ -64,6 +67,7 @@ export default function Files() {
     folderNotFound,
   } = useFetchFileList();
 
+  const currentFolder = useCurrentFolder(parent_folder);
   const navigateToOtherFolder = useNavigateToOtherFolder();
 
   // The folder currently open was removed (e.g. an ancestor was moved into
@@ -138,9 +142,8 @@ export default function Files() {
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button>
+              <Button size="icon" aria-label={t('knowledgeDetails.addFile')}>
                 <LucidePlus />
-                {t('knowledgeDetails.addFile')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56">
@@ -164,6 +167,7 @@ export default function Files() {
         <FilesTable
           files={files}
           total={total}
+          createTime={formatDate(currentFolder?.create_time)}
           pagination={pagination}
           setPagination={setPagination}
           loading={loading}

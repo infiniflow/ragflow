@@ -47,7 +47,7 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
       { value: 'scoring', label: 'modelTypes.scoring' },
       { value: 'rerank', label: 'modelTypes.rerank' },
       { value: 'tts', label: 'modelTypes.tts' },
-      { value: 'vision', label: 'modelTypes.image2text' },
+      { value: 'vlm', label: 'modelTypes.image2text' },
       { value: 'ocr', label: 'modelTypes.ocr' },
       { value: 'asr', label: 'modelTypes.speech2text' },
       { value: 'decision', label: 'modelTypes.decision' },
@@ -66,7 +66,9 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
     label: 'modelFeatures',
     type: 'switch-group',
     required: false,
-    defaultValue: [],
+    // New models default to tool calling enabled, mirroring the draft
+    // instance default applied by `buildModelInfo`.
+    defaultValue: ['is_tools'],
     options: [
       { value: 'is_tools', label: 'modelFeatureToolCall' },
       { value: 'supports_image', label: 'modelFeatureImageSupport' },

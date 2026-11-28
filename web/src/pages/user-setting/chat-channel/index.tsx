@@ -16,6 +16,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { useVisibleRoleIntegrationItems } from '@/ee/hooks/use-visible-role-integration-items';
 import { useTranslation } from 'react-i18next';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import AddChatChannelModal from './add-channel-modal';
@@ -72,25 +73,28 @@ const AvailableChannelCard = ({
 const ChatChannel = () => {
   const { t } = useTranslation();
   const { chatChannelInfo } = useChatChannelInfo();
-  const channelTemplates: IChatChannelInfo[] = Object.values(ChatChannelKey)
-    .filter(
-      (id) =>
-        [
-          ChatChannelKey.DISCORD,
-          ChatChannelKey.DINGTALK,
-          ChatChannelKey.FEISHU,
-          ChatChannelKey.TELEGRAM,
-          ChatChannelKey.QQBOT,
-          ChatChannelKey.WECOM,
-          ChatChannelKey.WHATSAPP,
-        ].includes(id), // Show only selected chat channels
-    )
-    .map((id) => ({
-      id,
-      name: chatChannelInfo[id].name,
-      description: chatChannelInfo[id].description,
-      icon: chatChannelInfo[id].icon,
-    }));
+  const channelTemplates = useVisibleRoleIntegrationItems(
+    'chat_channel',
+    Object.values(ChatChannelKey)
+      .filter(
+        (id) =>
+          [
+            ChatChannelKey.DISCORD,
+            ChatChannelKey.DINGTALK,
+            ChatChannelKey.FEISHU,
+            ChatChannelKey.TELEGRAM,
+            ChatChannelKey.QQBOT,
+            ChatChannelKey.WECOM,
+            ChatChannelKey.WHATSAPP,
+          ].includes(id), // Show only selected chat channels
+      )
+      .map((id) => ({
+        id,
+        name: chatChannelInfo[id].name,
+        description: chatChannelInfo[id].description,
+        icon: chatChannelInfo[id].icon,
+      })),
+  );
 
   const { categorizedList } = useListChatChannel();
 

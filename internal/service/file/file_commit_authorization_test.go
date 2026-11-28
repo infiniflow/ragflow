@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -29,10 +30,15 @@ func newCommitAuthFixture(t *testing.T) *commitAuthFixture {
 	t.Helper()
 	f := &commitAuthFixture{db: newCommitAuthTestDB(t)}
 	mk := func(id, parentID, tenantID, name, fileType, location string, size int64) *entity.File {
+		ownerUserID := "user-a"
+		if tenantID == "tenant-b" {
+			ownerUserID = "user-b"
+		}
 		row := &entity.File{
 			ID:        id,
 			ParentID:  parentID,
 			TenantID:  tenantID,
+			UserID:    ownerUserID,
 			CreatedBy: tenantID,
 			Name:      name,
 			Type:      fileType,
@@ -88,7 +94,7 @@ func (f *commitAuthFixture) assertUntouched(t *testing.T, id, wantName, wantLoca
 func TestCreateCommitRejectsFilesOutsideFolder(t *testing.T) {
 	f := newCommitAuthFixture(t)
 	svc := NewFileCommitService()
-	ctx := context.Background()
+	ctx := permission.WithIdentity(context.Background(), "user-a", "tenant-a")
 
 	cases := []struct {
 		name         string
@@ -129,7 +135,7 @@ func TestCreateCommitRejectsFilesOutsideFolder(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := svc.CreateCommit(ctx, "folder-a", "user-a", "attempt", []entity.FileChange{tc.change}); err == nil {
+			if _, err := svc.CreateCommit(ctx, nil, "folder-a", "user-a", "attempt", []entity.FileChange{tc.change}); err == nil {
 				t.Fatalf("expected CreateCommit to reject %s", tc.change.FileID)
 			}
 			f.assertUntouched(t, tc.victim, tc.wantName, tc.wantLocation)
@@ -140,9 +146,9 @@ func TestCreateCommitRejectsFilesOutsideFolder(t *testing.T) {
 func TestCreateCommitAcceptsFilesInsideFolderTree(t *testing.T) {
 	f := newCommitAuthFixture(t)
 	svc := NewFileCommitService()
-	ctx := context.Background()
+	ctx := permission.WithIdentity(context.Background(), "user-a", "tenant-a")
 
-	commit, err := svc.CreateCommit(ctx, "folder-a", "user-a", "edit", []entity.FileChange{
+	commit, err := svc.CreateCommit(ctx, nil, "folder-a", "user-a", "edit", []entity.FileChange{
 		{FileID: "file-a", Operation: "modify", FileName: "a.txt", Content: "hello"},
 		{FileID: "file-sub", Operation: "modify", FileName: "nested.txt", Content: "nested hello"},
 	})
@@ -172,7 +178,7 @@ func TestCreateCommitRejectsInvalidRenameTarget(t *testing.T) {
 
 	for _, name := range []string{"", "   ", strings.Repeat("a", 256)} {
 		t.Run(name, func(t *testing.T) {
-			_, err := svc.CreateCommit(context.Background(), "folder-a", "user-a", "rename", []entity.FileChange{
+			_, err := svc.CreateCommit(permission.WithIdentity(context.Background(), "user-a", "tenant-a"), nil, "folder-a", "user-a", "rename", []entity.FileChange{
 				{FileID: "file-a", Operation: "rename", OldName: "a.txt", NewName: name},
 			})
 			if err == nil {
@@ -194,7 +200,7 @@ func TestCreateCommitRejectsMissingFolder(t *testing.T) {
 	f := newCommitAuthFixture(t)
 	svc := NewFileCommitService()
 
-	if _, err := svc.CreateCommit(context.Background(), "no-such-folder", "user-a", "edit", []entity.FileChange{
+	if _, err := svc.CreateCommit(permission.WithIdentity(context.Background(), "user-a", "tenant-a"), nil, "no-such-folder", "user-a", "edit", []entity.FileChange{
 		{FileID: "file-a", Operation: "modify", FileName: "a.txt", Content: "hello"},
 	}); err == nil {
 		t.Fatal("expected CreateCommit to reject an unknown folder")

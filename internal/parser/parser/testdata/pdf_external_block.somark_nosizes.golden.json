@@ -1,0 +1,164 @@
+{
+  "page_count": 3,
+  "items": [
+    {
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "text": "# Annual Report"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "text": "### Scope"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "text": "# Level out of range"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "Body paragraph."
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "equation",
+      "page_number": 1,
+      "text": "a^2 + b^2 = c^2"
+    },
+    {
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "text": "[Image]"
+    },
+    {
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "text": "Approved"
+    },
+    {
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "Item",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "Value",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "A",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "42",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 1
+      }
+    },
+    {
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "K",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "V",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "a",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "1",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 1
+      }
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "overflows the page"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "swapped edges"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "belongs to page two"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "page index outside the document"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "no bbox"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 2,
+      "text": "Second page body."
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "Pixel size unknown."
+    }
+  ],
+  "warnings": [
+    "SoMark page 1: positions omitted because the SoMark pixel size or PDF point size is unavailable",
+    "SoMark page 2: positions omitted because the SoMark pixel size or PDF point size is unavailable",
+    "SoMark page 3: positions omitted because the SoMark pixel size or PDF point size is unavailable"
+  ]
+}

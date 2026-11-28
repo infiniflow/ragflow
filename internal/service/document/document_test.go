@@ -435,10 +435,7 @@ func (m *metadataDocEngine) SearchMetadata(_ context.Context, req *types.SearchM
 }
 
 func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	dup := make(map[string]interface{}, len(m.records[docID])+len(metaFields))
-	for k, v := range m.records[docID] {
-		dup[k] = v
-	}
+	dup := make(map[string]interface{}, len(metaFields))
 	for k, v := range metaFields {
 		dup[k] = v
 	}
@@ -496,14 +493,6 @@ func (m *metadataDocEngine) DeleteMetadataKeys(_ context.Context, docID string, 
 		m.docKBs[docID] = datasetID
 	}
 	return nil
-}
-
-type staleSearchMetadataDocEngine struct {
-	*metadataDocEngine
-}
-
-func (m *staleSearchMetadataDocEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
-	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{}}, nil
 }
 
 func (f *failingDeleteMetadataEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -2564,7 +2553,7 @@ func TestStopParseDocuments_Success(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2598,7 +2587,7 @@ func TestStopParseDocuments_CancelStatus(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2619,7 +2608,7 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2648,7 +2637,7 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -2713,7 +2702,7 @@ func TestStopParseDocuments_Deduplicate(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1", "doc-1", "doc-1"})
 	if err != nil {
 		t.Fatalf("StopParseDocuments failed: %v", err)
@@ -3245,8 +3234,8 @@ func TestUpdateDatasetDocumentMissingDocumentReturnsDataError(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if err.Error() != "the dataset doesn't own the document" {
-		t.Fatalf("error = %q, want missing-document response", err.Error())
+	if err.Error() != "can't find this document" {
+		t.Fatalf("error = %q, want missing-document error", err.Error())
 	}
 }
 
@@ -4197,7 +4186,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
-func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
+func TestSetDocumentMetadataReplacesMetadataRow(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -4221,8 +4210,8 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
-	if got := engine.records["doc-1"]["author"]; got != "alice" {
-		t.Fatalf("author = %#v, want alice", got)
+	if _, ok := engine.records["doc-1"]["author"]; ok {
+		t.Fatalf("replacement kept a field it did not contain: %#v", engine.records["doc-1"])
 	}
 	if got := engine.records["doc-1"]["category"]; got != "tech" {
 		t.Fatalf("category = %#v, want tech", got)
@@ -4286,6 +4275,26 @@ func TestChunkImageStorageKeyFallsBackToChunkID(t *testing.T) {
 	}
 }
 
+func TestApplyDocumentMetadataUpdatesReplacesListWithScalar(t *testing.T) {
+	for _, tc := range []struct {
+		valueType string
+		value     string
+		want      any
+	}{
+		{valueType: "string", value: "new", want: "new"},
+		{valueType: "time", value: "2026-11-20T12:00:00", want: "2026-11-20T12:00:00"},
+		{valueType: "number", value: "42", want: int64(42)},
+	} {
+		t.Run(tc.valueType, func(t *testing.T) {
+			meta := map[string]any{"field": []any{"old", "other"}}
+			changed := applyDocumentMetadataUpdates(meta, []MetadataUpdate{{Key: "field", Value: tc.value, ValueType: tc.valueType}})
+			if !changed || meta["field"] != tc.want {
+				t.Fatalf("changed = %t, field = %#v, want %#v", changed, meta["field"], tc.want)
+			}
+		})
+	}
+}
+
 func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -4302,11 +4311,11 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
 	}, []MetadataUpdate{
-		{Key: "tags", Value: "new", Match: "old"},
+		{Key: "tags", Value: "new", Match: "old", ValueType: "list"},
 		{Key: "category", Value: "paper"},
 	}, []MetadataDelete{
 		{Key: "author", Value: "alice"},
@@ -4349,42 +4358,6 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	}
 }
 
-func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
-
-	baseEngine := newMetadataDocEngine(map[string]map[string]interface{}{
-		"doc-1": {"author": "alice"},
-	}, map[string]string{"doc-1": "kb-1"})
-	engine := &staleSearchMetadataDocEngine{metadataDocEngine: baseEngine}
-
-	svc := testDocumentService(t)
-	svc.docEngine = engine
-	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
-		DocumentIDs: []string{"doc-1"},
-	}, []MetadataUpdate{
-		{Key: "category", Value: "paper"},
-	}, nil)
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("batch update failed: code=%v err=%v", code, err)
-	}
-	if resp.Updated != 1 || resp.MatchedDocs != 1 {
-		t.Fatalf("resp = %#v, want updated=1 matched=1", resp)
-	}
-
-	got := baseEngine.records["doc-1"]
-	if got["author"] != "alice" {
-		t.Fatalf("author should be preserved, got metadata %#v", got)
-	}
-	if got["category"] != "paper" {
-		t.Fatalf("category = %#v, want paper", got["category"])
-	}
-}
-
 func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -4400,7 +4373,7 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2"},
 	}, nil, []MetadataDelete{{Key: "status", Value: "draft"}})
@@ -4429,7 +4402,7 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
 	}, []MetadataUpdate{
@@ -5588,7 +5561,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	// We need a local-source file so the deletion path is exercised.
 	loc := "doc.pdf"
 	testFile := &entity.File{
-		ID: "file-1", ParentID: "kb-1", TenantID: "tenant-1", CreatedBy: "user-1",
+		ID: "file-1", ParentID: "kb-1", UserID: "user-1", TenantID: "tenant-1", CreatedBy: "user-1",
 		Name: "test.pdf", Location: &loc, SourceType: "", Type: "pdf",
 	}
 	if err := dao.DB.Create(testFile).Error; err != nil {

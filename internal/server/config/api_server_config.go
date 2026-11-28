@@ -36,6 +36,7 @@ type AuthenticationConfig struct {
 
 type APIServerConfig struct {
 	MCP      MCPConfig
+	Codex    CodexConfig
 	Host     string `mapstructure:"host"`
 	HTTPPort int    `mapstructure:"http_port"`
 	// TrustedProxies lists the IPs / CIDRs whose X-Forwarded-For and
@@ -51,6 +52,9 @@ type APIServerConfig struct {
 
 func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 	if err := c.parseMCPConfig(v); err != nil {
+		return err
+	}
+	if err := c.parseCodexConfig(v); err != nil {
 		return err
 	}
 
@@ -89,6 +93,22 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 
 	c.parseAuthenticationConfig(v)
 
+	return c.deriveCodexMCPBase()
+}
+
+// deriveCodexMCPBase fills codex.mcp_public_base from the API server's own address when
+// the operator did not set it explicitly, so a simple deployment needs no extra config.
+// A wildcard bind address is not reachable, so it maps to loopback.
+func (c *Config) deriveCodexMCPBase() error {
+	if c.apiServer.Codex.Endpoint == "" || c.apiServer.Codex.MCPPublicBase != "" {
+		return nil
+	}
+	host := c.apiServer.Host
+	switch host {
+	case "", "0.0.0.0", "::", "localhost":
+		host = "127.0.0.1"
+	}
+	c.apiServer.Codex.MCPPublicBase = fmt.Sprintf("http://%s:%d", host, c.apiServer.HTTPPort)
 	return nil
 }
 
@@ -132,33 +152,11 @@ func (c *Config) GetAPIServerConfig() APIServerConfig {
 	return c.apiServer
 }
 
-// SetAPIServerHTTPPort stores a resolved API server port in the global
-// config. GetAPIServerConfig returns a copy, so this setter (not a write
-// into the returned struct) is how a CLI/env override reaches the config
-// the API server actually binds.
-func (c *Config) SetAPIServerHTTPPort(port int) {
-	c.apiServer.HTTPPort = port
-}
-
-// ResolvePort resolves the effective HTTP port from the precedence
-// CLI flag > the configured port (config file / viper, already merged with
-// env) > the built-in default, and validates the final value against
-// [MinPort, MaxPort]. The configured port is passed by the caller so the
-// SAME validation serves both the API server (apiServer.HTTPPort) and the
-// admin server (admin.HTTPPort) — reading a single receiver field here would
-// make the admin server resolve to the API port and collide with it at
-// startup. The CLI parser still rejects an out-of-range --port up front; this
-// guard owns the config/env layers, where a non-integer value used to reach
-// viper's GetInt as a silent 0 (the server would then listen on a random
-// port).
-func (c *Config) ResolvePort(configured int, cli *int) (int, error) {
-	port := configured
-	if cli != nil {
-		port = *cli
-	}
+func (c *Config) SetAPIServerHTTPPort(port int) error {
 	if port < MinPort || port > MaxPort {
-		return 0, fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
+		return fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
 			port, MinPort, MaxPort)
 	}
-	return port, nil
+	c.apiServer.HTTPPort = port
+	return nil
 }

@@ -529,12 +529,12 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       chunkMethodTab: 'Fraqmentlərə bölmə üsulu',
       testResults: 'Nəticələr',
       testSetting: 'Parametr',
-      retrievalTesting: 'Axtarış sınağı',
+      retrievalTesting: 'Axtarış',
       retrievalTestingDescription:
-        'RAGFlow-un LLM üçün nəzərdə tutulan məzmunu tapa bilib-bilmədiyini yoxlamaq üçün axtarış sınağı aparın.',
+        'RAGFlow-un LLM üçün nəzərdə tutulan məzmunu tapa bilib-bilmədiyini yoxlamaq üçün axtarış aparın.',
       Parse: 'Təhlil et',
       dataset: 'Verilənlər dəsti',
-      testing: 'Axtarış sınağı',
+      testing: 'Axtarış',
       files: 'Fayllar',
       configuration: 'Konfiqurasiya',
       nextConfiguration: 'Verilənlər dəstinin konfiqurasiyası',
@@ -567,7 +567,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       noTestResultsForNotRuned:
         'Hələ heç bir sınaq aparılmayıb. Nəticələr burada görünəcək.',
       testingDescription:
-        'RAGFlow-un LLM üçün nəzərdə tutulan məzmunu tapa bilib-bilmədiyini yoxlamaq üçün axtarış sınağı aparın. Ən yaxşı nəticələrə nail olmaq üçün açar söz oxşarlığının çəkisi və ya oxşarlıq həddi kimi standart parametrləri dəyişmisinizsə, bu dəyişikliklərin avtomatik yadda saxlanılmayacağını nəzərə alın. Onları söhbət köməkçinizin parametrlərinə və ya axtarış agenti komponentinin parametrlərinə tətbiq etməlisiniz.',
+        'RAGFlow-un LLM üçün nəzərdə tutulan məzmunu tapa bilib-bilmədiyini yoxlamaq üçün axtarış aparın. Ən yaxşı nəticələrə nail olmaq üçün açar söz oxşarlığının çəkisi və ya oxşarlıq həddi kimi standart parametrləri dəyişmisinizsə, bu dəyişikliklərin avtomatik yadda saxlanılmayacağını nəzərə alın. Onları söhbət köməkçinizin parametrlərinə və ya axtarış agenti komponentinin parametrlərinə tətbiq etməlisiniz.',
       similarityThreshold: 'Oxşarlıq həddi',
       similarityThresholdTip:
         'RAGFlow axtarış zamanı ya çəki tətbiq edilmiş açar söz oxşarlığı ilə çəki tətbiq edilmiş vektor kosinus oxşarlığının birləşməsindən, ya da yenidən sıralama modeli seçildikdə çəki tətbiq edilmiş açar söz oxşarlığı ilə çəki tətbiq edilmiş yenidən sıralama balının birləşməsindən istifadə edir. Bu parametr istifadəçi sorğusu ilə fraqmentlər arasındakı oxşarlıq həddini təyin edir. Oxşarlıq balı bu həddən aşağı olan hər bir fraqment nəticələrdən çıxarılacaq. Standart olaraq hədd 20-yə təyin edilir. Bu o deməkdir ki, yalnız hibrid oxşarlıq balı 20 və ya daha yüksək olan fraqmentlər tapılacaq. Vektor oxşarlığının çəkisi 0-a təyin edilərsə, bu hədd tətbiq olunmur.',
@@ -3350,7 +3350,7 @@ Bu ayırıcı giriş mətnini bir neçə mətn hissəsinə bölmək üçün isti
       mergePath: 'Yolu birləşdir',
       mergePathTip:
         'Aktivləşdirildikdə, dəyişəndən dərhal sonra gələn nöqtə ilə başlayan şəkilçi yol sorğusuna birləşdirilir, məsələn, {node@result.name}.',
-      historyVersion: 'Versiya tarixçəsi',
+      historyVersion: 'Versiyalar',
       version: {
         created: 'Yaradılıb',
         details: 'Versiya təfərrüatları',
@@ -3557,7 +3557,7 @@ Bu proses sonrakı düyünlər üçün vahid konfiqurasiya yaratmaq məqsədilə
         'Bu hissələrə bölücü üçün əlavə konfiqurasiya tələb olunmur.',
       pageChunkerDescription:
         'Bu hissələrə bölücü üçün əlavə konfiqurasiya tələb olunmur.',
-      extractor: 'Çevirici',
+      extractor: 'Çıxarıcı',
       extractorDescription:
         'Sənəd hissələrindən xülasələr, təsnifatlar və s. kimi strukturlaşdırılmış məlumatları çıxarmaq üçün LLM-dən istifadə edin.',
       compiler: 'Kompilyator',

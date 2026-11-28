@@ -20,6 +20,7 @@ type WikiDetailEditorPanelProps = {
   displayedContent: string | undefined;
   referenceDocuments: Docagg[];
   isVersionView: boolean;
+  canEdit: boolean;
   commitDetail: IWikiCommitDetail | null | undefined;
   onContentChange: (value: string) => void;
   onWikiLinkClick: (pageType: WikiPageType, slug: string) => void;
@@ -31,6 +32,7 @@ export function WikiDetailEditorPanel({
   displayedContent,
   referenceDocuments,
   isVersionView,
+  canEdit,
   commitDetail,
   onContentChange,
   onWikiLinkClick,
@@ -51,6 +53,7 @@ export function WikiDetailEditorPanel({
                 content={editedContent}
                 onChange={onContentChange}
                 onWikiLinkClick={onWikiLinkClick}
+                readOnly={isVersionView || !canEdit}
               />
             )}
 

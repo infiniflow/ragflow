@@ -49,6 +49,29 @@ function isSearch1APIOperator(value: unknown) {
   );
 }
 
+function isSpecStreamOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return ['specstream', 'specstreamsearch', 'specstreamextract'].includes(
+    value.replace(/_/g, '').toLowerCase(),
+  );
+}
+
+function isAnySearchOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return [
+    'anysearch',
+    'anysearchsearch',
+    'anysearchdiscover',
+    'anysearchextract',
+  ].includes(value.replace(/_/g, '').toLowerCase());
+}
+
 function isNodeLabelApiKeyOperator(value: unknown) {
   if (typeof value !== 'string') {
     return false;
@@ -57,6 +80,8 @@ function isNodeLabelApiKeyOperator(value: unknown) {
   return (
     isQueritOperator(value) ||
     isSearch1APIOperator(value) ||
+    isSpecStreamOperator(value) ||
+    isAnySearchOperator(value) ||
     isPerplexityOperator(value) ||
     nodeLabelApiKeyOperators.includes(value)
   );
@@ -95,7 +120,9 @@ export function clearSensitiveFields<T>(obj: T): T {
       (apiKeyOperators.includes(value.component_name) ||
         isQueritOperator(value.component_name) ||
         isSearch1APIOperator(value.component_name) ||
-        isPerplexityOperator(embeddedToolName(value))) &&
+        isAnySearchOperator(embeddedToolName(value)) ||
+        isPerplexityOperator(embeddedToolName(value)) ||
+        isSpecStreamOperator(embeddedToolName(value))) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };

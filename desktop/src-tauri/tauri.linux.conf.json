@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "resources": [
+      "binaries/ragflow-desktop",
+      "resource",
+      "conf",
+      "deepdoc",
+      "deps"
+    ]
+  }
+}

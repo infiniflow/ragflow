@@ -23,3 +23,17 @@ import "context"
 func ValidateQuestion(ctx context.Context, question string) error {
 	return nil
 }
+
+func WithOutputFilter(ctx context.Context) (context.Context, error) {
+	return ctx, ctx.Err()
+}
+
+func FilterOutput(ctx context.Context, text string) (string, error) {
+	return text, ctx.Err()
+}
+
+func FilterText(_ context.Context, text string) string { return text }
+
+func OutputFilterEnabled(context.Context) bool { return false }
+
+func ValidateSetting(name, value string) error { return nil }

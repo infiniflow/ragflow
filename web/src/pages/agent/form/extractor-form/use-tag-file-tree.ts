@@ -28,6 +28,7 @@ export function useTagFileTree(value?: string, resourceTenantId?: string) {
   const { fetchList } = useFetchPureFileList();
 
   const [treeData, setTreeData] = useState<TreeNodeType[]>([]);
+  const rootLoadRef = useRef<{ tenantId?: string }>();
   const resourceTenantIdRef = useRef(resourceTenantId);
   resourceTenantIdRef.current = resourceTenantId;
   const appendFiles = useCallback((files: IFile[], tenantId?: string) => {
@@ -52,6 +53,16 @@ export function useTagFileTree(value?: string, resourceTenantId?: string) {
 
   const loadData = useCallback(
     async ({ id }: TreeNodeType) => {
+      // An empty or fully filtered listing still counts as a loaded root.
+      if (!id) {
+        if (
+          rootLoadRef.current &&
+          rootLoadRef.current.tenantId === resourceTenantId
+        ) {
+          return;
+        }
+        rootLoadRef.current = { tenantId: resourceTenantId };
+      }
       const ret = await fetchList({
         parentId: id as string,
         tenantId: resourceTenantId,

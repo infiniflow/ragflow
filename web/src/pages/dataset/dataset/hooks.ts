@@ -153,5 +153,14 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     },
     [showModal],
   );
-  return { showLog, hideLog: hideModal, logVisible: visible, logInfo };
+  // Expose the resolved run identity so the log modal can load per-run
+  // progress from the same dataset/log pair its events use.
+  return {
+    showLog,
+    hideLog: hideModal,
+    logVisible: visible,
+    logInfo,
+    datasetId,
+    logId: logID,
+  };
 };

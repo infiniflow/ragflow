@@ -239,6 +239,17 @@ func (s *SearchService) GetSearchDetail(ctx context.Context, searchID string) (*
 	return search, nil
 }
 
+func (s *SearchService) GetSearchOperatorPermission(ctx context.Context, searchID string) (int32, error) {
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindSearchApp,
+		ID:   searchID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return access.PermissionMask, nil
+}
+
 // GetSearchShareDetail returns the joined share-detail payload for public
 // searchbot pages after verifying the caller can access the search app.
 func (s *SearchService) GetSearchShareDetail(ctx context.Context, searchID string) (*SearchShareDetail, error) {
@@ -290,6 +301,31 @@ type SearchCompletionPlan struct {
 	Options    AskStreamOptions
 }
 
+// newDatasetUseChecker is the seam used by completion-plan authorization.
+var newDatasetUseChecker = func(db *gorm.DB) permission.ResourceChecker {
+	return permission.NewDatabaseChecker(db)
+}
+
+// checkDatasetsUsable maps dataset IDs to resource refs and delegates the
+// batch load plus ordered fallback to the shared permission helper. Reusing
+// that helper keeps completion-plan authorization consistent with every other
+// caller that authorizes a set of datasets.
+func checkDatasetsUsable(ctx context.Context, checker permission.ResourceChecker, datasetIDs []string) error {
+	if len(datasetIDs) == 0 {
+		return nil
+	}
+	refs := make([]permission.ResourceRef, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	for _, id := range datasetIDs {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	return permission.CheckResources(ctx, checker, refs, permission.OperationUse)
+}
+
 func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
 	searchID = strings.TrimSpace(searchID)
 	if searchID == "" {
@@ -325,14 +361,9 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 		return nil, common.CodeDataError, fmt.Errorf("`kb_ids` is required")
 	}
 
-	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-			Kind: permission.ResourceKindDataset,
-			ID:   datasetID,
-		}, permission.OperationUse); err != nil {
-			code, permissionErr := permissionresponse.Normalize(err)
-			return nil, code, permissionErr
-		}
+	if err := checkDatasetsUsable(ctx, newDatasetUseChecker(dao.DB), datasetIDs); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	tenantID, _ := searchDetail["tenant_id"].(string)
 	tenantID = strings.TrimSpace(tenantID)
@@ -521,10 +552,7 @@ type UpdateSearchRequest struct {
 }
 
 func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: permission.ResourceKindSearchApp,
-		ID:   searchID,
-	}, permission.OperationUpdate); err != nil {
+	if err := checkSearchUpdatePermission(ctx, searchID); err != nil {
 		return nil, err
 	}
 

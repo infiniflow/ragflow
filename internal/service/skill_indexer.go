@@ -467,19 +467,8 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, spaceID string, do
 	common.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
-	indexName := SkillIndexName(tenantID, spaceID)
-	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
-	if exists {
-		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
-		if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
-			common.Warn(fmt.Sprintf("ReindexAll: failed to delete existing index: %v", err))
-		}
-	}
-
-	// Create new index with correct dimension
-	common.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, newDimension))
-	if err := s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, newDimension); err != nil {
-		return nil, fmt.Errorf("failed to create index with dimension %d: %w", newDimension, err)
+	if err := recreateSkillIndex(ctx, s, tenantID, spaceID, embdID, docEngine, newDimension); err != nil {
+		return nil, err
 	}
 
 	// Get space info to find folder ID
@@ -894,6 +883,7 @@ func (s *SkillIndexerService) initializeIndex(ctx context.Context, tenantID, spa
 
 	if !exists {
 		common.Info("Skill index does not exist, creating...", zap.String("indexName", indexName))
+		// The index is known absent here, so the create path needs no check.
 		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID)
 	}
 
@@ -916,7 +906,27 @@ func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID
 	return s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension)
 }
 
-// createIndexWithDimension creates the skill index with a specific vector dimension
+// recreateSkillIndex drops an existing table and creates it again at the new
+// dimension. It is extracted from ReindexAll so the drop/create sequence is
+// testable without the surrounding service wiring.
+func recreateSkillIndex(ctx context.Context, s *SkillIndexerService, tenantID, spaceID, embdID string, docEngine engine.DocEngine, dimension int) error {
+	indexName := SkillIndexName(tenantID, spaceID)
+	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
+	if exists {
+		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
+		if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
+			// Creating on the stale table would keep the old dimension and rows
+			// while reporting success, so fail instead of continuing.
+			return fmt.Errorf("failed to delete existing index %s: %w", indexName, err)
+		}
+	}
+	common.Info(fmt.Sprintf("ReindexAll: creating new index %s with dimension %d", indexName, dimension))
+	return s.createIndexWithDimension(ctx, tenantID, spaceID, docEngine, embdID, dimension)
+}
+
+// createIndexWithDimension creates the skill index with a specific vector dimension.
+// Callers establish absence before reaching this path, so it never re-probes
+// the engine or drops an index here.
 func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, dimension int) error {
 	indexName := SkillIndexName(tenantID, spaceID)
 
@@ -925,21 +935,6 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 		zap.String("spaceID", spaceID),
 		zap.Int("dimension", dimension),
 		zap.String("engineType", docEngine.GetType()))
-
-	// For Infinity: check if table exists and needs recreation (dimension mismatch)
-	if docEngine.GetType() == "infinity" {
-		exists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
-		if err != nil {
-			common.Warn(fmt.Sprintf("Error checking if index exists: %v", err))
-		}
-		if exists {
-			common.Info(fmt.Sprintf("Index exists, deleting for recreation with dimension %d", dimension),
-				zap.String("indexName", indexName))
-			if err := docEngine.DropChunkStore(ctx, indexName, "skill"); err != nil {
-				common.Warn(fmt.Sprintf("Failed to delete existing index: %v", err))
-			}
-		}
-	}
 
 	// Use the doc engine's CreateChunkStore method with skill-specific mapping
 	// The mapping file is loaded from conf/skill_es_mapping.json or conf/skill_infinity_mapping.json
@@ -967,18 +962,26 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
 	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}}, nil, nil)
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}}, nil, nil)
+			if invErr != nil {
+				return fmt.Errorf("failed to encode text: %w", invErr)
+			}
+			if len(resp) == 0 {
+				return fmt.Errorf("embedding returned empty result")
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode text: %w", err)
-	}
-	if len(response) == 0 {
-		return nil, fmt.Errorf("embedding returned empty result")
+		return nil, err
 	}
 
 	return response[0].Embedding, nil
@@ -998,19 +1001,25 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
-	common.Info(fmt.Sprintf("Encoding %d texts", len(texts)))
-	// Use batch encode API (consistent with Python's encode(texts: list))
+	// Group failover: a gp- reference whose member fails the embedding call
+	// flips inactive and retries once on the next member.
 	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: texts}, nil, nil)
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			// Use batch encode API (consistent with Python's encode(texts: list))
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: texts}, nil, nil)
+			if invErr != nil {
+				common.Error(fmt.Sprintf("Failed to encode texts: %v", invErr), invErr)
+				return fmt.Errorf("failed to encode texts: %w", invErr)
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
-		return nil, fmt.Errorf("failed to encode texts: %w", err)
+		return nil, err
 	}
 
 	common.Info(fmt.Sprintf("Encoded successfully, got %d vectors", len(response)))
@@ -1033,21 +1042,27 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
+	// Group failover: a gp- reference whose member fails the probe call
+	// flips inactive and retries once on the next member.
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
-	testText := "ok"
 	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{testText}}, nil, nil)
+	err := dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, embdID,
+		func(ctx context.Context) (*models.EmbeddingModel, error) {
+			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
+		}, nil,
+		func(ctx context.Context, embeddingModel *models.EmbeddingModel) error {
+			resp, invErr := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{"ok"}}, nil, nil)
+			if invErr != nil {
+				return fmt.Errorf("failed to encode test text: %w", invErr)
+			}
+			if len(resp) == 0 || len(resp[0].Embedding) == 0 {
+				return fmt.Errorf("embedding returned empty vector")
+			}
+			response = resp
+			return nil
+		}, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to encode test text: %w", err)
-	}
-
-	if len(response) == 0 || len(response[0].Embedding) == 0 {
-		return 0, fmt.Errorf("embedding returned empty vector")
+		return 0, err
 	}
 
 	dimension := len(response[0].Embedding)

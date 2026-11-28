@@ -9,7 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { AgentDropdownGuard } from '@/ee/pages/agents/agent-dropdown-guard';
+import {
+  AgentDropdownGuard,
+  shouldShowAgentDropdown,
+} from '@/ee/pages/agents/agent-dropdown-guard';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
 import { PenLine, Tag, Trash2 } from 'lucide-react';
@@ -55,6 +58,10 @@ export function AgentDropdown({
     deleteAgent(agent.id);
   }, [agent.id, deleteAgent]);
 
+  if (!shouldShowAgentDropdown(agent)) {
+    return null;
+  }
+
   return (
     <>
       <DropdownMenu>
@@ -65,11 +72,17 @@ export function AgentDropdown({
             showPrivilegeModal={showPrivilegeModal}
             manageItems={
               <>
-                <DropdownMenuItem onClick={handleShowAgentRenameModal}>
-                  {t('common.rename')} <PenLine />
+                <DropdownMenuItem
+                  justifyBetween={false}
+                  onClick={handleShowAgentRenameModal}
+                >
+                  <PenLine /> {t('common.rename')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleEditTags}>
-                  {t('flow.editTags')} <Tag />
+                <DropdownMenuItem
+                  justifyBetween={false}
+                  onClick={handleEditTags}
+                >
+                  <Tag /> {t('flow.editTags')}
                 </DropdownMenuItem>
               </>
             }
@@ -89,6 +102,7 @@ export function AgentDropdown({
                   }}
                 >
                   <DropdownMenuItem
+                    justifyBetween={false}
                     className="text-state-error"
                     onSelect={(e) => {
                       e.preventDefault();
@@ -97,7 +111,7 @@ export function AgentDropdown({
                       e.stopPropagation();
                     }}
                   >
-                    {t('common.delete')} <Trash2 />
+                    <Trash2 /> {t('common.delete')}
                   </DropdownMenuItem>
                 </ConfirmDeleteDialog>
               </>

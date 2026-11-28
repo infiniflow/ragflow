@@ -49,6 +49,7 @@ import {
 import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
+  canManageProviderInstance,
 } from './interface';
 
 /**
@@ -140,7 +141,7 @@ const GenericProviderInstanceCard = forwardRef<
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
   const { baseUrlOptions, urlHint } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
-    providerName,
+    isDraft ? providerName : instance.provider_id || providerName,
     instance.id,
     isDraft,
     open,
@@ -181,7 +182,8 @@ const GenericProviderInstanceCard = forwardRef<
   );
   const handleDelete = useDeleteInstance(
     providerName,
-    instance.instance_name,
+    instance.provider_id,
+    instance.id,
     isDraft,
     onDelete,
   );
@@ -190,6 +192,7 @@ const GenericProviderInstanceCard = forwardRef<
   const { getSavePayload, markSaved, markModelsEdited } = useInstanceSaveState({
     formRef,
     providerName,
+    providerID: instance.provider_id,
     instanceName: instance.instance_name,
     editedInstanceName,
     instanceId: instance.id,
@@ -291,6 +294,7 @@ const GenericProviderInstanceCard = forwardRef<
           editedInstanceName={editedInstanceName}
           onRename={setEditedInstanceName}
           instance={{ ...instance, ...(instanceDetails ?? {}) }}
+          canManage={canManageProviderInstance(instance)}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
           onInstanceModelsStatusChange={(ready) => {

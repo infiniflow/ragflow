@@ -1,5 +1,8 @@
+import { PageFrame } from '@/components/page-frame';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import { ButtonLoading } from '@/components/ui/button';
-import { useSaveAgent } from '@/hooks/use-agent-request';
+import { useFetchAgent, useSaveAgent } from '@/hooks/use-agent-request';
+import { hasManagePermissionPermission } from '@/ee/utils/permission-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -11,6 +14,10 @@ import {
 export default function AgentSetting() {
   const { t } = useTranslation();
   const { saveAgent, loading } = useSaveAgent();
+  const { data: agent } = useFetchAgent();
+  const readOnly = !hasManagePermissionPermission(
+    agent.operator_permission ?? 0,
+  );
 
   const submit = useCallback(
     async (values: SettingFormSchemaType) => {
@@ -20,20 +27,26 @@ export default function AgentSetting() {
   );
 
   return (
-    <section className="h-full overflow-y-auto p-5">
-      <div className="mx-auto w-full max-w-3xl">
+    <PageFrame className="overflow-y-auto">
+      <SettingsFormContainer className="p-5">
         <header className="pb-8">
           <h1 className="text-xl font-semibold text-text-primary">
             {t('flow.setting')}
           </h1>
         </header>
-        <SettingForm submit={submit} />
-        <footer className="mt-8 flex justify-end">
-          <ButtonLoading type="submit" form={AgentSettingId} loading={loading}>
-            {t('common.save')}
-          </ButtonLoading>
-        </footer>
-      </div>
-    </section>
+        <SettingForm submit={submit} readOnly={readOnly} />
+        {!readOnly && (
+          <footer className="mt-8 flex justify-end">
+            <ButtonLoading
+              type="submit"
+              form={AgentSettingId}
+              loading={loading}
+            >
+              {t('common.save')}
+            </ButtonLoading>
+          </footer>
+        )}
+      </SettingsFormContainer>
+    </PageFrame>
   );
 }

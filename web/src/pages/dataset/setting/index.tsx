@@ -1,15 +1,10 @@
+import { PageFrame } from '@/components/page-frame';
 import { ParserTreeSelect } from '@/components/parser-tree-select';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import { useParserTreeData } from '@/components/parser-tree-select/use-parser-tree-data';
 import { usePrefillLatestPipelineVersion } from '@/components/parser-tree-select/use-prefill-latest-pipeline-version';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
 import {
   Form,
@@ -19,6 +14,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
+import { DatasetParserOptions } from '@/ee/components/parser-extension-fields';
 import { buildParserSelectValue } from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
@@ -48,6 +44,7 @@ import { normalizeParserConfigForComparison } from './parser-config';
 import { useFetchPipelineVersionList } from '@/hooks/use-pipeline-version-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
+import { hasManagePermissionPermission } from '@/ee/utils/permission-util';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -88,6 +85,10 @@ export default function DatasetSetting() {
   } = useFetchDatasetSettingOnMount(form);
   const { handleSave, loading: saveLoading } = useSaveDatasetSetting();
   const [applyParserConfigOpen, setApplyParserConfigOpen] = useState(false);
+  const canManageSettings = hasManagePermissionPermission(
+    knowledgeDetails?.operator_permission ?? 0,
+  );
+  const readOnly = !canManageSettings;
 
   const [sourceDataState, setSourceDataState] =
     useState<IDataSourceNodeProps[]>();
@@ -239,6 +240,7 @@ export default function DatasetSetting() {
 
   const handleSubmit = useCallback(
     async (data: DatasetSettingFormValues) => {
+      if (readOnly) return;
       const savedValues = form.formState.defaultValues;
       const operatorDefaults = buildParserConfigFromNodes(operatorNodes);
       const [savedParserConfig, parserConfig] = [
@@ -263,7 +265,14 @@ export default function DatasetSetting() {
         }
       }
     },
-    [form, handleSave, knowledgeDetails.document_count, operatorNodes, t],
+    [
+      form,
+      handleSave,
+      knowledgeDetails.document_count,
+      operatorNodes,
+      readOnly,
+      t,
+    ],
   );
 
   const { errors } = useFormState({
@@ -303,36 +312,55 @@ export default function DatasetSetting() {
     ((parseType === ParseType.Pipeline && !!pipelineId) ||
       (parseType === ParseType.BuiltIn && !!builtinPipelineId));
 
+  const handleReset = useCallback(() => {
+    form.reset();
+  }, [form]);
+
+  const settingsActions = !readOnly ? (
+    <>
+      <Button type="reset" variant="transparent" onClick={handleReset}>
+        {t('knowledgeConfiguration.cancel')}
+      </Button>
+
+      <ButtonLoading
+        type="submit"
+        loading={
+          datasetSettingLoading ||
+          saveLoading ||
+          form.formState.isSubmitting ||
+          (operatorNodesLoading && operatorNodes.length === 0)
+        }
+      >
+        {t('knowledgeConfiguration.save')}
+      </ButtonLoading>
+    </>
+  ) : undefined;
+
   return (
-    <div className="h-full pr-5 pb-5">
+    <>
       <ApplyParserConfigDialog
         datasetId={knowledgeDetails.id}
         open={applyParserConfigOpen}
         onOpenChange={setApplyParserConfigOpen}
       />
-      <Card className="p-0 h-full flex flex-col bg-transparent shadow-none">
-        <CardHeader className="p-5 border-b-0.5 border-border-button">
-          <header>
-            <CardTitle as="h1">
-              {t('knowledgeDetails.nextConfiguration')}
-            </CardTitle>
-            <CardDescription>
-              {t('knowledgeConfiguration.titleDescription')}
-            </CardDescription>
-          </header>
-        </CardHeader>
-
-        <CardContent className="p-0 flex-1 h-0 flex divide-x-0.5">
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSubmit, handleInvalidSubmit)}
-              className="flex flex-col"
+      <PageFrame>
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit(handleSubmit, handleInvalidSubmit)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <SettingsFormLayout
+              scrollContainerRef={scrollContainerRef}
+              actions={settingsActions}
             >
-              <div
-                ref={scrollContainerRef}
-                className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto"
+              <fieldset
+                disabled={readOnly}
+                className="m-0 w-full min-w-0 space-y-5 border-0 p-0 text-text-secondary"
               >
-                <section className="space-y-5 text-text-secondary">
+                <fieldset
+                  disabled={readOnly}
+                  className="m-0 w-full min-w-0 space-y-5 border-0 p-0"
+                >
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.baseInfo')}
                   </div>
@@ -345,41 +373,49 @@ export default function DatasetSetting() {
                     unbindFunc={unbindFunc}
                     handleAutoParse={handleAutoParse}
                   />
+                </fieldset>
 
-                  <Divider />
+                <Divider />
+                <div className="flex items-center justify-between gap-4">
                   <div className="text-base font-medium text-text-primary">
-                    {t('knowledgeConfiguration.dataPipeline')}
+                    {t('knowledgeConfiguration.parsingMode')}
                   </div>
-                  <FormItem className="items-center space-y-0">
-                    <div className="flex items-center gap-1">
-                      <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
-                        {t('knowledgeConfiguration.parsingMode')}
-                      </FormLabel>
-                      <div className="text-muted-foreground w-3/4">
-                        <FormField
-                          control={form.control}
-                          name={
-                            parseType === ParseType.BuiltIn
-                              ? 'parser_id'
-                              : 'pipeline_id'
-                          }
-                          render={({ fieldState }) => (
-                            <FormItem className="space-y-1">
-                              <ParserTreeSelect
-                                value={parserSelectValue}
-                                onChange={handleParserSelect}
-                                outdated={savedVersionOutdated}
-                                invalid={fieldState.invalid}
-                                accessUserId={knowledgeDetails?.user_id}
-                              />
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
+                  {parseType === ParseType.BuiltIn && builtinPipelineId && (
+                    <ChunkMethodLearnMore parserId={builtinPipelineId} />
+                  )}
+                </div>
+                <FormItem className="items-center space-y-0">
+                  <div className="flex items-center gap-1">
+                    <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
+                      {t('knowledgeConfiguration.parsingMode')}
+                    </FormLabel>
+                    <div className="text-muted-foreground w-3/4">
+                      <FormField
+                        control={form.control}
+                        name={
+                          parseType === ParseType.BuiltIn
+                            ? 'parser_id'
+                            : 'pipeline_id'
+                        }
+                        render={({ fieldState }) => (
+                          <FormItem className="space-y-1">
+                            <ParserTreeSelect
+                              value={parserSelectValue}
+                              onChange={handleParserSelect}
+                              outdated={savedVersionOutdated}
+                              invalid={fieldState.invalid}
+                              disabled={readOnly}
+                              accessUserId={knowledgeDetails?.user_id}
+                            />
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
-                  </FormItem>
-                  {showOperatorTabs && (
+                  </div>
+                </FormItem>
+                {showOperatorTabs && (
+                  <DatasetParserOptions>
                     <PipelineOperatorTabs
                       nodes={operatorNodes}
                       activeTab={activeTab}
@@ -392,44 +428,15 @@ export default function DatasetSetting() {
                           | undefined
                       }
                       fixedFileFormats
+                      readOnly={readOnly}
                     />
-                  )}
-                </section>
-              </div>
-
-              <div className="p-5 text-right items-center flex justify-end gap-3 w-[768px]">
-                <Button
-                  type="reset"
-                  variant="transparent"
-                  onClick={() => {
-                    form.reset();
-                  }}
-                >
-                  {t('knowledgeConfiguration.cancel')}
-                </Button>
-
-                <ButtonLoading
-                  type="submit"
-                  loading={
-                    datasetSettingLoading ||
-                    saveLoading ||
-                    form.formState.isSubmitting ||
-                    (operatorNodesLoading && operatorNodes.length === 0)
-                  }
-                >
-                  {t('knowledgeConfiguration.save')}
-                </ButtonLoading>
-              </div>
-            </form>
-          </Form>
-
-          <div className="flex-1 p-5 overflow-auto">
-            {parseType === ParseType.BuiltIn && builtinPipelineId && (
-              <ChunkMethodLearnMore parserId={builtinPipelineId} />
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+                  </DatasetParserOptions>
+                )}
+              </fieldset>
+            </SettingsFormLayout>
+          </form>
+        </Form>
+      </PageFrame>
+    </>
   );
 }

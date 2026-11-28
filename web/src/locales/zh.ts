@@ -28,6 +28,7 @@ export default {
       descriptionMaxLength: '描述最多 {{max}} 个字符。',
       next: '下一步',
       create: '创建',
+      createdAt: '创建时间',
       edit: '编辑',
       upload: '上传',
       english: '英文',
@@ -96,7 +97,7 @@ export default {
       nicknamePlaceholder: '请输入名称',
       register: '创建账户',
       continue: '继续',
-      title: 'A leading RAG engine for LLM context',
+      title: '面向 LLM 上下文的领先 RAG 引擎',
       start: '立即开始',
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强业务',
@@ -389,6 +390,13 @@ export default {
       dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
+      infoFields: {
+        name: '文件名',
+        size: '大小',
+        type: '类型',
+        create_time: '创建时间',
+        update_time: '更新时间',
+      },
       continueUpload: '继续上传',
       uploadPipelineDeletedTitle: '解析 Pipeline 不可用',
       uploadPipelineDeletedContent:
@@ -513,20 +521,53 @@ export default {
       failed: '失败',
       completed: '已完成',
       datasetLog: '知识库日志',
+      ingestionProgress: {
+        status: '状态',
+        parsing: '解析中',
+        completed: '已完成',
+        failed: '失败',
+        stopped: '已停止',
+        totalDuration: '总耗时',
+        chunks: '生成 chunk',
+        currentStage: '当前阶段',
+        progress: '处理进度',
+        elapsed: '耗时',
+        updatedAt: '更新于',
+        unavailable: '进度信息暂不可用，请查看完整日志。',
+        detailUnavailable: '详细进度暂不可用',
+        viewFullLog: '查看完整日志',
+        loadingEarlierEvents: '正在加载更早的事件…',
+        units: {
+          'page:parse': '页面解析',
+          'chunk:final': '文本切分',
+          'chunk:keywords': '关键词提取',
+          'chunk:tags': '标签提取',
+          'chunk:resume': '断点恢复',
+          'chunk:remaining': '信息补全',
+          'chunk:embed': '向量化',
+          'chunk:claim': '观点抽取',
+          'batch:generate': '批次生成',
+          'batch:embed': '批次向量化',
+          'batch:map': '批量映射',
+          'job:plan': '规划任务',
+          'page:refine': '页面精炼',
+          'row:dedup': '行去重',
+        },
+      },
       created: '创建于',
       learnMore: '查看内置解析模板说明',
+      builtInParserDetails: '内置解析模板说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
       testSetting: '测试设置',
-      retrievalTesting: '知识检索测试',
+      retrievalTesting: '检索',
       retrievalTestingDescription:
-        '进行检索测试，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
+        '进行检索，检查 RAGFlow 是否能够为大语言模型（LLM）恢复预期的内容。',
       Parse: '解析',
       dataset: '知识库',
-      testing: '检索测试',
+      testing: '检索',
       configuration: '配置',
-      nextConfiguration: '知识库配置',
       knowledgeGraph: 'Graph',
       compilation: '编译',
       files: '个文件',
@@ -544,6 +585,10 @@ export default {
       parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
+      enabledStatus: '已启用',
+      disabledStatus: '已禁用',
+      info: '信息',
+      viewError: '查看错误',
       action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
@@ -554,7 +599,7 @@ export default {
       noTestResultsForRuned: '未找到相关结果，请尝试调整查询语句或参数',
       noTestResultsForNotRuned: '尚未运行测试，结果会显示在这里',
       testingDescription:
-        '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
+        '请执行检索：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
@@ -739,7 +784,6 @@ export default {
       editLinkDataPipeline: '编辑 pipeline',
       linkPipelineSetTip: '管理与此知识库的数据管道链接',
       default: '默认',
-      dataPipeline: '选择或切换解析方式',
       linkDataPipeline: '关联 pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
@@ -757,7 +801,6 @@ export default {
         '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
-      titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '可以上传 4MB 以内的文件',
@@ -1253,6 +1296,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
+      specstreamApiKeyTip:
+        '选择 SpecStream 后，将使用 SpecStream 的网络搜索结果补充知识库检索。',
+      specstreamApiKeyMessage: '请输入 SpecStream API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
@@ -1742,8 +1788,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       jiraTokenTip:
         '在 https://id.atlassian.com/manage-profile/security/api-tokens 生成的 API Token。 (Clould only)',
       jiraPasswordTip: '可选：仅 Jira Server/Data Center 环境需要的密码字段。',
-      availableSourcesDescription: '选择要添加的数据源',
-      availableSources: '可用数据源',
+      dataSourceCategories: {
+        knowledgeAndLearning: '知识与学习',
+        fileStorage: '文件存储',
+        objectStorage: '对象存储',
+        messagingAndEmail: '消息与邮件',
+        developmentAndProjectManagement: '开发与项目管理',
+        businessApplications: '业务应用',
+        databasesAndApis: '数据库与 API',
+        webAndSocial: '网页与社交媒体',
+        other: '其他',
+      },
       datasourceDescription: '管理您的数据源和连接',
       dataSourceTestConnection: '测试连接',
       dataSourceTestSuccess: '数据源连接验证成功。',
@@ -2363,6 +2418,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       uploadFolderTitle: '上传文件夹',
       folder: '文件夹',
       files: '文件',
+      allFiles: '全部文件',
       name: '名称',
       uploadDate: '上传日期',
       knowledgeBase: '知识库',
@@ -2400,7 +2456,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
       chunkTokenCap: '分块 Token 上限',
       chunkTokenCapTip:
-        '每个分块允许的最大 Token 数。超过上限的分块将按照句子边界（中英文句号、感叹号、问号和换行符）重新拆分。设为 0 可禁用此上限。',
+        '每个文本分块允许的最大 Token 数。超过上限的文本块将按照句子边界重新拆分，仍超限时硬切；表格和图片不参与拆分。',
       rootAsHeading: '将首个分块设为全局上下文',
       rootAsHeadingTip:
         '将首个切片设为全局标题，以确保整个文档层级结构中拥有一致的上下文信息。该功能尤其适用于首段包含关键信息的简历。',
@@ -2559,7 +2615,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
 <role>
   你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
   如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
@@ -2594,7 +2650,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dialog: '对话',
       flow: '工作流',
       noMoreData: '没有更多数据了',
-      historyVersion: '历史版本',
+      historyVersion: '版本',
       version: {
         details: '版本详情',
         download: '下载',
@@ -2857,6 +2913,42 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1APICrawlUrl: '网页地址',
       search1APICrawlUrlTip:
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      specStreamSearch: 'SpecStream',
+      specStreamSearchDescription:
+        '使用 SpecStream Search API 搜索实时网页，返回带有标题、链接和摘要的搜索结果。需要配置 API Key。',
+      specStreamApiKeyTip: '必填。请在 specstream.ai 申请 API Key。',
+      specStreamPassages: '正文片段',
+      specStreamPassagesTip:
+        '同时返回排名靠前页面中提取的正文片段，无需再单独读取页面。',
+      specStreamExtract: 'SpecStream 网页读取',
+      specStreamExtractDescription:
+        '使用 SpecStream Extract API 读取网页或文档（PDF、Word、Excel），返回标题和正文。需要配置 API Key。',
+      specStreamExtractUrl: '网页地址',
+      specStreamExtractUrlTip:
+        '要读取页面或文档的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      anySearchSearch: 'AnySearch',
+      anySearchSearchDescription:
+        '通过 AnySearch 进行网页与垂直领域搜索：通用网页结果，或金融、学术、代码、法律等垂直领域。无需 API Key 即可使用。',
+      anySearchDiscover: 'AnySearch 领域发现',
+      anySearchDiscoverDescription:
+        '列出 AnySearch 当前支持的领域，以及各领域可用的垂直标签和参数，便于智能体选择有效的标签。',
+      anySearchExtract: 'AnySearch 网页提取',
+      anySearchExtractDescription:
+        '通过 AnySearch 读取单个网页并返回其文本。支持 HTML、文本、JSON 和 Markdown（不支持 PDF 或 Office 文件）。无需 API Key 即可使用。',
+      anySearchExtractUrl: '网页地址',
+      anySearchExtractUrlTip:
+        '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      anySearchApiKeyTip:
+        '可选。AnySearch 无需 Key 即可使用。填写后将使用你账户的额度，服务限制仍然适用。',
+      anySearchZone: '区域',
+      anySearchZoneTip:
+        '搜索所用的区域。留空则使用 AnySearch 的默认值。作为智能体工具时，智能体可以在每次调用时选择区域。',
+      anySearchZoneUnset: '未设置',
+      anySearchZoneIntl: '国际',
+      anySearchZoneCn: '中国',
+      anySearchLanguage: '语言',
+      anySearchLanguageTip:
+        '结果的首选语言，例如 en 或 zh-CN。留空则使用 AnySearch 的默认值。作为智能体工具时，智能体可以在每次调用时选择语言。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',
@@ -3265,10 +3357,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       setting: '设置',
       settings: {
         agentSetting: 'Agent设置',
-        title: '标题',
+        title: '名称',
         description: '描述',
         upload: '上传',
-        photo: '照片',
+        photo: '头像',
         permissions: '权限',
         permissionsTip: '可以在这里设置团队访问权限。',
         me: '仅限自己',
@@ -3351,6 +3443,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         tavilySearch: '正在网上搜索',
         queritSearch: '正在使用 Querit 搜索网络',
         queritContents: '正在使用 Querit 读取网页',
+        anySearchSearch: '正在使用 AnySearch 搜索',
+        anySearchDiscover: '正在查询 AnySearch 垂直领域',
+        anySearchExtract: '正在使用 AnySearch 读取网页',
         tavilyExtract: '读取网页内容',
         exeSQL: '查询数据库',
         google: '正在网上搜索',
@@ -3430,7 +3525,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',
       pageChunkerDescription: '此 Chunker 无需额外配置。',
-      extractor: 'Transformer',
+      extractor: 'Extractor',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       compiler: 'Compiler',
@@ -3880,7 +3975,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       newUser: '新建用户',
       email: '邮箱',
       name: '名称',
-      nickname: '昵称',
+      nickname: '名称',
+      nicknameMaxLength: '名称不能超过100个字符',
       status: '状态',
       id: 'ID',
       serviceType: '服务类型',
@@ -3968,7 +4064,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 
     explore: {
       title: '启动',
-      sessions: '会话列表',
+      sessions: '会话',
       newSession: '新建会话',
       newSessionLabel: '开始新对话',
       deleteSession: '删除会话',

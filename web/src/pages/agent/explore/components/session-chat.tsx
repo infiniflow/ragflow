@@ -169,7 +169,7 @@ export function SessionChat({ session }: SessionChatProps) {
 
   return (
     <>
-      <section className="flex flex-col h-full">
+      <section className="flex h-full min-h-0 flex-col gap-4">
         {!hasActiveSession && (
           <div className="flex-1 flex items-center justify-center text-text-secondary">
             {t('explore.noSessionSelected')}
@@ -179,7 +179,7 @@ export function SessionChat({ session }: SessionChatProps) {
         {hasActiveSession && (
           <div
             ref={messageContainerRef}
-            className="flex-1 overflow-auto min-h-0 p-5"
+            className="scrollbar-auto min-h-0 flex-1 overflow-auto p-5"
           >
             {sessionLoading ? (
               <div className="flex items-center justify-center h-full">
@@ -252,7 +252,7 @@ export function SessionChat({ session }: SessionChatProps) {
             )}
           </div>
         )}
-        <section className="p-4">
+        <section className="p-5 pt-0">
           {/* The SSE stream and its message state are shared by every
               session of this canvas, so the input stays disabled while any
               session is streaming: a second concurrent stream would

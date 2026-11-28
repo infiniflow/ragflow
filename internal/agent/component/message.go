@@ -39,6 +39,7 @@ import (
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 
 	"gorm.io/gorm"
 )
@@ -253,6 +254,8 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		"content":   rendered,
 		"downloads": downloads,
 	}
+	safeResolved := compliance.FilterText(ctx, resolved)
+	safeRendered := compliance.FilterText(ctx, rendered)
 
 	// File export (the "Download file type" selector). Python's
 	// _convert_content receives the resolved, un-rendered content and
@@ -262,7 +265,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 	// text as literal content). Failures are logged, never fatal —
 	// mirroring Python's try/except around the conversion.
 	if exportFmt := messageExportFormat(string(format)); exportFmt != "" && resolved != "" {
-		attachment, exportErr := exportMessageAttachment(ctx, exportFmt, resolved)
+		attachment, exportErr := exportMessageAttachment(ctx, exportFmt, safeResolved)
 		if exportErr != nil {
 			common.Error("Message: export attachment failed", exportErr)
 		} else if attachment != nil {
@@ -296,7 +299,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		synth := audio.GetSynthesizer()
 		resp, ttsErr := synth.Synthesize(ctx, audio.SynthesizeRequest{
 			Engine: engine,
-			Text:   rendered,
+			Text:   safeRendered,
 			Voice:  voice,
 			Lang:   lang,
 		})
@@ -346,7 +349,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 			AgentID:       memoryAgentID(state),
 			SessionID:     memorySessionID(state),
 			UserInput:     stringFromStateSys(state, "query"),
-			AgentResponse: rendered,
+			AgentResponse: safeRendered,
 		})
 		if saveErr != nil {
 			out["memory_error"] = saveErr.Error()

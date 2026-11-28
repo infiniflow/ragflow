@@ -38,14 +38,29 @@ func (c *CLI) LoginUserByCommand(commandCount int, cmd *Command) (ResponseIf, er
 	if !ok {
 		return nil, fmt.Errorf("email not provided")
 	}
-	password, ok := cmd.Params["password"].(string)
-	if !ok {
-		password = ""
-	}
 
-	err := c.LoginUserInteractive(email, password)
-	if err != nil {
-		return nil, err
+	maxAttempts := 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		fmt.Printf("Please input your password: ")
+
+		password, err := ReadPassword()
+
+		if password == "" {
+			if attempt < maxAttempts {
+				fmt.Println("Password cannot be empty, please try again")
+				continue
+			}
+			return nil, fmt.Errorf("no password provided after 3 attempts")
+		}
+
+		if err = c.VerifyAuth(email, password); err != nil {
+			if attempt < maxAttempts {
+				fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
+				continue
+			}
+			return nil, fmt.Errorf("authentication failed after %d attempts", maxAttempts)
+		}
+		break
 	}
 
 	var result SimpleResponse
@@ -1014,6 +1029,40 @@ func (c *CLI) CommonShowHardwareCommand(commandCount int, cmd *Command) (Respons
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to show hardware: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) CommonShowDeployCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	var resp *Response
+	var err error
+	switch c.Config.CLIMode {
+	case AdminMode:
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", "/admin/system/deployment-type", httpClient.AuthKind(), nil, nil)
+	case APIMode:
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", "/system/deployment-type", httpClient.AuthKind(), nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to show deploy: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show deploy: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to show deploy: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

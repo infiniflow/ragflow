@@ -121,6 +121,10 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("model_provider::"+providerName), permission.ActionEnable); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return code, normalizedErr
+	}
 	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
@@ -306,6 +310,8 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, provider
 // SavedProviderModelOptions contains owner-only overrides for a saved
 // provider instance's endpoint and non-secret configuration.
 type SavedProviderModelOptions struct {
+	ProviderID   string
+	InstanceID   string
 	APIKeyConfig json.RawMessage
 	BaseURL      *string
 	Region       *string
@@ -314,17 +320,22 @@ type SavedProviderModelOptions struct {
 // SavedProviderModelConfig contains the credentials and endpoint to use when
 // discovering models through a saved provider instance.
 type SavedProviderModelConfig struct {
-	APIKey  string
-	BaseURL string
-	Region  string
+	ProviderName string
+	APIKey       string
+	BaseURL      string
+	Region       string
 }
 
 // ResolveSavedProviderModelConfig validates access to a saved provider
 // instance and returns the credentials and endpoint for model discovery.
 func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Context, providerName, instanceName string, options SavedProviderModelOptions) (SavedProviderModelConfig, error) {
 	providerName = strings.TrimSpace(providerName)
+	providerIdentifier := strings.TrimSpace(options.ProviderID)
+	if providerIdentifier == "" {
+		providerIdentifier = providerName
+	}
 
-	provider, err := m.resolveProviderInTenant(ctx, providerName, permission.OperationRead)
+	provider, err := m.resolveProviderInTenant(ctx, providerIdentifier, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			_, normalizedErr := permissionresponse.NormalizeHidden(err)
@@ -333,10 +344,14 @@ func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Conte
 		return SavedProviderModelConfig{}, err
 	}
 
-	instance, err := m.resolveInstance(ctx, provider, instanceName)
+	instanceIdentifier := strings.TrimSpace(options.InstanceID)
+	if instanceIdentifier == "" {
+		instanceIdentifier = instanceName
+	}
+	instance, err := m.resolveInstance(ctx, provider, instanceIdentifier)
 	if err != nil {
 		if errors.Is(err, errInstanceProviderMismatch) {
-			return SavedProviderModelConfig{}, instanceLookupError(provider, instanceName, err)
+			return SavedProviderModelConfig{}, instanceLookupError(provider, instanceIdentifier, err)
 		}
 		return SavedProviderModelConfig{}, err
 	}
@@ -385,9 +400,10 @@ func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Conte
 	}
 
 	return SavedProviderModelConfig{
-		APIKey:  apiKey,
-		BaseURL: baseURL,
-		Region:  region,
+		ProviderName: provider.ProviderName,
+		APIKey:       apiKey,
+		BaseURL:      baseURL,
+		Region:       region,
 	}, nil
 }
 
@@ -717,17 +733,8 @@ func (m *ModelProviderService) findProviderByIDOrNameInCurrentTenant(ctx context
 		if provider.TenantID != tenantID {
 			return nil, gorm.ErrRecordNotFound
 		}
-		if provider.UserID != userID {
-			if !includeTenantOwner {
-				return nil, gorm.ErrRecordNotFound
-			}
-			owner, ownerErr := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
-			if ownerErr != nil {
-				return nil, ownerErr
-			}
-			if provider.UserID != owner.UserID {
-				return nil, gorm.ErrRecordNotFound
-			}
+		if provider.UserID != userID && !includeTenantOwner {
+			return nil, gorm.ErrRecordNotFound
 		}
 		return provider, nil
 	}
@@ -1155,13 +1162,11 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"status":        instance.Status,
 		"is_owner":      access.Source == permission.AccessSourceOwner,
 	}
-	if access.Source == permission.AccessSourceOwner || access.Allows(permission.OperationUpdate) {
-		configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
-		result["api_key_configured"] = configured
-		result["api_key_config"] = config
-		result["credential_status"] = credentialStatus
-		result["credential_masks"] = credentialMasks
-	}
+	configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
+	result["api_key_configured"] = configured
+	result["api_key_config"] = config
+	result["credential_status"] = credentialStatus
+	result["credential_masks"] = credentialMasks
 
 	return result, common.CodeSuccess, nil
 }

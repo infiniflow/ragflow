@@ -32,7 +32,8 @@ import (
 	"ragflow/internal/server/config"
 )
 
-func TestLegacyStorageRoundTrip(t *testing.T) {
+func newIntegrationEngine(t *testing.T) *Engine {
+	t.Helper()
 	host := os.Getenv("RAGFLOW_TEST_OCEANBASE_HOST")
 	if host == "" {
 		t.Skip("RAGFLOW_TEST_OCEANBASE_HOST is not set")
@@ -49,8 +50,12 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer engine.Close()
+	t.Cleanup(func() { engine.Close() })
+	return engine
+}
 
+func TestLegacyStorageRoundTrip(t *testing.T) {
+	engine := newIntegrationEngine(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -176,6 +181,183 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStoredJSON(ctx, t, engine, metadataTable, "meta_fields", "go-meta-1", map[string]interface{}{"source": "go", "tags": []interface{}{"c"}})
+}
+
+func TestChunkExtraFilterAndMutation(t *testing.T) {
+	for _, schema := range []string{"legacy", "current"} {
+		t.Run(schema, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+			defer cancel()
+			engine := newIntegrationEngine(t)
+			table := "ragflow_go_extra_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+			defer cleanupChunkStore(t, engine, table, "")
+			if schema == "legacy" {
+				if err := engine.ensureTable(ctx, table, baseChunkColumns, table); err != nil {
+					t.Fatal(err)
+				}
+			}
+			const dataset = "target-kb"
+			if err := engine.CreateChunkStore(ctx, table, dataset, 2, "naive", ""); err != nil {
+				t.Fatal(err)
+			}
+			const compileType = "tree's"
+			if _, err := engine.InsertChunks(ctx, []map[string]interface{}{
+				{
+					"id": "target", "kb_id": dataset, "compile_kwd": compileType, "token_num": 12,
+					"outlinks_int": 2, "title_kwd": "Zebra",
+					"children_kwd": []string{"child%", "keep"},
+					"claims":       map[string]interface{}{"old": true},
+					"extra":        map[string]interface{}{"custom_field": "keep"},
+				},
+				{"id": "literal-null", "kb_id": dataset, "compile_kwd": "null", "outlinks_int": 10, "title_kwd": "Beta"},
+				{"id": "absent", "kb_id": dataset, "outlinks_int": 10, "title_kwd": "alpha"},
+				{"id": "json-null", "kb_id": dataset, "compile_kwd": nil},
+				{"id": "no-extra", "kb_id": dataset},
+				{"id": "numeric-zero", "kb_id": dataset, "token_num": 0},
+				{"id": "other-kb", "kb_id": "other-kb", "compile_kwd": compileType, "token_num": 12, "children_kwd": []string{"child%"}},
+			}, table, dataset, ""); err != nil {
+				t.Fatal(err)
+			}
+			// Test an incorrectly typed legacy value and a stale extra key next
+			// to a physical NULL in the current schema.
+			extra := `{"token_num":"invalid","compile_kwd":null}`
+			if schema == "current" {
+				extra = `{"token_num":"invalid","compile_kwd":"tree's"}`
+			}
+			if _, err := engine.db.ExecContext(ctx, "UPDATE "+quoteIdentifier(table)+" SET extra = ? WHERE id = ?",
+				extra, "json-null"); err != nil {
+				t.Fatal(err)
+			}
+
+			checkSearch := func(filter map[string]interface{}, fields []string, wantIDs ...string) []map[string]interface{} {
+				t.Helper()
+				result, err := engine.Search(ctx, &types.SearchRequest{
+					IndexNames: []string{table}, KbIDs: []string{dataset},
+					SelectFields: fields, Filter: filter,
+					OrderBy: (&types.OrderByExpr{}).Asc("id"),
+				})
+				if err != nil {
+					t.Fatalf("search with %v: %v", filter, err)
+				}
+				ids := make([]string, 0, len(result.Chunks))
+				for _, row := range result.Chunks {
+					ids = append(ids, stringValue(row["id"]))
+				}
+				if result.Total != int64(len(wantIDs)) || !reflect.DeepEqual(ids, wantIDs) {
+					t.Fatalf("search with %v returned %v (%d total), want %v", filter, ids, result.Total, wantIDs)
+				}
+				return result.Chunks
+			}
+			matches := map[string]interface{}{
+				"compile_kwd": []string{"other", compileType}, "children_kwd": []string{"miss", "child%"}, "token_num": 12,
+			}
+			checkSearch(matches, []string{"compile_kwd", "children_kwd"}, "target")
+			checkSearch(map[string]interface{}{"exists": "compile_kwd"}, nil, "literal-null", "target")
+			checkSearch(map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}, nil, "absent", "json-null", "no-extra", "numeric-zero")
+			checkSearch(map[string]interface{}{"compile_kwd": "null"}, nil, "literal-null")
+			checkSearch(map[string]interface{}{"compile_kwd": "TREE'S"}, nil, "target")
+			checkSearch(map[string]interface{}{"token_num": 0}, nil, "numeric-zero")
+
+			page, err := engine.Search(ctx, &types.SearchRequest{
+				IndexNames: []string{table}, KbIDs: []string{dataset},
+				SelectFields: []string{"id"},
+				Filter:       map[string]interface{}{"id": []string{"target", "literal-null", "absent"}},
+				OrderBy:      (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd"),
+				Limit:        2,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if page.Total != 3 || len(page.Chunks) != 2 || page.Chunks[0]["id"] != "absent" || page.Chunks[1]["id"] != "literal-null" {
+				t.Fatalf("wiki order should rank 10 before 2, then alpha before Beta: %#v", page)
+			}
+
+			if err := engine.UpdateChunks(ctx, matches, map[string]interface{}{
+				"compile_kwd": "wiki", "claims": map[string]interface{}{"new": true},
+				"children_kwd": []string{"new-child"}, "token_num": 21, "content_with_weight": "updated",
+			}, table, dataset); err != nil {
+				t.Fatal(err)
+			}
+			row := checkSearch(map[string]interface{}{"compile_kwd": "wiki", "token_num": 21, "children_kwd": "new-child"},
+				[]string{"*", "compile_kwd"}, "target")[0]
+			if row["content_with_weight"] != "updated" || !reflect.DeepEqual(row["claims"], map[string]interface{}{"new": true}) ||
+				!reflect.DeepEqual(row["children_kwd"], []interface{}{"new-child"}) ||
+				asStringMap(row["extra"])["custom_field"] != "keep" {
+				t.Fatalf("update lost values or JSON types: %#v", row)
+			}
+			byID := map[string]interface{}{"id": "target"}
+			if err := engine.UpdateChunks(ctx, byID, map[string]interface{}{"remove": "claims"}, table, dataset); err != nil {
+				t.Fatal(err)
+			}
+			row = checkSearch(byID, nil, "target")[0]
+			if _, present := row["claims"]; present {
+				t.Fatalf("claims survived remove: %#v", row)
+			}
+			// A row with SQL NULL extra can gain its first JSON key.
+			if err := engine.UpdateChunks(ctx, map[string]interface{}{"id": "no-extra"},
+				map[string]interface{}{"compile_kwd": compileType}, table, dataset); err != nil {
+				t.Fatal(err)
+			}
+			deleted, err := engine.DeleteChunks(ctx, map[string]interface{}{"compile_kwd": compileType}, table, dataset)
+			if err != nil || deleted != 1 {
+				t.Fatalf("DeleteChunks() = %d, %v, want one deleted row", deleted, err)
+			}
+			other, err := engine.GetChunk(ctx, table, "other-kb", []string{"other-kb"})
+			if err != nil || asStringMap(other)["compile_kwd"] != compileType {
+				t.Fatalf("another dataset's chunk was changed: %#v, %v", other, err)
+			}
+		})
+	}
+}
+
+func TestChunkExtraTextUsesTableCollation(t *testing.T) {
+	engine := newIntegrationEngine(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	table := "ragflow_go_collation_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	defer cleanupChunkStore(t, engine, table, "")
+
+	// The binary collation differs from the engine's DDL default. Use legacy
+	// storage to verify that filters and sorting respect the live table.
+	if _, err := engine.db.ExecContext(ctx, "CREATE TABLE "+quoteIdentifier(table)+
+		" (id VARCHAR(64) PRIMARY KEY, kb_id VARCHAR(64) NOT NULL, extra JSON) DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_bin"); err != nil {
+		t.Fatal(err)
+	}
+	const dataset = "collation-kb"
+	if _, err := engine.db.ExecContext(ctx, "INSERT INTO "+quoteIdentifier(table)+" (id,kb_id,extra) VALUES (?,?,?),(?,?,?)",
+		"upper", dataset, `{"compile_kwd":"Tree","title_kwd":"Zebra"}`,
+		"lower", dataset, `{"compile_kwd":"tree","title_kwd":"alpha"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	req := &types.SearchRequest{
+		IndexNames: []string{table}, KbIDs: []string{dataset}, SelectFields: []string{"id"},
+		OrderBy: (&types.OrderByExpr{}).Asc("title_kwd"),
+	}
+	result, err := engine.Search(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Chunks) != 2 || result.Chunks[0]["id"] != "upper" || result.Chunks[1]["id"] != "lower" {
+		t.Fatalf("expected binary sort order Zebra, alpha: %#v", result)
+	}
+	req.Filter = map[string]interface{}{"compile_kwd": "Tree"}
+	result, err = engine.Search(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 || len(result.Chunks) != 1 || result.Chunks[0]["id"] != "upper" {
+		t.Fatalf("case-sensitive filter matched unexpected rows: %#v", result)
+	}
+	if err := engine.UpdateChunks(ctx, req.Filter, map[string]interface{}{"title_kwd": "Updated"}, table, dataset); err != nil {
+		t.Fatal(err)
+	}
+	assertStoredJSON(ctx, t, engine, table, "extra", "upper", map[string]interface{}{"compile_kwd": "Tree", "title_kwd": "Updated"})
+	assertStoredJSON(ctx, t, engine, table, "extra", "lower", map[string]interface{}{"compile_kwd": "tree", "title_kwd": "alpha"})
+	deleted, err := engine.DeleteChunks(ctx, req.Filter, table, dataset)
+	if err != nil || deleted != 1 {
+		t.Fatalf("case-sensitive delete affected %d rows, error %v", deleted, err)
+	}
 }
 
 func assertStoredJSON(ctx context.Context, t *testing.T, engine *Engine, tableName, columnName, rowID string, want interface{}) {

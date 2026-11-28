@@ -27,6 +27,18 @@ export function normalizeParserConfigForComparison(
       // defaults that their mounted controls write back without user edits.
       if (operatorType === Operator.Parser) {
         normalized = normalizeParserFormValues(normalized);
+        // An empty saved model resolves to the workspace default at parse time.
+        // Use the resolved default in the comparison so merely displaying it
+        // does not register as a parser-settings change.
+        if (!normalized.vlm?.llm_id) {
+          const defaultVisionModel = operatorDefaults[operatorId]?.vlm?.llm_id;
+          if (defaultVisionModel) {
+            normalized.vlm = {
+              ...normalized.vlm,
+              llm_id: defaultVisionModel,
+            };
+          }
+        }
         normalized.setups = normalized.setups.map(
           (setup: Record<string, any>) => {
             const next = { ...setup };

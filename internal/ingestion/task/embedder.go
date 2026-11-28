@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/permission"
@@ -46,17 +47,29 @@ import (
 )
 
 type embedder struct {
+	// mu guards model and the limiter cache: a group failover swaps the model
+	// mid-run and the limiter must be recomputed for the replacement model.
+	mu    sync.Mutex
 	model *models.EmbeddingModel
 
-	// limiter is resolved once per embedder (one embedder is built per tokenizer
+	// limiter is resolved lazily per model (one embedder is built per tokenizer
 	// invocation, i.e. per document) and binds the model's tokenizer, the
 	// declared input window and the calibration for this provider instance.
-	limiterOnce sync.Once
-	limiterVal  tokenizer.Limiter
+	limiterReady bool
+	limiterVal   tokenizer.Limiter
 	// limiterErr records the model declaring a tokenizer whose asset is not on disk.
 	// It is not a warning: the counter that would be used instead is a calibrated
 	// estimate of a *different* tokenizer, so the embedder refuses to run (limiter()).
 	limiterErr error
+
+	// Group failover state. tenantID/modelRef/db/resolve are set by the
+	// embedder resolver; embedWithFailover cascades through the group's
+	// members on repeated terminal failures. A non-group reference leaves the
+	// fields zero and embedWithFailover is a plain pass-through.
+	tenantID string
+	modelRef string
+	db       *gorm.DB
+	resolve  func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error)
 }
 
 func (e *embedder) MaxTokens() int {
@@ -92,7 +105,10 @@ func (e *embedder) BatchSize() int {
 // cannot report it - the EmbedderTrimmer seam returns no error - so it surfaces on the
 // first Encode(), which every ingest reaches.
 func (e *embedder) limiter() tokenizer.Limiter {
-	e.limiterOnce.Do(func() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.limiterReady {
+		e.limiterReady = true
 		id := ""
 		if e.model != nil {
 			id = e.model.ResolveTokenizerID()
@@ -103,7 +119,7 @@ func (e *embedder) limiter() tokenizer.Limiter {
 				id, e.quotaKey())
 		}
 		e.limiterVal = tokenizer.LimiterFor(id, string(e.quotaKey()), tokenizer.DefaultCalibration())
-	})
+	}
 	return e.limiterVal
 }
 
@@ -143,7 +159,7 @@ func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.E
 	var lastErr error
 	for _, limit := range overLimitLadder(limiter.Limit(maxTokens)) {
 		candidate, own := trimAll(texts, limiter.Counter(), limit)
-		embeds, usage, err := e.embedWithRetry(ctx, candidate)
+		embeds, usage, err := e.embedWithFailover(ctx, candidate)
 		if err == nil {
 			e.recordUsage(cal, calKey, own, usage)
 			return distributeTokenCount(embeds, usage, own), nil
@@ -272,6 +288,73 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 	return nil, 0, err
 }
 
+// embedWithFailover wraps embedWithRetry with cascading group failover: when
+// the current member fails terminally (retryable errors are already exhausted
+// by embedWithRetry's own backoff loop) and the dataset's embd_id is a gp-
+// reference, that member flips inactive in the group and the batch is retried
+// on the next member. Every member that fails terminally is flipped too, so
+// the cascade walks the group until a member serves the batch, the context
+// ends, or the group runs out of members - exhaustion returns an error
+// joining the per-member failures. Over-limit errors are never a failover
+// trigger: they belong to Encode's shrinking ladder.
+func (e *embedder) embedWithFailover(ctx context.Context, texts []string) ([]models.EmbeddingData, int, error) {
+	for {
+		embeds, usage, err := e.embedWithRetry(ctx, texts)
+		if err == nil || ctx.Err() != nil {
+			return embeds, usage, err
+		}
+		if isOverLimitErr(err) {
+			// Over-limit is a property of the input batch, not of the member:
+			// Encode's shrinking ladder owns it and will call back with a
+			// smaller batch, so hand it back instead of flipping a healthy
+			// group member.
+			return embeds, usage, err
+		}
+		groupID, ok := common.ParseGroupModelRef(e.modelRef)
+		if !ok || e.resolve == nil || e.db == nil || strings.TrimSpace(e.tenantID) == "" {
+			return embeds, usage, err
+		}
+		flipped, ferr := dao.MarkGroupMemberInactive(ctx, e.db, e.tenantID, groupID, entity.ModelTypeEmbedding)
+		if ferr != nil {
+			common.Warn("embedder: model group failover could not mark member inactive",
+				zap.String("embd_id", e.modelRef), zap.Error(ferr))
+			return embeds, usage, exhaustedEmbedderError(e.modelRef, err, ferr)
+		}
+		if !flipped {
+			return embeds, usage, exhaustedEmbedderError(e.modelRef, err, nil)
+		}
+		fresh, rerr := e.resolve(ctx, e.tenantID, e.modelRef)
+		if rerr != nil {
+			common.Warn("embedder: model group failover re-resolve failed, no member left to try",
+				zap.String("embd_id", e.modelRef), zap.Error(rerr))
+			return embeds, usage, exhaustedEmbedderError(e.modelRef, err, nil)
+		}
+		e.swapModel(fresh)
+		common.Warn("embedder: model group failover retrying on the next member",
+			zap.String("embd_id", e.modelRef), zap.Error(err))
+	}
+}
+
+// exhaustedEmbedderError reports that a gp- embedding group ran out of
+// members: the last member failure (and, when known, the flip failure) are
+// joined so errors.Is matches either cause.
+func exhaustedEmbedderError(modelRef string, lastErr, flipErr error) error {
+	if flipErr != nil {
+		return fmt.Errorf("embedding model group %s exhausted: %w (flip failed: %w)", modelRef, lastErr, flipErr)
+	}
+	return fmt.Errorf("embedding model group %s exhausted: %w", modelRef, lastErr)
+}
+
+// swapModel replaces the embedded model (a group failover re-resolution) and
+// invalidates the limiter cached for the previous model.
+func (e *embedder) swapModel(model *models.EmbeddingModel) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.model = model
+	e.limiterReady = false
+	e.limiterErr = nil
+}
+
 // distributeTokenCount attaches a token count to every input. Providers report
 // usage per request, so the total is spread over the inputs in proportion to
 // our own counts of exactly the texts we sent (own, from trimAll); the rounding
@@ -348,7 +431,7 @@ func (e *embedder) encodeIsolating(ctx context.Context, texts []string, limiter 
 			trimmed := counter.TrimToLimit(text, limit)
 			own := counter.Count(trimmed)
 			candidate := []string{trimmed}
-			embeds, usage, err := e.embedWithRetry(ctx, candidate)
+			embeds, usage, err := e.embedWithFailover(ctx, candidate)
 			if err == nil {
 				e.recordUsage(cal, calKey, []int{own}, usage)
 				out[i] = distributeTokenCount(embeds, usage, []int{own})[0]
@@ -665,7 +748,13 @@ func newEmbedderResolver(
 		if model == nil {
 			return nil, "", fmt.Errorf("embedder: resolved embedding model is nil for embd_id=%s", embdID)
 		}
-		return &embedder{model: model}, embdID, nil
+		return &embedder{
+			model:    model,
+			tenantID: tenantID,
+			modelRef: embdID,
+			db:       embedderResolverDB,
+			resolve:  getEmbeddingModel,
+		}, embdID, nil
 	}
 }
 

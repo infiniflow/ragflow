@@ -62,6 +62,11 @@ func (o *PreprocessOperator) Prepare(chunkCtx *ChunkContext) error {
 	return nil
 }
 
+var (
+	blankLinesRe  = regexp.MustCompile(`\n{2,}`)
+	sentenceEndRe = regexp.MustCompile(`[.!?][\s]*$`)
+)
+
 func (o *PreprocessOperator) Execute(chunkCtx *ChunkContext) error {
 	text := chunkCtx.Origin
 
@@ -70,8 +75,7 @@ func (o *PreprocessOperator) Execute(chunkCtx *ChunkContext) error {
 		text = strings.ReplaceAll(text, "\r\n", "\n")
 		text = strings.ReplaceAll(text, "\r", "\n")
 		// Collapse multiple \n into one
-		re := regexp.MustCompile(`\n{2,}`)
-		text = re.ReplaceAllString(text, "\n")
+		text = blankLinesRe.ReplaceAllString(text, "\n")
 	}
 
 	if o.stripWhitespace {
@@ -99,15 +103,13 @@ func (o *PreprocessOperator) Execute(chunkCtx *ChunkContext) error {
 		var merged []string
 		var current strings.Builder
 
-		sentenceEnd := regexp.MustCompile(`[.!?][\s]*$`)
-
 		for i, line := range lines {
 			if current.Len() > 0 {
 				current.WriteString(" ")
 			}
 			current.WriteString(line)
 
-			if i == len(lines)-1 || sentenceEnd.MatchString(line) {
+			if i == len(lines)-1 || sentenceEndRe.MatchString(line) {
 				merged = append(merged, current.String())
 				current.Reset()
 			}

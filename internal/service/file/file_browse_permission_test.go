@@ -26,8 +26,8 @@ func seedFileBrowsing(t *testing.T) {
 	}
 	for _, entry := range []entity.File{
 		{ID: "root", ParentID: "root", TenantID: "owner", CreatedBy: "owner", Name: "/", Type: FileTypeFolder},
-		{ID: "tags", ParentID: "root", TenantID: "owner", CreatedBy: "reader", Name: "tags.txt", Type: "doc"},
-		{ID: "private", ParentID: "root", TenantID: "owner", CreatedBy: "owner", Name: "private.txt", Type: "doc"},
+		{ID: "tags", ParentID: "root", UserID: "reader", TenantID: "owner", CreatedBy: "reader", Name: "tags.txt", Type: "doc"},
+		{ID: "private", ParentID: "root", UserID: "owner", TenantID: "owner", CreatedBy: "owner", Name: "private.txt", Type: "doc"},
 		{ID: "foreign-root", ParentID: "foreign-root", TenantID: "foreign", Name: "/", Type: FileTypeFolder},
 		{ID: "foreign-tags", ParentID: "foreign-root", TenantID: "foreign", Name: "tags.txt", Type: "doc"},
 	} {
@@ -37,26 +37,26 @@ func seedFileBrowsing(t *testing.T) {
 	}
 }
 
-func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
+func TestTenantMemberSeesOnlyOwnedFilesAndPaths(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
 	ctx := permission.WithIdentity(t.Context(), "reader", "owner")
 	list, err := svc.ListFilesForTenant(ctx, "owner", "", 1, 1, nil, "")
 	if err != nil {
-		t.Fatalf("list shared tenant files: %v", err)
+		t.Fatalf("list tenant files: %v", err)
 	}
 	if list.Total != 1 {
-		t.Fatalf("file count = %d, want only the readable file", list.Total)
+		t.Fatalf("file count = %d, want only the owned file", list.Total)
 	}
 	if len(list.Files) != 1 || list.Files[0]["id"] != "tags" {
-		t.Fatalf("listed files = %#v, want only readable file tags", list.Files)
+		t.Fatalf("listed files = %#v, want only owned file tags", list.Files)
 	}
-	if list.Files[0]["operator_permission"] != permission.ResourcePermissionOwner {
-		t.Fatalf("owner file permission mask = %v, want %d", list.Files[0]["operator_permission"], permission.ResourcePermissionOwner)
+	if _, exists := list.Files[0]["operator_permission"]; exists {
+		t.Fatal("file list must not expose independent permission state")
 	}
 	ancestors, err := svc.GetAllParentFoldersForTenant(ctx, "owner", "tags")
 	if err != nil {
-		t.Fatalf("resolve shared tenant tag file: %v", err)
+		t.Fatalf("resolve owned tenant tag file: %v", err)
 	}
 	if len(ancestors) != 2 {
 		t.Fatalf("ancestor count = %d, want 2", len(ancestors))

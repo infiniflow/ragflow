@@ -103,12 +103,14 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	}
 	checkpointState, err := r.prepareCheckpoint(ctx, taskContext, windowStart, time.Now().UTC())
 	if err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "checkpoint", "[ERROR] Could not load or initialize sync checkpoint")
 		return "", err
 	}
 
 	sourceType := service.SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
 	fingerprints, err := r.idResolver.ListFingerprintsBySourceType(ctx, taskContext.Knowledgebase.ID, sourceType)
 	if err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "sync", "[ERROR] Could not load existing file fingerprints")
 		return "", err
 	}
 	session, err := r.openSyncSession(ctx, taskContext, sourceType, fingerprints, &checkpointState, connector)
@@ -122,6 +124,9 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	}()
 
 	// prepare sourceType, waterline, stats, resultChan
+	if checkpointState.Checkpoint != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "checkpoint", "Resuming from saved checkpoint")
+	}
 	stats := statsFromCheckpointState(checkpointState) // count `add`, `updated`, `skipped`
 	resultChans := make([]<-chan syncJobResult, 0)
 
@@ -137,6 +142,9 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 			break
 		}
 		if nextErr != nil {
+			if !errors.Is(nextErr, syncerconnector.ErrSyncResumeInvalid) || checkpointState.RestartCount >= r.config.MaxAnchorRestartCount {
+				recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "sync", "[ERROR] Could not read sync source batch")
+			}
 			if err = r.collectResults(ctx, taskContext.Task.ID, resultChans, &checkpointState, &stats); err != nil {
 				return "", err
 			}
@@ -160,6 +168,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 		// a batch, a syncJob
 		resultChan, err := r.submitBatch(ctx, taskContext, sourceType, session, batch)
 		if err != nil {
+			recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "batch", "[ERROR] Could not queue file batch")
 			return "", err
 		}
 		resultChans = append(resultChans, resultChan)
@@ -174,9 +183,11 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	}
 	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, checkpointState.WindowEnd, stats)
 	if err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "sync", "[ERROR] Could not save sync completion")
 		return "", err
 	}
 	if err = r.checkpoints.DeleteSyncCheckpoint(context.WithoutCancel(ctx), taskContext.Task.ID); err != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeSystem, "checkpoint", "[WARN] Could not remove completed sync checkpoint")
 		common.Warn("delete sync checkpoint failed", zap.Error(err))
 	} else {
 		common.Info("delete sync checkpoint completed", zap.String("task_id", taskContext.Task.ID))
@@ -204,6 +215,7 @@ func (r *SyncRunner) openSyncSession(ctx context.Context, taskContext dao.SyncTa
 			}
 			return r.openSyncSession(ctx, taskContext, sourceType, fingerprints, checkpointState, connector)
 		}
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "sync", "[ERROR] Could not open sync source scan")
 		return nil, err
 	}
 	return session, nil
@@ -219,6 +231,7 @@ func (r *SyncRunner) restartSyncSession(ctx context.Context, taskContext dao.Syn
 // resetCheckpointForRestart discards committed progress and restarts the same
 // source window when the resume anchor is no longer valid.
 func (r *SyncRunner) resetCheckpointForRestart(ctx context.Context, taskID string, checkpointState *syncerconnector.SyncCheckpointState) error {
+	recordTaskEvent(taskID, dao.EventTypeSystem, "checkpoint", "[WARN] Saved checkpoint is no longer valid. Restarting the source scan")
 	checkpointState.RestartCount++
 	checkpointState.Checkpoint = nil
 	checkpointState.NextCommitSeq = 1
@@ -248,6 +261,7 @@ func (r *SyncRunner) collectResults(ctx context.Context, taskID string, resultCh
 			checkpointState.NextCommitSeq++
 			applyStatsToCheckpointState(checkpointState, *stats)
 			if err := r.checkpoints.SaveSyncCheckpoint(ctx, taskID, *checkpointState); err != nil {
+				recordTaskEvent(taskID, dao.EventTypeMessage, "checkpoint", "[ERROR] Could not save sync checkpoint")
 				return err
 			}
 		}
@@ -310,7 +324,18 @@ func applyStatsToCheckpointState(state *syncerconnector.SyncCheckpointState, sta
 // submitBatch submits one source batch as one BatchJob.
 func (r *SyncRunner) submitBatch(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
 	resultChan, err := r.queue.submit(ctx, func(jobCtx context.Context) (service.SyncStats, error) {
-		return r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+		stats, err := r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+		message := fmt.Sprintf("Batch of %d files: %d added, %d updated, %d skipped", len(batch.Documents), stats.Added, stats.Updated, stats.Skipped)
+		if err != nil {
+			message = "[WARN] Batch encountered a processing error. " + message
+		} else {
+			message += fmt.Sprintf(", %d errors", stats.ErrorCount)
+			if stats.ErrorCount > 0 {
+				message = "[WARN] " + message
+			}
+		}
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "batch", message)
+		return stats, err
 	}, batch.Checkpoint)
 	if err != nil {
 		return nil, err
@@ -358,6 +383,7 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 			continue
 		}
 		stats.AddResult(result)
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "file", "File "+result.DocID+" "+result.Action)
 	}
 	return stats, firstErr
 }
@@ -391,6 +417,7 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 			delay += time.Duration(rand.Int63n(int64(jitterMax)))
 		}
 
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "file", fmt.Sprintf("[WARN] Retrying file operation after attempt %d in %s", attempt, delay))
 		select {
 		case <-ctx.Done():
 			return service.DocumentUpsertResult{}, ctx.Err()
@@ -401,16 +428,30 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 }
 
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
-func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
+func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (_ service.DocumentUpsertResult, err error) {
+	stage := "resolve file identity"
+	var docID string
+	defer func() {
+		if err == nil {
+			return
+		}
+		message := "[ERROR] Could not " + stage
+		if docID != "" {
+			message += " (" + docID + ")"
+		}
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "file", message)
+	}()
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
 	if err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
+	docID = resolved.DocID
 	if sourceDocument.Fingerprint != "" && resolved.StoredFingerprint == sourceDocument.Fingerprint {
 		return service.DocumentUpsertResult{DocID: resolved.DocID, Action: service.DocumentActionSkipped}, nil
 	}
 
 	if len(sourceDocument.Blob) == 0 && sourceDocument.FetchRef != nil {
+		stage = "fetch file contents"
 		fetcher, ok := session.(syncerconnector.Fetcher)
 		if !ok {
 			return service.DocumentUpsertResult{}, fmt.Errorf("connector session cannot fetch %s", sourceDocument.FetchRef.Key)
@@ -422,6 +463,7 @@ func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTa
 		sourceDocument.Blob = blob
 	}
 
+	stage = "save file"
 	return r.sink.Upsert(ctx, service.DocumentUpsertInput{
 		TaskContext:    taskContext,
 		SourceType:     sourceType,

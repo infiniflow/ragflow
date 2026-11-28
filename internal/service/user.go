@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -115,8 +114,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
-	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
-	if !emailRegex.MatchString(req.Email) {
+	if !common.IsValidEmail(req.Email) {
 		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
 	req.Nickname = strings.TrimSpace(req.Nickname)
@@ -297,6 +295,8 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	return completePasswordLogin(ctx, user)
 }
 
+var errInvalidEmailCredentials = errors.New("email and password do not match")
+
 // LoginByEmail user login by email
 // Returns user on success, or error with specific code:
 // - CodeAuthenticationError (109): Email not registered or password mismatch
@@ -306,7 +306,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
 		common.Error("user not found by email", err)
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered", req.Email)
+		return nil, common.CodeAuthenticationError, errInvalidEmailCredentials
 	}
 
 	decryptedPassword, err := common.DecryptPassword(req.Password)
@@ -315,7 +315,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match")
+		return nil, common.CodeAuthenticationError, errInvalidEmailCredentials
 	}
 
 	if user.IsActive == "0" {

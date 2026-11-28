@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -62,16 +63,9 @@ func SeedSystemSettings(ctx context.Context, db *gorm.DB) error {
 }
 
 func findSystemSettingsSeedFile() string {
-	candidates := []string{
-		"conf/system_settings.json",
-		filepath.Join("..", "conf", "system_settings.json"),
-		filepath.Join("..", "..", "conf", "system_settings.json"),
-		filepath.Join("..", "..", "..", "conf", "system_settings.json"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
+	path := filepath.Join(utility.ConfDir(), "system_settings.json")
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return path
 	}
 	return ""
 }

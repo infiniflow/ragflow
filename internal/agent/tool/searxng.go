@@ -32,6 +32,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -263,10 +264,7 @@ func buildSearXNGReferences(envelope map[string]any) ([]map[string]any, []map[st
 			continue
 		}
 		content = searxngDataImagePattern.ReplaceAllString(content, "")
-		runes := []rune(content)
-		if len(runes) > 10000 {
-			content = string(runes[:10000])
-		}
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}

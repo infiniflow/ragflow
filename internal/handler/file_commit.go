@@ -28,11 +28,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // fileCommitService is the consumer-side interface for FileCommitHandler's service dependency.
 type fileCommitService interface {
-	CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
+	CreateCommit(ctx context.Context, db *gorm.DB, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error)
 	GetPageCommitDetail(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
@@ -47,9 +48,10 @@ type fileCommitService interface {
 
 // FileCommitHandler file commit handler
 type FileCommitHandler struct {
-	commitService fileCommitService
-	kbDAO         *dao.KnowledgebaseDAO
-	fileDAO       *dao.FileDAO
+	commitService         fileCommitService
+	kbDAO                 *dao.KnowledgebaseDAO
+	fileDAO               *dao.FileDAO
+	wikiPageAccessChecker func(*gin.Context, string, string, string) bool
 }
 
 // NewFileCommitHandler create file commit handler
@@ -59,6 +61,13 @@ func NewFileCommitHandler(commitService fileCommitService) *FileCommitHandler {
 		kbDAO:         dao.NewKnowledgebaseDAO(),
 		fileDAO:       dao.NewFileDAO(),
 	}
+}
+
+func (h *FileCommitHandler) canReadWikiPage(c *gin.Context, datasetID, pageType, slug string) bool {
+	if h.wikiPageAccessChecker != nil {
+		return h.wikiPageAccessChecker(c, datasetID, pageType, slug)
+	}
+	return wikiPageSourceReadable(c, datasetID, pageType, slug)
 }
 
 // ResolveFolderID resolves a resource ID (dataset/memory/skill) to its folder_id.
@@ -135,15 +144,24 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 // same access check as the other file routes instead of trusting a
 // caller-supplied folder ID.
 func (h *FileCommitHandler) folderAccessible(c *gin.Context, folderID string) bool {
+	return h.fileAccessible(c, folderID, true)
+}
+
+func (h *FileCommitHandler) fileAccessible(c *gin.Context, fileID string, folder bool) bool {
 	ctx := c.Request.Context()
-	folder, err := h.fileDAO.GetByID(ctx, dao.DB, folderID)
-	if err != nil || folder == nil || folder.Type != "folder" {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := permission.TenantIDFromContext(ctx)
+	if userID == "" {
 		return false
 	}
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: permission.ResourceKindFolder,
-		ID:   folder.ID,
-	}, permission.OperationRead) == nil
+	if tenantID == "" {
+		tenantID = userID
+	}
+	fileRecord, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
+	if err != nil || fileRecord == nil || fileRecord.TenantID != tenantID || file.FileOwnerUserID(fileRecord, userID, tenantID) != userID {
+		return false
+	}
+	return !folder || fileRecord.Type == "folder"
 }
 
 func commitFolderID(c *gin.Context) string {
@@ -205,7 +223,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		fileIDs = append(fileIDs, change.FileID)
 	}
 	common.SetOperationResource(c, "file_ids", fileIDs)
-	commit, err := h.commitService.CreateCommit(ctx, folderID, user.ID, req.Message, req.Files)
+	commit, err := h.commitService.CreateCommit(ctx, dao.DB, folderID, user.ID, req.Message, req.Files)
 	if err != nil {
 		// A delete change for a file that is still in the folder, or a rename
 		// with an empty or overlong target, is caller input, not a server
@@ -280,7 +298,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 	orderBy := c.DefaultQuery("order_by", "create_time")
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	ctx := c.Request.Context()
@@ -305,6 +323,9 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 			if idx := strings.Index(slug, "/"); idx >= 0 {
 				pageType, slug = slug[:idx], slug[idx+1:]
 			}
+		}
+		if !h.canReadWikiPage(c, datasetID, pageType, slug) {
+			return
 		}
 		commits, total, err := h.commitService.ListPageCommits(ctx, datasetID, pageType, slug, page, pageSize)
 		if err != nil {
@@ -398,6 +419,9 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		detail, err := h.commitService.GetPageCommitDetail(ctx, datasetID, commitID)
 		if err != nil {
 			common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
+			return
+		}
+		if !h.canReadWikiPage(c, datasetID, detail.PageType, detail.Slug) {
 			return
 		}
 		common.RespondSuccess(c, detail, common.CodeSuccess.Message())
@@ -683,10 +707,7 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
-	if err != nil || file == nil || permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
-		Kind: permission.ResourceKindFile,
-		ID:   fileID,
-	}, permission.OperationRead) != nil {
+	if err != nil || file == nil || !h.fileAccessible(c, fileID, false) {
 		common.RespondError(c, common.CodeNotFound, "File not found")
 		return
 	}

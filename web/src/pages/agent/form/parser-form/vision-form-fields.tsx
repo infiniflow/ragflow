@@ -50,7 +50,7 @@ function VisionEnhancementSwitch({
       }
       onEnabledChange(checked);
       if (checked && !form.getValues('vlm.llm_id')) {
-        const modelId = defaultModelDictionary[ModelTypeToField.vision];
+        const modelId = defaultModelDictionary[ModelTypeToField.vlm];
         if (modelId) {
           form.setValue('vlm.llm_id', modelId, { shouldDirty: true });
         }

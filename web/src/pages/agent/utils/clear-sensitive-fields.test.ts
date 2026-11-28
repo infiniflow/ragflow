@@ -13,6 +13,8 @@ jest.mock('@/constants/agent', () => ({
     Search1APISearch: 'Search1APISearch',
     Search1APICrawl: 'Search1APICrawl',
     Begin: 'Begin',
+    SpecStreamSearch: 'SpecStreamSearch',
+    SpecStreamExtract: 'SpecStreamExtract',
   },
   AgentDialogueMode: { Webhook: 'Webhook' },
 }));
@@ -237,6 +239,85 @@ describe('clearSensitiveFields', () => {
   );
 
   it.each([
+    'SpecStreamSearch',
+    'SpecStreamExtract',
+    'specstreamsearch',
+    'specstreamextract',
+    'specstream',
+    'specstream_extract',
+  ])(
+    'clears a %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'specstream-graph-secret',
+                  top_n: 5,
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'specstream-tool-secret',
+              top_n: 5,
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.top_n).toBe(5);
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'specstream-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('specstream-tool-secret');
+    },
+  );
+
+  it.each([
+    ['tool_name', { tool_name: 'SpecStreamSearch' }],
+    ['name', { name: 'specstream_extract' }],
+    [
+      'blank component_name then tool_name',
+      { component_name: '', tool_name: 'SpecStreamSearch' },
+    ],
+    [
+      'blank component_name and tool_name then name',
+      { component_name: '  ', tool_name: '', name: 'specstream' },
+    ],
+  ])(
+    'clears a SpecStream tool record named through %s, like the backend resolves it',
+    (_label, discriminator) => {
+      const dsl = {
+        tools: [
+          {
+            ...discriminator,
+            params: { api_key: 'specstream-tool-secret', top_n: 5 },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(dsl.tools[0].params.api_key).toBe('specstream-tool-secret');
+    },
+  );
+
+  it.each([
     'PerplexitySearch',
     'perplexitysearch',
     'perplexity',
@@ -381,6 +462,96 @@ describe('clearSensitiveFields', () => {
     expect(clearSensitiveFields(dsl)).toEqual(dsl);
   });
 
+  it.each([
+    'AnySearchSearch',
+    'AnySearchDiscover',
+    'anysearchsearch',
+    'anysearchdiscover',
+    'anysearch',
+    'anysearch_search',
+    'anysearch_discover',
+  ])(
+    'clears an %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'anysearch-graph-secret',
+                  zone: 'cn',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'anysearch-tool-secret',
+              language: 'zh-CN',
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.zone).toBe('cn');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.language).toBe('zh-CN');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'anysearch-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('anysearch-tool-secret');
+    },
+  );
+
+  it.each(['AnySearchExtract', 'anysearchextract', 'anysearch_extract'])(
+    'clears an %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'anysearch-graph-secret',
+                  url: 'https://example.com',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'anysearch-tool-secret',
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.url).toBe(
+        'https://example.com',
+      );
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'anysearch-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('anysearch-tool-secret');
+    },
+  );
+
   it('does not change standalone graph export behavior for other tools', () => {
     const dsl = {
       graph: {
@@ -459,4 +630,26 @@ describe('clearSensitiveFields', () => {
       'component-token-secret',
     );
   });
+  it.each([
+    ['tool_name', 'anysearch_search'],
+    ['name', 'anysearch_search'],
+    ['tool_name', 'anysearch_extract'],
+    ['name', 'anysearch_extract'],
+  ])(
+    'clears AnySearch credentials identified by %s=%s in tool records',
+    (field, toolName) => {
+      const dsl = {
+        tools: [
+          {
+            [field]: toolName,
+            params: { api_key: 'local-test-secret', top_n: 3 },
+          },
+        ],
+      };
+      const sanitized = clearSensitiveFields(dsl);
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(3);
+      expect(dsl.tools[0].params.api_key).toBe('local-test-secret');
+    },
+  );
 });

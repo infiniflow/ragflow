@@ -28,9 +28,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"ragflow/internal/common"
@@ -45,7 +47,23 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
+func TestMistralOCRModelSelector(t *testing.T) {
+	for _, tc := range []struct {
+		selector string
+		want     bool
+	}{
+		{"mistral-ocr-latest@default@Mistral", true},
+		{"mistral-ocr-2512@Mistral OCR", true},
+		{"pixtral-large-latest@default@Mistral", false},
+		{"mistral-ocr-latest@default@OtherProvider", false},
+	} {
+		if got := isMistralOCRModelSelector(t.Context(), nil, "", tc.selector); got != tc.want {
+			t.Errorf("Mistral OCR selector %q = %v, want %v", tc.selector, got, tc.want)
+		}
+	}
+}
+
+func TestMonkeyOCRv2ArchiveUsesNativeJSON(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	file, err := writer.Create("sample/sample.json")
@@ -55,16 +73,16 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), media.NewBudget())
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buffer.Bytes(), media.NewBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 2 || sections[0].text != "Heading" || sections[1].text != "x^2" {
-		t.Fatalf("sections=%v", sections)
+	if len(res.JSON) != 2 || res.JSON[0].ToMap()["layout"] != "title" || res.JSON[0].ToMap()["text"] != "Heading" || res.JSON[1].ToMap()["layout"] != "equation" || res.JSON[1].ToMap()["text"] != "x^2" {
+		t.Fatalf("items=%v", res.JSON)
 	}
 }
 
-func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
+func TestMonkeyOCRv2ArchiveEmbedsZIPImage(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	jsonFile, _ := writer.Create("sample/sample.json")
@@ -73,12 +91,12 @@ func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
 
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), media.NewBudget())
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buffer.Bytes(), media.NewBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 1 || !strings.HasPrefix(sections[0].text, "![figure](data:image/png;base64,") {
-		t.Fatalf("sections=%v", sections)
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "figure" || res.JSON[0].ToMap()["image"] != "cG5nLWRhdGE=" {
+		t.Fatalf("items=%v", res.JSON)
 	}
 }
 
@@ -261,13 +279,139 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 // the OCRFile method needed by dispatchPaddleOCRPdf.
 type paddleOCRFakeDriver struct {
 	modelModule.ModelDriver
-	pages []modelModule.OCRPage
+	pages     []modelModule.OCRPage
+	ocrConfig *modelModule.OCRConfig
 }
 
 func (d *paddleOCRFakeDriver) Name() string { return "PaddleOCR" }
 
-func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ *string, _ *modelModule.APIConfig, _ *modelModule.OCRConfig, _ *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ *string, _ *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig, _ *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+	d.ocrConfig = ocrConfig
 	return &modelModule.OCRFileResponse{Pages: d.pages}, nil
+}
+
+func TestPaddleOCRRequestTimeout(t *testing.T) {
+	t.Setenv(common.EnvPaddleOCRTimeout, "")
+
+	// 1. Unset: zero keeps the driver default
+	if got := paddleOCRRequestTimeout(nil, nil); got != 0 {
+		t.Fatalf("default timeout=%v, want 0", got)
+	}
+
+	// 2. Setup paddleocr_timeout / paddleocr_timeout_seconds (int and float seconds)
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 3600}, nil); got != time.Hour {
+		t.Fatalf("setup paddleocr_timeout=%v, want 1h", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout_seconds": 2400}, nil); got != 2400*time.Second {
+		t.Fatalf("setup paddleocr_timeout_seconds=%v, want 2400s", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout_seconds": 1800.0}, nil); got != 1800*time.Second {
+		t.Fatalf("setup paddleocr_timeout_seconds float=%v, want 1800s", got)
+	}
+
+	// 3. Setup duration strings
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": "45m"}, nil); got != 45*time.Minute {
+		t.Fatalf("setup paddleocr_timeout 45m=%v, want 45m", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": " 2h "}, nil); got != 2*time.Hour {
+		t.Fatalf("setup paddleocr_timeout 2h=%v, want 2h", got)
+	}
+
+	// 4. APIConfig JSON
+	apiKey := `{"paddleocr_timeout":"2400"}`
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKey}); got != 2400*time.Second {
+		t.Fatalf("API config timeout=%v, want 2400s", got)
+	}
+	apiKeyEnv := `{"api_key":{"PADDLEOCR_TIMEOUT":"90m"}}`
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyEnv}); got != 90*time.Minute {
+		t.Fatalf("API config env key timeout=%v, want 90m", got)
+	}
+	plainToken := "plain-token"
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &plainToken}); got != 0 {
+		t.Fatalf("plain api_key timeout=%v, want 0", got)
+	}
+
+	// 5. Environment variable
+	t.Setenv(common.EnvPaddleOCRTimeout, "7200")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 7200*time.Second {
+		t.Fatalf("env PADDLEOCR_TIMEOUT=%v, want 7200s", got)
+	}
+	t.Setenv(common.EnvPaddleOCRTimeout, "1h30m")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 90*time.Minute {
+		t.Fatalf("env PADDLEOCR_TIMEOUT duration=%v, want 1h30m", got)
+	}
+
+	// 6. Precedence: Setup > APIConfig > Env
+	t.Setenv(common.EnvPaddleOCRTimeout, "9999")
+	apiKeyPrecedence := `{"paddleocr_timeout":"600"}`
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 300}, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 300*time.Second {
+		t.Fatalf("precedence setup over apiConfig=%v, want 300s", got)
+	}
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 600*time.Second {
+		t.Fatalf("precedence apiConfig over env=%v, want 600s", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 1800, "paddleocr_timeout_seconds": 60}, nil); got != 1800*time.Second {
+		t.Fatalf("paddleocr_timeout precedence=%v, want 1800s", got)
+	}
+
+	// 7. Invalid values keep the driver default. A present setup key is authoritative:
+	// it does not fall through to apiConfig or the PADDLEOCR_TIMEOUT env.
+	for _, invalid := range []any{-10, 0, "invalid"} {
+		if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": invalid}, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 0 {
+			t.Fatalf("invalid setup %v timeout=%v, want 0", invalid, got)
+		}
+	}
+	t.Setenv(common.EnvPaddleOCRTimeout, "invalid")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 0 {
+		t.Fatalf("invalid env timeout=%v, want 0", got)
+	}
+
+	// 8. Duration clamping [1s, 24h]
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": "500ms"}, nil); got != time.Second {
+		t.Fatalf("sub-second timeout clamped=%v, want 1s", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": "48h"}, nil); got != 24*time.Hour {
+		t.Fatalf("oversized timeout clamped=%v, want 24h", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 10000000000}, nil); got != 24*time.Hour {
+		t.Fatalf("huge int seconds clamped=%v, want 24h", got)
+	}
+	t.Setenv(common.EnvPaddleOCRTimeout, "10000000000")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 24*time.Hour {
+		t.Fatalf("huge env seconds clamped=%v, want 24h", got)
+	}
+}
+
+func TestDispatchPaddleOCRPDFPassesResolvedTimeout(t *testing.T) {
+	t.Setenv(common.EnvPaddleOCRTimeout, "")
+	driver := &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "Body"}}}}}
+	original := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = original })
+	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return driver, "ocr-model", &modelModule.APIConfig{}, nil
+	}
+
+	if _, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", nil, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if driver.ocrConfig == nil || driver.ocrConfig.Timeout != 0 {
+		t.Fatalf("unconfigured OCR config=%+v, want zero timeout", driver.ocrConfig)
+	}
+
+	t.Setenv(common.EnvPaddleOCRTimeout, "1h")
+	if _, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", nil, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if driver.ocrConfig == nil || driver.ocrConfig.Timeout != time.Hour {
+		t.Fatalf("env OCR config=%+v, want 1h timeout", driver.ocrConfig)
+	}
+
+	if _, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{"paddleocr_timeout": "45m"}, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if driver.ocrConfig == nil || driver.ocrConfig.Timeout != 45*time.Minute {
+		t.Fatalf("setup OCR config=%+v, want 45m timeout", driver.ocrConfig)
+	}
 }
 
 func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {
@@ -920,7 +1064,7 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 		t.Fatal("stream kept reading the error response after cancellation")
 	}
 }
-func TestMonkeyOCRv2ExtractSectionsBudgetOmitsPayloadKeepsAltText(t *testing.T) {
+func TestMonkeyOCRv2ArchiveBudgetOmitsPayloadKeepsAltText(t *testing.T) {
 	oversized := make([]byte, media.ImageMaxBytes()+1)
 	for i := range oversized {
 		oversized[i] = 'b'
@@ -934,15 +1078,15 @@ func TestMonkeyOCRv2ExtractSectionsBudgetOmitsPayloadKeepsAltText(t *testing.T) 
 	_ = writer.Close()
 
 	budget := media.NewBudget()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), budget)
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buffer.Bytes(), budget)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 1 || !sections[0].imageOnly || sections[0].text != "big figure" {
-		t.Fatalf("oversized image must stay a position carrier keeping its alt text: sections=%v", sections)
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["media_omitted"] != true || res.JSON[0].ToMap()["text"] != "big figure" {
+		t.Fatalf("oversized image must stay a position carrier keeping its alt text: items=%v", res.JSON)
 	}
-	if len(sections[0].position) != 5 || sections[0].position[0] != 2 {
-		t.Fatalf("omitted image must keep its layout position: %#v", sections[0].position)
+	if !reflect.DeepEqual(res.JSON[0].ToMap()["_pdf_positions"], [][]any{{2, 1.0, 3.0, 2.0, 4.0}}) {
+		t.Fatalf("omitted image must keep its layout position: %#v", res.JSON[0].ToMap())
 	}
 	warnings := budget.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "per-image limit") {
@@ -950,100 +1094,7 @@ func TestMonkeyOCRv2ExtractSectionsBudgetOmitsPayloadKeepsAltText(t *testing.T) 
 	}
 }
 
-func TestMonkeyOCRv2AttachPositionsMatchesMarkdownItems(t *testing.T) {
-	sections := []monkeyOCRv2Section{
-		{text: "# Heading", position: []any{1, 10.0, 200.0, 680.0, 700.0}},
-		{text: "Body text.", position: []any{2, 15.0, 300.0, 100.0, 140.0}},
-		{text: "No geometry here"},
-	}
-	// Production NormalizeMarkdown keeps heading/list syntax in the item
-	// text, so the section side is indexed with the same shape.
-	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
-		{"text": "# Heading", "doc_type_kwd": "text"},
-		{"text": "Body text.", "doc_type_kwd": "text"},
-		{"text": "No geometry here", "doc_type_kwd": "text"},
-	})}
-	res = monkeyOCRv2AttachPositions(res, sections)
-	first := res.JSON[0].ToMap()
-	rows, ok := first["_pdf_positions"].([][]any)
-	if !ok || len(rows) != 1 {
-		t.Fatalf("heading positions = %#v", first["_pdf_positions"])
-	}
-	if page, _ := rows[0][0].(int); page != 1 {
-		t.Fatalf("heading page = %#v, want 1", rows[0])
-	}
-	second := res.JSON[1].ToMap()
-	if page, _ := second["page_number"].(int); page != 2 {
-		t.Fatalf("body page_number = %#v, want 2", second["page_number"])
-	}
-	third := res.JSON[2].ToMap()
-	if _, ok := third["_pdf_positions"]; ok {
-		t.Fatalf("ungeometried section must stay position-free: %#v", third)
-	}
-}
-
-func TestMonkeyOCRv2AttachPositionsMapsImageItemsOrdinally(t *testing.T) {
-	sections := []monkeyOCRv2Section{
-		{text: "![first](data:image/png;base64,AAAA)", position: []any{1, 1.0, 2.0, 3.0, 4.0}},
-		{text: "![second](data:image/png;base64,BBBB)", position: []any{2, 5.0, 6.0, 7.0, 8.0}},
-		{text: "![third](data:image/png;base64,CCCC)"}, // no geometry: skipped
-	}
-	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
-		{"doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
-		{"doc_type_kwd": "image", "image": "data:image/png;base64,BBBB"},
-		{"doc_type_kwd": "image", "image": "data:image/png;base64,DDDD"},
-	})}
-	res = monkeyOCRv2AttachPositions(res, sections)
-	first := res.JSON[0].ToMap()
-	if page, _ := first["page_number"].(int); page != 1 {
-		t.Fatalf("first image page = %#v, want 1", first)
-	}
-	second := res.JSON[1].ToMap()
-	rows, ok := second["_pdf_positions"].([][]any)
-	if !ok || len(rows) != 1 || rows[0][0] != 2 {
-		t.Fatalf("second image positions = %#v, want page 2", second)
-	}
-	third := res.JSON[2].ToMap()
-	if _, ok := third["_pdf_positions"]; ok {
-		t.Fatalf("image item without a positioned section must stay position-free: %#v", third)
-	}
-}
-
-func TestMonkeyOCRv2AttachPositionsInsertsOmittedImagesAsPositionOnlyItems(t *testing.T) {
-	sections := []monkeyOCRv2Section{
-		{text: "Before.", position: []any{1, 1.0, 2.0, 3.0, 4.0}, label: "text"},
-		{text: "", position: []any{2, 5.0, 6.0, 7.0, 8.0}, label: "picture", imageOnly: true},
-		{text: "After.", position: []any{3, 9.0, 10.0, 11.0, 12.0}, label: "text"},
-	}
-	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
-		{"text": "Before.", "doc_type_kwd": "text"},
-		{"text": "After.", "doc_type_kwd": "text"},
-	})}
-	res = monkeyOCRv2AttachPositions(res, sections)
-	if len(res.JSON) != 3 {
-		t.Fatalf("items = %d, want 3 with the inserted position-only image item", len(res.JSON))
-	}
-	mid := res.JSON[1].ToMap()
-	if mid["doc_type_kwd"] != "image" || mid["media_omitted"] != true {
-		t.Fatalf("inserted item = %#v, want media_omitted image", mid)
-	}
-	if text, _ := mid["text"].(string); text != "" {
-		t.Fatalf("no visible text may be invented, got %q", text)
-	}
-	rows, ok := mid["_pdf_positions"].([][]any)
-	if !ok || len(rows) != 1 || rows[0][0] != 2 {
-		t.Fatalf("inserted positions = %#v, want page 2", mid["_pdf_positions"])
-	}
-	last := res.JSON[2].ToMap()
-	if last["text"] != "After." {
-		t.Fatalf("insertion broke document order: %#v", last)
-	}
-	if page, _ := last["page_number"].(int); page != 3 {
-		t.Fatalf("trailing item positions = %#v, want page 3", last)
-	}
-}
-
-func TestMonkeyOCRv2ExtractSectionsMissingImageKeepsPositionCarrier(t *testing.T) {
+func TestMonkeyOCRv2ArchiveMissingImageKeepsPositionCarrier(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	jsonFile, _ := writer.Create("sample/sample.json")
@@ -1053,28 +1104,28 @@ func TestMonkeyOCRv2ExtractSectionsMissingImageKeepsPositionCarrier(t *testing.T
 	]}`))
 	_ = writer.Close()
 
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), media.NewBudget())
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buffer.Bytes(), media.NewBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 1 || !sections[0].imageOnly {
-		t.Fatalf("missing image with a position must keep a carrier, without one must drop: sections=%v", sections)
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["media_omitted"] != true {
+		t.Fatalf("missing image with a position must keep a carrier, without one must drop: items=%v", res.JSON)
 	}
-	if len(sections[0].position) != 5 || sections[0].position[0] != 2 {
-		t.Fatalf("carrier position = %#v, want page 2", sections[0].position)
+	if !reflect.DeepEqual(res.JSON[0].ToMap()["_pdf_positions"], [][]any{{2, 1.0, 3.0, 2.0, 4.0}}) {
+		t.Fatalf("carrier position = %#v, want page 2", res.JSON[0].ToMap())
 	}
 }
 
 func TestMonkeyOCRv2LayoutPositionShape(t *testing.T) {
-	got := monkeyOCRv2LayoutPosition(map[string]any{"page_num": 2, "bbox": []any{110.0, 40.0, 10.0, 20.0}})
+	_, got := monkeyOCRv2LayoutPosition(map[string]any{"page_num": 2, "bbox": []any{110.0, 40.0, 10.0, 20.0}})
 	if len(got) != 5 || got[0] != 2 || got[1] != 10.0 || got[2] != 110.0 || got[3] != 20.0 || got[4] != 40.0 {
 		t.Fatalf("position = %#v, want [2 10 110 20 40] with normalized corners", got)
 	}
-	def := monkeyOCRv2LayoutPosition(map[string]any{"bbox": []any{50.0, 60.0, 5.0, 10.0}})
+	_, def := monkeyOCRv2LayoutPosition(map[string]any{"bbox": []any{50.0, 60.0, 5.0, 10.0}})
 	if len(def) != 5 || def[0] != 1 || def[1] != 5.0 || def[2] != 50.0 || def[3] != 10.0 || def[4] != 60.0 {
 		t.Fatalf("default-page position = %#v", def)
 	}
-	if none := monkeyOCRv2LayoutPosition(map[string]any{"page_num": 1}); none != nil {
+	if page, none := monkeyOCRv2LayoutPosition(map[string]any{"page_num": 1}); page != 1 || none != nil {
 		t.Fatalf("missing bbox must yield nil, got %#v", none)
 	}
 }
@@ -1113,68 +1164,18 @@ func TestDispatchMonkeyOCRv2PDFEmitsPositionsAndPageCount(t *testing.T) {
 	}
 }
 
-func TestMonkeyOCRv2AttachPositionsLeadingUnpositionedImage(t *testing.T) {
-	// An inlined image without geometry must not shift later images'
-	// positions one section early.
-	sections := []monkeyOCRv2Section{
-		{text: "![first](data:image/png;base64,AAAA)"}, // no geometry
-		{text: "![second](data:image/png;base64,BBBB)", position: []any{2, 5.0, 6.0, 7.0, 8.0}},
-	}
-	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
-		{"doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
-		{"doc_type_kwd": "image", "image": "data:image/png;base64,BBBB"},
-	})}
-	res = monkeyOCRv2AttachPositions(res, sections)
-	first := res.JSON[0].ToMap()
-	if _, ok := first["_pdf_positions"]; ok {
-		t.Fatalf("unpositioned leading image must stay position-free, got %#v", first["_pdf_positions"])
-	}
-	second := res.JSON[1].ToMap()
-	rows, ok := second["_pdf_positions"].([][]any)
-	if !ok || len(rows) != 1 || rows[0][0] != 2 {
-		t.Fatalf("second image must keep its own section's page 2, got %#v", second)
-	}
-}
-
-func TestMonkeyOCRv2AttachPositionsRealMarkdownShapes(t *testing.T) {
-	// End-to-end through production NormalizeMarkdown: heading/list syntax
-	// survives into item text, and table items carry no text at all — both
-	// must still receive their sections' positions.
-	sections := []monkeyOCRv2Section{
-		{text: "# Real Heading", position: []any{1, 10.0, 200.0, 680.0, 700.0}, label: "text"},
-		{text: "- list entry", position: []any{1, 15.0, 300.0, 100.0, 140.0}, label: "text"},
-		{text: "| A | B |\n|---|---|\n| 1 | 2 |", position: []any{2, 20.0, 400.0, 200.0, 300.0}, label: "table"},
-	}
-	md := "# Real Heading\n\n- list entry\n\n| A | B |\n|---|---|\n| 1 | 2 |"
-	res := (&parser.PDFParser{}).NormalizeMarkdown(t.Context(), "x.pdf", md)
-	if len(res.JSON) != 3 {
-		t.Fatalf("items = %d, want 3 (heading, list, table)", len(res.JSON))
-	}
-	res = monkeyOCRv2AttachPositions(res, sections)
-	for i, wantPage := range []int{1, 1, 2} {
-		m := res.JSON[i].ToMap()
-		rows, ok := m["_pdf_positions"].([][]any)
-		if !ok || len(rows) != 1 {
-			t.Fatalf("item %d (%v) positions = %#v", i, m["doc_type_kwd"], m)
-		}
-		if page, _ := rows[0][0].(int); page != wantPage {
-			t.Fatalf("item %d page = %v, want %d", i, rows[0][0], wantPage)
-		}
-	}
-}
-
 func TestMonkeyOCRv2EmbeddedImageDataURI(t *testing.T) {
 	// A service that already inlines the payload: no ZIP entry can ever
 	// match, so the payload must be budget-checked and kept, not lost.
 	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-	text, inlined, referenced := monkeyOCRv2EmbeddedImage("![fig](data:image/png;base64,"+png+")", map[string]*zip.File{}, media.NewBudget())
-	if !inlined || !referenced || !strings.Contains(text, "data:image/png;base64,") {
-		t.Fatalf("inline data URI must be kept: text=%q inlined=%v referenced=%v", text, inlined, referenced)
+	encoded := monkeyOCRv2EmbeddedImage("data:image/png;base64,"+png, map[string]*zip.File{}, media.NewBudget())
+	if encoded != png {
+		t.Fatalf("inline data URI must be kept: encoded=%q", encoded)
 	}
 	// Undecodable payload: position-only carrier with the alt text.
-	text, inlined, referenced = monkeyOCRv2EmbeddedImage("![fig](data:image/png;base64,%%%)", map[string]*zip.File{}, media.NewBudget())
-	if inlined || !referenced || text != "" {
-		t.Fatalf("undecodable data URI must fall back to position-only: text=%q inlined=%v referenced=%v", text, inlined, referenced)
+	encoded = monkeyOCRv2EmbeddedImage("data:image/png;base64,%%%", map[string]*zip.File{}, media.NewBudget())
+	if encoded != "" {
+		t.Fatalf("undecodable data URI must fall back to position-only: encoded=%q", encoded)
 	}
 }
 
@@ -1214,15 +1215,15 @@ func TestMonkeyOCRv2ImageOnlyLastPageCountsAndFileContract(t *testing.T) {
 	}
 }
 
-func TestMonkeyOCRv2EmbeddedImageOversizedDataURIWarnsAndKeepsAltText(t *testing.T) {
+func TestMonkeyOCRv2EmbeddedImageOversizedDataURIWarns(t *testing.T) {
 	// An oversized inline data: payload must be charged to the shared
 	// budget like the ZIP path: omitted with a per-image warning, keeping
 	// the alt text as the position carrier instead of dropping both.
 	oversized := base64.StdEncoding.EncodeToString(make([]byte, media.ImageMaxBytes()+1))
 	budget := media.NewBudget()
-	text, inlined, referenced := monkeyOCRv2EmbeddedImage("![big fig](data:image/png;base64,"+oversized+")", map[string]*zip.File{}, budget)
-	if inlined || !referenced || text != "big fig" {
-		t.Fatalf("oversized inline data URI: text=%q inlined=%v referenced=%v", text, inlined, referenced)
+	encoded := monkeyOCRv2EmbeddedImage("data:image/png;base64,"+oversized, map[string]*zip.File{}, budget)
+	if encoded != "" {
+		t.Fatalf("oversized inline data URI: encoded=%q", encoded)
 	}
 	warnings := budget.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "per-image limit") {
@@ -1230,27 +1231,255 @@ func TestMonkeyOCRv2EmbeddedImageOversizedDataURIWarnsAndKeepsAltText(t *testing
 	}
 }
 
-func TestMonkeyOCRv2AttachPositionsLeadingUnpositionedTable(t *testing.T) {
-	// An unpositioned table section must not shift later tables' positions
-	// one section early: the table channel collects sections before the
-	// position check, and SetPosition ignores rows without geometry.
-	sections := []monkeyOCRv2Section{
-		{text: "| A |\n|---|\n| 1 |", label: "table"}, // no geometry
-		{text: "| B |\n|---|\n| 2 |", position: []any{2, 5.0, 6.0, 7.0, 8.0}, label: "table"},
+func TestDispatchMonkeyOCRv2PreservesLayoutBoundaries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		archive := zip.NewWriter(w)
+		layout, _ := archive.Create("sample/sample.json")
+		_, _ = io.WriteString(layout, `{"layouts":[
+			{"label":"Text","content":"Repeated","page_num":1},
+			{"label":"Title","content":"Repeated","page_num":2,"bbox":[11,12,40,50]},
+			{"label":"Code","content":"first line\n\nsecond line","page_num":2,"bbox":[10,55,50,65]},
+			{"label":"Picture","content":"![](images/missing.png)","page_num":3,"bbox":[15,20,45,60]}
+		]}`)
+		archive.Close()
+	}))
+	defer server.Close()
+
+	result, err := dispatchMonkeyOCRv2PDF(t.Context(), nil, "sample.pdf", nil, "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	md := "| A |\n|---|\n| 1 |\n\n| B |\n|---|\n| 2 |"
-	res := (&parser.PDFParser{}).NormalizeMarkdown(t.Context(), "x.pdf", md)
-	if len(res.JSON) != 2 {
-		t.Fatalf("items = %d, want 2 tables", len(res.JSON))
+	if len(result.JSON) != 4 || result.File["page_count"] != 3 {
+		t.Fatalf("want four source layouts on three pages, got %+v", result)
 	}
-	res = monkeyOCRv2AttachPositions(res, sections)
-	first := res.JSON[0].ToMap()
-	if _, ok := first["_pdf_positions"]; ok {
-		t.Fatalf("unpositioned leading table must stay position-free, got %#v", first)
+	for i, want := range []string{"text", "title", "code", "figure"} {
+		if got := result.JSON[i].ToMap()["layout"]; got != want {
+			t.Fatalf("layout %d = %v, want %s", i, got, want)
+		}
 	}
-	second := res.JSON[1].ToMap()
-	rows, ok := second["_pdf_positions"].([][]any)
-	if !ok || len(rows) != 1 || rows[0][0] != 2 {
-		t.Fatalf("second table must keep its own section's page 2, got %#v", second)
+	first, second := result.JSON[0].ToMap(), result.JSON[1].ToMap()
+	if first["page_number"] != 1 || first["positions"] != nil || first["text"] != "Repeated" {
+		t.Fatalf("first occurrence acquired another occurrence's box: %#v", first)
+	}
+	wantBox := [][]any{{2, 11.0, 40.0, 12.0, 50.0}}
+	if second["text"] != "Repeated" || !reflect.DeepEqual(second["_pdf_positions"], wantBox) || !reflect.DeepEqual(second["positions"], wantBox) {
+		t.Fatalf("second occurrence lost its own box: %#v", second)
+	}
+	if got := result.JSON[2].ToMap()["text"]; got != "first line\n\nsecond line" {
+		t.Fatalf("code block was split or rewritten: %q", got)
+	}
+	last := result.JSON[3].ToMap()
+	if last["page_number"] != 3 || last["media_omitted"] != true || last["text"] != "" {
+		t.Fatalf("missing source image lost its place: %#v", last)
+	}
+}
+
+func TestMonkeyOCRv2ArchiveTablesAndImagesKeepTheirSourceOrder(t *testing.T) {
+	var buf bytes.Buffer
+	archive := zip.NewWriter(&buf)
+	layouts, _ := archive.Create("sample/sample.json")
+	_, _ = io.WriteString(layouts, `{"layouts":[
+		{"label":"Table","content":"| A |\n|---|\n| 1 |"},
+		{"label":"Picture","content":"![a](data:image/png;base64,YQ==)"},
+		{"label":"Table","table_body":"<table><tr><th>B</th></tr><tr><td>2</td></tr></table>","page_num":2,"bbox":[2,3,4,5]},
+		{"label":"Picture","content":"![b](data:image/png;base64,Yg==)","page_num":3,"bbox":[5,6,7,8]},
+		{"label":"Section-header","content":"Heading"},
+		{"label":"List-item","content":"List item"}
+	]}`)
+	md, _ := archive.Create("sample/sample.md")
+	_, _ = io.WriteString(md, "stale Markdown")
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buf.Bytes(), media.NewBudget())
+	if err != nil || len(res.JSON) != 6 || len(res.Warnings) != 0 {
+		t.Fatalf("unexpected archive result: %+v, %v", res, err)
+	}
+	for i, want := range []string{"table", "figure", "table", "figure", "title", "list"} {
+		fields := res.JSON[i].ToMap()
+		if fields["layout"] != want || fields["_preserve_order"] != true {
+			t.Fatalf("item %d = %#v, want %s in source order", i, fields, want)
+		}
+		if i < 2 && fields["_pdf_positions"] != nil {
+			t.Fatalf("item %d acquired a later item's position: %#v", i, fields)
+		}
+	}
+	for _, tc := range []struct {
+		index, page int
+		cell        string
+	}{{0, 0, "1"}, {2, 2, "2"}} {
+		td, ok := res.JSON[tc.index].ToMap()["table"].(*entity.TableData)
+		if !ok || td.Page != tc.page || len(td.Grid) != 2 || len(td.Grid[1]) != 1 || td.Grid[1][0].Text != tc.cell {
+			t.Fatalf("table %d = %#v", tc.index, td)
+		}
+	}
+	picture := res.JSON[3].ToMap()
+	if picture["page_number"] != 3 || picture["image"] != "Yg==" {
+		t.Fatalf("positioned image = %#v", picture)
+	}
+}
+
+func TestMonkeyOCRv2ArchiveMarkdownFallback(t *testing.T) {
+	var buf bytes.Buffer
+	archive := zip.NewWriter(&buf)
+	for name, body := range map[string]string{"sample/sample.json": `{"layouts":[]}`, "sample/sample.md": "# Fallback heading", "README.md": "not the document"} {
+		f, err := archive.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(f, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buf.Bytes(), media.NewBudget())
+	if err != nil || len(res.JSON) != 1 || res.File["parse_method"] != "monkeyocrv2" || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "without layout positions") {
+		t.Fatalf("unexpected fallback: %+v, %v", res, err)
+	}
+	item := res.JSON[0].ToMap()
+	if item["text"] != "# Fallback heading" || item["_pdf_positions"] != nil {
+		t.Fatalf("unexpected Markdown item: %#v", item)
+	}
+}
+
+func TestMonkeyOCRv2PositionedPicturesWithoutReferences(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	f, err := w.Create("sample/sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.WriteString(f, `{"layouts":[
+		{"label":"Text","content":"  ","page_num":1,"bbox":[1,2,10,20]},
+		{"label":"Picture","content":"plain caption","page_num":2,"bbox":[2,3,12,18]},
+		{"label":"Picture","page_num":3,"bbox":[4,5,14,15]},
+		{"label":"Picture","page_num":4},
+		{"label":"Picture","page_num":5,"bbox":[1,2,1,2]}
+	]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buf.Bytes(), media.NewBudget())
+	if err != nil || len(res.JSON) != 2 || res.File["page_count"] != 3 {
+		t.Fatalf("crop-only figures: %+v, %v", res, err)
+	}
+	for i, wantText := range []string{"plain caption", ""} {
+		item := res.JSON[i].ToMap()
+		if item["text"] != wantText || item["page_number"] != i+2 || item["doc_type_kwd"] != "image" || item["media_omitted"] != true || !parser.HasPDFCropRegion(item) {
+			t.Fatalf("item %d lost its caption or crop: %#v", i, item)
+		}
+	}
+}
+
+func TestMonkeyOCRv2TextWithMultipleImageReferences(t *testing.T) {
+	block := map[string]any{"label": "Text", "content": "before ![one](data:image/png;base64,YQ==) between ![two](data:image/png;base64,Yg==) after", "page_num": 2, "bbox": []any{1, 2, 10, 20}}
+	for _, limit := range []int{2, 1} {
+		budget := media.NewBudgetWithLimits(media.Limits{MaxImagesPerRun: limit, MaxBytesPerRun: 10, ImageMaxBytes: 10})
+		sections := monkeyOCRv2Sections(block, nil, budget)
+		if len(sections) != 2 {
+			t.Fatalf("limit %d: want two figures, got %+v", limit, sections)
+		}
+		if got := sections[0].text + sections[1].text; got != "before one between two after" {
+			t.Fatalf("surrounding text or alt text changed: %q", got)
+		}
+		wantSecond := "Yg=="
+		if limit == 1 {
+			wantSecond = ""
+		}
+		for i, want := range []string{"YQ==", wantSecond} {
+			s := sections[i]
+			if s.layout != "figure" || s.image != want || s.page != 2 || !reflect.DeepEqual(s.position, []any{2, 1.0, 10.0, 2.0, 20.0}) {
+				t.Fatalf("limit %d: figure %d = %+v", limit, i, s)
+			}
+		}
+		if budget.Count() != limit || len(budget.Warnings()) != 2-limit {
+			t.Fatalf("limit %d: charged %d, warnings %v", limit, budget.Count(), budget.Warnings())
+		}
+	}
+}
+
+func TestMonkeyOCRv2UnpositionedPictureKeepsTextForMissingImage(t *testing.T) {
+	var buf bytes.Buffer
+	archive := zip.NewWriter(&buf)
+	err := archive.AddFS(fstest.MapFS{
+		"sample/sample.json": {Data: []byte(`{"layouts":[
+			{"label":"Picture","content":"before ![one](a.png) between ![two](missing.png) after"},
+			{"label":"Picture","content":"before ![one](a.png) between ![two](b.png) after"}
+		]}`)},
+		"sample/images/a.png": {Data: []byte("a")},
+		"sample/images/b.png": {Data: []byte("b")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buf.Bytes(), media.NewBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ layout, text, image string }{
+		{"figure", "before one", "YQ=="},
+		{"text", " between two after", ""},
+		{"figure", "before one", "YQ=="},
+		{"figure", " between two after", "Yg=="},
+	}
+	if len(result.JSON) != len(want) {
+		t.Fatalf("got %d items, want %d: %#v", len(result.JSON), len(want), result.JSON)
+	}
+	for i, expected := range want {
+		item := result.JSON[i].ToMap()
+		image, _ := item["image"].(string)
+		if item["layout"] != expected.layout || item["text"] != expected.text || image != expected.image {
+			t.Errorf("item %d = %#v, want %+v", i, item, expected)
+		}
+	}
+}
+
+func TestMonkeyOCRv2ReservesZIPImageBeforeOpening(t *testing.T) {
+	var buf bytes.Buffer
+	archive := zip.NewWriter(&buf)
+	member, err := archive.CreateHeader(&zip.FileHeader{Name: "figure.png", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(member, "ab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opens := 0
+	reader.RegisterDecompressor(zip.Store, func(r io.Reader) io.ReadCloser { opens++; return io.NopCloser(r) })
+	images := map[string]*zip.File{"figure.png": reader.File[0]}
+	for _, limits := range []media.Limits{
+		{MaxImagesPerRun: 1, MaxBytesPerRun: 10, ImageMaxBytes: 10},
+		{MaxImagesPerRun: 3, MaxBytesPerRun: 3, ImageMaxBytes: 10},
+	} {
+		opens = 0
+		budget := media.NewBudgetWithLimits(limits)
+		for _, want := range []string{"YWI=", ""} {
+			image := monkeyOCRv2EmbeddedImage("figure.png", images, budget)
+			if image != want {
+				t.Fatalf("image = %q, want %q", image, want)
+			}
+		}
+		if opens != 1 || len(budget.Warnings()) != 1 {
+			t.Fatalf("opened %d times, warnings %v", opens, budget.Warnings())
+		}
 	}
 }

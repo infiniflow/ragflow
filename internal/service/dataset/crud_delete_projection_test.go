@@ -80,9 +80,21 @@ func TestDeleteDatasetProjectsDocumentColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDatasetUpdateService(t).deleteDataset(t.Context(), kb); err != nil {
+	svc := testDatasetUpdateService(t)
+	plan, err := svc.DeleteDatasetTx(t.Context(), captureDB, kb)
+	if err != nil {
 		t.Fatalf("delete dataset: %v", err)
 	}
+	if plan.KBID != "kb-1" || plan.TenantID != "tenant-1" {
+		t.Errorf("cleanup plan identity = %+v, want kb-1/tenant-1", plan)
+	}
+	if len(plan.DocLocations) != 1 || plan.DocLocations[0] != "tracked" {
+		t.Errorf("cleanup plan locations = %v, want [tracked]", plan.DocLocations)
+	}
+	if len(plan.DocIDs) != 1 || plan.DocIDs[0] != "doc-1" {
+		t.Errorf("cleanup plan docIDs = %v, want [doc-1]", plan.DocIDs)
+	}
+	svc.CleanupDatasetExternal(t.Context(), plan)
 
 	// Locate the SELECT issued against the document table.
 	var docSQL string

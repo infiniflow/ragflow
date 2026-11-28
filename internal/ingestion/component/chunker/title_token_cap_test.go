@@ -796,7 +796,7 @@ func TestTitleChunkerParam_ChunkTokenCapValidate(t *testing.T) {
 		cap int
 		ok  bool
 	}{
-		{0, true},     // disabled
+		{0, false},    // disabled is no longer an accepted title cap
 		{50, false},   // below 128
 		{127, false},  // below 128
 		{128, true},   // lower bound

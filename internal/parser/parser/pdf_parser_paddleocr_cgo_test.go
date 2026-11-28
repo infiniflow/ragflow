@@ -44,6 +44,24 @@ func TestPaddleOCRPDFResultPageGeometry(t *testing.T) {
 	}
 }
 
+// Normalized boxes land in PDF points of their own page: page 3 of the
+// fixture is 300x400 points. OCR dimensions with another aspect ratio
+// (1000x1000) do not drop the geometry of a Normalized page.
+func TestPaddleOCRPDFResultNormalizedPageGeometry(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 2, Normalized: true, Width: 1000, Height: 1000, Blocks: []models.OCRBlock{{Text: "body", Label: "text", BBox: []float64{0.25, 0.5, 0.75, 0.75}}}}}}
+	result := OCRPDFResult(t.Context(), "Nace", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 1 || strings.Contains(strings.Join(result.Warnings, "\n"), "aspect ratio") {
+		t.Fatalf("result=%+v", result)
+	}
+	if got := result.JSON[0].ToMap()["positions"]; !reflect.DeepEqual(got, [][]any{{3, float64(75), float64(225), float64(200), float64(300)}}) {
+		t.Fatalf("positions=%v", got)
+	}
+}
+
 func TestPaddleOCRPDFResultLocatesUnstructuredTableText(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {
@@ -208,6 +226,29 @@ func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
 		gotText, _ := item["text"].(string)
 		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText || item["page_number"] != 1 {
 			t.Fatalf("item %d = %v", i, item)
+		}
+	}
+}
+
+// A response may list the same page twice at different raster sizes. Each
+// entry's blocks are scaled by that entry's raster, not by the last one seen.
+func TestOCRPDFResultScalesRepeatedPageByItsOwnRaster(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{
+		{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Text: "first pass", Label: "text", BBox: []float64{174, 146, 1015, 240}}}},
+		{Index: 0, Width: 2382, Height: 3368, Blocks: []models.OCRBlock{{Text: "second pass", Label: "text", BBox: []float64{348, 292, 2030, 480}}}},
+	}}
+	result := OCRPDFResult(t.Context(), "MiniCPM-OCR", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	want := [][]any{{1, float64(87), 507.5, float64(73), float64(120)}}
+	for i, item := range result.JSON {
+		if got := item.ToMap()["_pdf_positions"]; !reflect.DeepEqual(got, want) {
+			t.Fatalf("item %d positions = %v, want %v (the same region at either raster size)", i, got, want)
 		}
 	}
 }

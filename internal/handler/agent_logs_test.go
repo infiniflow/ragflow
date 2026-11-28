@@ -149,7 +149,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(miniredisDebugStore{rdb: rdb}).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		})
 
@@ -293,7 +293,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	}
 
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		})
 
@@ -335,6 +335,89 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	}
 }
 
+// TestGetAgentLogs_MergesSeparateResultPayload locks the read-side half of the
+// split storage contract: the timeline key holds a short completion message
+// and the result key holds the complete END output plus the result DSL.
+// GetAgentLogs must merge both back into the END marker so the front-end sees
+// the original shape.
+func TestGetAgentLogs_MergesSeparateResultPayload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := t.Context()
+
+	db := setupHandlerAgentsTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
+	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	const messageID = "msg-merged"
+	timeline := `[` +
+		`{"component_id":"File","trace":[{"progress":1,"message":"File Done","datetime":"10:00:00","timestamp":1.0,"elapsed_time":0}]},` +
+		`{"component_id":"END","trace":[{"progress":1,"message":"Debug run completed","datetime":"10:00:01","timestamp":2.0,"elapsed_time":1.0}]}` +
+		`]`
+	resultPayload := `{"message":"{\"ok\":true}","dsl":{"components":{"File":{"obj":{"component_name":"File"}}}}}`
+	if err = rdb.Set(ctx, task.DebugLogKey("c1", messageID), timeline, 0).Err(); err != nil {
+		t.Fatalf("seed timeline: %v", err)
+	}
+	if err := rdb.Set(ctx, task.DebugResultKey("c1", messageID), resultPayload, 0).Err(); err != nil {
+		t.Fatalf("seed result payload: %v", err)
+	}
+
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
+			return rdb.Get(ctx, key).Result()
+		})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+	c.Request = c.Request.WithContext(ctx)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "message_id", Value: messageID},
+	}
+	h.GetAgentLogs(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, w.Body.String())
+	}
+	dataRaw, _ := json.Marshal(resp["data"])
+	var arr []map[string]interface{}
+	if err := json.Unmarshal(dataRaw, &arr); err != nil {
+		t.Fatalf("data not array: %v body=%s", err, string(dataRaw))
+	}
+	if len(arr) == 0 || arr[len(arr)-1]["component_id"] != "END" {
+		t.Fatalf("END marker missing after merge: %s", string(dataRaw))
+	}
+	trace := arr[len(arr)-1]["trace"].([]interface{})[0].(map[string]interface{})
+	if trace["message"] != `{"ok":true}` {
+		t.Errorf("merged END message=%v want the complete result output", trace["message"])
+	}
+	dsl, ok := trace["dsl"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("merged END dsl missing: %s", string(dataRaw))
+	}
+	components, _ := dsl["components"].(map[string]interface{})
+	if _, exists := components["File"]; !exists {
+		t.Errorf("merged dsl.components missing File: %s", string(dataRaw))
+	}
+}
+
 // capturedStore is an in-memory task.DebugLogStore used to assert that
 // runCanvasPipelineDebug actually wrote the debug log array under the expected key.
 type capturedStore struct {
@@ -346,7 +429,7 @@ func TestPersistAgentToolInvocations_UsesAgentNodeAndExistingLogShape(t *testing
 	store := &capturedStore{}
 	h := &AgentHandler{
 		redisStore: store,
-		redisGet: func(key string) (string, error) {
+		redisGet: func(_ context.Context, key string) (string, error) {
 			value, ok := store.Get(t.Context(), key)
 			if !ok {
 				return "", errors.New("missing")
@@ -674,7 +757,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	// production where both hit one Redis.
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(miniredisDebugStore{rdb: rdb}).
-		WithRedisGetter(func(key string) (string, error) {
+		WithRedisGetter(func(_ context.Context, key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		}).
 		WithNewExecutor(func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {

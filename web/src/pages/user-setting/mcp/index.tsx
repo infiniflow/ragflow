@@ -168,8 +168,12 @@ export default function McpServer() {
                 <Download className="size-3.5" />
                 {t('mcp.import')}
               </Button>
-              <Button onClick={showEditModal('')}>
-                <Plus /> {t('mcp.addMCP')}
+              <Button
+                size="icon"
+                onClick={showEditModal('')}
+                aria-label={t('mcp.addMCP')}
+              >
+                <Plus />
               </Button>
             </McpToolbarGuard>
           </div>

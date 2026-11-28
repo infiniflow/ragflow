@@ -14,28 +14,17 @@
 //  limitations under the License.
 //
 
-// JSONParser handles .json, .jsonl, and .ldjson files. It detects
-// the payload shape:
-//
-//   - JSON array: each element becomes one item.
-//   - Single JSON object: emitted as one item.
-//   - JSONL (newline-delimited JSON): each non-empty line is
-//     independently parsed; lines that fail to parse are skipped
-//     with a warning — matching the Python JsonParser behaviour.
-//
-// For JSON objects, the parser serialises the full object into a
-// `text` field so the downstream chunker receives a readable
-// representation. Arrays of objects emit one item per element.
+// JSONParser handles JSON, JSON Lines, and Docling document exports.
 
 package parser
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -53,39 +42,43 @@ func (p *JSONParser) String() string {
 	return "JSONParser"
 }
 
-// ParseWithResult implements ParseResultProducer. It detects the JSON
-// shape (array, single object, or line-delimited) and emits one JSON
-// item per logical record, with {text, doc_type_kwd:"text"}.
+// ParseWithResult reads JSON Lines one value per line, and detects the shape
+// of other JSON input before building text items.
 func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	decoded, encName := charset.DecodeToUTF8(data, "application/json")
+	file := map[string]any{
+		"name":     filename,
+		"size":     len(data),
+		"encoding": encName,
+	}
 	text := string(bytes.TrimSpace(decoded))
 	if text == "" {
 		return ParseResult{
-			File: map[string]any{
-				"name":     filename,
-				"size":     len(data),
-				"encoding": encName,
-			},
+			File: file,
 			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
-	items := parseJSONContent(text)
+	var items []map[string]any
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".jsonl", ".ldjson":
+		// A line can hold any JSON value, including an array or scalar.
+		items = parseJSONLines(text)
+	}
+	if items == nil {
+		items = parseJSONContent(text, file)
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		File: map[string]any{
-			"name":     filename,
-			"size":     len(data),
-			"encoding": encName,
-		},
+		File: file,
 		JSON: MapsToItems(items),
 	}
 }
 
 // parseJSONContent detects the JSON shape and dispatches.
-func parseJSONContent(text string) []map[string]any {
+func parseJSONContent(text string, file map[string]any) []map[string]any {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil
@@ -117,6 +110,12 @@ func parseJSONContent(text string) []map[string]any {
 		if !ok {
 			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
+		if items, ok := parseDoclingJSONItems(obj); ok {
+			if pageCount := doclingPageCount([]doclingDocument{{JSONContent: obj}}, 0); pageCount <= doclingMaxSourcePageCount {
+				file["page_count"] = pageCount
+			}
+			return items
+		}
 		return singleObjectItems(obj)
 	}
 
@@ -127,9 +126,8 @@ func parseJSONContent(text string) []map[string]any {
 // isJSONL returns true when the content looks like newline-delimited
 // JSON (multiple lines each starting with '{').
 func isJSONL(text string) bool {
-	lines := strings.Split(text, "\n")
 	objCount := 0
-	for _, line := range lines {
+	for line := range strings.Lines(text) {
 		t := strings.TrimSpace(line)
 		if t == "" {
 			continue
@@ -203,10 +201,8 @@ func singleObjectItems(obj map[string]any) []map[string]any {
 // independently unmarshalled; lines that fail to parse are skipped.
 func parseJSONLines(text string) []map[string]any {
 	var items []map[string]any
-	scanner := bufio.NewScanner(strings.NewReader(text))
-	scanner.Buffer(nil, 10*1024*1024) // 10 MB max line
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for line := range strings.Lines(text) {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}

@@ -1,4 +1,5 @@
 import { DynamicForm } from '@/components/dynamic-form';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
@@ -11,7 +12,7 @@ import { IMemory } from '@/pages/memories/interface';
 import { showPermissionField } from '@/ee/constants/feature-flags';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { FieldValues, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import {
@@ -26,6 +27,10 @@ import {
   useRevalidatePersistedModels,
 } from './memory-setting-hooks';
 import { MemorySettingProvider } from './memory-setting-context';
+import {
+  canManageMemoryConfig,
+  useCanWriteMemoryRole,
+} from '@/ee/pages/memories/memory-dropdown-guard';
 
 export default function MemoryMessage() {
   const { t } = useTranslation();
@@ -45,6 +50,9 @@ export default function MemoryMessage() {
     } as unknown as IMemory,
   });
   const { onMemoryRenameOk, loading } = useUpdateMemoryConfig();
+  const hasRoleWrite = useCanWriteMemoryRole(data?.tenant_id ?? '');
+  const canEditConfig =
+    hasRoleWrite && canManageMemoryConfig(data?.operator_permission ?? 0);
 
   useEffect(() => {
     form.reset({
@@ -78,57 +86,65 @@ export default function MemoryMessage() {
   const onSubmit = (data: IMemory) => {
     onMemoryRenameOk(data);
   };
+
+  const handleReset = () => {
+    form.reset();
+  };
+
+  const handleSavingSubmit = (value: FieldValues) => {
+    onSubmit(value as IMemory);
+  };
+
+  const memoryActions = canEditConfig ? (
+    <>
+      <Button
+        type="reset"
+        className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
+        onClick={handleReset}
+      >
+        {t('knowledgeConfiguration.cancel')}
+      </Button>
+      <DynamicForm.SavingButton
+        submitLoading={loading}
+        submitFunc={handleSavingSubmit}
+      ></DynamicForm.SavingButton>
+    </>
+  ) : undefined;
+
   return (
-    <section className="h-full flex flex-col">
-      <TopTitle
-        title={t('knowledgeDetails.configuration')}
-        description={t('memory.config.titleDescription')}
-      ></TopTitle>
-      <div className="flex gap-14 flex-1 min-h-0">
-        <MemorySettingProvider data={data}>
-          <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-            <ModelResourceAccessUserIdContext.Provider
-              value={memoryConfigLoading ? null : (data?.user_id ?? null)}
+    <MemorySettingProvider data={data}>
+      <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
+        <ModelResourceAccessUserIdContext.Provider
+          value={memoryConfigLoading ? null : (data?.user_id ?? null)}
+        >
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(() => {})}
+              className="flex min-h-0 w-full flex-1 flex-col"
             >
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(() => {})}
-                  className="space-y-6 "
-                >
-                  <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
-                    <section className="space-y-5 text-text-secondary !space-y-10">
-                      <div className="text-base font-medium text-text-primary">
-                        {t('knowledgeConfiguration.baseInfo')}
-                      </div>
-                      <BasicInfo></BasicInfo>
-                      <Divider />
-                      <MemoryModelForm />
-                      <AdvancedSettingsForm />
-                    </section>
+              <SettingsFormLayout
+                header={
+                  <TopTitle
+                    title={t('knowledgeDetails.configuration')}
+                    description={t('memory.config.titleDescription')}
+                  ></TopTitle>
+                }
+                actions={memoryActions}
+              >
+                <section className="space-y-5 text-text-secondary !space-y-10">
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.baseInfo')}
                   </div>
-                  <div className="text-right items-center flex justify-end gap-3 w-[768px]">
-                    <Button
-                      type="reset"
-                      className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
-                      onClick={() => {
-                        form.reset();
-                      }}
-                    >
-                      {t('knowledgeConfiguration.cancel')}
-                    </Button>
-                    <DynamicForm.SavingButton
-                      submitLoading={loading}
-                      submitFunc={(value) => {
-                        onSubmit(value as IMemory);
-                      }}
-                    ></DynamicForm.SavingButton>
-                  </div>
-                </form>
-              </Form>
-            </ModelResourceAccessUserIdContext.Provider>
-          </ModelResourceTenantIdContext.Provider>
-        </MemorySettingProvider>
-      </div>
-    </section>
+                  <BasicInfo readOnly={!canEditConfig}></BasicInfo>
+                  <Divider />
+                  <MemoryModelForm readOnly={!canEditConfig} />
+                  <AdvancedSettingsForm readOnly={!canEditConfig} />
+                </section>
+              </SettingsFormLayout>
+            </form>
+          </Form>
+        </ModelResourceAccessUserIdContext.Provider>
+      </ModelResourceTenantIdContext.Provider>
+    </MemorySettingProvider>
   );
 }

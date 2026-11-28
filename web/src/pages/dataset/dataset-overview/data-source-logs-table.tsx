@@ -11,6 +11,7 @@ import {
 import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { IDataSourceLog } from '@/pages/user-setting/data-source/interface';
+import { useListDataSource } from '@/pages/user-setting/data-source/hooks';
 import { getDataSourceLogsTableColumns } from '@/pages/user-setting/data-source/log-columns';
 import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import {
@@ -24,7 +25,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { PaginatedTableLayout } from '@/components/paginated-table-layout';
 import { LogTabs } from './dataset-common';
 import { DatasetOverviewKeys } from './utils';
 
@@ -41,6 +42,17 @@ const isScheduledRow = (log: IDataSourceLog) => {
 const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
   const { t: tDatasetOverview } = useTranslation('datasetOverview');
   const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  // Resolve the syncing data source's name from its connector_id: the sync log
+  // rows only carry connector_id, so join against the connector list.
+  const { list: connectors } = useListDataSource();
+  const sourceNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    (connectors || []).forEach((connector) => {
+      map[connector.id] = connector.name;
+    });
+    return map;
+  }, [connectors]);
 
   const { data } = useQuery<{ logs: IDataSourceLog[]; total: number }>({
     queryKey: DatasetOverviewKeys.logs(
@@ -83,8 +95,9 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
       getDataSourceLogsTableColumns({
         now: Date.now(),
         showDatasetColumn: false,
+        getSourceName: (connectorId) => sourceNameMap[connectorId],
       }),
-    [],
+    [sourceNameMap],
   );
 
   const currentPagination = useMemo(
@@ -110,7 +123,7 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
   });
 
   return (
-    <DatasetTableLayout
+    <PaginatedTableLayout
       tableClassName="table-fixed"
       pagination={
         <RAGFlowPagination
@@ -160,7 +173,7 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
           </TableRow>
         )}
       </TableBody>
-    </DatasetTableLayout>
+    </PaginatedTableLayout>
   );
 };
 

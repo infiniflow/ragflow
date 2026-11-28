@@ -197,12 +197,16 @@ func TestConversationTurnMessagesSeedsOnce(t *testing.T) {
 	}
 }
 
-// lastAssistant reads the recovery path straight out of the session: the
-// newest assistant message that carries a cited answer, even when later turns
-// were pure narration.
+// lastAssistant reads the recovery ladder straight out of the session: the
+// newest assistant message that carries an answer, even when later turns were
+// pure narration.
 func TestConversationLastAssistant(t *testing.T) {
 	conv := newTestConversation()
-	const deliverable = "The pass holds 14 people.\n\nchunk_id: abc123"
+	const deliverable = "## Reasoning Chain\n- Clue: b\n\nFinal Answer: **14 人**"
+	// The predicate is local on purpose: this test exercises the
+	// conversation's lastAssistant walk, not any particular answer-line
+	// contract.
+	carriesAnswer := func(s string) bool { return strings.Contains(s, "Final Answer:") }
 	agent := &scriptedSessionAgent{out: func(turn int) string {
 		if turn == 1 {
 			return deliverable
@@ -218,13 +222,13 @@ func TestConversationLastAssistant(t *testing.T) {
 
 	ctx := context.Background()
 	answer := func(m *schema.Message) bool {
-		return strings.TrimSpace(m.Content) != "" && strings.Contains(m.Content, "chunk_id:")
+		return strings.TrimSpace(m.Content) != "" && carriesAnswer(m.Content)
 	}
 	if got := conv.lastAssistant(ctx, answer); got != deliverable {
 		t.Errorf("lastAssistant(answer) = %q, want the earlier deliverable", got)
 	}
 	substantive := func(m *schema.Message) bool { return strings.TrimSpace(m.Content) != "" }
-	if got := conv.lastAssistant(ctx, substantive); strings.Contains(got, "chunk_id:") || got == "" {
+	if got := conv.lastAssistant(ctx, substantive); carriesAnswer(got) || got == "" {
 		t.Errorf("lastAssistant(substantive) = %q, want the narration tail", got)
 	}
 }

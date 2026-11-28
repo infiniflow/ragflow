@@ -19,12 +19,14 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/utility"
 
 	"github.com/gin-gonic/gin"
 )
@@ -56,5 +58,42 @@ func TestJSONInternalErrorRedactsOriginalError(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), cause.Error()) {
 		t.Fatalf("response exposed original error: %s", recorder.Body.String())
+	}
+}
+
+func TestFeatureDisabledResponses(t *testing.T) {
+	cause := fmt.Errorf("WPS is not enabled: %w", utility.ErrFeatureDisabled)
+	for name, respond := range map[string]func(*gin.Context, error){
+		"internal error": jsonInternalError,
+		"debug parse":    func(c *gin.Context, err error) { respondWithDebugResult(c, nil, err) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/parse", nil)
+			respond(c, fmt.Errorf("parse upload: %w", cause))
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			var body struct {
+				Code    common.ErrorCode `json:"code"`
+				Message string           `json:"message"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != common.CodeForbidden || !strings.Contains(body.Message, "WPS is not enabled") {
+				t.Fatalf("body=%+v", body)
+			}
+		})
+	}
+}
+
+func TestOpenAICompatFeatureDisabled(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	writeOpenAICompatError(c, fmt.Errorf("parse upload: %w", utility.ErrFeatureDisabled))
+	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), "permission_error") || !strings.Contains(recorder.Body.String(), utility.ErrFeatureDisabled.Error()) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes as RouterRoutes } from 'react-router';
-import { SideBar } from './index';
+import { DatasetSidebar } from './index';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -19,7 +19,7 @@ function renderSidebar(onMenuSelect: jest.Mock, onCollapse: jest.Mock) {
         <Route
           path="/dataset/:section/:id"
           element={
-            <SideBar
+            <DatasetSidebar
               dataset={Dataset}
               onCollapse={onCollapse}
               onMenuSelect={onMenuSelect}
@@ -31,7 +31,7 @@ function renderSidebar(onMenuSelect: jest.Mock, onCollapse: jest.Mock) {
   );
 }
 
-describe('SideBar', () => {
+describe('DatasetSidebar', () => {
   it.each([
     'knowledgeDetails.subbarFiles',
     'knowledgeDetails.testing',

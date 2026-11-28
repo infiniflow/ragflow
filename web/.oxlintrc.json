@@ -26,5 +26,33 @@
     "react/no-unescaped-entities": "warn",
     "no-console": ["warn", { "allow": ["warn", "error"] }],
     "no-unused-vars": ["warn", { "fix": { "imports": "safe-fix" } }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/pages/**/*.tsx"],
+      "rules": {
+        "no-restricted-imports": [
+          "warn",
+          {
+            "name": "@/components/ui/select",
+            "message": "Use SelectWithSearch from @/components/originui/select-with-search for single-select controls."
+          },
+          {
+            "name": "@radix-ui/react-select",
+            "message": "Use SelectWithSearch from @/components/originui/select-with-search instead of building single-select controls with Radix Select."
+          },
+          {
+            "name": "@/components/ui/dropdown-menu",
+            "importNames": ["DropdownMenuRadioGroup", "DropdownMenuRadioItem"],
+            "message": "Use SelectWithSearch from @/components/originui/select-with-search for single-select dropdowns. Regular action menus are not restricted."
+          },
+          {
+            "name": "@radix-ui/react-dropdown-menu",
+            "importNames": ["RadioGroup", "RadioItem"],
+            "message": "Use SelectWithSearch from @/components/originui/select-with-search for single-select dropdowns. Regular action menus are not restricted."
+          }
+        ]
+      }
+    }
+  ]
 }

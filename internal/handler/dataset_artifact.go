@@ -78,18 +78,133 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 	return user, kb.TenantID, msg
 }
 
+func flattenSourceGroups(groups [][]string) []string {
+	ids := make([]string, 0)
+	for _, group := range groups {
+		ids = append(ids, group...)
+	}
+	return ids
+}
+
+func sourceIDsFromMap(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		ids := make([]string, 0, len(v))
+		for _, item := range v {
+			if id, ok := item.(string); ok {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	case string:
+		if v != "" {
+			return []string{v}
+		}
+	}
+	return nil
+}
+
+func (h *DatasetArtifactHandler) filterStructureSources(c *gin.Context, datasetID string, graph *service.DatasetStructureGraphResponse) error {
+	if graph == nil {
+		return nil
+	}
+	graph.TotalEntities, graph.TotalRelations = 0, 0
+	graph.ReturnedEntities, graph.ReturnedRelations = 0, 0
+	templates := graph.Templates[:0]
+	for ti := range graph.Templates {
+		template := &graph.Templates[ti]
+		groups := make([][]string, len(template.Entities))
+		for i := range template.Entities {
+			groups[i] = sourceIDsFromMap(template.Entities[i]["source_doc_ids"])
+		}
+		visible, err := readableArtifactSources(c, datasetID, groups)
+		if err != nil {
+			return err
+		}
+		visibleNames := make(map[string]struct{}, len(template.Entities))
+		entities := template.Entities[:0]
+		for i, node := range template.Entities {
+			if i >= len(visible) || !visible[i] {
+				continue
+			}
+			for _, key := range []string{"name", "id", "slug"} {
+				if name, ok := node[key].(string); ok && name != "" {
+					visibleNames[name] = struct{}{}
+				}
+			}
+			delete(node, "source_doc_ids")
+			entities = append(entities, node)
+		}
+		template.Entities = entities
+		relationGroups := make([][]string, len(template.Relations))
+		for i := range template.Relations {
+			relationGroups[i] = sourceIDsFromMap(template.Relations[i]["source_doc_ids"])
+		}
+		relationVisible, err := readableArtifactSources(c, datasetID, relationGroups)
+		if err != nil {
+			return err
+		}
+		relations := template.Relations[:0]
+		for i, relation := range template.Relations {
+			if i >= len(relationVisible) || !relationVisible[i] {
+				continue
+			}
+			from, _ := relation["from"].(string)
+			to, _ := relation["to"].(string)
+			if _, ok := visibleNames[from]; !ok {
+				continue
+			}
+			if _, ok := visibleNames[to]; !ok {
+				continue
+			}
+			delete(relation, "source_doc_ids")
+			relations = append(relations, relation)
+		}
+		template.Relations = relations
+		if len(entities) == 0 && len(relations) == 0 {
+			continue
+		}
+		templates = append(templates, *template)
+		graph.ReturnedEntities += len(entities)
+		graph.ReturnedRelations += len(relations)
+	}
+	graph.Templates = templates
+	graph.TotalEntities = graph.ReturnedEntities
+	graph.TotalRelations = graph.ReturnedRelations
+	return nil
+}
+
+func (h *DatasetArtifactHandler) filterDocumentStructureSources(c *gin.Context, datasetID string, graph *service.DocumentStructureGraphResponse) error {
+	if graph == nil {
+		return nil
+	}
+	filtered := &service.DatasetStructureGraphResponse{Templates: graph.Templates}
+	if err := h.filterStructureSources(c, datasetID, filtered); err != nil {
+		return err
+	}
+	graph.Templates = filtered.Templates
+	graph.TotalEntities = filtered.ReturnedEntities
+	graph.ReturnedEntities = filtered.ReturnedEntities
+	return nil
+}
+
 // AnyArtifact handles HEAD /artifacts — any wiki artifact present?
 func (h *DatasetArtifactHandler) AnyArtifact(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
-	has, err := h.svc.HasWiki(c.Request.Context(), tenantID, c.Param("dataset_id"))
+	items, _, err := h.svc.ListWikiPagesWithSourceAccess(c.Request.Context(), tenantID, c.Param("dataset_id"), "", "", "", 1, 1,
+		func(groups [][]string) ([]bool, error) {
+			return readableArtifactSources(c, c.Param("dataset_id"), groups)
+		})
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	if has {
+	if len(items) > 0 {
 		c.Status(http.StatusOK)
 	} else {
 		c.Status(http.StatusNotFound)
@@ -112,7 +227,8 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 		return
 	}
 
-	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize)
+	items, total, err := h.svc.ListWikiPagesWithSourceAccess(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize,
+		func(groups [][]string) ([]bool, error) { return readableArtifactSources(c, datasetID, groups) })
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -133,6 +249,18 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		return
 	}
 	datasetID := c.Param("dataset_id")
+	before, err := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, c.Param("page_type"), strings.TrimPrefix(c.Param("slug"), "/"))
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if before == nil {
+		common.RespondError(c, common.CodeNotFound, "page not found")
+		return
+	}
+	if !h.checkArtifactWrite(c, datasetID, before.SourceDocIDs) {
+		return
+	}
 	pageType := c.Param("page_type")
 	slug := strings.TrimPrefix(c.Param("slug"), "/")
 	var req struct {
@@ -153,13 +281,8 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	var oldContent string
 	canRecordAudit := false
 	if req.ContentMd != "" {
-		before, gerr := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug)
-		if gerr != nil {
-			common.Warn("failed to read wiki page before recording edit commit", zap.Error(gerr))
-		} else if before != nil {
-			oldContent = before.ContentMd
-			canRecordAudit = true
-		}
+		oldContent = before.ContentMd
+		canRecordAudit = true
 	}
 
 	detail, err := h.svc.UpdateWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug, req.ContentMd, req.Title, req.Outlinks)
@@ -202,7 +325,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 			"page_type_kwd":        pageType,
 			"kb_id":                datasetID,
 		}
-		commit, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
+		commit, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), dao.DB, file.PageEditCommitInput{
 			DatasetID:  datasetID,
 			Slug:       slug,
 			PageType:   pageType,
@@ -278,6 +401,16 @@ func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "page not found")
 		return
 	}
+	visible, err := readableArtifactSources(c, datasetID, [][]string{detail.SourceDocIDs})
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	if len(visible) == 0 || !visible[0] {
+		respondPermissionError(c, permission.ErrPermissionDenied, true)
+		return
+	}
+	detail.CanEdit = h.artifactWriteAllowed(c, datasetID, detail.SourceDocIDs)
 	common.RespondSuccess(c, detail, "success")
 }
 
@@ -289,11 +422,51 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	keywords := strings.TrimSpace(c.Query("keywords"))
-	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID, keywords)
+	pages := make([]service.WikiPageItem, 0)
+	for _, pageType := range []string{"concept", "entity", "topic"} {
+		visiblePages, _, err := h.svc.ListWikiPagesWithSourceAccess(c.Request.Context(), tenantID, datasetID, pageType, "", "", 1, 1000000,
+			func(groups [][]string) ([]bool, error) { return readableArtifactSources(c, datasetID, groups) })
+		if err != nil {
+			common.RespondError(c, common.CodeDataError, err.Error())
+			return
+		}
+		pages = append(pages, visiblePages...)
+	}
+	counts := make(map[string]int)
+	for _, page := range pages {
+		if page.Topic != "" {
+			counts[page.Topic]++
+		}
+	}
+	orderedTopics, _, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID, "")
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
+	items := make([]service.WikiTopicItem, 0, len(counts))
+	lowerKeyword := strings.ToLower(keywords)
+	for _, item := range orderedTopics {
+		count, exists := counts[item.Topic]
+		if !exists {
+			continue
+		}
+		item.PageCount = count
+		topic := item.Topic
+		if keywords != "" && !strings.Contains(strings.ToLower(topic), lowerKeyword) && !strings.Contains(strings.ToLower(item.Title), lowerKeyword) {
+			matchedPage := false
+			for _, page := range pages {
+				if page.Topic == topic && (strings.Contains(strings.ToLower(page.Title), lowerKeyword) || strings.Contains(strings.ToLower(page.Slug), lowerKeyword) || strings.Contains(strings.ToLower(page.Summary), lowerKeyword)) {
+					matchedPage = true
+					break
+				}
+			}
+			if !matchedPage {
+				continue
+			}
+		}
+		items = append(items, item)
+	}
+	total := int64(len(items))
 	// Python's list_wiki_topics returns {total, items}; align the Go port so the
 	// shared frontend (which reads data.items) stays compatible.
 	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
@@ -311,6 +484,40 @@ func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
+	all := append([]string{}, alt.RemovedDocIDs...)
+	all = append(all, alt.NewlyUploadedDocIDs...)
+	all = append(all, alt.InvolvedDocIDs...)
+	all = append(all, alt.EligibleDocIDs...)
+	groups := make([][]string, len(all))
+	for i, id := range all {
+		groups[i] = []string{id}
+	}
+	visible, err := readableArtifactSources(c, datasetID, groups)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	readable := make(map[string]struct{})
+	for i, id := range all {
+		if i < len(visible) && visible[i] {
+			readable[id] = struct{}{}
+		}
+	}
+	filterIDs := func(ids []string) []string {
+		filtered := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if _, ok := readable[id]; ok {
+				filtered = append(filtered, id)
+			}
+		}
+		return filtered
+	}
+	alt.RemovedDocIDs = filterIDs(alt.RemovedDocIDs)
+	alt.NewlyUploadedDocIDs = filterIDs(alt.NewlyUploadedDocIDs)
+	alt.InvolvedDocIDs = filterIDs(alt.InvolvedDocIDs)
+	alt.EligibleDocIDs = filterIDs(alt.EligibleDocIDs)
+	alt.Removed = len(alt.RemovedDocIDs)
+	alt.NewlyUploaded = len(alt.NewlyUploadedDocIDs)
 	common.RespondSuccess(c, alt, "success")
 }
 
@@ -346,6 +553,53 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
+	entityGroups := make([][]string, len(graph.Entities))
+	for i := range graph.Entities {
+		entityGroups[i] = graph.Entities[i].SourceDocIDs
+	}
+	entityVisible, err := readableArtifactSources(c, datasetID, entityGroups)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	visibleSlugs := make(map[string]struct{}, len(graph.Entities))
+	entities := graph.Entities[:0]
+	for i, item := range graph.Entities {
+		if i >= len(entityVisible) || !entityVisible[i] {
+			continue
+		}
+		visibleSlugs[item.Slug] = struct{}{}
+		item.SourceDocIDs = nil
+		entities = append(entities, item)
+	}
+	graph.Entities = entities
+	relationGroups := make([][]string, len(graph.Relations))
+	for i := range graph.Relations {
+		relationGroups[i] = graph.Relations[i].SourceDocIDs
+	}
+	relationVisible, err := readableArtifactSources(c, datasetID, relationGroups)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	relations := graph.Relations[:0]
+	for i, item := range graph.Relations {
+		if i >= len(relationVisible) || !relationVisible[i] {
+			continue
+		}
+		if _, ok := visibleSlugs[item.From]; !ok {
+			continue
+		}
+		if _, ok := visibleSlugs[item.To]; !ok {
+			continue
+		}
+		relations = append(relations, service.WikiGraphRelation{From: item.From, To: item.To})
+	}
+	graph.Relations = relations
+	graph.TotalEntities = len(graph.Entities)
+	graph.TotalRelations = len(graph.Relations)
+	graph.ReturnedEntities = len(graph.Entities)
+	graph.ReturnedRelations = len(graph.Relations)
 	common.RespondSuccess(c, graph, "success")
 }
 
@@ -380,6 +634,10 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 		}
 		return
 	}
+	if err := h.filterStructureSources(c, datasetID, resp); err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
 	common.RespondSuccess(c, resp, "success")
 }
 
@@ -389,10 +647,22 @@ func (h *DatasetArtifactHandler) AnySkill(c *gin.Context) {
 	if tenantID == "" {
 		return
 	}
-	has, err := h.svc.HasSkill(c.Request.Context(), tenantID, c.Param("dataset_id"))
+	groups, err := h.svc.SkillSourceDocGroups(c.Request.Context(), tenantID, c.Param("dataset_id"), "")
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
+	}
+	visible, err := readableArtifactSources(c, c.Param("dataset_id"), groups)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	has := false
+	for _, allowed := range visible {
+		if allowed {
+			has = true
+			break
+		}
 	}
 	if has {
 		c.Status(http.StatusOK)
@@ -449,6 +719,23 @@ func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
+	groups := make([][]string, len(items))
+	for i := range items {
+		groups[i] = items[i].SourceDocIDs
+	}
+	visible, err := readableArtifactSources(c, c.Param("dataset_id"), groups)
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	filtered := items[:0]
+	for i, item := range items {
+		if i < len(visible) && visible[i] {
+			filtered = append(filtered, item)
+		}
+	}
+	items = filtered
+	total = int64(len(items))
 	common.RespondSuccess(c, gin.H{"total": total, "tree": items}, "success")
 }
 
@@ -461,7 +748,20 @@ func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
 	if tenantID == "" {
 		return
 	}
-	n, err := h.svc.DeleteSkills(c.Request.Context(), tenantID, c.Param("dataset_id"), "")
+	datasetID := c.Param("dataset_id")
+	groups, err := h.svc.SkillSourceDocGroups(c.Request.Context(), tenantID, datasetID, "")
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if len(groups) == 0 {
+		if !checkDatasetArtifactWrite(c, datasetID) {
+			return
+		}
+	} else if !h.checkArtifactWrite(c, datasetID, flattenSourceGroups(groups)) {
+		return
+	}
+	n, err := h.svc.DeleteSkills(c.Request.Context(), tenantID, datasetID, "")
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -484,6 +784,15 @@ func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "skill not found")
 		return
 	}
+	visible, err := readableArtifactSources(c, c.Param("dataset_id"), [][]string{detail.SourceDocIDs})
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
+	}
+	if len(visible) == 0 || !visible[0] {
+		respondPermissionError(c, permission.ErrPermissionDenied, true)
+		return
+	}
 	common.RespondSuccess(c, detail, "success")
 }
 
@@ -496,7 +805,20 @@ func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
 	if tenantID == "" {
 		return
 	}
-	n, err := h.svc.DeleteSkills(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("skill_kwd"))
+	datasetID := c.Param("dataset_id")
+	groups, err := h.svc.SkillSourceDocGroups(c.Request.Context(), tenantID, datasetID, c.Param("skill_kwd"))
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if len(groups) == 0 {
+		if !checkDatasetArtifactWrite(c, datasetID) {
+			return
+		}
+	} else if !h.checkArtifactWrite(c, datasetID, flattenSourceGroups(groups)) {
+		return
+	}
+	n, err := h.svc.DeleteSkills(c.Request.Context(), tenantID, datasetID, c.Param("skill_kwd"))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -528,6 +850,10 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	}
 	if resp == nil {
 		resp = &service.DocumentStructureGraphResponse{Templates: []service.DocumentStructureGraphTemplate{}}
+	}
+	if err := h.filterDocumentStructureSources(c, datasetID, resp); err != nil {
+		common.RespondError(c, common.CodeServerError, "failed to validate artifact source permissions")
+		return
 	}
 	common.RespondSuccess(c, resp, "success")
 }
@@ -584,13 +910,27 @@ func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
 	common.StartOperationLog(c, "delete_dataset_document_graph")
 	defer common.FinishOperationLog(c)
 
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
+	_, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
 		return
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
-	n, err := h.svc.DeleteDocumentGraph(c.Request.Context(), tenantID, datasetID, documentID)
+	kb, err := h.datasetSvc.GetKnowledgebaseByID(c.Request.Context(), datasetID)
+	if err != nil || kb == nil {
+		if err != nil && !dao.IsNotFoundErr(err) {
+			common.RespondError(c, common.CodeServerError, "failed to resolve dataset")
+		} else {
+			common.RespondError(c, common.CodeNotFound, "dataset not found")
+		}
+		return
+	}
+	if err := checkDocumentGraphWrite(c, documentID); err != nil {
+		respondPermissionError(c, err, true)
+		return
+	}
+	n, err := h.svc.DeleteDocumentGraph(c.Request.Context(), kb.TenantID, datasetID, documentID)
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return

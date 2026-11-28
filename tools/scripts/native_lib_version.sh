@@ -59,6 +59,16 @@ pdfium_static_version() {
     printf '%s\n' "7809"
 }
 
+# pcre2_static_version
+# pcre2 is the tokenizer's regex engine and the one native library neither
+# Linux nor macOS has to provision (the toolchain ships it) — Windows has no
+# system pcre2 at all, so the C++ build takes a static archive built from this
+# pinned release. Echoes the bare version (no "pcre2-" tag prefix) and returns 0.
+pcre2_static_version() {
+    # Single source of truth for the pcre2 release the Windows C++ build links.
+    printf '%s\n' "10.45"
+}
+
 # Give cgo immutable archive paths that change when any linked PDFium archive
 # changes, even under the same version. Keep these copies in the project's
 # writable cache so a pre-provisioned native dependency cache can be read-only.

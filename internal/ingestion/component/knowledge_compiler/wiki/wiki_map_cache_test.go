@@ -17,6 +17,8 @@ package wiki
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -58,6 +60,212 @@ func (s *memoryWikiMapVersionStore) PutWikiMapVersions(_ context.Context, versio
 type countingWikiMapChat struct {
 	mu    sync.Mutex
 	calls int
+}
+
+type claimRequestChat struct {
+	countingWikiMapChat
+	requests []common.ChatRequest
+}
+
+type claimGuidanceCacheStore struct {
+	memoryWikiMapVersionStore
+	activeStates map[string][]byte
+	activeReads  []string
+}
+
+func (s *claimGuidanceCacheStore) GetWikiMapActiveState(_ context.Context, tenantID, datasetID, key string) ([]byte, error) {
+	if tenantID != "tenant-1" || datasetID != "kb-1" {
+		return nil, fmt.Errorf("unexpected active-state scope: %s/%s", tenantID, datasetID)
+	}
+	s.activeReads = append(s.activeReads, key)
+	return s.activeStates[key], nil
+}
+
+func (s *claimGuidanceCacheStore) PutWikiMapActiveState(_ context.Context, state common.WikiMapActiveState) error {
+	if state.TenantID != "tenant-1" || state.DatasetID != "kb-1" || state.DocumentID != "doc-1" {
+		return fmt.Errorf("unexpected active-state scope: %s/%s/%s", state.TenantID, state.DatasetID, state.DocumentID)
+	}
+	s.activeStates[state.Key] = append([]byte(nil), state.Payload...)
+	return nil
+}
+
+func (c *claimRequestChat) Chat(ctx context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+	c.requests = append(c.requests, req)
+	return c.countingWikiMapChat.Chat(ctx, req)
+}
+
+// Cache fixtures use the old MAP fingerprint before canonical guidance was
+// read. The combined fixture includes the prior claim-only rendering version.
+// Only changed guidance needs a new request, then the result must be reusable.
+func TestVersionedMapRefreshesSavedGuidance(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		language  string
+		config    map[string]any
+		oldKey    string
+		oldActive string
+		wantCalls int
+		guidance  []string
+	}{
+		{
+			name: "canonical claim guidance", guidance: []string{"Extract audited financial claims.", "Use legal entity names."},
+			config: map[string]any{"claim": map[string]any{"fields": []any{map[string]any{
+				"statement": "Extract audited financial claims.", "subject": "Use legal entity names.",
+			}}}},
+			oldKey: "9c642c4dc3c80dca321f0d9e0bf3d73ada735e1d73e3f12a6031182b77e22aa9", wantCalls: 1,
+			oldActive: "e483b7cc26f82581f10a6a7d9b789cfd92d0718f236b0edb06a77fd090c2a6cb",
+		},
+		{
+			name: "no claim guidance", config: map[string]any{},
+			oldKey:    "e1a30f6aa9da75ae27839f4b561326cc5751c7bcb3e26c5997081ecc45ea673e",
+			oldActive: "2452ff89474f54b2b0fc137cba1e958fb1c99fb84f32e2a0032c8c4d8470e933",
+		},
+		{
+			name: "empty claim guidance", config: map[string]any{"claim": map[string]any{"fields": []any{}}},
+			oldKey:    "4c3e0f2f1926ad93402083427b3c99cc57a293854f2412445f17f7b2e86ee47f",
+			oldActive: "bd296f8dfc82e4ce3987c2dbcb48bdf1418506ef553333975cafdea396ce4b8d",
+		},
+		{
+			name:      "entity type guidance",
+			config:    map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": "An installed physical sensor.", "rule": "Keep its exact commissioning identifier."}}}},
+			oldKey:    "2aba3689af18d4f2826737da24e496006ff303813bb13379919c9b9f36bcd85e",
+			oldActive: "bb279aa92aa9b60d4bd6e3578b7fc8474232b16c18fd501fafeb0722b014d2e0",
+			wantCalls: 1,
+			guidance:  []string{"sensor", "An installed physical sensor.", "Keep its exact commissioning identifier."},
+		},
+		{
+			name:      "relation type guidance",
+			config:    map[string]any{"relation": map[string]any{"fields": []any{map[string]any{"type": "calibrates", "description": "Calibration performed on equipment.", "rule": "Direction is technician to sensor."}}}},
+			oldKey:    "4ebf5eb5310d51227137f1260e5178e03cc16ef12655887b8033f362ceebfe3a",
+			oldActive: "98d2ab4f5adf878341cf2f4de8f7767f111bd6524a2f5332aad0120128079c2d",
+			wantCalls: 1,
+			guidance:  []string{"calibrates", "Calibration performed on equipment.", "Direction is technician to sensor."},
+		},
+		{
+			name:      "type without optional guidance",
+			config:    map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": "", "rule": ""}}}},
+			oldKey:    "9ae6c8e69518e1f5b12c817ef506167b9b204616db3a04ec8509fb7640646762",
+			oldActive: "62abb1a62b7806e0604bfd28c58529ddb3ef04fce7d52289ab2f70ea78f899c5",
+			wantCalls: 1,
+			guidance:  []string{"sensor"},
+		},
+		{
+			name:      "empty type guidance",
+			config:    map[string]any{"entity": map[string]any{"fields": []any{}}, "relation": map[string]any{"fields": []any{}}},
+			oldKey:    "c0caf21eea57d8d8d1a3bd85d666c7d040450487aa440998bda60f84e1c50e2f",
+			oldActive: "0ac014733e54da6bf33670be9bcbafd1b0f2898b65266bb6b5cb9db27b07e9ee",
+			wantCalls: 0,
+			guidance:  []string{},
+		},
+		{
+			name:      "blank type retains defaults",
+			config:    map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "  ", "description": "ignored", "rule": "ignored"}}}},
+			oldKey:    "7fb96c2e0a8534a5adf4f84647b890f612580d69f8ece3a1314ce370b56f0524",
+			oldActive: "91d9b232e7b7f6e185289f7b2bc48d5857b573dd1922524256da58e3f36d7674",
+			wantCalls: 1,
+			guidance:  []string{},
+		},
+		{
+			name:      "combined claim and type guidance",
+			config:    map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": "Installed sensor", "rule": "Keep ID"}}}, "claim": map[string]any{"fields": []any{map[string]any{"statement": "Extract audited financial claims.", "subject": "Use legal entity names."}}}},
+			oldKey:    "ab22dc3331a2febbbccc5a84971159d79e5835049e519cdd739377288724cea1",
+			oldActive: "21fa972bf5c9c62a220644758767241c194ca88385a94041f4f5b4f40cc93550",
+			wantCalls: 1,
+			guidance:  []string{"sensor", "Installed sensor", "Keep ID", "Extract audited financial claims.", "Use legal entity names."},
+		},
+		{
+			name: "existing v1 Chinese type guidance", language: "Chinese",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "b104b7f474c8c09cf9f8095bb03176e4bd3bdd2d2959dcf16c06bdf3f27d38fc", oldActive: "4182bced78ac95cf5fe0a5913bd37aa210cd286a3c5ed42dd3c880c7b9200bdd", wantCalls: 1,
+			guidance: []string{"Chinese sensor."},
+		},
+		{
+			name: "existing v1 zh type guidance", language: "zh",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "6405d7664430c02c4462a76c52e47b83aa762e6a2a5a2db72bd25887aba46b10", oldActive: "6c26634c23f8c1fdbaa937f3353b2b538fe248ff98c882670a44f1fb5a26aef1", wantCalls: 0,
+		},
+		{
+			name: "existing v1 en type guidance", language: "en",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "e18c502d1791c1a165ae7338a431b0a19da3aee241740e80397d8947329e2893", oldActive: "80f1a1d15b01bae259c0386d5d0f46395aa8722677cdeb09de6435135fc05aa2", wantCalls: 0,
+		},
+		{
+			name: "existing v1 custom-language type guidance", language: "custom-language",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "da72efcb958244bd99dd0a2ce33736381b687d49c390d0135aa3d9433a3a7d17", oldActive: "3beb8f2d2636be76758591d2157344a06632cc47390cb8dc57d93a52e0cee897", wantCalls: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			language := tc.language
+			if language == "" {
+				language = "English"
+			}
+			oldExtract := wikiExtract{Claims: []wikiClaim{{Statement: "cached without guidance", Subject: "Alpha", SourceChunkIDs: []string{"c1"}}}}
+			oldPayload, err := json.Marshal(oldExtract)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldActive, err := json.Marshal(wikiMapActiveSnapshot{Chunks: map[string]wikiMapActiveChunk{"c1": {Key: tc.oldKey, Extract: oldExtract}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := &claimGuidanceCacheStore{
+				memoryWikiMapVersionStore: memoryWikiMapVersionStore{payloads: map[string][]byte{tc.oldKey: oldPayload}},
+				activeStates:              map[string][]byte{tc.oldActive: oldActive},
+			}
+			chat := &claimRequestChat{}
+			newPipeline := func() *wikiPipeline {
+				return &wikiPipeline{
+					ctx: t.Context(), deps: common.Deps{Chat: chat, WikiMapVersions: store},
+					param: common.Param{TemplateID: "tpl-claim", Language: language, TemplateConfig: tc.config},
+					inputs: common.Inputs{
+						Chunks:          []common.Chunk{{ID: "c1", Text: "Alpha exists."}},
+						VariantSpecific: map[string]any{"parser_config": tc.config},
+					},
+					docID: "doc-1", tenantID: "tenant-1", datasetID: "kb-1", llmID: "llm-1",
+				}
+			}
+			first := newPipeline()
+			if err := first.runMap(); err != nil {
+				t.Fatal(err)
+			}
+			if len(chat.requests) != tc.wantCalls {
+				t.Fatalf("MAP requests = %d, want %d; old cache may have bypassed corrected guidance", len(chat.requests), tc.wantCalls)
+			}
+			if len(store.activeReads) != 1 || store.activeReads[0] != first.activeStateKey || first.mapChanged != (tc.wantCalls > 0) {
+				t.Fatalf("unexpected active-state read/change: keys=%v changed=%t", store.activeReads, first.mapChanged)
+			}
+			if (first.activeStateKey != tc.oldActive) != (tc.wantCalls > 0) {
+				t.Fatalf("active-state scope did not follow saved guidance rendering: key=%s old=%s", first.activeStateKey, tc.oldActive)
+			}
+			if tc.wantCalls > 0 {
+				for _, guidance := range tc.guidance {
+					if !strings.Contains(chat.requests[0].UserPrompt, guidance) {
+						t.Errorf("refresh request missing %q", guidance)
+					}
+				}
+				if len(first.mapExtracts) != 1 || len(first.mapExtracts[0].Claims) != 1 || first.mapExtracts[0].Claims[0].Statement != "Alpha exists" {
+					t.Fatalf("MAP result did not replace old cached extraction: %#v", first.mapExtracts)
+				}
+			}
+			activePayload, err := json.Marshal(first.nextActiveState)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.PutWikiMapActiveState(t.Context(), common.WikiMapActiveState{
+				Key: first.activeStateKey, TenantID: "tenant-1", DatasetID: "kb-1", DocumentID: "doc-1", Payload: activePayload,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			second := newPipeline()
+			if err := second.runMap(); err != nil {
+				t.Fatal(err)
+			}
+			if len(chat.requests) != tc.wantCalls || len(store.payloads) != 1+tc.wantCalls || second.mapChanged || second.activeStateKey != first.activeStateKey {
+				t.Fatalf("repeated run did not reuse cache: requests=%d versions=%d", len(chat.requests), len(store.payloads))
+			}
+		})
+	}
 }
 
 type staticWikiEmbedder struct{}
@@ -217,5 +425,26 @@ func TestSplitWikiExtractByChunkDropsUnknownProvenance(t *testing.T) {
 	}
 	if got := len(parts["c2"].Topics); got != 1 || parts["c2"].Topics[0].Path != "Knowledge/Shared" {
 		t.Fatalf("c2 topics = %#v, want only source-less fallback", parts["c2"].Topics)
+	}
+}
+
+func TestWikiMapFingerprintPreservesGlobalLanguage(t *testing.T) {
+	config := map[string]any{
+		"global_rules": map[string]any{"Chinese": "Global display-name rules.", "zh": "Global code rules."},
+		"entity": map[string]any{"fields": []any{map[string]any{
+			"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."},
+		}}},
+	}
+	fingerprints := make(map[string]string)
+	for _, language := range []string{"Chinese", "zh"} {
+		pipeline := &wikiPipeline{param: common.Param{TemplateID: "tpl-1", Language: language, TemplateConfig: config}}
+		fingerprint, err := pipeline.wikiMapTemplateFingerprint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fingerprints[language] = fingerprint
+	}
+	if fingerprints["Chinese"] == fingerprints["zh"] {
+		t.Fatal("distinct global rules share a MAP cache identity")
 	}
 }

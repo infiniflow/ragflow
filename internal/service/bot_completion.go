@@ -43,6 +43,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
@@ -330,7 +331,10 @@ func (s *BotService) ChatbotCompletion(
 		// the share page calls this endpoint once with an empty
 		// question to obtain a session_id, then sends the real
 		// questions with that session_id.
-		prologue := stringFromMap(dialog.PromptConfig, "prologue")
+		prologue, err := compliance.FilterOutput(ctx, stringFromMap(dialog.PromptConfig, "prologue"))
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
 		seedMsg, _ := json.Marshal([]map[string]any{
 			{
 				"role":       "assistant",
@@ -403,14 +407,14 @@ func (s *BotService) ChatbotCompletion(
 	kwargs := map[string]interface{}{
 		"quote": req.Quote != nil && *req.Quote,
 	}
-	// Pass the raw reasoning level (0..4) straight through to the pipeline.
+	// Pass the raw reasoning level (0..6) straight through to the pipeline.
 	// The previous normalizeBotBoolFlag coercion only accepted a bool or 0/1,
-	// silently dropping medium/high/ultra agentic-RAG levels (2/3/4) so the
-	// new-tab/embed chat fell back to plain RAG. resolveReasoningLevel
-	// (chat_pipeline.go) reads this value first and tolerates float64/int/bool/
-	// string/json.Number via asInt64, then falls back to the dialog's
-	// prompt_config when the key is absent — so omitting it keeps the old
-	// default behaviour.
+	// silently dropping the depth levels (2/3/4) and the engine-selecting ones
+	// (5, 6) so the new-tab/embed chat fell back to plain RAG.
+	// resolveReasoningLevel (chat_pipeline.go) reads this value first and
+	// tolerates float64/int/bool/string/json.Number via asInt64, then falls back
+	// to the dialog's prompt_config when the key is absent — so omitting it keeps
+	// the old default behaviour.
 	if req.Reasoning != nil {
 		kwargs["reasoning"] = req.Reasoning
 	}
@@ -424,6 +428,7 @@ func (s *BotService) ChatbotCompletion(
 	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
 		return nil, common.CodeServerError, err
 	}
+	ctx = common.WithSessionID(ctx, session.ID)
 	results, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err

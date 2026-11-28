@@ -31,7 +31,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. This includes `migrateColumnWidths`, which widens `pipeline_operation_log.pipeline_title`, `tenant.name`, and the `tenant_*id` model-reference columns only when the existing column is narrower. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
 3. `migrateUserTenantDuplicates` — deduplicates memberships before `AutoMigrate` creates their unique index.
-4. `AutoMigrate` — converges every ORM model, including the compilation queue tables.
+4. `AutoMigrate` — converges every ORM model, including the compilation queue tables. Existing MySQL `datetime` columns retain their stored fractional-second precision.
 5. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
 6. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
 7. `migrateTenantModelMaxTokens` — backfills model context windows before advancing the marker to its target.
@@ -45,6 +45,8 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 15. `migrateIngestionLegacyConfigs` — normalizes top-level flat and component-node legacy ingestion params in datasets, documents, and custom canvas DSLs, then records `v1.0.0.2`. It runs last because its target version sorts above every earlier gated step.
 
 After the migration or runtime schema path, `InitDB` ensures `user.last_login_tenant` exists. This unversioned column is shared by both editions and is added during normal server startup as well; it has no data backfill.
+
+Normal startup also runs `SeedCanvasTemplates` without a version gate. It seeds only workflow templates and removes stale `canvas_template` rows. Ingestion pipelines, including Outline, Summary, and Enriched, are served from the embedded built-in catalog rather than seeded into that table. Existing user-owned pipeline copies are unchanged.
 
 ## Version overview
 
@@ -64,6 +66,7 @@ After the migration or runtime schema path, `InitDB` ensures `user.last_login_te
 | `v1.0.0-rc3.dev7` | Store conversation references in each assistant message | `conversationReferenceTargetVersion` |
 | `v1.0.0.1` | Backfill resource-owner `user_id` values from `created_by` or `tenant_id` | `resourceUserIDMigrationTargetVersion` |
 | `v1.0.0.2` | Normalize legacy Extractor / TitleChunker / TokenChunker params in `knowledgebase`, `document`, `user_canvas`, and `user_canvas_version` | `ingestionLegacyConfigTargetVersion` |
+| Unversioned | Preserve the precision of existing MySQL `datetime` columns during `AutoMigrate` | Stored column type checked on each run; no version marker |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -171,6 +174,7 @@ Execution details:
 
 - Component conversion reads each table in id-ordered batches of 256, each batch in its own transaction. Changed rows are updated once by the conversion; unchanged rows retain their original bytes. The existing dataset cleanup performs its own subsequent scan.
 - Each row's `parser_id` determines the builtin component targets. Parser/Chunker/Tokenizer conversion leaves custom pipeline rows and unsupported parser IDs untouched. Extractor conversion can also target existing Extractor nodes in custom pipeline configs.
+- Saved Mistral OCR model references such as `mistral-ocr-latest@default@Mistral OCR` move from `layout_recognize` to the Parser's `pdf.layout_recognizer`, preserving the full reference.
 - Existing component values win, except that dataset-level modular metadata transport remains authoritative under the current service contract.
 - SQL `NULL`, empty strings and JSON `null` are left untouched. Invalid JSON, unsupported metadata schemas and unsupported engine selections stop migration with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely. See [Parser-config conversion failures](./upgrade_from_v1_to_later_releases.md#parser-config-conversion-failures) for recovery instructions.
 - The marker advances only after both table conversions and the existing dataset cleanup succeed. If neither table exists, the marker is left unchanged.
@@ -407,6 +411,15 @@ A skipped `user_canvas_version` row is a historical snapshot; the live `user_can
 ## Version-less steps
 
 These steps are not gated by the version marker. They use schema or data checks to make repeated execution safe. Steps in `RunMigrations` run during `ragflow_server --migrate`; ingestion helpers also run during server startup.
+
+MySQL `AutoMigrate` preserves the precision of existing `datetime`,
+`datetime(3)`, and `datetime(6)` columns (and the other valid precisions). A
+precision difference alone issues no `ALTER TABLE`; changes to defaults,
+nullability, or comments retain the stored precision. New tables and columns
+still use the model's declared type or the driver's default `datetime(3)`.
+Changing a model's precision tag does not change an existing column's precision;
+that requires an explicit migration. Manual migrations apply their declared
+column definitions.
 
 ### Schema changes
 

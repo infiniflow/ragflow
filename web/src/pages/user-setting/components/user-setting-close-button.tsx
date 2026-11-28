@@ -14,25 +14,11 @@
  *  limitations under the License.
  */
 
-import { Button } from '@/components/ui/button';
+import { PageCloseButton } from '@/components/page-close-button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { X } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 
 export function UserSettingCloseButton() {
-  const { t } = useTranslation();
   const { closeUserSetting } = useNavigatePage();
 
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label={t('common.close')}
-      title={t('common.close')}
-      onClick={closeUserSetting}
-      className="absolute right-2 top-4 z-10 md:right-6"
-    >
-      <X className="size-6" />
-    </Button>
-  );
+  return <PageCloseButton onClick={closeUserSetting} />;
 }

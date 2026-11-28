@@ -61,6 +61,7 @@ export interface PromptConfig {
   search1api_api_key?: string;
   searchapi_api_key?: string;
   serply_api_key?: string;
+  specstream_api_key?: string;
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
@@ -140,6 +141,7 @@ export interface IConversation {
   create_time: number;
   chat_id: string;
   id: string;
+  user_id?: string;
   avatar: string;
   messages: Message[];
   name: string;
