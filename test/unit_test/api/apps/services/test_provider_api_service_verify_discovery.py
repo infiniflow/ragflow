@@ -26,6 +26,7 @@ catalogue problem and sends people hunting for a bad API key.
 
 import importlib.util
 import logging
+import socket
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -57,6 +58,16 @@ def _load_service(monkeypatch, discovery):
     `discovery` is a zero-argument coroutine function standing in for
     `get_model_list`, so a test can make discovery raise or come back empty.
     """
+
+    # These tests exercise the discovery error/redaction path with loopback and
+    # deliberately unresolvable base URLs. The SSRF guard added in
+    # provider_api_service runs before discovery, so point its resolver at a
+    # public address and let the stubbed model client fail downstream exactly
+    # as each test intends.
+    monkeypatch.setattr(
+        "common.ssrf_guard.socket.getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))],
+    )
 
     class _Meta:
         def __init__(self, api_key, base_url):
