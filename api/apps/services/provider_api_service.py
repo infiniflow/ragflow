@@ -20,6 +20,7 @@ import asyncio
 from urllib.parse import urlparse, urlunparse
 
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
+from common.ssrf_guard import assert_url_is_safe
 from common.settings import FACTORY_LLM_INFOS
 from api.db.db_models import DB
 from api.db.joint_services.tenant_model_service import resolve_model_config, delete_models_by_instance_ids, delete_instances_by_provider_ids
@@ -96,6 +97,22 @@ def _scrub_url_secrets(text: str, url: str | None) -> str:
     for fragment in sorted((f for f in fragments if f), key=len, reverse=True):
         text = text.replace(fragment, "***")
     return text
+
+
+def _check_base_url_ssrf(base_url: str | None) -> str | None:
+    """Return an error message when a caller-supplied base_url fails the SSRF guard, else None.
+
+    Empty base_url is skipped so factory-default flows keep working. The
+    rejection message carries the redacted URL, never query tokens or
+    credentials.
+    """
+    if not base_url:
+        return None
+    try:
+        assert_url_is_safe(base_url)
+    except ValueError as exc:
+        return f"base_url {_redact_url(base_url)} rejected: {exc}"
+    return None
 
 
 def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
@@ -311,6 +328,10 @@ async def list_provider_models(
     ]
 
     model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
+    if base_url:
+        ssrf_error = _check_base_url_ssrf(model_base_url)
+        if ssrf_error:
+            return False, ssrf_error
     remote_models = []
     bedrock_api_key_config = _bedrock_api_key_config(api_key)
     should_fetch_remote = provider_name in ModelMeta and (provider_name != "Bedrock" or bedrock_api_key_config is not None)
@@ -836,6 +857,10 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
+
+    ssrf_error = _check_base_url_ssrf(base_url)
+    if ssrf_error:
+        return False, ssrf_error, {}
 
     if region and region == "intl" and provider_name.lower() == "siliconflow":
         target_factory_name = "siliconflow_intl"
