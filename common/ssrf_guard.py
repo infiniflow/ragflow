@@ -25,7 +25,7 @@ import os
 import socket
 import threading
 from contextlib import contextmanager
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,27 @@ def _effective_ip(
     return ip
 
 
+
+def _redact_url_for_log(url: str) -> str:
+    """Return *url* with query, fragment and userinfo stripped.
+
+    Blocked URLs are written to logs, and a rejected URL can carry secrets in
+    its query string or userinfo (e.g. an API key a user pasted into a base
+    URL). Log only scheme, host, port and path.
+    """
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        try:
+            if parsed.port:
+                host = f"{host}:{parsed.port}"
+        except ValueError:
+            host = f"{host}:<invalid port>"
+        return urlunparse((parsed.scheme, host, parsed.path, "", "", ""))
+    except ValueError:
+        return "<unparseable url>"
+
+
 def assert_url_is_safe(
     url: str,
     *,
@@ -157,13 +178,13 @@ def assert_url_is_safe(
         logger.warning(
             "SSRF guard blocked URL with disallowed scheme: scheme=%r url=%r",
             scheme,
-            url,
+            _redact_url_for_log(url),
         )
         raise ValueError(f"Disallowed URL scheme: {scheme!r}. Only {sorted(allowed_schemes)} are allowed.")
 
     hostname = parsed.hostname
     if not hostname:
-        logger.warning("SSRF guard blocked URL with missing host: url=%r", url)
+        logger.warning("SSRF guard blocked URL with missing host: url=%r", _redact_url_for_log(url))
         raise ValueError("URL is missing a host.")
 
     allow_any_host = _allow_any_host()
@@ -247,3 +268,33 @@ def assert_host_is_safe(host: str) -> str:
         raise ValueError(f"Host {host!r} resolved to no addresses.")
 
     return resolved_ip
+
+
+def assert_config_urls_are_safe(config: dict, allowed_schemes=None) -> None:
+    """Validate every absolute URL found anywhere in a connector *config*.
+
+    Recursively walks dicts and lists. A string is checked only when it is an
+    absolute URL (both scheme and netloc present); bare host/port pairs,
+    paths and free-text values are ignored so existing configs keep working.
+
+    Raises ValueError on the first unsafe URL.
+    """
+    if allowed_schemes is None:
+        allowed_schemes = _DEFAULT_ALLOWED_SCHEMES
+
+    def _walk(value):
+        if isinstance(value, dict):
+            for item in value.values():
+                _walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _walk(item)
+        elif isinstance(value, str):
+            parsed = urlparse(value)
+            if parsed.scheme and parsed.netloc:
+                try:
+                    assert_url_is_safe(value, allowed_schemes=allowed_schemes)
+                except ValueError as exc:
+                    raise ValueError(f"unsafe URL in config ({_redact_url_for_log(value)}): {exc}") from exc
+
+    _walk(config)

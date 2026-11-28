@@ -213,6 +213,13 @@ async def test_connector(connector_id):
     if not isinstance(config, dict):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config must be an object.")
 
+    from common.ssrf_guard import assert_config_urls_are_safe
+
+    try:
+        assert_config_urls_are_safe(config)
+    except ValueError as exc:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"Connector URL rejected: {exc}")
+
     if not unsaved:
         ok, conn = ConnectorService.get_by_id(connector_id)
         if ok and conn.tenant_id != current_user.id:
