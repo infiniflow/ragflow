@@ -34,42 +34,57 @@ func ServerMiddleware() gin.HandlerFunc {
 		// Extract remote trace context from inbound headers.
 		ctx := prop.Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
 
-		// Name the span after the route template once it is known. Before
-		// c.Next() the full template is not yet set, so we start with the
-		// method + raw path and rename after the handler runs.
-		spanName := c.Request.Method + " " + c.Request.URL.Path
+		// Use the route template as the span name. For unmatched requests
+		// FullPath() returns "" — fall back to just the method so span names
+		// stay low-cardinality even for 404s.
+		route := c.FullPath()
+		spanName := c.Request.Method
+		if route != "" {
+			spanName = c.Request.Method + " " + route
+		}
 
 		ctx, span := tracer.Start(ctx, spanName,
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
 				semconv.HTTPRequestMethodKey.String(c.Request.Method),
-				semconv.HTTPRouteKey.String(c.FullPath()),
-				attribute.String("http.url", c.Request.URL.RequestURI()),
+				semconv.HTTPRouteKey.String(route),
 				attribute.String("http.host", c.Request.Host),
 				attribute.String("net.peer.addr", c.ClientIP()),
 			),
 		)
-		defer span.End()
 
 		// Propagate the trace context so downstream calls (HTTP clients,
 		// harness spans) can attach to this server span.
 		c.Request = c.Request.WithContext(ctx)
 
+		// Finalize the span in a deferred function so it also runs when a
+		// handler panics. We re-panic after recording the error so the outer
+		// gin recovery middleware still handles the request normally.
+		defer func() {
+			if r := recover(); r != nil {
+				span.SetStatus(codes.Error, fmt.Sprintf("panic: %v", r))
+				span.End()
+				panic(r) // re-panic for gin.Recovery to handle
+			}
+
+			// Update span name to route template now that matched handlers
+			// have run (FullPath is set by gin before handlers execute, but
+			// re-applying here is safe and future-proof).
+			if fp := c.FullPath(); fp != "" && fp != route {
+				span.SetName(c.Request.Method + " " + fp)
+				span.SetAttributes(semconv.HTTPRouteKey.String(fp))
+			}
+
+			status := c.Writer.Status()
+			span.SetAttributes(semconv.HTTPResponseStatusCode(status))
+			if status >= 500 {
+				span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
+			} else {
+				span.SetStatus(codes.Ok, "")
+			}
+			span.End()
+		}()
+
 		c.Next()
-
-		// After the handler the route template is populated. Update the span
-		// name to the low-cardinality template form.
-		if route := c.FullPath(); route != "" {
-			span.SetName(fmt.Sprintf("%s %s", c.Request.Method, route))
-			span.SetAttributes(semconv.HTTPRouteKey.String(route))
-		}
-
-		status := c.Writer.Status()
-		span.SetAttributes(semconv.HTTPResponseStatusCode(status))
-		if status >= 500 {
-			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
-		} else {
-			span.SetStatus(codes.Ok, "")
-		}
 	}
 }
