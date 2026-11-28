@@ -54,6 +54,7 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 	if err != nil {
 		return nil, code, err
 	}
+	reqCtx := permission.WithTenantID(ctx, tenantID)
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
@@ -61,7 +62,7 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 		response *modelModule.ChatResponse
 		callCode = common.CodeNotFound
 	)
-	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeChat, modelRef,
+	err = dao.InvokeWithGroupFailover(reqCtx, dao.DB, tenantID, entity.ModelTypeChat, modelRef,
 		func(ctx context.Context) (*modelModule.ChatModel, error) {
 			m, rerr := s.modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			return m, rerr
@@ -91,6 +92,7 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 	if err != nil {
 		return code, err
 	}
+	reqCtx := permission.WithTenantID(ctx, tenantID)
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
@@ -100,7 +102,7 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 		return sender(status, msg)
 	}
 	callCode := common.CodeNotFound
-	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeChat, modelRef,
+	err = dao.InvokeWithGroupFailover(reqCtx, dao.DB, tenantID, entity.ModelTypeChat, modelRef,
 		func(ctx context.Context) (*modelModule.ChatModel, error) {
 			return s.modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
 		}, nil,
@@ -125,6 +127,7 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef string, texts
 	if err != nil {
 		return nil, code, err
 	}
+	reqCtx := permission.WithTenantID(ctx, tenantID)
 	if config == nil {
 		config = &modelModule.EmbeddingConfig{}
 	}
@@ -133,7 +136,7 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef string, texts
 		callCode   = common.CodeNotFound
 		invalid    bool
 	)
-	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeEmbedding, modelRef,
+	err = dao.InvokeWithGroupFailover(reqCtx, dao.DB, tenantID, entity.ModelTypeEmbedding, modelRef,
 		func(ctx context.Context) (*modelModule.EmbeddingModel, error) {
 			return s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), modelRef)
 		}, nil,
@@ -173,6 +176,7 @@ func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, query s
 	if err != nil {
 		return nil, code, err
 	}
+	reqCtx := permission.WithTenantID(ctx, tenantID)
 	if config == nil {
 		config = &modelModule.RerankConfig{}
 	}
@@ -180,7 +184,7 @@ func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, query s
 		response *modelModule.RerankResponse
 		callCode = common.CodeNotFound
 	)
-	err = dao.InvokeWithGroupFailover(ctx, dao.DB, tenantID, entity.ModelTypeRerank, modelRef,
+	err = dao.InvokeWithGroupFailover(reqCtx, dao.DB, tenantID, entity.ModelTypeRerank, modelRef,
 		func(ctx context.Context) (*modelModule.RerankModel, error) {
 			return s.modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantID), modelRef)
 		}, nil,
@@ -459,7 +463,6 @@ func (s *ModelCallService) tenantIDForRequest(ctx context.Context) (string, comm
 	}
 	return tenantID, common.CodeSuccess, nil
 }
-
 func populateModelUsage(ctx context.Context, usage *common.ModelUsage, info *modelModule.ModelInfo, apiConfig *modelModule.APIConfig, tenantID string) {
 	if usage == nil || info == nil {
 		return

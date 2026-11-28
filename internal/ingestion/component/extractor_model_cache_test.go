@@ -26,6 +26,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -129,7 +130,7 @@ func TestExtractor_ResolveChatTargetNoCacheCallsEachTime(t *testing.T) {
 
 	const n = 4
 	for i := 0; i < n; i++ {
-		if _, _, _, _, err := resolveExtractorChatTarget(t.Context(), nil, "some-model"); err != nil {
+		if _, _, _, _, _, err := resolveExtractorChatTarget(t.Context(), nil, "some-model"); err != nil {
 			t.Fatalf("resolveExtractorChatTarget: %v", err)
 		}
 	}
@@ -167,9 +168,9 @@ func newSpyModelCache(t *testing.T, targetCalls *atomic.Int32, ctxLenCalls *atom
 	return &extractorModelCache{
 		targets: make(map[string]extractorResolvedTarget),
 		ctxLens: make(map[string]int),
-		resolveTarget: func(_ context.Context, _ *gorm.DB, llmID string) (string, string, string, string, error) {
+		resolveTarget: func(_ context.Context, _ *gorm.DB, llmID string) (string, string, string, string, *models.ModelInfo, error) {
 			targetCalls.Add(1)
-			return "d", llmID, "k", "u", nil
+			return "d", llmID, "k", "u", nil, nil
 		},
 		resolveCtxLen: func(_ context.Context, _ *gorm.DB, _ string) int {
 			ctxLenCalls.Add(1)
@@ -185,7 +186,7 @@ func TestExtractorModelCache_TargetCachesSuccess(t *testing.T) {
 	cache := newSpyModelCache(t, &tc, &cc)
 
 	for i := 0; i < 5; i++ {
-		d, m, k, u, err := cache.target(t.Context(), nil, "x")
+		d, m, k, u, _, err := cache.target(t.Context(), nil, "x")
 		if err != nil {
 			t.Fatalf("target: %v", err)
 		}
@@ -206,15 +207,15 @@ func TestExtractorModelCache_TargetDoesNotCacheError(t *testing.T) {
 	cache := &extractorModelCache{
 		targets: make(map[string]extractorResolvedTarget),
 		ctxLens: make(map[string]int),
-		resolveTarget: func(_ context.Context, _ *gorm.DB, _ string) (string, string, string, string, error) {
+		resolveTarget: func(_ context.Context, _ *gorm.DB, _ string) (string, string, string, string, *models.ModelInfo, error) {
 			tc.Add(1)
-			return "", "", "", "", errTestModelCache
+			return "", "", "", "", nil, errTestModelCache
 		},
 	}
 
 	const n = 4
 	for i := 0; i < n; i++ {
-		if _, _, _, _, err := cache.target(t.Context(), nil, "x"); err != errTestModelCache {
+		if _, _, _, _, _, err := cache.target(t.Context(), nil, "x"); err != errTestModelCache {
 			t.Fatalf("target err = %v, want errTestModelCache", err)
 		}
 	}
@@ -232,7 +233,7 @@ func TestExtractorModelCache_TargetConcurrentWarmThenRead(t *testing.T) {
 	cache := newSpyModelCache(t, &tc, &cc)
 
 	// Warm serially (mirrors Invoke's pre-fan-out warm).
-	if _, _, _, _, err := cache.target(t.Context(), nil, "x"); err != nil {
+	if _, _, _, _, _, err := cache.target(t.Context(), nil, "x"); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 	if got := tc.Load(); got != 1 {
@@ -246,7 +247,7 @@ func TestExtractorModelCache_TargetConcurrentWarmThenRead(t *testing.T) {
 	for i := 0; i < readers; i++ {
 		go func() {
 			defer wg.Done()
-			d, m, k, u, err := cache.target(t.Context(), nil, "x")
+			d, m, k, u, _, err := cache.target(t.Context(), nil, "x")
 			if err != nil || d != "d" || m != "x" || k != "k" || u != "u" {
 				bad.Add(1)
 			}
@@ -271,9 +272,9 @@ func TestExtractorModelCache_TargetConcurrentMiss(t *testing.T) {
 	cache := &extractorModelCache{
 		targets: make(map[string]extractorResolvedTarget),
 		ctxLens: make(map[string]int),
-		resolveTarget: func(_ context.Context, _ *gorm.DB, llmID string) (string, string, string, string, error) {
+		resolveTarget: func(_ context.Context, _ *gorm.DB, llmID string) (string, string, string, string, *models.ModelInfo, error) {
 			tc.Add(1)
-			return "d", llmID, "k", "u", nil
+			return "d", llmID, "k", "u", nil, nil
 		},
 	}
 
@@ -284,7 +285,7 @@ func TestExtractorModelCache_TargetConcurrentMiss(t *testing.T) {
 	for i := 0; i < readers; i++ {
 		go func() {
 			defer wg.Done()
-			d, m, k, u, err := cache.target(t.Context(), nil, "x")
+			d, m, k, u, _, err := cache.target(t.Context(), nil, "x")
 			if err != nil || d != "d" || m != "x" || k != "k" || u != "u" {
 				bad.Add(1)
 			}

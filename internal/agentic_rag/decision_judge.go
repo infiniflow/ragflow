@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 )
 
@@ -124,6 +125,7 @@ type decisionBackend struct {
 	// few consecutive failures the verdicts are all "keep" anyway, so the only
 	// thing still being paid for is the timeout, per passage.
 	breaker *decisionBreaker
+	info    *models.ModelInfo
 }
 
 var (
@@ -173,6 +175,10 @@ func decisionBackendFromEnv() *decisionBackend {
 // Each backend also gets its own breaker, which is what keeps one broken
 // instance from silencing the gate for every other tenant.
 func newDecisionBackend(url, key, model string) *decisionBackend {
+	return newDecisionBackendWithInfo(url, key, model, nil)
+}
+
+func newDecisionBackendWithInfo(url, key, model string, info *models.ModelInfo) *decisionBackend {
 	return &decisionBackend{
 		url:      url,
 		key:      key,
@@ -183,6 +189,7 @@ func newDecisionBackend(url, key, model string) *decisionBackend {
 		// custom path, rather than the provider's base URL.
 		driver:  models.NewSystemOneModel(map[string]string{"default": url}, models.URLSuffix{Decision: "/"}),
 		breaker: newDecisionBreaker(),
+		info:    info,
 	}
 }
 
@@ -402,9 +409,28 @@ func (b *decisionBackend) askBatch(ctx context.Context, question, intent string,
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(envIntDefault(common.EnvDecisionTimeoutMS, defaultDecisionTimeoutMS))*time.Millisecond)
 	defer cancel()
+	tenantID := permission.TenantIDFromContext(ctx)
+	userID := permission.UserIDFromContext(ctx)
+	if tenantID == "" || userID == "" {
+		scope := decisionScopeFrom(ctx)
+		if tenantID == "" && scope.tenantID != "" {
+			ctx = permission.WithTenantID(ctx, scope.tenantID)
+		}
+		if userID == "" && scope.userID != "" {
+			ctx = permission.WithUserID(ctx, scope.userID)
+		}
+	}
+	if b.info != nil {
+		ctx = models.WithModelInfo(ctx, b.info)
+	}
+	usage := &common.ModelUsage{
+		ModelName: b.model,
+		Type:      "decision",
+		StartAt:   time.Now(),
+	}
 	parsed, err := b.driver.Decide(ctx, &b.model, &models.DecideRequest{
 		State: map[string]string{"passage": ""}, Questions: questions,
-	}, &models.APIConfig{ApiKey: &b.key}, nil)
+	}, &models.APIConfig{ApiKey: &b.key}, usage)
 	if err != nil {
 		return res, err
 	}

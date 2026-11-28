@@ -212,13 +212,14 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 	knnNumCandidates = max(knnNumCandidates, knnTopK)
 
+	modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
+
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
 	var err error
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
 			if chatID != "" {
 				chatModelForFilter, err = modelFactory.NewChatModel(modelCtx, chatID)
 				if err != nil {
@@ -278,7 +279,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		chatModel, err := modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantIDs[0]))
+		chatModel, err := modelFactory.NewDefaultChatModel(modelCtx)
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
