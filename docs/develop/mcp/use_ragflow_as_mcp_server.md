@@ -71,9 +71,9 @@ Enabling the listener with its default `self-host` mode requires `mcp.host_api_k
 
 For the Go deployment, use `docker/docker-compose.yml` with `docker/.env`. Uncomment the `mcp` example in `docker/service_conf.yaml.template` or set the equivalent `RAGFLOW_MCP_*` values in `docker/.env`. The Go entrypoint generates the runtime configuration from that template.
 
-Set `RAGFLOW_MCP_HOST=0.0.0.0` and connect to `http://<docker-host-ip>:${SVR_MCP_PORT}/mcp`. Compose publishes `SVR_MCP_PORT` (default `9382`) on all host IPv4 interfaces to the configured `RAGFLOW_MCP_PORT` (default `9382`) inside the container. Recreate the container after changing these settings.
+The default Compose file publishes no MCP host port. After enabling the listener (`RAGFLOW_MCP_HOST=0.0.0.0` and the matching `RAGFLOW_MCP_*` settings), uncomment the MCP mapping in `docker/docker-compose.yml`. That commented mapping binds `127.0.0.1:${SVR_MCP_PORT}` (set `SVR_MCP_PORT=9382` in `docker/.env`) to the container's `RAGFLOW_MCP_PORT` (default `9382`), so only local clients can reach `http://127.0.0.1:${SVR_MCP_PORT}/mcp`. Recreate the container after changing these settings. Remote access needs an explicit change to that port mapping (for example binding a non-loopback address); the access restrictions in the next paragraph still apply.
 
-This exposes the listener to any network that can reach the host port. In `self-host` mode, every client reaching it shares the configured user's identity. Restrict access with a firewall and use `host` mode when clients should authenticate with their own RAGFlow credentials.
+Changing the mapping to publish beyond localhost exposes the listener to any network that can reach the host port. In `self-host` mode, every client reaching it shares the configured user's identity. Restrict access with a firewall and use `host` mode when clients should authenticate with their own RAGFlow credentials.
 
 ## Verify the endpoint
 

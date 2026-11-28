@@ -13,8 +13,10 @@ References: `docs/references/python_api_reference.md`,
 `docs/references/http_api_reference.md`, `sdk/python/ragflow_sdk/`.
 
 ```bash
-pip install ragflow-sdk openai
+python3.13 -m pip install "ragflow-sdk>=1.0.0,<2" openai
 ```
+
+The repository SDK is version 1.0.0 and requires Python 3.13.
 
 ```python
 import os
@@ -33,8 +35,12 @@ with open("policy.pdf", "rb") as f:
 ids = [d.id for d in docs]
 for doc_id, status, chunks, tokens in dataset.parse_documents(ids):   # blocks until done
     print(doc_id, status, chunks, tokens)
+    if status != "DONE":
+        raise RuntimeError(f"parse failed for {doc_id}: {status}")
 ```
 
+`parse_documents` yields `DONE`, `FAIL`, or `CANCEL` as status rather than
+raising on failure; stop or report unless the status is `DONE`.
 Use `dataset.async_parse_documents(ids)` to start parsing without waiting.
 Uploading alone does not make documents searchable; they must be parsed.
 `avatar`/`description` are set afterwards with `dataset.update(...)`.
@@ -69,7 +75,13 @@ parts = list(session.ask("And after five years?", stream=True))
 print(parts[-1].content)
 ```
 
-Agents work the same way via `rag.list_agents()` and agent sessions.
+## Agents
+
+Agent sessions use `rag.list_agents()` then `agent.create_session()`. Streaming
+does not mirror chat: collect answer text from `message` events only. When the
+run has references, the SDK still yields a final `message_end` event with
+empty `content` (and the references), so do not take `parts[-1].content` as
+the answer.
 
 ## OpenAI-compatible endpoint
 
