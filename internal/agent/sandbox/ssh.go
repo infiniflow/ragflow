@@ -70,10 +70,24 @@ const (
 	sshDefaultPort         = 22
 	sshDefaultMaxOutput    = 1 << 20
 	sshDefaultMaxArtifacts = 20
-	sshDefaultMaxArtifact  = 10 << 20
-	sshDefaultPythonBin    = "python3"
-	sshDefaultNodeBin      = "node"
-	sshDefaultWorkDir      = "/tmp"
+	// The artifact walk issues one remote `find` per directory, and directories
+	// produce no artifacts of their own, so maxArtifacts cannot bound the walk.
+	// Match the depth limit the tenki/ucloud providers use and cap the total
+	// number of remote listings as well so a wide or deep tree cannot turn one
+	// execution into unbounded SSH round trips.
+	sshMaxArtifactDepth    = 16
+	sshMaxArtifactListings = 256
+	// One `find` lists one directory. A directory with very many entries would
+	// otherwise stream an unbounded listing into the provider's memory before
+	// maxArtifacts or the listing cap applies, so each listing is bounded in
+	// bytes and in entries: the retained stdout stops at sshMaxListingBytes and
+	// at most sshMaxListingEntries rows are parsed.
+	sshMaxListingBytes    = 1 << 20
+	sshMaxListingEntries  = 4096
+	sshDefaultMaxArtifact = 10 << 20
+	sshDefaultPythonBin   = "python3"
+	sshDefaultNodeBin     = "node"
+	sshDefaultWorkDir     = "/tmp"
 )
 
 // SSHProvider executes code on a remote host.
@@ -536,11 +550,53 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 // which single-quote escapes any value so the shell cannot be
 // tricked into re-interpreting it (see remoteMkdirAll,
 // remoteRemoveAll, remoteReadFile, remoteWriteFile, etc).
+// cappedBuffer retains at most limit bytes of a remote stdout stream and drops
+// the rest. A zero limit keeps everything. Writes always report success so a
+// bound never turns into a session error; the caller decides what truncation
+// means for its own parse.
+type cappedBuffer struct {
+	buf       strings.Builder
+	limit     int
+	truncated bool
+}
+
+// Write retains the bytes that fit and drops the rest. It never reports a short
+// write, so the bound cannot surface as a session error and the remote command
+// keeps running to completion.
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if c.limit <= 0 {
+		c.buf.Write(p)
+		return len(p), nil
+	}
+	remaining := c.limit - c.buf.Len()
+	if remaining <= 0 {
+		c.truncated = true
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		c.buf.Write(p[:remaining])
+		c.truncated = true
+		return len(p), nil
+	}
+	c.buf.Write(p)
+	return len(p), nil
+}
+
+// String returns the retained prefix of the remote output.
+func (c *cappedBuffer) String() string { return c.buf.String() }
+
 func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, command string, timeoutSec int) (string, string, int, error) {
 	return p.runRemoteCommandWithInput(ctx, client, command, timeoutSec, nil)
 }
 
 func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh.Client, command string, timeoutSec int, input io.Reader) (string, string, int, error) {
+	return p.runRemoteCommandCore(ctx, client, command, timeoutSec, input, nil)
+}
+
+// runRemoteCommandCore runs one remote command. When stdout is nil the whole
+// stream is retained; a capped buffer keeps the command running while bounding
+// how much of its output the provider holds.
+func (p *SSHProvider) runRemoteCommandCore(ctx context.Context, client *ssh.Client, command string, timeoutSec int, input io.Reader, stdout *cappedBuffer) (string, string, int, error) {
 	sess, err := client.NewSession()
 	if err != nil {
 		return "", "", -1, fmt.Errorf("ssh: open session: %w", err)
@@ -553,14 +609,17 @@ func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh
 			return "", "", -1, fmt.Errorf("ssh: open stdin: %w", err)
 		}
 	}
-	stdoutBuf, stderrBuf := &strings.Builder{}, &strings.Builder{}
-	sess.Stdout = stdoutBuf
+	if stdout == nil {
+		stdout = &cappedBuffer{}
+	}
+	stderrBuf := &strings.Builder{}
+	sess.Stdout = stdout
 	sess.Stderr = stderrBuf
 	// from shq()-escaped arguments only (see callers above); user
 	// input never reaches the shell unsanitized.
 	// codeql[go/command-injection] False positive: command is built
 	if err := sess.Start(command); err != nil {
-		return stdoutBuf.String(), stderrBuf.String(), -1, err
+		return stdout.String(), stderrBuf.String(), -1, err
 	}
 	runCtx := ctx
 	cancel := func() {}
@@ -604,7 +663,7 @@ func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh
 			if !writeComplete {
 				<-writeDone
 			}
-			return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+			return stdout.String(), stderrBuf.String(), -1, runCtx.Err()
 		}
 	}
 	if waitErr != nil {
@@ -613,14 +672,14 @@ func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh
 		// the ExitCode field).
 		var exitErr *ssh.ExitError
 		if errors.As(waitErr, &exitErr) {
-			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
+			return stdout.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
 		}
-		return stdoutBuf.String(), stderrBuf.String(), -1, waitErr
+		return stdout.String(), stderrBuf.String(), -1, waitErr
 	}
 	if writeErr != nil {
-		return stdoutBuf.String(), stderrBuf.String(), -1, fmt.Errorf("ssh: write stdin: %w", writeErr)
+		return stdout.String(), stderrBuf.String(), -1, fmt.Errorf("ssh: write stdin: %w", writeErr)
 	}
-	return stdoutBuf.String(), stderrBuf.String(), 0, nil
+	return stdout.String(), stderrBuf.String(), 0, nil
 }
 
 // remoteMkdirAll runs `mkdir -p` on the remote. The Python
@@ -654,12 +713,19 @@ func (p *SSHProvider) remoteWriteFile(ctx context.Context, client *ssh.Client, r
 	return nil
 }
 
-// remoteReadFile reads a remote file's content as a string.
-// Used by collectArtifacts.
+// remoteReadFile reads a remote file's content as a string, used by
+// collectArtifacts. The read itself is bounded by maxArtifactBytes: `find`
+// reported the size before the read, but a background process can keep writing
+// after the command that produced the artifact returned, so that size is only a
+// prediction. Content beyond the limit fails the read instead of being returned
+// and published under a stale size.
 func (p *SSHProvider) remoteReadFile(ctx context.Context, client *ssh.Client, remotePath string) (string, error) {
-	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client,
+	bounded := &cappedBuffer{limit: p.maxArtifactBytes}
+	stdout, stderr, exitCode, err := p.runRemoteCommandCore(ctx, client,
 		fmt.Sprintf("cat %s", shq(remotePath)),
 		p.timeout,
+		nil,
+		bounded,
 	)
 	if err != nil {
 		return "", err
@@ -667,106 +733,191 @@ func (p *SSHProvider) remoteReadFile(ctx context.Context, client *ssh.Client, re
 	if exitCode != 0 {
 		return "", fmt.Errorf("read %s: exit=%d stderr=%q", remotePath, exitCode, stderr)
 	}
+	if bounded.truncated {
+		return "", fmt.Errorf("artifact exceeds %d bytes: %s", p.maxArtifactBytes, remotePath)
+	}
 	return stdout, nil
 }
 
-// remoteListDir lists a remote directory's entries. The format
-// is `name<TAB>size<TAB>mode` per line, sorted lexically by the
-// remote `find` call. We use `find` rather than `ls -la` because
-// its output is unambiguous across distros (no header rows).
+// remoteListDir lists a remote directory's entries. Each record is
+// `path<NUL>size<NUL>type<NUL>`, in the order `find` emits them. We use `find`
+// rather than `ls -la` because its output is unambiguous across distros (no
+// header rows), and NUL rather than newline because a filename may contain a
+// newline.
 func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, remotePath string) ([]remoteEntry, error) {
-	// -mindepth 1 / -maxdepth 1: only direct children, not
-	// the dir itself. -printf 'P\t%s\t%m\n' is the GNU find
-	// format; the leading P is a literal path placeholder
-	// filled in below. -print0 + IFS split is more robust
-	// but adds complexity; for the artifact collection use
-	// case filenames don't contain newlines, so the simpler
-	// format is fine.
+	// -mindepth 1 / -maxdepth 1: only direct children, not the dir itself.
+	// %y is find's entry type ("f", "d", "l", ...); %m is the permission bits
+	// alone, so masking it for S_IFDIR/S_IFREG never matches and every entry
+	// used to look unsupported.
 	cmd := fmt.Sprintf(
-		"find %s -mindepth 1 -maxdepth 1 -printf '%%p\\t%%s\\t%%m\\n'",
+		"find %s -mindepth 1 -maxdepth 1 -printf '%%p\\0%%s\\0%%y\\0'",
 		shq(remotePath),
 	)
-	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
+	// Bound what a single `find` can make this process hold. Truncation can
+	// only cut the tail mid-record, which parseRemoteEntries drops; a record
+	// that arrives whole is still an ordinary entry.
+	bounded := &cappedBuffer{limit: sshMaxListingBytes}
+	stdout, stderr, exitCode, err := p.runRemoteCommandCore(ctx, client, cmd, p.timeout, nil, bounded)
 	if err != nil {
 		return nil, err
 	}
 	if exitCode != 0 {
-		// `find` returns non-zero if the dir does not exist
-		// (e.g. no artifacts produced). That's expected.
-		if strings.Contains(stderr, "No such file or directory") {
+		// `find` returns non-zero if the dir does not exist (e.g. no artifacts
+		// produced). That is the normal empty case, but only when it emitted
+		// nothing: rows already on stdout mean the listing is incomplete, and
+		// treating it as empty would silently drop artifacts whose entries
+		// disappeared mid-walk.
+		if strings.Contains(stderr, "No such file or directory") && strings.TrimSpace(stdout) == "" {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("find %s: exit=%d stderr=%q", remotePath, exitCode, stderr)
 	}
-	var out []remoteEntry
-	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 3)
-		if len(parts) != 3 {
-			continue
-		}
-		size, _ := strconv.ParseInt(parts[1], 10, 64)
-		mode, _ := strconv.ParseInt(parts[2], 8, 32) // octal mode
-		name := strings.TrimPrefix(parts[0], remotePath+"/")
-		out = append(out, remoteEntry{Name: name, Size: size, Mode: mode})
+	entries := parseRemoteEntries(stdout, remotePath)
+	if err := listingBoundsError(remotePath, bounded.truncated, len(entries)); err != nil {
+		return nil, err
 	}
-	return out, nil
+	return entries, nil
 }
 
-// remoteEntry is one row from remoteListDir.
+// listingBoundsError refuses a listing that hit either per-listing bound.
+// Returning the prefix silently would report fewer artifacts than the directory
+// holds, so an oversized listing fails the collection instead. Truncated means
+// the retained stdout stopped at sshMaxListingBytes; a row count at
+// sshMaxListingEntries means the byte cap did not bound this listing on its own
+// (very short names), so the row bound has to refuse it.
+func listingBoundsError(remotePath string, truncated bool, rowCount int) error {
+	if truncated {
+		return fmt.Errorf("find %s: listing exceeded %d bytes", remotePath, sshMaxListingBytes)
+	}
+	if rowCount > sshMaxListingEntries {
+		return fmt.Errorf("find %s: listing exceeded %d entries", remotePath, sshMaxListingEntries)
+	}
+	return nil
+}
+
+// parseRemoteEntries turns `find -printf '%p\0%s\0%y\0'` output into entries,
+// stripping root from each path. A record whose fields did not all arrive (the
+// listing stopped mid-record) is dropped rather than turned into a bogus entry,
+// and NUL delimiting keeps a filename that contains a newline in one record.
+func parseRemoteEntries(stdout, root string) []remoteEntry {
+	fields := strings.Split(stdout, "\x00")
+	var out []remoteEntry
+	// A record is path, size, type, and the NUL that terminates the type field:
+	// without that terminator the record was cut and its type may be partial.
+	for i := 0; i+3 < len(fields); i += 3 {
+		if fields[i] == "" {
+			continue
+		}
+		size, err := strconv.ParseInt(fields[i+1], 10, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, remoteEntry{
+			Name: strings.TrimPrefix(fields[i], root+"/"),
+			Size: size,
+			Type: fields[i+2],
+		})
+	}
+	return out
+}
+
+// remoteEntry is one row from remoteListDir. Type is find's %y: "f" for a
+// regular file, "d" for a directory, anything else for symlinks and specials.
 type remoteEntry struct {
 	Name string
 	Size int64
-	Mode int64
+	Type string
 }
+
+func (e remoteEntry) isDir() bool  { return e.Type == "d" }
+func (e remoteEntry) isFile() bool { return e.Type == "f" }
+
+// artifactLister lists one remote directory; artifactReader reads one remote
+// file. They are parameters so the traversal can be exercised without SSH.
+type artifactLister func(ctx context.Context, dir string) ([]remoteEntry, error)
+type artifactReader func(ctx context.Context, path string) (string, error)
 
 // collectArtifacts walks the remote artifacts/ dir and returns
 // the list of files as {name, content_b64, mime_type, size}.
-// Enforces the same limits the local provider does.
+// Enforces the same limits the local provider does: max count across the whole
+// tree, max per-file size, allowlist of extensions, no symlinks. Names are
+// relative to the artifacts root, matching LocalProvider.collectArtifacts.
 func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, root string) ([]map[string]any, error) {
-	entries, err := p.remoteListDir(ctx, client, root)
+	var out []map[string]any
+	listings := 0
+	err := p.collectArtifactsInto(ctx, root, "", 0, &listings, &out,
+		func(ctx context.Context, dir string) ([]remoteEntry, error) {
+			return p.remoteListDir(ctx, client, dir)
+		},
+		func(ctx context.Context, path string) (string, error) {
+			return p.remoteReadFile(ctx, client, path)
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
-	var out []map[string]any
+	return out, nil
+}
+
+// collectArtifactsInto appends the artifacts under dir to out. relativeDir is
+// the path of dir relative to the artifacts root, and out is shared by every
+// recursive call so maxArtifacts bounds the whole tree instead of each subtree.
+func (p *SSHProvider) collectArtifactsInto(
+	ctx context.Context,
+	dir, relativeDir string,
+	depth int,
+	listings *int,
+	out *[]map[string]any,
+	list artifactLister,
+	read artifactReader,
+) error {
+	if depth > sshMaxArtifactDepth {
+		return fmt.Errorf("artifact directory nesting exceeds %d levels: %s", sshMaxArtifactDepth, relativeDir)
+	}
+	*listings++
+	if *listings > sshMaxArtifactListings {
+		return fmt.Errorf("artifact directory walk exceeds %d listings", sshMaxArtifactListings)
+	}
+	entries, err := list(ctx, dir)
+	if err != nil {
+		return err
+	}
 	for _, e := range entries {
-		remote := path.Join(root, e.Name)
-		// Mode bits: S_ISDIR = 0o040000, S_ISREG = 0o100000.
-		if e.Mode&0o170000 == 0o040000 {
-			sub, err := p.collectArtifacts(ctx, client, remote)
-			if err != nil {
-				return nil, err
+		remote := path.Join(dir, e.Name)
+		relativePath := path.Join(relativeDir, e.Name)
+		if e.isDir() {
+			if err := p.collectArtifactsInto(ctx, remote, relativePath, depth+1, listings, out, list, read); err != nil {
+				return err
 			}
-			out = append(out, sub...)
 			continue
 		}
-		if e.Mode&0o170000 != 0o100000 {
-			return nil, fmt.Errorf("unsupported artifact entry: %s", e.Name)
+		if !e.isFile() {
+			return fmt.Errorf("unsupported artifact entry: %s (find type %q)", relativePath, e.Type)
 		}
-		if len(out) >= p.maxArtifacts {
-			return nil, fmt.Errorf("ssh execution produced more than %d artifacts", p.maxArtifacts)
+		if len(*out) >= p.maxArtifacts {
+			return fmt.Errorf("ssh execution produced more than %d artifacts", p.maxArtifacts)
 		}
 		if e.Size > int64(p.maxArtifactBytes) {
-			return nil, fmt.Errorf("artifact exceeds %d bytes: %s", p.maxArtifactBytes, e.Name)
+			return fmt.Errorf("artifact exceeds %d bytes: %s", p.maxArtifactBytes, relativePath)
 		}
 		ext := strings.ToLower(path.Ext(e.Name))
 		if _, ok := allowedArtifactExts[ext]; !ok {
-			return nil, fmt.Errorf("unsupported artifact type: %s", e.Name)
+			return fmt.Errorf("unsupported artifact type: %s", relativePath)
 		}
-		body, err := p.remoteReadFile(ctx, client, remote)
+		body, err := read(ctx, remote)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, map[string]any{
-			"name":        e.Name,
+		// Size is the content actually read, matching LocalProvider's stat of the
+		// bytes it returns, not the size `find` reported before the read.
+		*out = append(*out, map[string]any{
+			"name":        relativePath,
 			"content_b64": base64.StdEncoding.EncodeToString([]byte(body)),
 			"mime_type":   mime.TypeByExtension(ext),
-			"size":        e.Size,
+			"size":        int64(len(body)),
 		})
 	}
-	return out, nil
+	return nil
 }
 
 // shq single-quotes a string for POSIX shell inclusion. Embedded
