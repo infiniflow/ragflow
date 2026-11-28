@@ -55,7 +55,7 @@ describe('KnowledgeGraph styling scope', () => {
   });
 
   it.each([
-    CompilationTemplateKind.SessionGraph,
+    CompilationTemplateKind.MemoryFacts,
     CompilationTemplateKind.Empty,
   ])('leaves %s on the default graph colors and tooltip', (kind) => {
     render(<RepresentationRenderer template={{ ...Template, kind }} />);

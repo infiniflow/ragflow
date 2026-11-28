@@ -28,21 +28,42 @@ import (
 	"gorm.io/gorm"
 )
 
-// Memory type bit flag constants, consistent with Python MemoryType enum
+// Memory type bit flags.
+//
+// The stored bitmask predates the built-in pipelines: the three extraction
+// types (semantic/episodic/procedural) were separate choices. They are now one
+// pipeline (memory_notes), so their bits are kept only to decode existing rows —
+// every one of them means "notes". memory_facts is the hindsight-style fact
+// graph and gets its own bit, which no legacy row carries.
 const (
-	MemoryTypeRaw        = 0b0001 // Raw memory (binary: 0001)
-	MemoryTypeSemantic   = 0b0010 // Semantic memory (binary: 0010)
-	MemoryTypeEpisodic   = 0b0100 // Episodic memory (binary: 0100)
-	MemoryTypeProcedural = 0b1000 // Procedural memory (binary: 1000)
+	MemoryTypeRaw        = 0b00001 // raw conversation, always stored
+	MemoryTypeSemantic   = 0b00010 // legacy: folded into memory_notes
+	MemoryTypeEpisodic   = 0b00100 // legacy: folded into memory_notes
+	MemoryTypeProcedural = 0b01000 // legacy: folded into memory_notes
+	MemoryTypeNotes      = MemoryTypeSemantic | MemoryTypeEpisodic | MemoryTypeProcedural
+	MemoryTypeFacts      = 0b10000 // hindsight-style fact graph
 )
 
-// MemoryTypeMap maps memory type names to bit flags
-// Exported for use by service package
+// MemoryTypeMap maps memory type names to bit flags.
+//
+// The canonical names are the built-in pipeline ids the API accepts now. The
+// three legacy names stay accepted as aliases of memory_notes so an existing
+// client keeps working and keeps producing notes.
 var MemoryTypeMap = map[string]int{
-	"raw":        MemoryTypeRaw,
-	"semantic":   MemoryTypeSemantic,
-	"episodic":   MemoryTypeEpisodic,
-	"procedural": MemoryTypeProcedural,
+	"raw":          MemoryTypeRaw,
+	"memory_notes": MemoryTypeNotes,
+	"memory_facts": MemoryTypeFacts,
+	"semantic":     MemoryTypeNotes,
+	"episodic":     MemoryTypeNotes,
+	"procedural":   MemoryTypeNotes,
+}
+
+// MemoryTypeAliases maps a legacy type name to the built-in pipeline id it now
+// resolves to.
+var MemoryTypeAliases = map[string]string{
+	"semantic":   "memory_notes",
+	"episodic":   "memory_notes",
+	"procedural": "memory_notes",
 }
 
 // CalculateMemoryType converts memory type names array to bit flags integer
@@ -77,27 +98,24 @@ func CalculateMemoryType(memoryTypeNames []string) int64 {
 //
 // Example:
 //
-//	GetMemoryTypeHuman(3) returns ["raw", "semantic"]
+//	GetMemoryTypeHuman(3) returns ["raw", "memory_notes"]
 func GetMemoryTypeHuman(memoryType int64) []string {
 	var result []string
 	if memoryType&int64(MemoryTypeRaw) != 0 {
 		result = append(result, "raw")
 	}
-	if memoryType&int64(MemoryTypeSemantic) != 0 {
-		result = append(result, "semantic")
+	if memoryType&int64(MemoryTypeNotes) != 0 {
+		result = append(result, "memory_notes")
 	}
-	if memoryType&int64(MemoryTypeEpisodic) != 0 {
-		result = append(result, "episodic")
-	}
-	if memoryType&int64(MemoryTypeProcedural) != 0 {
-		result = append(result, "procedural")
+	if memoryType&int64(MemoryTypeFacts) != 0 {
+		result = append(result, "memory_facts")
 	}
 	return result
 }
 
 // MemoryTypeNames returns every memory type name in canonical bit-flag order.
 func MemoryTypeNames() []string {
-	return GetMemoryTypeHuman(MemoryTypeRaw | MemoryTypeSemantic | MemoryTypeEpisodic | MemoryTypeProcedural)
+	return GetMemoryTypeHuman(MemoryTypeRaw | MemoryTypeNotes | MemoryTypeFacts)
 }
 
 // MemoryDAO handles all Memory-related database operations

@@ -753,12 +753,23 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		"session_id": sessionID,
 		"user_id":    c.DefaultQuery("user_id", ""),
 	}
+	// message_type narrows the shared message index to one or more fact types
+	// (semantic/episodic/procedural) or raw conversations.
+	if messageTypes := splitQueryValues(c, "message_type"); len(messageTypes) > 0 {
+		filterDict["message_type"] = messageTypes
+	}
 
 	params := map[string]interface{}{
 		"query":                      query,
 		"similarity_threshold":       similarityThreshold,
 		"keywords_similarity_weight": keywordsSimilarityWeight,
 		"top_n":                      topN,
+		"offset":                     c.DefaultQuery("offset", "0"),
+	}
+	for _, key := range []string{"as_of", "valid_at_from", "valid_at_to"} {
+		if value := strings.TrimSpace(c.Query(key)); value != "" {
+			params[key] = value
+		}
 	}
 
 	res, code, err := h.memoryService.SearchMessage(c.Request.Context(), filterDict, params)
@@ -767,6 +778,71 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		return
 	}
 
+	common.RespondSuccessList(c, res, "success")
+}
+
+// ListMemoryFacts handles GET /api/v1/memories/:memory_id/facts.
+//
+// It lists or searches only the extracted facts of one memory (every built-in
+// pipeline), leaving the raw conversations out. Retrieval is the same hybrid
+// vector+keyword path as the message search, plus the validity filters:
+//   - message_type (optional): restrict to specific fact types
+//   - query (optional): when empty the facts are listed newest-first
+//   - as_of: facts that were true at that instant
+//   - valid_at_from / valid_at_to: facts whose validity started in the window
+func (h *MemoryHandler) ListMemoryFacts(c *gin.Context) {
+	memoryID := strings.TrimSpace(c.Param("memory_id"))
+	if memoryID == "" {
+		common.RespondError(c, common.CodeArgumentError, "memory_id is required")
+		return
+	}
+	similarityThreshold, err := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
+	if err != nil || math.IsNaN(similarityThreshold) || math.IsInf(similarityThreshold, 0) || similarityThreshold < 0 || similarityThreshold > 1 {
+		common.RespondError(c, common.CodeArgumentError, "similarity_threshold must be a finite number between 0 and 1")
+		return
+	}
+	keywordsSimilarityWeight, err := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
+	if err != nil || math.IsNaN(keywordsSimilarityWeight) || math.IsInf(keywordsSimilarityWeight, 0) || keywordsSimilarityWeight < 0 || keywordsSimilarityWeight > 1 {
+		common.RespondError(c, common.CodeArgumentError, "keywords_similarity_weight must be a finite number between 0 and 1")
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if limit <= 0 || limit > 100 {
+		common.RespondError(c, common.CodeArgumentError, "limit must be between 1 and 100")
+		return
+	}
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if offset < 0 {
+		common.RespondError(c, common.CodeArgumentError, "offset must be greater than or equal to 0")
+		return
+	}
+
+	filterDict := map[string]interface{}{
+		"agent_id":   c.DefaultQuery("agent_id", ""),
+		"session_id": c.DefaultQuery("session_id", ""),
+		"user_id":    c.DefaultQuery("user_id", ""),
+	}
+	if messageTypes := splitQueryValues(c, "message_type"); len(messageTypes) > 0 {
+		filterDict["message_type"] = messageTypes
+	}
+	params := map[string]interface{}{
+		"query":                      c.Query("query"),
+		"similarity_threshold":       similarityThreshold,
+		"keywords_similarity_weight": keywordsSimilarityWeight,
+		"top_n":                      limit,
+		"offset":                     offset,
+	}
+	for _, key := range []string{"as_of", "valid_at_from", "valid_at_to"} {
+		if value := strings.TrimSpace(c.Query(key)); value != "" {
+			params[key] = value
+		}
+	}
+
+	res, code, err := h.memoryService.SearchFacts(c.Request.Context(), memoryID, filterDict, params)
+	if err != nil {
+		common.RespondError(c, code, err.Error())
+		return
+	}
 	common.RespondSuccessList(c, res, "success")
 }
 

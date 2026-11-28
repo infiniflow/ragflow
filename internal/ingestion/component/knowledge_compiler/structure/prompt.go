@@ -42,7 +42,7 @@ func normalizeKind(raw any) string {
 
 // InferType mirrors _struct_infer_type: explicit compile_type restricted to
 // the known compile kinds; then kind returned VERBATIM (aliases resolved) —
-// stamps template kinds ("page_index", "session_graph") as the autotype
+// stamps template kinds ("page_index", "memory_facts") as the autotype
 // then the legacy output.entities+output.relations shape; default "list".
 func InferType(parserConfig map[string]any) Type {
 	if t, ok := resolveTypeAlias(normalizeKind(common.Get(parserConfig, "compile_type"))); ok {

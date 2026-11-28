@@ -27,7 +27,7 @@ func TestParseParamThinkingSettings(t *testing.T) {
 func TestKindToVariant_WhitelistCoversAllValidKinds(t *testing.T) {
 	validKinds := []string{
 		"tree", "mind_map", "mindmap", "wiki", "page_index",
-		"session_essence", "session_graph",
+		"memory_notes", "memory_facts",
 		"knowledge_graph", "structure", "knowledgegraph", "graph",
 	}
 	for _, kind := range validKinds {

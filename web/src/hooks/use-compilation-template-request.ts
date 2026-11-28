@@ -70,8 +70,8 @@ export const CompilationTemplateKeys = {
 };
 
 const ExcludedBuiltinKinds: string[] = [
-  CompilationTemplateKind.SessionEssence,
-  CompilationTemplateKind.SessionGraph,
+  CompilationTemplateKind.MemoryNotes,
+  CompilationTemplateKind.MemoryFacts,
 ];
 
 export const useFetchCompilationTemplatesByPage = () => {

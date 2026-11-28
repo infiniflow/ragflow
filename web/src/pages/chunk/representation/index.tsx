@@ -78,8 +78,8 @@ function Representation({
   // that actually produce claim rows. Right now that's page_index (titles
   // + claim/fact/conclusion entities with gate-verified evidence) and tree
   // (RAPTOR leaf clusters with harvested claims). Other templates
-  // (knowledge_graph, mind_map, timeline, wiki, session_graph,
-  // session_essence, empty) emit no claim rows at all, so opening the
+  // (knowledge_graph, mind_map, timeline, wiki, memory_facts,
+  // memory_notes, empty) emit no claim rows at all, so opening the
   // panel for them would only ever show the empty state.
   const supportsClaims =
     selectedTemplate?.kind === CompilationTemplateKind.PageIndex ||

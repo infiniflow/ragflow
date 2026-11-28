@@ -8,20 +8,14 @@ export const useUpdateMemoryConfig = () => {
   const [loading, setLoading] = useState(false);
   const onMemoryRenameOk = useCallback(
     async (data: IMemory) => {
-      let res;
       setLoading(true);
       if (data?.id) {
-        // console.log('memory-->', memory, data);
         try {
-          const params = omit(data, [
-            'id',
-            // 'memory_type',
-            // 'embd_id',
-            // 'storage_type',
-          ]);
-          res = await updateMemory({
-            // ...memoryDataTemp,
-            // data: data,
+          // memory_type is intentionally never sent: the built-in pipelines
+          // are not editable, and the backend rejects a memory_type update once
+          // the memory holds messages.
+          const params = omit(data, ['id', 'memory_type']);
+          await updateMemory({
             id: data.id,
             ...params,
           } as unknown as IMemoryAppDetailProps);

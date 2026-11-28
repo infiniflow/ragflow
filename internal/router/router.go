@@ -491,6 +491,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.DELETE("/:memory_id", r.memoryHandler.DeleteMemory)
 				memory.GET("", r.memoryHandler.ListMemories)
 				memory.GET("/:memory_id/config", r.memoryHandler.GetMemoryConfig)
+				memory.GET("/:memory_id/facts", r.memoryHandler.ListMemoryFacts)
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 

@@ -13,13 +13,15 @@ export interface MemoryListParams {
   desc?: boolean;
   owner_ids?: string[];
 }
-export type MemoryType = 'raw' | 'semantic' | 'episodic' | 'procedural';
+export type MemoryType = 'raw' | 'memory_notes' | 'memory_facts';
 export type StorageType = 'table' | 'graph';
 export type Permissions = 'me' | 'team';
 export type ForgettingPolicy = 'FIFO' | 'LRU';
 export interface ICreateMemoryProps {
   name: string;
-  memory_type: MemoryType[];
+  // Optional: the built-in pipelines (memory_notes / memory_facts) always run,
+  // so creation no longer chooses them. The API still accepts the field.
+  memory_type?: MemoryType[];
   embd_id: string;
   llm_id: string;
 }

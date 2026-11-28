@@ -233,9 +233,7 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 	}
 	if got, want := filters.Filter.MemoryType, []MemoryFilterOption{
 		{ID: "raw", Label: "raw", Count: 2},
-		{ID: "semantic", Label: "semantic", Count: 2},
-		{ID: "episodic", Label: "episodic", Count: 1},
-		{ID: "procedural", Label: "procedural", Count: 1},
+		{ID: "memory_notes", Label: "memory_notes", Count: 2},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("memory type filter = %+v, want %+v", got, want)
 	}
@@ -295,7 +293,7 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	for _, option := range filters.Filter.MemoryType {
 		gotTypes = append(gotTypes, option.ID)
 	}
-	if want := []string{"raw", "semantic", "episodic", "procedural"}; !slices.Equal(gotTypes, want) {
+	if want := []string{"raw", "memory_notes"}; !slices.Equal(gotTypes, want) {
 		t.Fatalf("memory type facet order = %v, want %v", gotTypes, want)
 	}
 	gotStorage := make([]string, 0, len(filters.Filter.StorageType))

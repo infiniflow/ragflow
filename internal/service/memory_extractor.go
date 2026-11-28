@@ -47,7 +47,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 
 	"go.uber.org/zap"
@@ -427,12 +426,12 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 	if len(memoryTypes) == 0 {
 		memoryTypes = dao.GetMemoryTypeHuman(mem.Memory.MemoryType)
 	}
-	extractTypes := getTypesToExtract(memoryTypes)
-	if len(extractTypes) == 0 {
+	kinds := resolveMemoryCompileKinds(memoryTypes)
+	if len(kinds) == 0 {
 		return []extractedMemory{}, nil
 	}
 
-	extracted, err := s.extractByLLM(ctx, mem, extractTypes, msg, task.TaskID)
+	extracted, err := s.extractByLLM(ctx, mem, kinds, msg, task.TaskID)
 	if err != nil {
 		if !errors.Is(err, errMemoryChatCall) {
 			return nil, err
@@ -444,7 +443,9 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 		return []extractedMemory{}, nil
 	}
 	materialized := materializeMemoryExtraction(ctx, extracted, memoryNow(), s.kvrocksClient)
-	return materialized, nil
+	// Fold repeats before the checkpoint is persisted: one message often yields
+	// the same statement twice, and a resumed task must not store it twice.
+	return dedupeExtractedFacts(materialized), nil
 }
 
 // storeMemoryTaskExtraction embeds and stores a previously checkpointed result.
@@ -459,6 +460,10 @@ func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, ta
 	if s.memories == nil {
 		return errors.New("memory: memory service is not initialized")
 	}
+	extracted = dedupeExtractedFacts(extracted)
+	if len(extracted) == 0 {
+		return nil
+	}
 	mem, err := s.memories.getMemoryConfig(ctx, task.MemoryID)
 	if err != nil {
 		return classifyMemoryTaskDependencyError(err)
@@ -466,6 +471,18 @@ func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, ta
 	// Same identity stamp as extractMemoryTask: the embedding call below
 	// must be attributed to the memory owner.
 	ctx = permission.WithIdentity(ctx, mem.Memory.UserID, mem.Memory.TenantID)
+	// Fold against what this memory already knows. Hindsight does this in its
+	// asynchronous consolidation pass (restates → evidence, near-duplicates →
+	// fold); doing the exact-text half at ingest keeps the common case cheap
+	// and leaves only the semantic judgement to a later pass.
+	if existing, err := s.memories.ExistingFactTexts(ctx, &mem.Memory, factTypesOf(extracted)); err == nil {
+		extracted = dropKnownFacts(extracted, existing)
+	} else {
+		common.Warn(fmt.Sprintf("memory: could not read stored facts for dedupe (memory %s): %v", task.MemoryID, err))
+	}
+	if len(extracted) == 0 {
+		return nil
+	}
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(task.SourceID, task.MemoryID, msg, item))
@@ -476,82 +493,44 @@ func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, ta
 	return nil
 }
 
-// extractByLLM mirrors Python extract_by_llm: build the system/user
-// prompts from the memory config, chat with the configured model, and
-// parse the JSON result into per-type extracted items.
-func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemoryResponse, extractTypes []string, msg MemoryMessage, taskID string) ([]extractedMemory, error) {
-	systemPrompt := ""
-	if mem.SystemPrompt != nil {
-		systemPrompt = *mem.SystemPrompt
-	}
-	if strings.TrimSpace(systemPrompt) == "" {
-		systemPrompt = PromptAssembler{}.AssembleSystemPrompt(extractTypes)
-	}
-
+// extractByLLM runs the built-in memory pipelines selected by the memory's
+// configured types.
+//
+// Each pipeline is a knowledge-compilation template (memory_notes /
+// memory_facts) executed by the compiler: this worker only supplies the
+// conversation, the memory's model settings and the memory-level prompt
+// customization. Adding or retuning a memory type is a template change, not a
+// change here.
+func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemoryResponse, kinds []string, msg MemoryMessage, taskID string) ([]extractedMemory, error) {
 	conversation := fmt.Sprintf("User Input: %s\nAgent Response: %s", msg.UserInput, msg.AgentResponse)
-	now := memoryNow().Format(memoryTimeLayout)
-	messages := []models.Message{{Role: "system", Content: systemPrompt}}
-	if mem.UserPrompt != nil && strings.TrimSpace(*mem.UserPrompt) != "" {
-		messages = append(messages,
-			models.Message{Role: "user", Content: *mem.UserPrompt},
-			models.Message{Role: "user", Content: fmt.Sprintf("Conversation: %s\nConversation Time: %s\nCurrent Time: %s", conversation, now, now)},
-		)
-	} else {
-		messages = append(messages, models.Message{Role: "user", Content: PromptAssembler{}.AssembleUserPrompt(conversation, now, now)})
-	}
+	// The compiler stamps provenance with the chunk id; one conversation is one
+	// chunk, so the task id identifies it.
+	sourceID := taskID
 
 	// Python prefers tenant_llm_id and falls back to llm_id.
 	llmRef := mem.LLMID
 	if mem.TenantLLMID != nil && *mem.TenantLLMID != "" {
 		llmRef = *mem.TenantLLMID
 	}
-	chatModel, err := NewModelFactory().NewChatModel(permission.WithTenantID(ctx, mem.TenantID), llmRef)
-	if err != nil {
-		return nil, fmt.Errorf("resolve chat model: %w", classifyMemoryTaskDependencyError(err))
-	}
+	runCtx := permission.WithTenantID(ctx, mem.TenantID)
+	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared conversation and models.")
 
-	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
-	temperature := mem.Temperature
-	resp, err := chatModel.ChatWithMessages(ctx, messages, &models.ChatConfig{Temperature: &temperature}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("%w: chat model: %w", errMemoryChatCall, err)
+	collected := make([]extractedMemory, 0, len(kinds))
+	for _, kind := range kinds {
+		items, err := s.compileMemoryKind(runCtx, mem, kind, conversation, llmRef, sourceID, taskID)
+		if err != nil {
+			// A model that cannot be resolved (deleted, no access, malformed
+			// provider config) will never resolve on retry: keep it permanent.
+			if errors.Is(err, errModelConfigUnavailable) {
+				return nil, err
+			}
+			return nil, err
+		}
+		collected = append(collected, items...)
 	}
-	if resp == nil || resp.Answer == nil {
-		return nil, fmt.Errorf("%w: empty response from chat model", errMemoryChatCall)
-	}
-	if llmErr := memoryLLMError(*resp.Answer); llmErr != "" {
-		// The driver reports the failure as answer text, so the extraction is
-		// unusable: log it and report an empty extraction, the same outcome
-		// Python produces for the same payload.
-		common.Warn(fmt.Sprintf("memory: chat model failed for task %s: %s", taskID, llmErr))
-		return nil, nil
-	}
-
-	return parseMemoryExtraction(*resp.Answer, extractTypes), nil
+	return collected, nil
 }
 
-// memoryLLMError returns the failure a chat driver reports as answer text
-// instead of a Go error. Drivers mirror the Python convention of answering
-// with a "**ERROR**: <detail>" payload, which leaves no JSON to parse, so the
-// caller reports an empty extraction. An empty return means the answer carries
-// no error marker.
-func memoryLLMError(answer string) string {
-	const marker = "**ERROR**"
-	idx := strings.Index(answer, marker)
-	if idx < 0 {
-		return ""
-	}
-	detail := strings.TrimPrefix(strings.TrimSpace(answer[idx+len(marker):]), ":")
-	if strings.TrimSpace(detail) == "" {
-		return "chat model returned an error without detail"
-	}
-	return strings.TrimSpace(detail)
-}
-
-// materializeMemoryExtraction assigns stable message ids and timestamp
-// fallbacks before the extraction checkpoint is persisted. kv is the kvrocks
-// client used to mint raw-message ids; a nil client falls back to wall-clock
-// ids.
 func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemory, now time.Time, kv *kvrocks.Client) []extractedMemory {
 	materialized := make([]extractedMemory, len(extracted))
 	for i, item := range extracted {
@@ -666,43 +645,6 @@ func buildExtractedMessage(sourceID int64, memoryID string, msg MemoryMessage, i
 // parseMemoryExtraction ports memory.utils.msg_util.get_json_result_from_llm_response
 // plus the per-type flattening in extract_by_llm. Only the configured
 // extract types are collected; unparseable responses yield an empty list.
-func parseMemoryExtraction(answer string, extractTypes []string) []extractedMemory {
-	clean := strings.TrimSpace(answer)
-	clean = strings.TrimPrefix(clean, "```json")
-	clean = strings.TrimPrefix(clean, "```")
-	clean = strings.TrimSuffix(clean, "```")
-	if start := strings.Index(clean, "{"); start >= 0 {
-		if end := strings.LastIndex(clean, "}"); end > start {
-			clean = clean[start : end+1]
-		}
-	}
-
-	var parsed map[string][]struct {
-		Content   string `json:"content"`
-		ValidAt   string `json:"valid_at"`
-		InvalidAt string `json:"invalid_at"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(clean)), &parsed); err != nil {
-		common.Warn("memory: failed to parse LLM extraction result", zap.Error(err))
-		return nil
-	}
-
-	var out []extractedMemory
-	for _, memoryType := range extractTypes {
-		for _, item := range parsed[memoryType] {
-			if strings.TrimSpace(item.Content) == "" {
-				continue
-			}
-			out = append(out, extractedMemory{
-				MessageType: memoryType,
-				Content:     item.Content,
-				ValidAt:     item.ValidAt,
-				InvalidAt:   item.InvalidAt,
-			})
-		}
-	}
-	return out
-}
 
 // formatMemoryTime normalizes an LLM-supplied timestamp (ISO 8601 or
 // already-formatted) into memoryTimeLayout. The parsed timestamp keeps its

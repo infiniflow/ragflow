@@ -273,7 +273,7 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 
 // TestKnowledgeCompilerDSL_KindToVariant locks the compilation_template.kind ->
 // Go Variant mapping. tree->tree, mind_map->mindmap, wiki->wiki; the
-// graph-family kinds (page_index / session_essence / session_graph /
+// graph-family kinds (page_index / memory_notes / memory_facts /
 // knowledge_graph) all collapse onto the structure (graph) variant; unknown
 // kinds return ErrUnknownVariant.
 func TestKnowledgeCompilerDSL_KindToVariant(t *testing.T) {
@@ -285,8 +285,8 @@ func TestKnowledgeCompilerDSL_KindToVariant(t *testing.T) {
 		{"mind_map", kc.VariantMindmap},
 		{"wiki", kc.VariantWiki},
 		{"page_index", kc.VariantStructure},
-		{"session_essence", kc.VariantStructure},
-		{"session_graph", kc.VariantStructure},
+		{"memory_notes", kc.VariantStructure},
+		{"memory_facts", kc.VariantStructure},
 		{"knowledge_graph", kc.VariantStructure},
 	}
 	for _, c := range cases {

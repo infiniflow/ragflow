@@ -21,8 +21,8 @@ export const enum CompilationTemplateKind {
   Tree = 'tree',
   Empty = 'empty',
   MindMap = 'mind_map',
-  SessionGraph = 'session_graph',
-  SessionEssence = 'session_essence',
+  MemoryFacts = 'memory_facts',
+  MemoryNotes = 'memory_notes',
 }
 
 export const enum CompilationTemplateScope {

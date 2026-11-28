@@ -207,7 +207,7 @@ export function RepresentationRenderer({
           />
         </div>
       );
-    case CompilationTemplateKind.SessionGraph:
+    case CompilationTemplateKind.MemoryFacts:
       return (
         <div className="mt-6 flex-1 min-h-0">
           <ArtifactForceGraph
@@ -220,7 +220,7 @@ export function RepresentationRenderer({
           />
         </div>
       );
-    case CompilationTemplateKind.SessionEssence:
+    case CompilationTemplateKind.MemoryNotes:
       return (
         <div className="mt-6 flex-1 min-h-0">
           <MindMapG6Graph
