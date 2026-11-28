@@ -17,6 +17,7 @@
 package cli
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -119,5 +120,27 @@ func TestBuildURLPreservesIPv4Host(t *testing.T) {
 	}
 	if got, want := c.NonAPIBase(), "127.0.0.1:9382"; got != want {
 		t.Errorf("NonAPIBase() = %q, want %q", got, want)
+	}
+}
+
+func TestRequestWithIterationsResendsJSONBody(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A fresh connection prevents transport retries from rewinding the body.
+		w.Header().Set("Connection", "close")
+		body, err := io.ReadAll(r.Body)
+		if err != nil || string(body) != `{"question":"example"}` || r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, `{"code":1}`, http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":0}`))
+	}))
+
+	result, err := client.Request(3, http.MethodPost, "/search", "api", nil, map[string]interface{}{"question": "example"})
+	if err != nil {
+		t.Fatalf("Request() error = %v", err)
+	}
+	if result.Success != 3 || result.Fail != 0 || result.StatusCode != http.StatusOK {
+		t.Fatalf("successes = %d, failures = %d, status = %d; want 3 successes, 0 failures, and HTTP 200",
+			result.Success, result.Fail, result.StatusCode)
 	}
 }

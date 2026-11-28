@@ -177,13 +177,15 @@ func (c *HTTPClient) RequestWithContext(ctx context.Context, commandCount int, m
 	var respHeader http.Header
 	var requestErr error
 	for i := range commandCount {
+		iterationRequest := req
 		if i > 0 && req.GetBody != nil {
-			req.Body, err = req.GetBody()
+			iterationRequest = req.Clone(req.Context())
+			iterationRequest.Body, err = req.GetBody()
 			if err != nil {
 				return nil, err
 			}
 		}
-		respBody, respHeader, statusCode, err = c.HttpDo(req)
+		respBody, respHeader, statusCode, err = c.HttpDo(iterationRequest)
 		if err == nil {
 			if statusCode >= http.StatusBadRequest {
 				failCount++
