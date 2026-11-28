@@ -190,3 +190,30 @@ func registeredUserCommands(t *testing.T) map[string]bool {
 	t.Fatal("ExecuteUserCommand cmd.Type switch not found")
 	return nil
 }
+
+func TestParseArgsOutputFormat(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want OutputFormat
+	}{
+		{"api output before mode", []string{"--output", "json", "--api"}, OutputFormatJSON},
+		{"api output after mode", []string{"--api", "-o", "json"}, OutputFormatJSON},
+		{"admin output before mode", []string{"-o", "plain", "--admin"}, OutputFormatPlain},
+		{"admin output after mode", []string{"--admin", "--output", "plain"}, OutputFormatPlain},
+		{"last output wins", []string{"-o", "json", "--admin", "-o", "plain"}, OutputFormatPlain},
+		{"api default", []string{"--api"}, OutputFormatTable},
+		{"admin default", []string{"--admin"}, OutputFormatTable},
+		{"command default", []string{"list", "datasets"}, OutputFormatPlain},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config, err := ParseArgs(tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.OutputFormat != tc.want {
+				t.Errorf("output format = %q, want %q", config.OutputFormat, tc.want)
+			}
+		})
+	}
+}
