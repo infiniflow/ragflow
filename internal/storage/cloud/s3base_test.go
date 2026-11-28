@@ -14,12 +14,13 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	objectstorage "ragflow/internal/storage"
 	"strings"
 	"testing"
 
@@ -28,15 +29,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// Compile-time contract: every backend must satisfy the full Storage
+// Compile-time contract: every backend must satisfy the full objectstorage.Storage
 // interface. These pin the embedding-based decomposition — if a future
 // refactor drops a method from s3Base or a thin shell, compilation breaks.
 var (
-	_ Storage = (*S3Storage)(nil)
-	_ Storage = (*OSSStorage)(nil)
-	_ Storage = (*MinioStorage)(nil)
-	_ Storage = (*MemoryStorage)(nil)
-	_ Storage = (*GCSStorage)(nil)
+	_ objectstorage.Storage = (*S3Storage)(nil)
+	_ objectstorage.Storage = (*OSSStorage)(nil)
+	_ objectstorage.Storage = (*MinioStorage)(nil)
+	_ objectstorage.Storage = (*objectstorage.MemoryStorage)(nil)
+	_ objectstorage.Storage = (*GCSStorage)(nil)
 )
 
 // newBareS3Base builds an s3Base directly — no S3Storage wrapper — proving

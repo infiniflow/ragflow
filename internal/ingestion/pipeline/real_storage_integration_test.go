@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
+	cloudstorage "ragflow/internal/storage/cloud"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -61,7 +62,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		t.Fatalf("auto-migrate real mysql tables: %v", err)
 	}
 
-	realStorage, err := storage.NewMinioStorage(cfg.GetMinioConfig())
+	realStorage, err := cloudstorage.NewMinioStorage(cfg.GetMinioConfig())
 	if err != nil {
 		t.Fatalf("connect real minio: %v", err)
 	}

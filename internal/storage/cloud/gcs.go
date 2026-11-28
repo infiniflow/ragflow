@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
@@ -31,7 +31,7 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// GCSStorage implements Storage interface for GCS
+// GCSStorage implements objectstorage.Storage interface for GCS
 type GCSStorage struct {
 	client *storage.Client
 	config config.GCSConfig

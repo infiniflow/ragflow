@@ -18,82 +18,17 @@ package storage
 
 import (
 	"context"
-	"errors"
-	"net/http"
-	"time"
-
-	"ragflow/internal/common"
-
-	gcs "cloud.google.com/go/storage"
-	"github.com/minio/minio-go/v7"
 	"go.uber.org/zap"
-	"google.golang.org/api/googleapi"
+	"ragflow/internal/common"
+	"time"
 )
 
-// IsNotFound reports whether an object or bucket is missing from storage.
-func IsNotFound(err error) bool {
-	if errors.Is(err, ErrMemoryNotFound) || errors.Is(err, gcs.ErrObjectNotExist) || IsBucketNotFound(err) || isS3NotFound(err) {
-		return true
-	}
-	var minioErr minio.ErrorResponse
-	if errors.As(err, &minioErr) {
-		return minioErr.Code == "NoSuchKey" || minioErr.Code == "NoSuchBucket" || minioErr.Code == "NotFound"
-	}
-	return false
-}
-
-// IsBucketNotFound reports a missing bucket without matching object-level
-// 404s, so a bucket removal cannot mistake a missing object for a missing
-// bucket. GCS's object iterator returns a raw googleapi 404 for this case,
-// while object handles wrap theirs in a typed sentinel.
-func IsBucketNotFound(err error) bool {
-	if errors.Is(err, ErrMemoryNotFound) || errors.Is(err, gcs.ErrBucketNotExist) || isS3BucketNotFound(err) {
-		return true
-	}
-	var minioErr minio.ErrorResponse
-	if errors.As(err, &minioErr) {
-		return minioErr.Code == "NoSuchBucket" || minioErr.Code == "NotFound"
-	}
-	var apiErr *googleapi.Error
-	return errors.As(err, &apiErr) && apiErr.Code == http.StatusNotFound
-}
-
-// retryObjectOp runs op up to attempts times, sleeping one second between
-// attempts and invoking onRetry (e.g. a client reconnect) before each sleep.
-// It returns nil on the first success and the last error once attempts are
-// exhausted. A canceled context short-circuits before an attempt and wins
-// over the backoff sleep, so cancellation always surfaces promptly instead
-// of costing a sleep window — the contract pinned by s3_cancel_test.go.
-func retryObjectOp(ctx context.Context, attempts int, onRetry func(), op func() error) error {
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := op(); err != nil {
-			lastErr = err
-			if cerr := ctx.Err(); cerr != nil {
-				return cerr
-			}
-			if onRetry != nil {
-				onRetry()
-			}
-			if serr := sleepOrAbort(ctx, time.Second); serr != nil {
-				return serr
-			}
-			continue
-		}
-		return nil
-	}
-	return lastErr
-}
-
-// moveWithRollback implements the shared Move contract across backends: copy
+// MoveWithRollback implements the shared Move contract across backends: copy
 // the object, then remove the source. If the source removal fails, the
 // destination is removed best-effort under a detached 30s context derived via
 // context.WithoutCancel — so cleanup survives a parent canceled during the
 // source removal — and the move reports failure.
-func moveWithRollback(ctx context.Context, srcBucket, srcPath, destBucket, destPath string, copyFn func() bool, removeSrc, removeDest func(context.Context) error) bool {
+func MoveWithRollback(ctx context.Context, srcBucket, srcPath, destBucket, destPath string, copyFn func() bool, removeSrc, removeDest func(context.Context) error) bool {
 	if !copyFn() {
 		return false
 	}

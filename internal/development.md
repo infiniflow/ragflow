@@ -1025,3 +1025,25 @@ RAGFlow(api/default)> search "AI" datasets 'test1' 'test2'    # search in datase
 ```
 RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
 ```
+
+## Local and remote object storage
+
+`internal/storage` owns the `Storage` interface, memory implementation, shared
+factory, and detached cleanup. It does not import cloud SDKs or select a backend.
+Local parsing tools can use `NewMemoryStorage` and existing injection seams
+without remote storage initialization.
+
+`internal/storage/cloud` owns MinIO, AWS S3, OSS, GCS, and their SDK-specific error
+classification. Server startup explicitly calls `cloud.Init(ctx, server.GetConfig())` and closes the
+shared factory through `storage.CloseStorage`. Cloud initialization installs its
+backend into the same factory read by ingestion and service code. It keeps the
+existing configured engine, credentials, path folding, cancellation, retry,
+rollback, and health contracts. An unsupported engine is an error; importing the
+local package neither enables a cloud provider nor selects a fallback.
+
+Run `bash build.sh --test ./internal/storage/...` for the memory/cloud regressions
+and the local package dependency boundary. The dependency test checks `go list`
+for the compiled package closure; cloud entries remain in `go.mod` because the
+server still uses them. Package-scoped tests do not establish cloud deployment
+readiness or native PDF/OCR quality; embedded consumers must rebuild their exact
+artifact and run their parsing/chunking regressions separately.

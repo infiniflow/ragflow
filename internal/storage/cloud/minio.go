@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"bytes"
@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
+	objectstorage "ragflow/internal/storage"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -31,7 +32,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// MinioStorage implements Storage interface for MinIO
+// MinioStorage implements objectstorage.Storage interface for MinIO
 type MinioStorage struct {
 	client       *minio.Client
 	healthClient *http.Client
@@ -486,7 +487,7 @@ func (m *MinioStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket,
 
 // Move moves an object from source to destination
 func (m *MinioStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+	return objectstorage.MoveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
 		func() bool { return m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
 		func(rctx context.Context) error { return m.Remove(rctx, srcBucket, srcPath) },
 		func(rctx context.Context) error { return m.Remove(rctx, destBucket, destPath) },

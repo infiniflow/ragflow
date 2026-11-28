@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package storage
+package cloud
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// OSSStorage implements Storage for Aliyun OSS. The shared S3-compatible
+// OSSStorage implements objectstorage.Storage for Aliyun OSS. The shared S3-compatible
 // surface lives in s3Base; this file holds only what differs for OSS: the
 // connection setup, the path-folding semantics (no logical-bucket segment —
 // see doc.go), and the refusal to remove logical buckets in shared-bucket

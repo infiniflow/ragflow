@@ -39,7 +39,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/permission"
-	"ragflow/internal/storage"
+	cloudstorage "ragflow/internal/storage/cloud"
 	"ragflow/internal/utility"
 )
 
@@ -92,7 +92,7 @@ func (h *AgentHandler) streamAgentAttachment(c *gin.Context, attachmentID string
 			common.RespondError(c, common.CodeUnauthorized, err.Error())
 			return
 		}
-		if storage.IsNotFound(err) {
+		if cloudstorage.IsNotFound(err) {
 			common.RespondError(c, common.CodeDataError, "Attachment not found!")
 			return
 		}
