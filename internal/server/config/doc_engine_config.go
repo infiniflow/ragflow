@@ -30,6 +30,7 @@ type DocEngineConfig struct {
 	OceanBase  OceanBaseConfig     `mapstructure:"oceanbase"`
 	SeekDB     OceanBaseConfig     `mapstructure:"seekdb"`
 	SereneDB   SereneDBConfig      `mapstructure:"serenedb"`
+	OpenGauss  OpenGaussConfig     `mapstructure:"opengauss"`
 	Vastbase   VastbaseConfig      `mapstructure:"vastbase"`
 }
 
@@ -125,6 +126,7 @@ func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
 	c.parseVastbaseConfig(v)
+	c.parseOpenGaussConfig(v)
 	return nil
 }
 

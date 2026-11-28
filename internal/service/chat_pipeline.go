@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/opengauss"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -40,6 +41,7 @@ import (
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -3233,14 +3235,11 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	return model
 }
 
-// HydrateChunkVectors fills the `vector` field on each chunk in `kbinfos`
-// that lacks one, by issuing a single batched fetch via
-// RetrievalService.FetchChunkVectors. Mirrors Python's
-// `async_chat._hydrate_chunk_vectors` at
-// api/db/services/dialog_service.py:62-106.
+// HydrateChunkVectors fetches missing vectors for citation and retrieval hits.
+// For openGauss, chunk IDs are unique within a dataset, so each batch is
+// restricted to one dataset.
 //
-// The vector dimension is auto-detected from chunks that already carry a
-// vector. If no chunk has a vector yet, no fetch is attempted (returns 0).
+// When dim is zero, infer it from the first chunk that carries a vector.
 //
 // Returns the number of chunks that gained a vector.
 //
@@ -3260,11 +3259,8 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 //     "infer from the chunks"; the agentic evidence pool carries no chunk
 //     vectors at all, so its caller passes the model dimension explicitly.
 func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, tenantIDs []string, kbIDs []string, dim int, docEngine engine.DocEngine) (int, error) {
-	if kbinfos == nil {
-		return 0, nil
-	}
-	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
-	if !ok || len(chunksRaw) == 0 {
+	chunks, _ := kbinfos["chunks"].([]map[string]interface{})
+	if len(chunks) == 0 || len(tenantIDs) == 0 {
 		return 0, nil
 	}
 	if docEngine == nil {
@@ -3283,50 +3279,63 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 	// alone skips exactly the chunks hydration exists for, leaving them at zero
 	// similarity where they can never be cited.
 	if dim <= 0 {
-		dim = firstChunkVectorDim(chunksRaw)
+		dim = firstChunkVectorDim(chunks)
 	}
-	var missing []string
-	for _, cm := range chunksRaw {
-		if vectorHasSignal(chunkVector(cm)) {
-			continue
-		}
-		if cid, ok := cm["chunk_id"].(string); ok && cid != "" {
-			missing = append(missing, cid)
-		}
-	}
-	if len(missing) == 0 || dim <= 0 || len(tenantIDs) == 0 {
+	if dim <= 0 {
 		return 0, nil
 	}
 
-	// Use RetrievalService which mirrors Python's Dealer.fetch_chunk_vectors.
-	retrievalSvc := nlp.NewRetrievalService(docEngine, dao.NewDocumentDAO())
-	vectors, err := retrievalSvc.FetchChunkVectors(ctx, missing, tenantIDs, kbIDs, dim)
+	svc := nlp.NewRetrievalService(docEngine, dao.NewDocumentDAO())
+	if engine.Type(docEngine) != engine.EngineOpenGauss {
+		return hydrateVectorBatch(ctx, svc, chunks, tenantIDs, kbIDs, dim)
+	}
+	batches := make(map[string][]map[string]any)
+	for _, chunk := range chunks {
+		kb := common.FirstEngineString(chunk["kb_id"])
+		if kb == "" {
+			kb = common.FirstEngineString(chunk["dataset_id"])
+		}
+		if kb == "" && len(kbIDs) == 1 {
+			kb = kbIDs[0]
+		}
+		if kb == "" || (len(kbIDs) > 0 && !slices.Contains(kbIDs, kb)) {
+			continue
+		}
+		batches[kb] = append(batches[kb], chunk)
+	}
+	hits := 0
+	for kb, batch := range batches {
+		n, err := hydrateVectorBatch(ctx, svc, batch, tenantIDs, []string{kb}, dim)
+		if err != nil {
+			return hits, err
+		}
+		hits += n
+	}
+	return hits, nil
+}
+
+func hydrateVectorBatch(ctx context.Context, svc *nlp.RetrievalService, chunks []map[string]any, tenantIDs, kbIDs []string, dim int) (int, error) {
+	var ids []string
+	for _, chunk := range chunks {
+		if id, _ := chunk["chunk_id"].(string); id != "" && !vectorHasSignal(chunkVector(chunk)) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	vectors, err := svc.FetchChunkVectors(ctx, ids, tenantIDs, kbIDs, dim)
 	if err != nil {
-		common.Warn("HydrateChunkVectors: FetchChunkVectors failed", zap.Error(err))
 		return 0, err
 	}
-
-	// Stitch the vectors back onto the chunks. FetchChunkVectors answers with
-	// zeros for chunks it could not resolve, so only a vector with signal counts
-	// as a hit.
 	hits := 0
-	for _, cm := range chunksRaw {
-		if vectorHasSignal(chunkVector(cm)) {
-			continue
+	for _, chunk := range chunks {
+		id, _ := chunk["chunk_id"].(string)
+		if vec := vectors[id]; vectorHasSignal(vec) && !vectorHasSignal(chunkVector(chunk)) {
+			chunk["vector"] = vec
+			hits++
 		}
-		cid, _ := cm["chunk_id"].(string)
-		if cid == "" {
-			continue
-		}
-		vec := vectors[cid]
-		if !vectorHasSignal(vec) {
-			continue
-		}
-		cm["vector"] = vec
-		hits++
 	}
-	common.Debug("HydrateChunkVectors complete",
-		zap.Int("hits", hits), zap.Int("requested", len(missing)))
 	return hits, nil
 }
 
@@ -3453,7 +3462,7 @@ func (s *ChatPipelineService) decorateAnswer(
 			normalizedOutput := normalizeArabicDigits(think + ans)
 			// P7 — _hydrate_chunk_vectors. Mirrors
 			// dialog_service.py:794. Fetch the chunk embeddings insertCitations
-			// scores against, in one batched engine call. The agentic evidence
+			// scores against. The agentic evidence
 			// pool reaches here with no `vector` key at all and the naive path
 			// ships zero placeholders, so the dimension comes from the embedding
 			// model whenever no chunk carries one. Only needed when we'll
@@ -4128,7 +4137,7 @@ func sqlScanDialectFor(engineName string) sqlScanDialect {
 	switch {
 	case engine.IsOceanBaseFamily(engineName):
 		return sqlScanDialect{backslashEscapes: true, hashLineComments: true, executableComments: true}
-	case engine.IsVastbase(engineName), engineName == string(engine.EngineSereneDB):
+	case engine.IsVastbase(engineName), engineName == string(engine.EngineOpenGauss), engineName == string(engine.EngineSereneDB):
 		return sqlScanDialect{dollarQuotes: true, nestedBlockComments: true}
 	default:
 		// Elasticsearch / OpenSearch / unknown: standard literals only.
@@ -4313,6 +4322,17 @@ func scanScalarWords(sqlText string, dialect sqlScanDialect) (words []scalarWord
 // be scoped safely (set operations, unterminated literals/comments). Callers
 // must not execute the SQL when it is false.
 func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (string, bool) {
+	if engineName == string(engine.EngineOpenGauss) {
+		datasets := make(map[string][]string)
+		for _, kb := range kbs {
+			if kb == nil || kb.TenantID == "" || !isValidUUID(kb.ID) {
+				return "", false
+			}
+			table := "ragflow_" + kb.TenantID
+			datasets[table] = append(datasets[table], kb.ID)
+		}
+		return opengauss.ScopeChatSQL(sqlText, datasets)
+	}
 	if engineName == "infinity" || len(kbs) == 0 {
 		return sqlText, true
 	}
@@ -4945,8 +4965,9 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 	ctx context.Context,
 	docEngine engine.DocEngine,
 	tableName, originalSQL, expectedCol string,
-	kbIDs []string,
+	kbs []*entity.Knowledgebase,
 ) (chunks []map[string]interface{}, docAggs []map[string]interface{}) {
+	kbIDs := kbIDStrings(kbs)
 	multiKB := len(kbIDs) > 1
 
 	// Infinity's RunSQL rejects multi-KB (see infinity/sql.go:63-65).
@@ -4969,10 +4990,6 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 
 	if len(kbIDs) == 0 {
 		return nil, nil
-	}
-	kbs := make([]*entity.Knowledgebase, len(kbIDs))
-	for i, kbID := range kbIDs {
-		kbs[i] = &entity.Knowledgebase{ID: kbID}
 	}
 	chunksSQL, ok = addKBFilter(chunksSQL, engineName, kbs)
 	if !ok {
@@ -5214,7 +5231,7 @@ func (s *ChatPipelineService) buildSQLReference(
 
 	// Source columns missing — try the aggregate secondary fetch.
 	if isAggregateSQL(originalSQL) {
-		chunks, docAggs := s.fetchAggregateChunks(ctx, docEngine, tableName, originalSQL, expectedCol, kbIDs)
+		chunks, docAggs := s.fetchAggregateChunks(ctx, docEngine, tableName, originalSQL, expectedCol, kbs)
 		if len(chunks) > 0 {
 			ref["chunks"] = chunksFormat(chunks)
 			ref["doc_aggs"] = docAggs

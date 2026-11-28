@@ -36,6 +36,7 @@ const (
 	EngineOceanBase     EngineType = "oceanbase"
 	EngineSeekDB        EngineType = "seekdb"
 	EngineSereneDB      EngineType = "serenedb"
+	EngineOpenGauss     EngineType = "opengauss"
 	EngineVastbase      EngineType = "vastbase"
 )
 

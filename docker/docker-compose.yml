@@ -8,6 +8,9 @@ services:
       mysql:
         condition: service_healthy
         required: false
+      opengauss:
+        condition: service_healthy
+        required: false
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}

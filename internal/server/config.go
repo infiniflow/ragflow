@@ -236,6 +236,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	case "seekdb":
 		seekDBConfig := globalConfig.GetSeekDBConfig()
 		allConfigs = append(allConfigs, seekDBConfig.ExportConfigs())
+	case "opengauss":
+		cfg := globalConfig.GetOpenGaussConfig()
+		allConfigs = append(allConfigs, cfg.ExportConfigs())
 	case "vastbase":
 		vastbaseConfig := globalConfig.GetVastbaseConfig()
 		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())

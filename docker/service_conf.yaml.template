@@ -91,6 +91,14 @@ seekdb:
     password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
     host: '${SEEKDB_HOST:-seekdb}'
     port: 2881
+opengauss:
+  host: '${OPENGAUSS_HOST:-opengauss}'
+  port: '${OPENGAUSS_PORT:-5432}'
+  database: '${OPENGAUSS_DATABASE:-postgres}'
+  user: '${OPENGAUSS_USER:-ragflow}'
+  schema: '${OPENGAUSS_SCHEMA:-public}'
+  ssl_mode: '${OPENGAUSS_SSL_MODE:-verify-full}'
+
 vastbase:
   host: '${VB_HOST:-vastbase}'
   port: 5432

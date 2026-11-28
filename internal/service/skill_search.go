@@ -406,18 +406,6 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 		zap.String("embdID", config.EmbdID),
 		zap.Int("dimension", len(vector)))
 
-	// Analyze query for potential keyword filtering
-	matchExpr := &types.MatchTextExpr{
-		MatchingText: query,
-		Fields: []string{
-			"name^10",
-			"tags^5",
-			"description^3",
-			"content^1",
-		},
-		TopN: int(config.TopK),
-	}
-
 	// Build MatchDenseExpr for vector search
 	vectorColumnName := common.VectorColumnName(len(vector))
 	matchDense := &types.MatchDenseExpr{
@@ -436,7 +424,7 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 		IndexNames: []string{indexName},
 		Offset:     0,
 		Limit:      100,
-		MatchExprs: []interface{}{matchExpr, matchDense},
+		MatchExprs: skillVectorMatchExprs(docEngine.GetType(), query, matchDense),
 	}
 
 	searchResult, err := docEngine.Search(ctx, searchReq)
@@ -461,6 +449,23 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 	}
 
 	return results, nil
+}
+
+func skillVectorMatchExprs(engineType, query string, dense *types.MatchDenseExpr) []interface{} {
+	if engineType == string(engine.EngineOpenGauss) {
+		return []interface{}{dense}
+	}
+	matchExpr := &types.MatchTextExpr{
+		MatchingText: query,
+		Fields: []string{
+			"name^10",
+			"tags^5",
+			"description^3",
+			"content^1",
+		},
+		TopN: dense.TopN,
+	}
+	return []interface{}{matchExpr, dense}
 }
 
 // hybridSearch performs hybrid search combining BM25 and vector search

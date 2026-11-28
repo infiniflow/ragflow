@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/engine/nats"
 	"ragflow/internal/engine/oceanbase"
+	"ragflow/internal/engine/opengauss"
 	"ragflow/internal/engine/opensearch"
 	"ragflow/internal/engine/serenedb"
 	"ragflow/internal/engine/vastbase"
@@ -67,6 +68,8 @@ func InitDocEngine(ctx context.Context) error {
 			}
 		case "serenedb":
 			globalEngine, err = serenedb.NewEngine(globalConfig.GetSereneDBConfig())
+		case "opengauss":
+			globalEngine, err = opengauss.NewEngine(globalConfig.GetOpenGaussConfig())
 		case "vastbase":
 			globalEngine, err = vastbase.NewEngine(globalConfig.GetVastbaseConfig())
 		default:

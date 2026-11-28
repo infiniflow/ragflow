@@ -19,6 +19,7 @@ package nlp
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 
 	"ragflow/internal/common"
@@ -74,7 +75,7 @@ func TestRerankStandardIncludesQuestionTks(t *testing.T) {
 	}
 }
 
-func TestScoreSearchResultLocalRerankOceanBaseAndVastbase(t *testing.T) {
+func TestScoreSearchResultLocalRerank(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
@@ -118,6 +119,7 @@ func TestScoreSearchResultLocalRerankOceanBaseAndVastbase(t *testing.T) {
 		engineType string
 	}{
 		{name: "oceanbase", engineType: string(engine.EngineOceanBase)},
+		{name: "opengauss", engineType: string(engine.EngineOpenGauss)},
 		{name: "vastbase", engineType: string(engine.EngineVastbase)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,5 +153,24 @@ func TestScoreSearchResultLocalRerankOceanBaseAndVastbase(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOpenGaussVectorOnlyScoresAcrossDatasets(t *testing.T) {
+	service := NewRetrievalService(&localRerankDocEngine{engineType: string(engine.EngineOpenGauss)}, nil)
+	chunks := []map[string]any{
+		{"id": "same", "kb_id": "a", "_score": 0.9, "content_ltks": "unrelated"},
+		{"id": "same", "kb_id": "b", "_score": 0.2, "content_ltks": "orbital"},
+	}
+	hits, originals := scopeDatasetHits(chunks)
+	ids := []string{hits[0]["id"].(string), hits[1]["id"].(string)}
+	if ids[0] == ids[1] || originals[ids[0]] != "same" || originals[ids[1]] != "same" || chunks[0]["id"] != "same" || chunks[1]["id"] != "same" {
+		t.Fatalf("hit IDs %q lost dataset or citation identity", ids)
+	}
+	result := &RetrievalSearchResult{Chunks: hits, IDs: ids, originalIDs: originals, Total: 2}
+	req := &RetrievalRequest{VectorOnly: true, Question: "orbital", VectorSimilarityWeight: new(0.3), RankFeature: new(map[string]float64)}
+	sim, term, dense, err := service.scoreSearchResult(t.Context(), req, result)
+	if err != nil || !slices.Equal(sim, []float64{0.9, 0.2}) || !slices.Equal(term, []float64{0, 0}) || !slices.Equal(dense, sim) {
+		t.Fatalf("sim=%v term=%v dense=%v err=%v", sim, term, dense, err)
 	}
 }

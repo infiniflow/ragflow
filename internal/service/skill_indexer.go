@@ -202,7 +202,7 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 	}
 
 	// ES document ID cannot contain '/' - replace with '_'
-	docID := strings.ReplaceAll(skill.ID, "/", "_")
+	docID := skillDocumentID(docEngine, skill.ID)
 
 	common.Info(fmt.Sprintf("Calling IndexDocument: indexName=%s, docID=%s, engineType=%s", indexName, docID, docEngine.GetType()))
 	if err := docEngine.IndexDocument(ctx, indexName, docID, doc); err != nil {
@@ -311,7 +311,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 		}
 
 		// ES document ID cannot contain '/' - replace with '_'
-		docID := strings.ReplaceAll(skill.ID, "/", "_")
+		docID := skillDocumentID(docEngine, skill.ID)
 
 		// Use skill.Version if available, otherwise default to "1.0.0"
 		skillVersion := skill.Version
@@ -379,6 +379,13 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 	return nil
 }
 
+func skillDocumentID(docEngine engine.DocEngine, id string) string {
+	if docEngine.GetType() == string(engine.EngineOpenGauss) {
+		return id
+	}
+	return strings.ReplaceAll(id, "/", "_")
+}
+
 // DeleteSkillIndex deletes a skill's index by skill ID
 // Returns nil if the document doesn't exist (idempotent delete)
 func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, spaceID, skillID string, docEngine engine.DocEngine) error {
@@ -389,7 +396,7 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, spaceID, ski
 	spaceID = normalizeSpaceID(spaceID)
 	indexName := SkillIndexName(tenantID, spaceID)
 	// ES document ID cannot contain '/' - replace with '_'
-	docID := strings.ReplaceAll(skillID, "/", "_")
+	docID := skillDocumentID(docEngine, skillID)
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
 		// Check if it's a "not found" error - this is OK, document might not have been indexed
 		if strings.Contains(err.Error(), "not found") {
@@ -403,10 +410,14 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, spaceID, ski
 }
 
 func (s *SkillIndexerService) deleteSkillByName(ctx context.Context, tenantID, spaceID, skillName string, docEngine engine.DocEngine) error {
+	// openGauss upserts by skill_id. A display name may be another skill's ID.
+	if engine.Type(docEngine) == engine.EngineOpenGauss {
+		return nil
+	}
 	spaceID = normalizeSpaceID(spaceID)
 	indexName := SkillIndexName(tenantID, spaceID)
 
-	docID := strings.ReplaceAll(skillName, "/", "_")
+	docID := skillDocumentID(docEngine, skillName)
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
 		common.Debug(fmt.Sprintf("Document %s not found in index %s", skillName, indexName))
 	}
