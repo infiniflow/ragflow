@@ -76,6 +76,10 @@ export function TemplateConfiguration({
     control: form.control,
     name: `templates.${selectedTemplateIndex}.config.rechunk`,
   });
+  const wikiMode = useWatch({
+    control: form.control,
+    name: `templates.${selectedTemplateIndex}.config.mode`,
+  });
 
   const availableKindOptions = useAvailableKindOptions(
     form,
@@ -207,6 +211,15 @@ export function TemplateConfiguration({
             )}
           </RAGFlowFormItem>
         )}
+
+        {kind === CompilationTemplateKind.Artifacts &&
+          wikiMode === 'entity' && (
+            <SwitchFormField
+              name={`templates.${selectedTemplateIndex}.config.disable_concept_pages`}
+              label={t('knowledgeCompilation.disableConceptPages')}
+              vertical={false}
+            />
+          )}
 
         {kind === CompilationTemplateKind.Tree ? (
           <TreeTemplateFields index={selectedTemplateIndex} />

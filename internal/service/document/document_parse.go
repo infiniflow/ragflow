@@ -126,6 +126,10 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	unlock := lockDocumentParse(doc.ID)
 	defer unlock()
 
+	if err := ValidateDocumentParser(doc); err != nil {
+		return err
+	}
+
 	if opts.ApplyKB {
 		if err := s.applyKnowledgebaseParserConfig(ctx, doc, kb); err != nil {
 			return err
@@ -147,6 +151,23 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	}
 	if !strings.HasPrefix(responses[0].Result, "task_id:") {
 		return fmt.Errorf("failed to enqueue document %s: %s", doc.ID, responses[0].Result)
+	}
+	return nil
+}
+
+// ValidateDocumentParser checks the built-in parser selected for a document.
+// A custom pipeline takes precedence over the parser ID.
+func ValidateDocumentParser(doc *entity.Document) error {
+	if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
+		return nil
+	}
+	parserID := strings.TrimSpace(doc.ParserID)
+	registry, err := ingestionpipeline.DefaultRegistry()
+	if err != nil {
+		return fmt.Errorf("builtin pipeline registry: %w", err)
+	}
+	if !registry.IsValid(parserID) {
+		return fmt.Errorf("document %s: unknown builtin parser_id: %s", doc.ID, parserID)
 	}
 	return nil
 }
