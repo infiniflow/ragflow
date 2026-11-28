@@ -16,7 +16,9 @@
 package metafilter
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +101,31 @@ func TestParseJSONArrayDoubleQuotedWithCommas(t *testing.T) {
 	want := []interface{}{"a,b", "c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("parseJSONArray([\"a,b\", \"c\"]):\n got  %#v\n want %#v", got, want)
+	}
+}
+
+func TestBuildMetaFilterQueryNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "Inf", "Infinity", "+Infinity", "-Inf", "-Infinity"} {
+		for _, op := range []string{"=", "≠", ">", "<", "≥", "≤"} {
+			t.Run(value+"/"+op, func(t *testing.T) {
+				query, err := BuildMetaFilterQuery([]map[string]interface{}{
+					{"key": "engine", "op": op, "value": value},
+				}, "and", []string{"kb-1"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := json.Marshal(query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := `"` + value + `"`
+				if op == "=" || op == "≠" {
+					want = `"meta_fields.engine.keyword":{"case_insensitive":true,"value":"` + strings.ToLower(value) + `"}`
+				}
+				if !strings.Contains(string(body), want) {
+					t.Errorf("query %s does not contain %s", body, want)
+				}
+			})
+		}
 	}
 }
