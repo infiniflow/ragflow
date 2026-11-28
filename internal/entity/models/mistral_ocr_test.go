@@ -215,8 +215,8 @@ func TestMistralOCRFileDetectsPDFWithLeadingBytes(t *testing.T) {
 }
 
 func TestMistralOCRMimeTypeDropsParameters(t *testing.T) {
-	if got := mistralOCRMimeType([]byte("plain text, not a document")); got != "text/plain" {
-		t.Errorf("mistralOCRMimeType(text) = %q, want text/plain", got)
+	if got := ocrMIMEType([]byte("plain text, not a document")); got != "text/plain" {
+		t.Errorf("ocrMIMEType(text) = %q, want text/plain", got)
 	}
 }
 
@@ -225,12 +225,12 @@ func TestMistralOCRMimeTypeDropsParameters(t *testing.T) {
 // header window.
 func TestMistralOCRMimeTypePrefersImageSignature(t *testing.T) {
 	png := append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52}, []byte("tEXt%PDF-1.4")...)
-	if got := mistralOCRMimeType(png); got != "image/png" {
-		t.Errorf("mistralOCRMimeType(png with %%PDF-) = %q, want image/png", got)
+	if got := ocrMIMEType(png); got != "image/png" {
+		t.Errorf("ocrMIMEType(png with %%PDF-) = %q, want image/png", got)
 	}
 	jpeg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, []byte("JFIF %PDF-1.7")...)
-	if got := mistralOCRMimeType(jpeg); got != "image/jpeg" {
-		t.Errorf("mistralOCRMimeType(jpeg with %%PDF-) = %q, want image/jpeg", got)
+	if got := ocrMIMEType(jpeg); got != "image/jpeg" {
+		t.Errorf("ocrMIMEType(jpeg with %%PDF-) = %q, want image/jpeg", got)
 	}
 }
 

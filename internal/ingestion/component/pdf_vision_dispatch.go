@@ -375,35 +375,9 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	if !useVision {
 		return parser.ParseResult{}, false, nil
 	}
-	// A MiniCPM-OCR model is OCR-only and cannot serve the image2text VLM path
-	// below, so its selector goes to its own parser instead.
-	if isMiniCPMOCRModelSelector(ctx, db, tenantID, modelID) {
-		res, err := dispatchMiniCPMOCRPDF(ctx, db, filename, binary, tenantID, modelID)
-		if err != nil {
-			return parser.ParseResult{}, true, err
-		}
-		return res, true, nil
-	}
-	// A Nace NDI model is OCR-only as well. NDI parses only the configured
-	// pages, so they are passed on.
-	if isNaceOCRModelSelector(ctx, db, tenantID, modelID) {
-		pages, err := utility.NormalizePDFPages(setup["pages"])
-		if err != nil {
-			return parser.ParseResult{}, true, fmt.Errorf("parser: Nace pages: %w", err)
-		}
-		res, err := dispatchNaceOCRPDF(ctx, db, filename, binary, tenantID, modelID, pages)
-		if err != nil {
-			return parser.ParseResult{}, true, err
-		}
-		return res, true, nil
-	}
-	if isMistralOCRModelSelector(ctx, db, tenantID, modelID) {
-		pages, err := utility.NormalizePDFPages(setup["pages"])
-		if err != nil {
-			return parser.ParseResult{}, true, fmt.Errorf("parser: Mistral OCR pages: %w", err)
-		}
-		res, err := dispatchOCRModelPDF(ctx, db, filename, binary, tenantID, modelID,
-			"Mistral OCR", "mistral", &modelModule.OCRConfig{Pages: pages})
+	// Selected OCR models supply structured pages to the shared PDF parser.
+	if provider := selectedPDFOCRProvider(ctx, db, tenantID, modelID); provider != "" {
+		res, err := dispatchSelectedOCRPDF(ctx, db, filename, binary, tenantID, modelID, provider, setup)
 		return res, true, err
 	}
 	if tenantID == "" {
@@ -1979,66 +1953,56 @@ func paddleOCRRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.AP
 	return timeout
 }
 
-// isMiniCPMOCRModelSelector reports whether selector — a tenant model UUID or
-// a model@instance@provider composite — names a MiniCPM-OCR model. A UUID
-// carries no provider spelling, so it is resolved within the tenant.
-var isMiniCPMOCRModelSelector = defaultIsMiniCPMOCRModelSelector
+// A composite selector carries the provider. A UUID must be resolved in its tenant.
+var selectedPDFOCRProvider = defaultSelectedPDFOCRProvider
 
-func defaultIsMiniCPMOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
-	return isOCRModelSelector(ctx, db, tenantID, selector, "MiniCPM-OCR", "minicpm-ocr")
-}
-
-// dispatchMiniCPMOCRPDF parses the PDF with the selected MiniCPM-OCR model and
-// projects its page blocks onto the PDF pages.
-func dispatchMiniCPMOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector string) (parser.ParseResult, error) {
-	return dispatchOCRModelPDF(ctx, db, filename, binary, tenantID, selector, "MiniCPM-OCR", "minicpm-ocr", nil)
-}
-
-// isNaceOCRModelSelector reports whether selector — a tenant model UUID or a
-// model@instance@provider composite — names a Nace model used as a PDF parser.
-// Nace serves no image2text model, so a composite naming the provider always
-// takes this path; a UUID is resolved as an OCR model within the tenant.
-var isNaceOCRModelSelector = defaultIsNaceOCRModelSelector
-
-func defaultIsNaceOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
-	return isOCRModelSelector(ctx, db, tenantID, selector, "Nace", "nace")
-}
-
-// dispatchNaceOCRPDF parses the selected pages of the PDF (all pages when
-// pages is empty) with the selected Nace NDI model and projects its page
-// blocks onto the PDF pages.
-func dispatchNaceOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector string, pages [][]int) (parser.ParseResult, error) {
-	return dispatchOCRModelPDF(ctx, db, filename, binary, tenantID, selector, "Nace", "nace", &modelModule.OCRConfig{Pages: pages})
-}
-
-func isMistralOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
-	if strings.Contains(selector, "@") {
-		return modelModule.IsMistralOCRModelReference(selector)
-	}
-	return isOCRModelSelector(ctx, db, tenantID, selector, "Mistral", "mistral")
-}
-
-// isOCRModelSelector reports whether selector names an OCR model of the given
-// provider: a composite by its provider spelling, a tenant model UUID by the
-// driver it resolves to as an OCR model.
-func isOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector, provider, driverName string) bool {
+func defaultSelectedPDFOCRProvider(ctx context.Context, db *gorm.DB, tenantID, selector string) string {
 	selector = strings.TrimSpace(selector)
+	var name string
 	if strings.Contains(selector, "@") {
-		_, _, providerName, err := common.ParseCompositeModelName(selector)
-		return err == nil && strings.EqualFold(providerName, provider)
+		_, _, provider, err := common.ParseCompositeModelName(selector)
+		if err != nil {
+			return ""
+		}
+		name = provider
+	} else {
+		if db == nil || tenantID == "" || selector == "" {
+			return ""
+		}
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+		if err != nil {
+			return ""
+		}
+		name = resolved.driver.Name()
 	}
-	if db == nil || tenantID == "" || selector == "" {
-		return false
+	switch strings.ToLower(modelModule.CatalogProviderName(name)) {
+	case "mistral":
+		// Mistral also serves vision models. A UUID was already resolved as OCR.
+		if strings.Contains(selector, "@") && !modelModule.IsMistralOCRModelReference(selector) {
+			return ""
+		}
+		return "Mistral OCR"
+	case "minicpm-ocr":
+		return "MiniCPM-OCR"
+	case "xiaomiocr":
+		return "XiaomiOCR"
+	case "nace":
+		return "Nace"
+	default:
+		return ""
 	}
-	resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, selector)
-	return err == nil && resolved.driver.Name() == driverName
 }
 
-// dispatchOCRModelPDF parses the PDF with an OCR-only model whose driver
-// returns page blocks, and projects them onto the PDF pages. provider names
-// the model family in errors and warnings; driverName is the driver the
-// selector must resolve to.
-func dispatchOCRModelPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector, provider, driverName string, config *modelModule.OCRConfig) (parser.ParseResult, error) {
+func dispatchSelectedOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector, provider string, setup schema.ParserSetup) (parser.ParseResult, error) {
+	var options *modelModule.OCRConfig
+	switch provider {
+	case "XiaomiOCR", "Nace", "Mistral OCR":
+		pages, err := utility.NormalizePDFPages(setup["pages"])
+		if err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: %s pages: %w", provider, err)
+		}
+		options = &modelModule.OCRConfig{Pages: pages}
+	}
 	if tenantID == "" {
 		return parser.ParseResult{}, fmt.Errorf("parser: %s requires tenant_id", provider)
 	}
@@ -2055,7 +2019,7 @@ func dispatchOCRModelPDF(ctx context.Context, db *gorm.DB, filename string, bina
 		if err != nil {
 			return nil, fmt.Errorf("parser: %s model: %w", provider, err)
 		}
-		if driver.Name() != driverName {
+		if !strings.EqualFold(driver.Name(), modelModule.CatalogProviderName(provider)) {
 			return nil, fmt.Errorf("parser: %s requires a %s OCR model; found %q", provider, provider, driver.Name())
 		}
 		return &ocrModelTarget{driver: driver, modelName: modelName, apiConfig: apiConfig}, nil
@@ -2065,7 +2029,7 @@ func dispatchOCRModelPDF(ctx context.Context, db *gorm.DB, filename string, bina
 	err := dao.InvokeWithGroupFailover(ctx, db, tenantID, entity.ModelTypeOCR, selector,
 		resolveTarget, nil,
 		func(ctx context.Context, target *ocrModelTarget) error {
-			resp, invErr := target.driver.OCRFile(ctx, &target.modelName, binary, nil, target.apiConfig, config, nil)
+			resp, invErr := target.driver.OCRFile(ctx, &target.modelName, binary, nil, target.apiConfig, options, nil)
 			if invErr != nil {
 				return fmt.Errorf("parser: %s OCRFile: %w", provider, invErr)
 			}

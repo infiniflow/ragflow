@@ -154,7 +154,7 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 		defer cleanup()
 		document = map[string]any{"type": "document_url", "document_url": signedURL}
 	default:
-		mimeType := mistralOCRMimeType(content)
+		mimeType := ocrMIMEType(content)
 		dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(content))
 		if strings.HasPrefix(mimeType, "image/") {
 			document = map[string]any{"type": "image_url", "image_url": dataURL}
@@ -215,28 +215,6 @@ func mistralOCRCredentials(apiConfig *APIConfig) *APIConfig {
 	return &resolved
 }
 
-// mistralOCRPDFHeaderWindow is how far into the file a PDF header may start;
-// PDF readers accept leading bytes before %PDF- within the first kilobyte.
-const mistralOCRPDFHeaderWindow = 1024
-
-// mistralOCRMimeType returns the bare media type of content for the OCR data
-// URL. Image signatures are trusted first; otherwise PDFs are recognised even
-// when bytes precede the header, which content sniffing alone reports as
-// text/plain.
-func mistralOCRMimeType(content []byte) string {
-	mediaType, _, err := mime.ParseMediaType(http.DetectContentType(content))
-	if err == nil && strings.HasPrefix(mediaType, "image/") {
-		return mediaType
-	}
-	if bytes.Contains(content[:min(len(content), mistralOCRPDFHeaderWindow)], []byte("%PDF-")) {
-		return "application/pdf"
-	}
-	if err != nil {
-		return "application/octet-stream"
-	}
-	return mediaType
-}
-
 // mistralOCRImageExtensions are common image formats, sent to /v1/ocr as
 // image_url; anything else is sent as document_url.
 var mistralOCRImageExtensions = map[string]bool{
@@ -284,7 +262,7 @@ func (m *MistralModel) mistralOCRUpload(ctx context.Context, baseURL string, aut
 	filesURL := joinURL(baseURL, m.baseModel.URLSuffix.Files)
 
 	filename := "document"
-	if extensions, _ := mime.ExtensionsByType(mistralOCRMimeType(content)); len(extensions) > 0 {
+	if extensions, _ := mime.ExtensionsByType(ocrMIMEType(content)); len(extensions) > 0 {
 		filename += extensions[0]
 	}
 	var form bytes.Buffer

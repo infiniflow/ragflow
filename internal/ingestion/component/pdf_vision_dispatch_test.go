@@ -50,14 +50,14 @@ import (
 func TestMistralOCRModelSelector(t *testing.T) {
 	for _, tc := range []struct {
 		selector string
-		want     bool
+		want     string
 	}{
-		{"mistral-ocr-latest@default@Mistral", true},
-		{"mistral-ocr-2512@Mistral OCR", true},
-		{"pixtral-large-latest@default@Mistral", false},
-		{"mistral-ocr-latest@default@OtherProvider", false},
+		{"mistral-ocr-latest@default@Mistral", "Mistral OCR"},
+		{"mistral-ocr-2512@Mistral OCR", "Mistral OCR"},
+		{"pixtral-large-latest@default@Mistral", ""},
+		{"mistral-ocr-latest@default@OtherProvider", ""},
 	} {
-		if got := isMistralOCRModelSelector(t.Context(), nil, "", tc.selector); got != tc.want {
+		if got := defaultSelectedPDFOCRProvider(t.Context(), nil, "", tc.selector); got != tc.want {
 			t.Errorf("Mistral OCR selector %q = %v, want %v", tc.selector, got, tc.want)
 		}
 	}

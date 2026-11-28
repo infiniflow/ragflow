@@ -111,6 +111,7 @@ const svgIcons = [
   LLMFactory.AstraflowCN,
   LLMFactory.FuturMix,
   LLMFactory.Xiaomi,
+  LLMFactory.XiaomiOCR,
   LLMFactory.YouDao,
   LLMFactory.BAAI,
   LLMFactory.NomicAI,

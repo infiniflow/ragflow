@@ -80,15 +80,18 @@ func TestDispatch_PDFNaceOCR(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origSelector, origResolve := isNaceOCRModelSelector, resolveModelConfig
-	t.Cleanup(func() { isNaceOCRModelSelector, resolveModelConfig = origSelector, origResolve })
+	origSelector, origResolve := selectedPDFOCRProvider, resolveModelConfig
+	t.Cleanup(func() { selectedPDFOCRProvider, resolveModelConfig = origSelector, origResolve })
 	modelID := "7c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5"
 	composites := map[string]bool{}
 	for _, instance := range []string{"mineru-prod", "paddleocr-prod", "somark-prod", "unlimited-ocr-prod"} {
 		composites["ndi-parse-low@"+instance+"@Nace"] = true
 	}
-	isNaceOCRModelSelector = func(_ context.Context, _ *gorm.DB, tenantID, selector string) bool {
-		return tenantID == "test-tenant" && (selector == modelID || composites[selector])
+	selectedPDFOCRProvider = func(ctx context.Context, db *gorm.DB, tenantID, selector string) string {
+		if tenantID == "test-tenant" && selector == modelID {
+			return "Nace"
+		}
+		return origSelector(ctx, db, tenantID, selector)
 	}
 	baseURL, apiKey := server.URL+"/v1", "nace-secret"
 	resolveModelConfig = func(_ context.Context, _ *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -216,12 +219,12 @@ func TestDispatchPDFBackendParserNameForms(t *testing.T) {
 	}
 	origConfig, origProvider := resolveModelConfig, resolveTenantOCRModelByProvider
 	origMinerU, origPaddle, origSoMark, origMonkey := resolveMinerUModelForDispatch, resolvePaddleOCRModelForDispatch, resolveSoMarkModelForDispatch, resolveMonkeyOCRModelForDispatch
-	origIDs := []func(context.Context, *gorm.DB, string, string) bool{isMinerULayoutModelID, isPaddleOCRLayoutModelID, isSoMarkLayoutModelID, isUnlimitedOCRLayoutModelID, isMonkeyOCRLayoutModelID, isMonkeyOCRv2LayoutModelID, isNaceOCRModelSelector, isMiniCPMOCRModelSelector}
+	origIDs := []func(context.Context, *gorm.DB, string, string) bool{isMinerULayoutModelID, isPaddleOCRLayoutModelID, isSoMarkLayoutModelID, isUnlimitedOCRLayoutModelID, isMonkeyOCRLayoutModelID, isMonkeyOCRv2LayoutModelID}
 	t.Cleanup(func() {
 		resolveModelConfig, resolveTenantOCRModelByProvider = origConfig, origProvider
 		resolveMinerUModelForDispatch, resolvePaddleOCRModelForDispatch, resolveSoMarkModelForDispatch, resolveMonkeyOCRModelForDispatch = origMinerU, origPaddle, origSoMark, origMonkey
 		isMinerULayoutModelID, isPaddleOCRLayoutModelID, isSoMarkLayoutModelID, isUnlimitedOCRLayoutModelID = origIDs[0], origIDs[1], origIDs[2], origIDs[3]
-		isMonkeyOCRLayoutModelID, isMonkeyOCRv2LayoutModelID, isNaceOCRModelSelector, isMiniCPMOCRModelSelector = origIDs[4], origIDs[5], origIDs[6], origIDs[7]
+		isMonkeyOCRLayoutModelID, isMonkeyOCRv2LayoutModelID = origIDs[4], origIDs[5]
 	})
 	resolveMinerUModelForDispatch = resolver("mineru")
 	resolvePaddleOCRModelForDispatch = resolver("paddleocr")
@@ -236,10 +239,6 @@ func TestDispatchPDFBackendParserNameForms(t *testing.T) {
 	}
 	isMinerULayoutModelID, isPaddleOCRLayoutModelID, isSoMarkLayoutModelID = uuid("mineru"), uuid("paddleocr"), uuid("somark")
 	isUnlimitedOCRLayoutModelID, isMonkeyOCRLayoutModelID, isMonkeyOCRv2LayoutModelID = uuid("unlimited-ocr-2"), uuid("monkeyocr"), uuid("monkeyocrv2")
-	isNaceOCRModelSelector = func(_ context.Context, _ *gorm.DB, _, selector string) bool {
-		return strings.HasSuffix(strings.ToLower(selector), "@nace")
-	}
-	isMiniCPMOCRModelSelector = func(context.Context, *gorm.DB, string, string) bool { return false }
 
 	// A parser branch falls back to its service URL from the environment when
 	// the resolver fails, so clear those URLs: no probe may send a request.
@@ -311,35 +310,17 @@ func TestDispatchPDFBackendParserNameForms(t *testing.T) {
 	}
 }
 
-func TestIsNaceOCRModelSelector(t *testing.T) {
-	for _, tc := range []struct {
-		selector string
-		want     bool
-	}{
-		{"ndi-parse-low@default@Nace", true},
-		{"ndi-parse-high@Nace", true},
-		{"MiniCPM-OCR-1.0@default@MiniCPM-OCR", false},
-		{"PaddleOCR-VL-1.6@default@PaddleOCR", false},
-		// A bare model UUID is resolved within the tenant, which needs a database.
-		{"7c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5", false},
-	} {
-		if got := defaultIsNaceOCRModelSelector(t.Context(), nil, "tenant", tc.selector); got != tc.want {
-			t.Errorf("selector %q: got %v, want %v", tc.selector, got, tc.want)
-		}
-	}
-}
-
 func TestDispatchNaceOCRPDFRejectsOtherDrivers(t *testing.T) {
 	original := resolveModelConfig
 	t.Cleanup(func() { resolveModelConfig = original })
 	resolveModelConfig = func(context.Context, *gorm.DB, string, entity.ModelType, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return &paddleOCRFakeDriver{}, "PaddleOCR-VL-1.6", &modelModule.APIConfig{}, 0, nil
 	}
-	_, err := dispatchNaceOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "tenant", "PaddleOCR-VL-1.6@default@PaddleOCR", nil)
+	_, err := dispatchSelectedOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "tenant", "PaddleOCR-VL-1.6@default@PaddleOCR", "Nace", nil)
 	if err == nil || !strings.Contains(err.Error(), "requires a Nace OCR model") {
 		t.Fatalf("err=%v", err)
 	}
-	if _, err = dispatchNaceOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "", "model", nil); err == nil || !strings.Contains(err.Error(), "requires tenant_id") {
+	if _, err = dispatchSelectedOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "", "model", "Nace", nil); err == nil || !strings.Contains(err.Error(), "requires tenant_id") {
 		t.Fatalf("missing tenant err=%v", err)
 	}
 }
