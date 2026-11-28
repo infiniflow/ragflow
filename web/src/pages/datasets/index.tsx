@@ -115,9 +115,12 @@ export default function Datasets() {
             filters={owners}
             onChange={handleFilterSubmit}
           >
-            <Button onClick={showModal}>
-              <Plus className="size-[1em]" />
-              {t('knowledgeList.createKnowledgeBase')}
+            <Button
+              size="icon"
+              onClick={showModal}
+              aria-label={t('knowledgeList.createKnowledgeBase')}
+            >
+              <Plus />
             </Button>
           </NavGroupListFilterBar>
         </header>

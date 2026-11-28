@@ -228,6 +228,9 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
+	if !filterSearchResponse(c, &result.Chunks, &result.DocAggs) {
+		return
+	}
 	common.RespondSuccess(c, result, "success")
 }
 

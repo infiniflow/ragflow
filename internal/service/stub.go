@@ -220,6 +220,18 @@ func logChatCompletion(_ context.Context, _ *entity.Chat, _ []map[string]any, _ 
 	return in
 }
 
+func prepareAgentOutput(ctx context.Context) (context.Context, error) { return ctx, ctx.Err() }
+
+func filterAgentOutput(_ context.Context, answer, thinking string, reference map[string]any) (string, string, map[string]any) {
+	return answer, thinking, reference
+}
+
+func (*ChatPipelineService) filterChatOutput(_ context.Context, _ *entity.Chat, _ bool, input <-chan AsyncChatResult) <-chan AsyncChatResult {
+	return input
+}
+
+func filterAskOutput(_ context.Context, input <-chan AskDelta) <-chan AskDelta { return input }
+
 func logAgentCompletion(_ context.Context, _, _ string, _ any, in <-chan canvas.RunEvent) <-chan canvas.RunEvent {
 	return in
 }

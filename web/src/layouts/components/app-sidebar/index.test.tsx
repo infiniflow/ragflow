@@ -3,17 +3,21 @@ import { MemoryRouter } from 'react-router';
 import { AppSidebar } from './index';
 
 const mockToggleDatasetSidebar = jest.fn();
+const mockToggleFilesSidebar = jest.fn();
 const mockToggleAgentSidebar = jest.fn();
 const mockToggleChatSidebar = jest.fn();
 const mockToggleSearchSidebar = jest.fn();
 const mockToggleCompilationTemplateSidebar = jest.fn();
+const mockToggleMemorySidebar = jest.fn();
 const mockTogglePrimarySidebar = jest.fn();
 let mockPrimarySidebarCollapsed = false;
 let mockDatasetSidebarCollapsed = false;
+let mockFilesSidebarCollapsed = false;
 let mockAgentSidebarCollapsed = false;
 let mockChatSidebarCollapsed = false;
 let mockSearchSidebarCollapsed = false;
 let mockCompilationTemplateSidebarCollapsed = false;
+let mockMemorySidebarCollapsed = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -23,6 +27,13 @@ jest.mock('@/hooks/use-dataset-sidebar-collapse', () => ({
   useDatasetSidebarCollapse: () => ({
     collapsed: mockDatasetSidebarCollapsed,
     toggleCollapsed: mockToggleDatasetSidebar,
+  }),
+}));
+
+jest.mock('@/hooks/use-files-sidebar-collapse', () => ({
+  useFilesSidebarCollapse: () => ({
+    collapsed: mockFilesSidebarCollapsed,
+    toggleCollapsed: mockToggleFilesSidebar,
   }),
 }));
 
@@ -51,6 +62,13 @@ jest.mock('@/hooks/use-compilation-template-sidebar-collapse', () => ({
   useCompilationTemplateSidebarCollapse: () => ({
     collapsed: mockCompilationTemplateSidebarCollapsed,
     toggleCollapsed: mockToggleCompilationTemplateSidebar,
+  }),
+}));
+
+jest.mock('@/hooks/use-memory-sidebar-collapse', () => ({
+  useMemorySidebarCollapse: () => ({
+    collapsed: mockMemorySidebarCollapsed,
+    toggleCollapsed: mockToggleMemorySidebar,
   }),
 }));
 
@@ -106,10 +124,35 @@ describe('AppSidebar secondary sidebar expansion', () => {
     jest.clearAllMocks();
     mockPrimarySidebarCollapsed = false;
     mockDatasetSidebarCollapsed = false;
+    mockFilesSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
     mockSearchSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
+    mockMemorySidebarCollapsed = false;
+  });
+
+  it('expands the Library secondary sidebar on the Files route', () => {
+    mockFilesSidebarCollapsed = true;
+    mockDatasetSidebarCollapsed = true;
+    renderAppSidebar('/files?folderId=folder-1');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockToggleFilesSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
+  });
+
+  it('does not show the Library expander on the Skills route', () => {
+    mockFilesSidebarCollapsed = true;
+    renderAppSidebar('/files/skills');
+
+    expect(
+      screen.queryByRole('button', { name: 'sidebar.expandSidebar' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
   });
 
   it('expands the agent secondary sidebar on agent detail routes', () => {
@@ -195,6 +238,18 @@ describe('AppSidebar secondary sidebar expansion', () => {
     expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
   });
 
+  it('expands the memory secondary sidebar on memory detail routes', () => {
+    mockMemorySidebarCollapsed = true;
+    renderAppSidebar('/memory/memory-setting/memory-1');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockToggleMemorySidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
+  });
+
   it('keeps the dataset expansion behavior on dataset routes', () => {
     mockDatasetSidebarCollapsed = true;
     mockAgentSidebarCollapsed = true;
@@ -225,10 +280,12 @@ describe('AppSidebar primary sidebar border', () => {
   beforeEach(() => {
     mockPrimarySidebarCollapsed = true;
     mockDatasetSidebarCollapsed = false;
+    mockFilesSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
     mockSearchSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
+    mockMemorySidebarCollapsed = false;
   });
 
   it('is hidden on list pages without a secondary sidebar', () => {

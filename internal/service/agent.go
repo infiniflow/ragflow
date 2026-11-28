@@ -2334,6 +2334,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		ctx, err := prepareAgentOutput(ctx)
+		if err != nil {
+			return nil, err
+		}
 		if err := component.ValidateDynamicEntries(dsl); err != nil {
 			return nil, runtime.NewUserFacingError(err.Error())
 		}
@@ -2953,6 +2957,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
+	answer, thinking, reference = filterAgentOutput(ctx, answer, thinking, reference)
 	userID := agentSessionHistoryUserID(ctx, agentID, sessionID)
 	history := dao.ConversationHistoryUpdate{}
 	if stringifyAgentUserInput(agentRunQuery(userInput)) != "" {

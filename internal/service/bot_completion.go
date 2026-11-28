@@ -43,6 +43,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
@@ -330,7 +331,10 @@ func (s *BotService) ChatbotCompletion(
 		// the share page calls this endpoint once with an empty
 		// question to obtain a session_id, then sends the real
 		// questions with that session_id.
-		prologue := stringFromMap(dialog.PromptConfig, "prologue")
+		prologue, err := compliance.FilterOutput(ctx, stringFromMap(dialog.PromptConfig, "prologue"))
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
 		seedMsg, _ := json.Marshal([]map[string]any{
 			{
 				"role":       "assistant",

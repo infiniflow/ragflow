@@ -377,6 +377,8 @@ export const useFetchDocumentsByIds = (
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
   statusCounts: Record<string, number>;
+  parsingCount: number;
+  pendingCount: number;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
@@ -403,6 +405,7 @@ export const useGetDocumentFilter = (): {
       setOpen(currentOpen);
     }
   };
+  const statusCounts = data?.filter?.ingestion_status ?? {};
   return {
     filter: data?.filter
       ? adaptDocumentFilter(data.filter)
@@ -413,7 +416,9 @@ export const useGetDocumentFilter = (): {
         },
     // Per-status exact counts (UNSTART/CREATED/SCHEDULED/RUNNING/...) before
     // the display-bucket adaptation, for callers that act on a single status.
-    statusCounts: data?.filter?.ingestion_status ?? {},
+    statusCounts,
+    parsingCount: statusCounts[IngestionTaskStatus.RUNNING] ?? 0,
+    pendingCount: statusCounts[IngestionTaskStatus.SCHEDULED] ?? 0,
     onOpenChange: handleOpenChange,
   };
 };

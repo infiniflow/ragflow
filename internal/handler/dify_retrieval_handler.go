@@ -443,6 +443,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		})
 	}
 
+	if err := filterDifyRecords(ctx, records); err != nil {
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"records": records})
 }
 

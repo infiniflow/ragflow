@@ -17,6 +17,9 @@
 package models
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
 	"slices"
 	"testing"
 )
@@ -174,5 +177,36 @@ func TestBuildRequestBodyJSONMode(t *testing.T) {
 		if _, present := body["response_format"]; present {
 			t.Errorf("%s: response_format must stay absent, got %v", name, body["response_format"])
 		}
+	}
+}
+
+// IsRequestRejected gates failover: a refused payload (HTTP 4xx other than
+// the transient 408/429) fails identically on any group member, so it must
+// not deactivate one. 5xx and unclassified errors keep the conservative flip
+// behavior.
+func TestIsRequestRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"plain error", errors.New("connection refused"), false},
+		{"400 bad request", &APIStatusError{Status: http.StatusBadRequest}, true},
+		{"401 unauthorized", &APIStatusError{Status: http.StatusUnauthorized}, true},
+		{"413 payload too large", &APIStatusError{Status: http.StatusRequestEntityTooLarge}, true},
+		{"422 unprocessable", &APIStatusError{Status: http.StatusUnprocessableEntity}, true},
+		{"408 request timeout", &APIStatusError{Status: http.StatusRequestTimeout}, false},
+		{"429 rate limited", &APIStatusError{Status: http.StatusTooManyRequests}, false},
+		{"500 server error", &APIStatusError{Status: http.StatusInternalServerError}, false},
+		{"503 unavailable", &APIStatusError{Status: http.StatusServiceUnavailable}, false},
+		{"wrapped 400", fmt.Errorf("rerank failed: %w", &APIStatusError{Status: 400}), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsRequestRejected(tc.err); got != tc.want {
+				t.Fatalf("IsRequestRejected(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

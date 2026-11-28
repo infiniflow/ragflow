@@ -30,13 +30,13 @@ const CancelScopeStatuses: Record<CancelScope, IngestionTaskStatus[]> = {
 function useCancelParsingTasks() {
   const { t } = useTranslation();
   const { id: datasetId } = useParams();
-  const { statusCounts } = useGetDocumentFilter();
+  const { parsingCount, pendingCount } = useGetDocumentFilter();
   const { stopAllDocuments } = useStopAllDocuments();
   const [confirmScope, setConfirmScope] = useState<CancelScope | null>(null);
 
   const counts: Record<CancelScope, number> = {
-    [CancelScope.Parsing]: statusCounts[IngestionTaskStatus.RUNNING] ?? 0,
-    [CancelScope.Pending]: statusCounts[IngestionTaskStatus.SCHEDULED] ?? 0,
+    [CancelScope.Parsing]: parsingCount,
+    [CancelScope.Pending]: pendingCount,
   };
 
   const showConfirm = useCallback((scope: CancelScope) => {

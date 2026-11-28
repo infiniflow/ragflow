@@ -17,9 +17,11 @@
 package handler
 
 import (
+	"errors"
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -177,6 +179,10 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 	}
 	group, err := h.compilationTemplateGroupService.UpdateGroup(c.Request.Context(), id, &req)
 	if err != nil {
+		if errors.Is(err, permission.ErrPermissionDenied) {
+			common.RespondError(c, common.CodeForbidden, "Permission denied")
+			return
+		}
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -203,6 +209,10 @@ func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
 	common.SetOperationResource(c, "compilation_template_group_id", id)
 	ok, err := h.compilationTemplateGroupService.DeleteGroup(c.Request.Context(), id)
 	if err != nil {
+		if errors.Is(err, permission.ErrPermissionDenied) {
+			common.RespondError(c, common.CodeForbidden, "Permission denied")
+			return
+		}
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}

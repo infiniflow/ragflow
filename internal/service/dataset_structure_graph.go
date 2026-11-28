@@ -180,6 +180,7 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 		"mention_count":    1,
 		"name":             name,
 		"source_chunk_ids": chunkIDs,
+		"source_doc_ids":   graphSourceDocIDs(payload, row),
 		"type":             typ,
 		"description":      desc,
 	}
@@ -277,11 +278,36 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 		fallbackSrc := strings.TrimSpace(common.FirstEngineString(row["from_entity_kwd"]))
 		fallbackTgt := strings.TrimSpace(common.FirstEngineString(row["to_entity_kwd"]))
 		if fallbackSrc != "" && fallbackTgt != "" {
-			return StructureGraphRelation{"from": fallbackSrc, "to": fallbackTgt, "type": typ}
+			return StructureGraphRelation{"from": fallbackSrc, "to": fallbackTgt, "type": typ, "source_doc_ids": graphSourceDocIDs(payload, row)}
 		}
 		return nil
 	}
-	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
+	return StructureGraphRelation{"from": src, "to": tgt, "type": typ, "source_doc_ids": graphSourceDocIDs(payload, row)}
+}
+
+func graphSourceDocIDs(payload, row map[string]interface{}) []string {
+	var values []string
+	add := func(value interface{}) {
+		switch v := value.(type) {
+		case []string:
+			values = append(values, v...)
+		case []interface{}:
+			for _, item := range v {
+				if id, ok := item.(string); ok {
+					values = append(values, id)
+				}
+			}
+		case string:
+			values = append(values, v)
+		}
+	}
+	if payload != nil {
+		add(payload["source_doc_ids"])
+	}
+	if len(values) == 0 && row != nil {
+		add(row["source_doc_ids"])
+	}
+	return common.Deduplicate(values)
 }
 
 // dedupEntities preserves the first entity for each lowercased name.

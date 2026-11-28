@@ -8,6 +8,8 @@ import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
+import { useFilesSidebarCollapse } from '@/hooks/use-files-sidebar-collapse';
+import { useMemorySidebarCollapse } from '@/hooks/use-memory-sidebar-collapse';
 import { useSearchSidebarCollapse } from '@/hooks/use-search-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -27,6 +29,10 @@ function AppSidebarContent() {
     toggleCollapsed: toggleDatasetSidebar,
   } = useDatasetSidebarCollapse();
   const {
+    collapsed: filesSidebarCollapsed,
+    toggleCollapsed: toggleFilesSidebar,
+  } = useFilesSidebarCollapse();
+  const {
     collapsed: agentSidebarCollapsed,
     toggleCollapsed: toggleAgentSidebar,
   } = useAgentSidebarCollapse();
@@ -42,6 +48,10 @@ function AppSidebarContent() {
     collapsed: compilationTemplateSidebarCollapsed,
     toggleCollapsed: toggleCompilationTemplateSidebar,
   } = useCompilationTemplateSidebarCollapse();
+  const {
+    collapsed: memorySidebarCollapsed,
+    toggleCollapsed: toggleMemorySidebar,
+  } = useMemorySidebarCollapse();
   const { pathname } = useLocation();
   const visibleNavItems = useVisibleNavItems(NavItems);
   const primaryNavItems = visibleNavItems.filter(
@@ -51,37 +61,44 @@ function AppSidebarContent() {
     (item) => item.key === NavItemKey.Team,
   );
 
-  const activeSecondarySidebar = [
-    {
-      route: Routes.DatasetBase,
-      collapsed: datasetSidebarCollapsed,
-      onExpand: toggleDatasetSidebar,
-    },
-    {
-      route: Routes.Agent,
-      collapsed: agentSidebarCollapsed,
-      onExpand: toggleAgentSidebar,
-    },
-    {
-      route: Routes.Chat,
-      collapsed: chatSidebarCollapsed,
-      onExpand: toggleChatSidebar,
-    },
-    {
-      route: Routes.Search,
-      collapsed: searchSidebarCollapsed,
-      onExpand: toggleSearchSidebar,
-    },
-    {
-      route: Routes.CompilationTemplatesEditNext,
-      collapsed: compilationTemplateSidebarCollapsed,
-      onExpand: toggleCompilationTemplateSidebar,
-    },
-    {
-      route: Routes.Memory,
-      collapsed: false,
-    },
-  ].find((sidebar) => matchesPath(pathname, sidebar.route));
+  const activeSecondarySidebar =
+    pathname === Routes.Files
+      ? {
+          collapsed: filesSidebarCollapsed,
+          onExpand: toggleFilesSidebar,
+        }
+      : [
+          {
+            route: Routes.DatasetBase,
+            collapsed: datasetSidebarCollapsed,
+            onExpand: toggleDatasetSidebar,
+          },
+          {
+            route: Routes.Agent,
+            collapsed: agentSidebarCollapsed,
+            onExpand: toggleAgentSidebar,
+          },
+          {
+            route: Routes.Chat,
+            collapsed: chatSidebarCollapsed,
+            onExpand: toggleChatSidebar,
+          },
+          {
+            route: Routes.Search,
+            collapsed: searchSidebarCollapsed,
+            onExpand: toggleSearchSidebar,
+          },
+          {
+            route: Routes.CompilationTemplatesEditNext,
+            collapsed: compilationTemplateSidebarCollapsed,
+            onExpand: toggleCompilationTemplateSidebar,
+          },
+          {
+            route: Routes.Memory,
+            collapsed: memorySidebarCollapsed,
+            onExpand: toggleMemorySidebar,
+          },
+        ].find((sidebar) => matchesPath(pathname, sidebar.route));
   const collapsedSecondarySidebar = activeSecondarySidebar?.collapsed
     ? activeSecondarySidebar
     : undefined;

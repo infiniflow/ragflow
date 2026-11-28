@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -47,6 +48,23 @@ func (e *APIStatusError) Error() string {
 		return fmt.Sprintf("API request failed with status %d", e.Status)
 	}
 	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
+}
+
+// IsRequestRejected reports whether the failure is a client request
+// rejection: an HTTP 4xx other than the transient 408/429. The payload
+// itself was refused — too long, malformed, unsupported parameter — so
+// replaying it on another model-group member would fail identically, and
+// failover must not deactivate a healthy member over it. Unclassified
+// errors (drivers with bespoke HTTP handling) report false, keeping the
+// conservative flip behavior.
+func IsRequestRejected(err error) bool {
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	s := statusErr.Status
+	return s >= http.StatusBadRequest && s < http.StatusInternalServerError &&
+		s != http.StatusRequestTimeout && s != http.StatusTooManyRequests
 }
 
 type BaseModel struct {

@@ -2946,8 +2946,6 @@ func (p *Parser) parseParseCommands() (*Command, error) {
 		return p.parseAPIModelParse()
 	case TokenDocument:
 		return p.parseAPIParseDocs()
-	case TokenFile:
-		return p.parseAPIParseLocalFile()
 	default:
 		return nil, fmt.Errorf("expected DATASET, WITH, or DOCUMENT")
 	}
@@ -3063,88 +3061,6 @@ func (p *Parser) parseAPIParseDocs() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAPIParseLocalFile() (*Command, error) {
-	p.nextToken() // consume FILE
-
-	filename, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	cmd := NewCommand("user_parse_local_file_command")
-	cmd.Params["filename"] = filename
-
-optionsLoop:
-	for {
-		switch p.curToken.Type {
-		case TokenVision:
-			p.nextToken()
-			var visionModel string
-			visionModel, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["vision_model"] = visionModel
-			p.nextToken()
-		case TokenASR:
-			p.nextToken()
-			var asrModel string
-			asrModel, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["asr_model"] = asrModel
-			p.nextToken()
-
-		case TokenOCR:
-			p.nextToken()
-			var ocrModel string
-			ocrModel, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["ocr_model"] = ocrModel
-			p.nextToken()
-		case TokenChat:
-			p.nextToken()
-			var chatModel string
-			chatModel, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["chat_model"] = chatModel
-			p.nextToken()
-		case TokenEmbed:
-			p.nextToken()
-			var embedModel string
-			embedModel, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["embedding_model"] = embedModel
-			p.nextToken()
-		case TokenDocParse:
-			p.nextToken()
-			var docParseModel string
-			docParseModel, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["doc_parse_model"] = docParseModel
-			p.nextToken()
-		case TokenSemicolon:
-			p.nextToken()
-			break optionsLoop // done
-		default:
-			// No more options to process
-			break optionsLoop
-		}
-	}
-
 	return cmd, nil
 }
 

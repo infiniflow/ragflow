@@ -177,15 +177,16 @@ func (s *DatasetArtifactService) HasSkill(ctx context.Context, tenantID, dataset
 
 // WikiPageItem is a single wiki page summary returned by ListWikiPages.
 type WikiPageItem struct {
-	Slug     string `json:"slug"`
-	Title    string `json:"title"`
-	PageType string `json:"page_type"`
-	Topic    string `json:"topic"`
-	Summary  string `json:"summary"`
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	PageType     string   `json:"page_type"`
+	Topic        string   `json:"topic"`
+	Summary      string   `json:"summary"`
+	SourceDocIDs []string `json:"-"`
 }
 
 // wikiPageSelectFields are the engine fields ListWikiPages reads.
-var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"}
+var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight", "source_doc_ids"}
 
 // wikiPageOrderBy ranks wiki pages by connectivity then title.
 func wikiPageOrderBy() *types.OrderByExpr {
@@ -258,6 +259,65 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 	return matched[offset:end], total, nil
 }
 
+// ListWikiPagesWithSourceAccess filters merged pages by all of their source
+// documents before applying pagination. The access callback receives each
+// engine batch's source-document lists and returns one visibility result per
+// page. A page with no source documents is hidden when a callback is supplied.
+func (s *DatasetArtifactService) ListWikiPagesWithSourceAccess(ctx context.Context, tenantID, datasetID, pageType, topic, keywords string, page, pageSize int, canAccess func([][]string) ([]bool, error)) ([]WikiPageItem, int64, error) {
+	if canAccess == nil {
+		return s.ListWikiPages(ctx, tenantID, datasetID, pageType, topic, keywords, page, pageSize)
+	}
+	filter := map[string]interface{}{"type_kwd": []string{CompileKwdWikiPage}, "available_int": 1}
+	if pageType != "" {
+		filter["page_type_kwd"] = []string{pageType}
+	}
+	if topic != "" {
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
+	}
+	kw := strings.ToLower(keywords)
+	matched := make([]WikiPageItem, 0)
+	const batchSize = 1000
+	for offset := 0; ; offset += batchSize {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, wikiPageSelectFields, offset, batchSize, wikiPageOrderBy())
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(chunks) == 0 {
+			break
+		}
+		items := wikiPageItemsFromChunks(chunks)
+		sourceIDs := make([][]string, len(items))
+		for i := range items {
+			sourceIDs[i] = items[i].SourceDocIDs
+		}
+		visible, err := canAccess(sourceIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i, item := range items {
+			if i >= len(visible) || !visible[i] {
+				continue
+			}
+			if keywords == "" || wikiPageItemMatchesKeyword(item, kw) {
+				matched = append(matched, item)
+			}
+		}
+		if int64(offset+len(chunks)) >= total {
+			break
+		}
+	}
+	total := int64(len(matched))
+	offset := (page - 1) * pageSize
+	if offset < 0 || offset >= len(matched) {
+		return []WikiPageItem{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total, nil
+}
+
 // wikiPageItemsFromChunks maps engine rows to wiki page summaries.
 func wikiPageItemsFromChunks(chunks []map[string]interface{}) []WikiPageItem {
 	items := make([]WikiPageItem, 0, len(chunks))
@@ -277,11 +337,12 @@ func wikiPageItemFromChunk(c map[string]interface{}) WikiPageItem {
 		bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
 	}
 	return WikiPageItem{
-		Slug:     bareSlug,
-		Title:    common.FirstEngineString(c["title_kwd"]),
-		PageType: pageType,
-		Topic:    kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"])),
-		Summary:  common.FirstEngineString(c["summary_with_weight"]),
+		Slug:         bareSlug,
+		Title:        common.FirstEngineString(c["title_kwd"]),
+		PageType:     pageType,
+		Topic:        kccommon.NormalizeWikiTopicPath(common.FirstEngineString(c["topic_kwd"])),
+		Summary:      common.FirstEngineString(c["summary_with_weight"]),
+		SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 	}
 }
 
@@ -314,6 +375,7 @@ type WikiPageDetail struct {
 	RelatedKbPages []string `json:"related_kb_pages"`
 	SourceChunkIDs []string `json:"source_chunk_ids"`
 	SourceDocIDs   []string `json:"source_doc_ids"`
+	CanEdit        bool     `json:"can_edit"`
 }
 
 // GetWikiPage returns a single wiki page by page_type and slug.
@@ -914,12 +976,14 @@ type WikiGraphEntity struct {
 	Type           string   `json:"type"`
 	Weight         int      `json:"weight"`
 	SourceChunkIDs []string `json:"source_chunk_ids"`
+	SourceDocIDs   []string `json:"-"`
 }
 
 // WikiGraphRelation is a single wiki graph relation.
 type WikiGraphRelation struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	SourceDocIDs []string `json:"-"`
 }
 
 // GetWikiGraph returns an incremental wiki graph slice for a dataset. keywords
@@ -981,7 +1045,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		orderBy = (&types.OrderByExpr{}).Desc("weight_int")
 	}
 	entityChunks, _, err := s.searchCompiledWithMatch(ctx, tenantID, datasetID, entityFilter,
-		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "content_with_weight"},
+		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "source_doc_ids", "content_with_weight"},
 		0, limit, orderBy, matchExprs)
 	if err != nil {
 		return nil, err
@@ -1027,13 +1091,14 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			Type:           entityType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
+			SourceDocIDs:   toStringSlice(c["source_doc_ids"]),
 		})
 	}
 	if len(fromKwds) > 0 {
 		relationFilter["from_kwd"] = fromKwds
 		relChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
 			relationFilter,
-			[]string{"from_kwd", "to_kwd"}, 0, 10000, nil)
+			[]string{"from_kwd", "to_kwd", "source_doc_ids"}, 0, 10000, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1042,8 +1107,9 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			// form in ES; expose them as bare slugs so the frontend's
 			// nodesBySlug (keyed on the entity's bare slug) can resolve edges.
 			graph.Relations = append(graph.Relations, WikiGraphRelation{
-				From: bareWikiSlug(common.FirstEngineString(c["from_kwd"])),
-				To:   bareWikiSlug(common.FirstEngineString(c["to_kwd"])),
+				From:         bareWikiSlug(common.FirstEngineString(c["from_kwd"])),
+				To:           bareWikiSlug(common.FirstEngineString(c["to_kwd"])),
+				SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 			})
 		}
 	}
@@ -1367,11 +1433,12 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 
 // SkillTreeItem is a single skill-tree page summary.
 type SkillTreeItem struct {
-	Kwd      string `json:"kwd"`
-	Title    string `json:"title"`
-	PageType string `json:"page_type"`
-	Outlinks int    `json:"outlinks"`
-	Inlinks  int    `json:"inlinks"`
+	Kwd          string   `json:"kwd"`
+	Title        string   `json:"title"`
+	PageType     string   `json:"page_type"`
+	Outlinks     int      `json:"outlinks"`
+	Inlinks      int      `json:"inlinks"`
+	SourceDocIDs []string `json:"-"`
 }
 
 // GetSkillTree returns the skill tree of a dataset.
@@ -1381,7 +1448,7 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 		filter["kwd"] = []string{kwd}
 	}
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "outlinks_int", "inlinks_int"}, 0, 10000, nil)
+		[]string{"kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "outlinks_int", "inlinks_int", "source_doc_ids"}, 0, 10000, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1389,11 +1456,12 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 	for _, c := range chunks {
 		outlinks, inlinks := intValue(c["outlinks_int"]), intValue(c["inlinks_int"])
 		items = append(items, SkillTreeItem{
-			Kwd:      common.FirstEngineString(c["kwd"]),
-			Title:    common.FirstEngineString(c["title_kwd"]),
-			PageType: types.WikiPageCategory(c),
-			Outlinks: outlinks,
-			Inlinks:  inlinks,
+			Kwd:          common.FirstEngineString(c["kwd"]),
+			Title:        common.FirstEngineString(c["title_kwd"]),
+			PageType:     types.WikiPageCategory(c),
+			Outlinks:     outlinks,
+			Inlinks:      inlinks,
+			SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 		})
 	}
 	return items, total, nil
@@ -1401,18 +1469,19 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 
 // SkillPageDetail is the full skill page payload.
 type SkillPageDetail struct {
-	Kwd       string   `json:"kwd"`
-	Title     string   `json:"title"`
-	ContentMd string   `json:"content_md"`
-	Outlinks  []string `json:"outlinks"`
-	Inlinks   []string `json:"inlinks"`
+	Kwd          string   `json:"kwd"`
+	Title        string   `json:"title"`
+	ContentMd    string   `json:"content_md"`
+	Outlinks     []string `json:"outlinks"`
+	Inlinks      []string `json:"inlinks"`
+	SourceDocIDs []string `json:"source_doc_ids"`
 }
 
 // GetSkillPage returns a single skill page by keyword.
 func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, datasetID, kwd string) (*SkillPageDetail, error) {
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
 		map[string]interface{}{"compile_kwd": []string{CompileKwdSkillAll}, "kwd": []string{kwd}},
-		[]string{"kwd", "title_kwd", "content_with_weight", "outlinks_kwd", "inlinks_kwd"}, 0, 1, nil)
+		[]string{"kwd", "title_kwd", "content_with_weight", "outlinks_kwd", "inlinks_kwd", "source_doc_ids"}, 0, 1, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1421,12 +1490,36 @@ func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, dat
 	}
 	c := chunks[0]
 	return &SkillPageDetail{
-		Kwd:       common.FirstEngineString(c["kwd"]),
-		Title:     common.FirstEngineString(c["title_kwd"]),
-		ContentMd: common.FirstEngineString(c["content_with_weight"]),
-		Outlinks:  toStringSlice(c["outlinks_kwd"]),
-		Inlinks:   toStringSlice(c["inlinks_kwd"]),
+		Kwd:          common.FirstEngineString(c["kwd"]),
+		Title:        common.FirstEngineString(c["title_kwd"]),
+		ContentMd:    common.FirstEngineString(c["content_with_weight"]),
+		Outlinks:     toStringSlice(c["outlinks_kwd"]),
+		Inlinks:      toStringSlice(c["inlinks_kwd"]),
+		SourceDocIDs: toStringSlice(c["source_doc_ids"]),
 	}, nil
+}
+
+// SkillSourceDocGroups returns the source documents for skill rows targeted by
+// kwd. An empty kwd selects all skill rows in the dataset.
+func (s *DatasetArtifactService) SkillSourceDocGroups(ctx context.Context, tenantID, datasetID, kwd string) ([][]string, error) {
+	filter := map[string]interface{}{"compile_kwd": []string{CompileKwdSkillAll}}
+	if kwd != "" {
+		filter["kwd"] = []string{kwd}
+	}
+	groups := make([][]string, 0)
+	for offset := 0; ; offset += 1000 {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"source_doc_ids"}, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, chunk := range chunks {
+			groups = append(groups, toStringSlice(chunk["source_doc_ids"]))
+		}
+		if len(chunks) == 0 || int64(offset+len(chunks)) >= total {
+			break
+		}
+	}
+	return groups, nil
 }
 
 // DeleteSkills deletes skills of a dataset, optionally scoped by keyword.

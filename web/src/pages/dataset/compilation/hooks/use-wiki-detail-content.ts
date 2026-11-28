@@ -7,6 +7,7 @@ import { Docagg } from '@/interfaces/database/chat';
 import { IArtifact, IWikiCommit } from '@/interfaces/database/dataset';
 import { downloadMarkdownFile } from '@/utils/file-util';
 import type { WikiPageType } from '@/utils/wiki-link-util';
+import { useArtifactPermissions } from '@/ee/pages/dataset/compilation/use-artifact-permissions';
 import { useCallback, useEffect, useMemo } from 'react';
 
 import { useCommitArtifact } from './use-commit-artifact';
@@ -163,13 +164,11 @@ export function useWikiDetailContent({
   const { documents } = useFetchDocumentsByIds(pageData?.source_doc_ids ?? []);
 
   const referenceDocuments = useMemo<Docagg[]>(() => {
-    return documents.map(
-      (doc): Docagg => ({
-        doc_id: doc.id,
-        doc_name: doc.name,
-        count: 0,
-      }),
-    );
+    return documents.map((doc): Docagg => ({
+      doc_id: doc.id,
+      doc_name: doc.name,
+      count: 0,
+    }));
   }, [documents]);
 
   const handleExport = useCallback(() => {
@@ -178,6 +177,7 @@ export function useWikiDetailContent({
   }, [title, editedContent]);
 
   const loading = isVersionView ? commitLoading : pageLoading;
+  const { canEdit } = useArtifactPermissions(pageData, isVersionView);
 
   return {
     isVersionView,
@@ -196,6 +196,7 @@ export function useWikiDetailContent({
     loading,
     editedContent,
     isDirty,
+    canEdit,
     referenceDocuments,
     isOpen,
     open,

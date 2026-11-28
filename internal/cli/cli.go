@@ -932,12 +932,7 @@ func (c *CLI) VerifyAuth(username, password string) error {
 		return fmt.Errorf("password is required")
 	}
 
-	// Create login command with username and password
-	cmd := NewCommand("login_user_on_startup")
-	cmd.Params["email"] = username
-	cmd.Params["password"] = password
-
-	_, err := c.LoginUserByCommand(1, cmd)
+	err := c.LoginUserInteractive(username, password)
 	return err
 }
 

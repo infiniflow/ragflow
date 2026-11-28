@@ -28,7 +28,7 @@ jest.mock('@/layouts/components/app-sidebar/use-sidebar-collapse', () => ({
 }));
 
 jest.mock('./sidebar', () => ({
-  SideBar: ({ onMenuSelect }: { onMenuSelect: () => void }) => (
+  DatasetSidebar: ({ onMenuSelect }: { onMenuSelect: () => void }) => (
     <aside data-testid="dataset-sidebar">
       <button
         type="button"

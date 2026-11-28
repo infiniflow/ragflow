@@ -104,6 +104,7 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{name: "numeric string chunk size", input: `{"chunk_token_num":"256"}`, want: `{"GeneralChunker:SixApplesFall":{"chunk_token_size":256}}`},
 		{name: "unusable chunk size is dropped", input: `{"chunk_token_num":"many"}`, want: `{}`},
 		{name: "title chunker cap", parser: "book", input: `{"chunk_token_num":256}`, want: `{"TitleChunker:GrumpyGarlicsBake":{"chunk_token_cap":256}}`},
+		{name: "title chunker zero cap is dropped", parser: "book", input: `{"chunk_token_num":0}`, want: `{}`},
 		{name: "title chunker cap out of range", parser: "book", input: `{"chunk_token_num":64}`, want: `{}`},
 		{name: "manual chunker has no cap", parser: "manual", input: `{"chunk_token_num":512}`, want: `{}`},
 		{name: "delimiter with backticks and unicode", input: "{\"delimiter\":\"`--`。？\"}", want: `{"GeneralChunker:SixApplesFall":{"delimiters":["` + "`--`" + `","。","？"]}}`},

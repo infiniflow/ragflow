@@ -1206,6 +1206,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
+	if !filterSearchResponse(c, &resp.Chunks, &resp.DocAggs) {
+		return
+	}
 	common.RespondSuccess(c, resp, "success")
 }
 
@@ -1276,6 +1279,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 
+	if !filterSearchResponse(c, &resp.Chunks, &resp.DocAggs) {
+		return
+	}
 	common.RespondSuccess(c, resp, "success")
 }
 

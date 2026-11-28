@@ -1,6 +1,6 @@
 import { PageFrame } from '@/components/page-frame';
 import { ParserTreeSelect } from '@/components/parser-tree-select';
-import { SettingsFormContainer } from '@/components/settings-form-container';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import { useParserTreeData } from '@/components/parser-tree-select/use-parser-tree-data';
 import { usePrefillLatestPipelineVersion } from '@/components/parser-tree-select/use-prefill-latest-pipeline-version';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
@@ -312,6 +312,30 @@ export default function DatasetSetting() {
     ((parseType === ParseType.Pipeline && !!pipelineId) ||
       (parseType === ParseType.BuiltIn && !!builtinPipelineId));
 
+  const handleReset = useCallback(() => {
+    form.reset();
+  }, [form]);
+
+  const settingsActions = !readOnly ? (
+    <>
+      <Button type="reset" variant="transparent" onClick={handleReset}>
+        {t('knowledgeConfiguration.cancel')}
+      </Button>
+
+      <ButtonLoading
+        type="submit"
+        loading={
+          datasetSettingLoading ||
+          saveLoading ||
+          form.formState.isSubmitting ||
+          (operatorNodesLoading && operatorNodes.length === 0)
+        }
+      >
+        {t('knowledgeConfiguration.save')}
+      </ButtonLoading>
+    </>
+  ) : undefined;
+
   return (
     <>
       <ApplyParserConfigDialog
@@ -325,14 +349,17 @@ export default function DatasetSetting() {
             onSubmit={form.handleSubmit(handleSubmit, handleInvalidSubmit)}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <SettingsFormContainer className="flex min-h-0 flex-1 flex-col">
-              <div
-                ref={scrollContainerRef}
-                className="flex-1 min-h-0 w-full px-5 pt-5 overflow-y-auto scrollbar-auto"
+            <SettingsFormLayout
+              scrollContainerRef={scrollContainerRef}
+              actions={settingsActions}
+            >
+              <fieldset
+                disabled={readOnly}
+                className="m-0 w-full min-w-0 space-y-5 border-0 p-0 text-text-secondary"
               >
                 <fieldset
                   disabled={readOnly}
-                  className="m-0 w-full min-w-0 space-y-5 border-0 p-0 text-text-secondary"
+                  className="m-0 w-full min-w-0 space-y-5 border-0 p-0"
                 >
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.baseInfo')}
@@ -346,91 +373,67 @@ export default function DatasetSetting() {
                     unbindFunc={unbindFunc}
                     handleAutoParse={handleAutoParse}
                   />
-
-                  <Divider />
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-base font-medium text-text-primary">
-                      {t('knowledgeConfiguration.parsingMode')}
-                    </div>
-                    {parseType === ParseType.BuiltIn && builtinPipelineId && (
-                      <ChunkMethodLearnMore parserId={builtinPipelineId} />
-                    )}
-                  </div>
-                  <FormItem className="items-center space-y-0">
-                    <div className="flex items-center gap-1">
-                      <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
-                        {t('knowledgeConfiguration.parsingMode')}
-                      </FormLabel>
-                      <div className="text-muted-foreground w-3/4">
-                        <FormField
-                          control={form.control}
-                          name={
-                            parseType === ParseType.BuiltIn
-                              ? 'parser_id'
-                              : 'pipeline_id'
-                          }
-                          render={({ fieldState }) => (
-                            <FormItem className="space-y-1">
-                              <ParserTreeSelect
-                                value={parserSelectValue}
-                                onChange={handleParserSelect}
-                                outdated={savedVersionOutdated}
-                                invalid={fieldState.invalid}
-                                accessUserId={knowledgeDetails?.user_id}
-                              />
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-                  </FormItem>
-                  {showOperatorTabs && (
-                    <DatasetParserOptions>
-                      <PipelineOperatorTabs
-                        nodes={operatorNodes}
-                        activeTab={activeTab}
-                        onTabChange={setActiveTab}
-                        onOperatorValuesChange={handleOperatorValuesChange}
-                        operatorValues={parserConfigValues}
-                        operatorFormErrors={
-                          errors.parser_config as
-                            | Record<string, FieldErrors | undefined>
-                            | undefined
-                        }
-                        fixedFileFormats
-                      />
-                    </DatasetParserOptions>
-                  )}
                 </fieldset>
-              </div>
 
-              {!readOnly && (
-                <div className="p-5 text-right items-center flex justify-end gap-3 w-full">
-                  <Button
-                    type="reset"
-                    variant="transparent"
-                    onClick={() => {
-                      form.reset();
-                    }}
-                  >
-                    {t('knowledgeConfiguration.cancel')}
-                  </Button>
-
-                  <ButtonLoading
-                    type="submit"
-                    loading={
-                      datasetSettingLoading ||
-                      saveLoading ||
-                      form.formState.isSubmitting ||
-                      (operatorNodesLoading && operatorNodes.length === 0)
-                    }
-                  >
-                    {t('knowledgeConfiguration.save')}
-                  </ButtonLoading>
+                <Divider />
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.parsingMode')}
+                  </div>
+                  {parseType === ParseType.BuiltIn && builtinPipelineId && (
+                    <ChunkMethodLearnMore parserId={builtinPipelineId} />
+                  )}
                 </div>
-              )}
-            </SettingsFormContainer>
+                <FormItem className="items-center space-y-0">
+                  <div className="flex items-center gap-1">
+                    <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
+                      {t('knowledgeConfiguration.parsingMode')}
+                    </FormLabel>
+                    <div className="text-muted-foreground w-3/4">
+                      <FormField
+                        control={form.control}
+                        name={
+                          parseType === ParseType.BuiltIn
+                            ? 'parser_id'
+                            : 'pipeline_id'
+                        }
+                        render={({ fieldState }) => (
+                          <FormItem className="space-y-1">
+                            <ParserTreeSelect
+                              value={parserSelectValue}
+                              onChange={handleParserSelect}
+                              outdated={savedVersionOutdated}
+                              invalid={fieldState.invalid}
+                              disabled={readOnly}
+                              accessUserId={knowledgeDetails?.user_id}
+                            />
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                </FormItem>
+                {showOperatorTabs && (
+                  <DatasetParserOptions>
+                    <PipelineOperatorTabs
+                      nodes={operatorNodes}
+                      activeTab={activeTab}
+                      onTabChange={setActiveTab}
+                      onOperatorValuesChange={handleOperatorValuesChange}
+                      operatorValues={parserConfigValues}
+                      operatorFormErrors={
+                        errors.parser_config as
+                          | Record<string, FieldErrors | undefined>
+                          | undefined
+                      }
+                      fixedFileFormats
+                      readOnly={readOnly}
+                    />
+                  </DatasetParserOptions>
+                )}
+              </fieldset>
+            </SettingsFormLayout>
           </form>
         </Form>
       </PageFrame>

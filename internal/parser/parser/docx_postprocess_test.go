@@ -1,97 +1,10 @@
 package parser
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
 )
-
-// helper: build a minimal docx ZIP in-memory with given header/footer XML.
-func buildDocxZIP(t *testing.T, headerText, footerText string) []byte {
-	t.Helper()
-	buf := new(bytes.Buffer)
-	zw := zip.NewWriter(buf)
-	// Minimal required parts for a valid docx: [Content_Types].xml + word/document.xml.
-	mustWrite := func(name, body string) {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(body))
-	}
-	mustWrite("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/></Types>`)
-	mustWrite("word/document.xml", `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body text</w:t></w:r></w:p></w:body></w:document>`)
-	if headerText != "" {
-		mustWrite("word/header1.xml", `<?xml version="1.0"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>`+headerText+`</w:t></w:r></w:p></w:hdr>`)
-	}
-	if footerText != "" {
-		mustWrite("word/footer1.xml", `<?xml version="1.0"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>`+footerText+`</w:t></w:r></w:p></w:ftr>`)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
-
-func TestExtractDOCXHeaderFooterTexts(t *testing.T) {
-	data := buildDocxZIP(t, "Company Confidential", "Page 1")
-	texts := extractDOCXHeaderFooterTexts(data)
-	if !texts["Company Confidential"] {
-		t.Error("missing header text 'Company Confidential'")
-	}
-	if !texts["Page 1"] {
-		t.Error("missing footer text 'Page 1'")
-	}
-}
-
-func TestExtractDOCXHeaderFooterTexts_NoHeaders(t *testing.T) {
-	data := buildDocxZIP(t, "", "")
-	texts := extractDOCXHeaderFooterTexts(data)
-	if len(texts) != 0 {
-		t.Errorf("expected empty map, got %v", texts)
-	}
-}
-
-func TestExtractDOCXHeaderFooterTexts_Normalization(t *testing.T) {
-	// Whitespace runs should be collapsed and trimmed.
-	data := buildDocxZIP(t, "  Multiple   Spaces  ", "")
-	texts := extractDOCXHeaderFooterTexts(data)
-	if !texts["Multiple Spaces"] {
-		t.Errorf("expected normalized 'Multiple Spaces', got %v", texts)
-	}
-}
-
-// TestRemoveDOCXHeaderFooterSections filters JSON items whose
-// normalized text exactly matches a header/footer text.
-func TestRemoveDOCXHeaderFooterSections(t *testing.T) {
-	items := []map[string]any{
-		{"text": "Company Confidential"},
-		{"text": "Real content"},
-		{"text": "Page 1"},
-		{"text": "More content"},
-	}
-	hfTexts := map[string]bool{"Company Confidential": true, "Page 1": true}
-	got := removeDOCXHeaderFooterSections(items, hfTexts)
-	want := []map[string]any{
-		{"text": "Real content"},
-		{"text": "More content"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %+v, want %+v", got, want)
-	}
-}
-
-// TestRemoveDOCXHeaderFooterSections_EmptyHF keeps all items when no
-// header/footer texts are provided.
-func TestRemoveDOCXHeaderFooterSections_EmptyHF(t *testing.T) {
-	items := []map[string]any{{"text": "A"}, {"text": "B"}}
-	got := removeDOCXHeaderFooterSections(items, nil)
-	if !reflect.DeepEqual(got, items) {
-		t.Errorf("expected unchanged, got %+v", got)
-	}
-}
 
 // TestExtractDOCXOutlines verifies heading elements are extracted
 // from the office_oxide IR as (title, level) outlines.

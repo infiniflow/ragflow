@@ -538,7 +538,7 @@ const apiEndpoints = {
   adminListRoles: `${restAPIv1}/admin/roles`,
   adminListRolesWithPermission: `${restAPIv1}/admin/roles_with_permission`,
   adminGetRolePermissions: (roleName: string) =>
-    `${restAPIv1}/admin/roles/${roleName}/permissions`,
+    `${restAPIv1}/admin/roles/${roleName}/permission`,
   adminAssignRolePermissions: (roleName: string) =>
     `${restAPIv1}/admin/roles/${roleName}/permission`,
   adminRevokeRolePermissions: (roleName: string) =>

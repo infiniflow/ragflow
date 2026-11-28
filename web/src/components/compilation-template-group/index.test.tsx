@@ -91,11 +91,14 @@ describe('CompilationTemplateGroupEditor', () => {
     const nameInput = screen.getByRole('textbox', { name: 'Template name' });
     expect(nameInput).toHaveValue('');
     expect(screen.getByRole('heading', { name: 'common.name' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'common.save' })).toBeVisible();
 
     fireEvent.change(nameInput, { target: { value: 'Updated name' } });
     fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
 
     expect(screen.getByTestId('json-editor')).toHaveTextContent('Updated name');
+    expect(screen.getByRole('button', { name: 'common.save' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'common.back' })).toBeVisible();
     expect(
       screen.queryByRole('textbox', { name: 'Template name' }),
     ).not.toBeInTheDocument();
@@ -110,6 +113,14 @@ describe('CompilationTemplateGroupEditor', () => {
       'Updated name',
     );
     expect(screen.getByRole('heading', { name: 'Updated name' })).toBeVisible();
+  });
+
+  it('forwards cancel from the shared footer', () => {
+    renderEditor();
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.back' }));
+
+    expect(mockCancel).toHaveBeenCalledTimes(1);
   });
 
   it('shows the page title and forwards secondary sidebar collapse', () => {

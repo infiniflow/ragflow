@@ -48,9 +48,10 @@ type fileCommitService interface {
 
 // FileCommitHandler file commit handler
 type FileCommitHandler struct {
-	commitService fileCommitService
-	kbDAO         *dao.KnowledgebaseDAO
-	fileDAO       *dao.FileDAO
+	commitService         fileCommitService
+	kbDAO                 *dao.KnowledgebaseDAO
+	fileDAO               *dao.FileDAO
+	wikiPageAccessChecker func(*gin.Context, string, string, string) bool
 }
 
 // NewFileCommitHandler create file commit handler
@@ -60,6 +61,13 @@ func NewFileCommitHandler(commitService fileCommitService) *FileCommitHandler {
 		kbDAO:         dao.NewKnowledgebaseDAO(),
 		fileDAO:       dao.NewFileDAO(),
 	}
+}
+
+func (h *FileCommitHandler) canReadWikiPage(c *gin.Context, datasetID, pageType, slug string) bool {
+	if h.wikiPageAccessChecker != nil {
+		return h.wikiPageAccessChecker(c, datasetID, pageType, slug)
+	}
+	return wikiPageSourceReadable(c, datasetID, pageType, slug)
 }
 
 // ResolveFolderID resolves a resource ID (dataset/memory/skill) to its folder_id.
@@ -316,6 +324,9 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 				pageType, slug = slug[:idx], slug[idx+1:]
 			}
 		}
+		if !h.canReadWikiPage(c, datasetID, pageType, slug) {
+			return
+		}
 		commits, total, err := h.commitService.ListPageCommits(ctx, datasetID, pageType, slug, page, pageSize)
 		if err != nil {
 			jsonInternalError(c, err)
@@ -408,6 +419,9 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		detail, err := h.commitService.GetPageCommitDetail(ctx, datasetID, commitID)
 		if err != nil {
 			common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
+			return
+		}
+		if !h.canReadWikiPage(c, datasetID, detail.PageType, detail.Slug) {
 			return
 		}
 		common.RespondSuccess(c, detail, common.CodeSuccess.Message())

@@ -1,5 +1,5 @@
 import { DynamicForm } from '@/components/dynamic-form';
-import { SettingsFormContainer } from '@/components/settings-form-container';
+import { SettingsFormLayout } from '@/components/settings-form-layout';
 import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
@@ -12,7 +12,7 @@ import { IMemory } from '@/pages/memories/interface';
 import { showPermissionField } from '@/ee/constants/feature-flags';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { FieldValues, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import {
@@ -86,59 +86,65 @@ export default function MemoryMessage() {
   const onSubmit = (data: IMemory) => {
     onMemoryRenameOk(data);
   };
+
+  const handleReset = () => {
+    form.reset();
+  };
+
+  const handleSavingSubmit = (value: FieldValues) => {
+    onSubmit(value as IMemory);
+  };
+
+  const memoryActions = canEditConfig ? (
+    <>
+      <Button
+        type="reset"
+        className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
+        onClick={handleReset}
+      >
+        {t('knowledgeConfiguration.cancel')}
+      </Button>
+      <DynamicForm.SavingButton
+        submitLoading={loading}
+        submitFunc={handleSavingSubmit}
+      ></DynamicForm.SavingButton>
+    </>
+  ) : undefined;
+
   return (
-    <SettingsFormContainer className="flex h-full flex-col">
-      <TopTitle
-        title={t('knowledgeDetails.configuration')}
-        description={t('memory.config.titleDescription')}
-      ></TopTitle>
-      <div className="flex gap-14 flex-1 min-h-0">
-        <MemorySettingProvider data={data}>
-          <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-            <ModelResourceAccessUserIdContext.Provider
-              value={memoryConfigLoading ? null : (data?.user_id ?? null)}
+    <MemorySettingProvider data={data}>
+      <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
+        <ModelResourceAccessUserIdContext.Provider
+          value={memoryConfigLoading ? null : (data?.user_id ?? null)}
+        >
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(() => {})}
+              className="flex min-h-0 w-full flex-1 flex-col"
             >
-              <Form {...form}>
-                <form
-                  onSubmit={form.handleSubmit(() => {})}
-                  className="w-full space-y-6"
-                >
-                  <div className="w-full h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
-                    <section className="space-y-5 text-text-secondary !space-y-10">
-                      <div className="text-base font-medium text-text-primary">
-                        {t('knowledgeConfiguration.baseInfo')}
-                      </div>
-                      <BasicInfo readOnly={!canEditConfig}></BasicInfo>
-                      <Divider />
-                      <MemoryModelForm readOnly={!canEditConfig} />
-                      <AdvancedSettingsForm readOnly={!canEditConfig} />
-                    </section>
+              <SettingsFormLayout
+                header={
+                  <TopTitle
+                    title={t('knowledgeDetails.configuration')}
+                    description={t('memory.config.titleDescription')}
+                  ></TopTitle>
+                }
+                actions={memoryActions}
+              >
+                <section className="space-y-5 text-text-secondary !space-y-10">
+                  <div className="text-base font-medium text-text-primary">
+                    {t('knowledgeConfiguration.baseInfo')}
                   </div>
-                  {canEditConfig && (
-                    <div className="text-right items-center flex justify-end gap-3 w-full">
-                      <Button
-                        type="reset"
-                        className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
-                        onClick={() => {
-                          form.reset();
-                        }}
-                      >
-                        {t('knowledgeConfiguration.cancel')}
-                      </Button>
-                      <DynamicForm.SavingButton
-                        submitLoading={loading}
-                        submitFunc={(value) => {
-                          onSubmit(value as IMemory);
-                        }}
-                      ></DynamicForm.SavingButton>
-                    </div>
-                  )}
-                </form>
-              </Form>
-            </ModelResourceAccessUserIdContext.Provider>
-          </ModelResourceTenantIdContext.Provider>
-        </MemorySettingProvider>
-      </div>
-    </SettingsFormContainer>
+                  <BasicInfo readOnly={!canEditConfig}></BasicInfo>
+                  <Divider />
+                  <MemoryModelForm readOnly={!canEditConfig} />
+                  <AdvancedSettingsForm readOnly={!canEditConfig} />
+                </section>
+              </SettingsFormLayout>
+            </form>
+          </Form>
+        </ModelResourceAccessUserIdContext.Provider>
+      </ModelResourceTenantIdContext.Provider>
+    </MemorySettingProvider>
   );
 }

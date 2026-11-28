@@ -450,6 +450,9 @@ func PushEvent(ctx context.Context, ch chan<- RunEvent, ev RunEvent) {
 		return
 	}
 	defer func() { _ = recover() }()
+	if pushFilteredEvent(ctx, ch, ev) {
+		return
+	}
 	eventCtx := getEventContext(ctx)
 	if eventCtx.Err() != nil {
 		return
