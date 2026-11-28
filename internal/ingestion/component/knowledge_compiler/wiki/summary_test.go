@@ -43,8 +43,8 @@ func TestSummarizeMarkdown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := summarizeMarkdown(tt.content, ""); got != tt.want {
-				t.Fatalf("summarizeMarkdown() = %q, want %q", got, tt.want)
+			if got := SummarizeMarkdown(tt.content, ""); got != tt.want {
+				t.Fatalf("SummarizeMarkdown() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -52,23 +52,23 @@ func TestSummarizeMarkdown(t *testing.T) {
 
 func TestSummarizeMarkdownTruncatesAfterRemovingLinks(t *testing.T) {
 	content := "**齿轮**是[海雾镇](artifact/" + strings.Repeat("a", 400) + "/entity/location/海雾镇)钟楼的零件。"
-	if got := summarizeMarkdown(content, ""); got != "齿轮是海雾镇钟楼的零件。" {
+	if got := SummarizeMarkdown(content, ""); got != "齿轮是海雾镇钟楼的零件。" {
 		t.Fatalf("summary = %q, want the complete visible text", got)
 	}
 
 	for _, runeText := range []string{"中", "🔔"} {
 		t.Run(runeText, func(t *testing.T) {
 			prefix := strings.Repeat("a", 299)
-			got := summarizeMarkdown(prefix+runeText+" tail", "")
+			got := SummarizeMarkdown(prefix+runeText+" tail", "")
 			if got != prefix || !utf8.ValidString(got) {
 				t.Fatalf("summary = %q, want a valid UTF-8 prefix at the 300-byte limit", got)
 			}
 		})
 	}
-	if got := summarizeMarkdown(strings.Repeat("中", 101), ""); got != strings.Repeat("中", 100) {
+	if got := SummarizeMarkdown(strings.Repeat("中", 101), ""); got != strings.Repeat("中", 100) {
 		t.Fatalf("Chinese summary length = %d bytes, want 300", len(got))
 	}
-	if got := summarizeMarkdown(strings.Repeat("a", 301), ""); len(got) != 300 {
+	if got := SummarizeMarkdown(strings.Repeat("a", 301), ""); len(got) != 300 {
 		t.Fatalf("ASCII summary length = %d bytes, want 300", len(got))
 	}
 }
@@ -80,7 +80,7 @@ func TestSummarizeMarkdownTitleDoesNotRestoreHiddenContent(t *testing.T) {
 		"<style>.ignored { color: red; }</style>",
 	} {
 		t.Run(title, func(t *testing.T) {
-			if got := summarizeMarkdown("", title); got != "" {
+			if got := SummarizeMarkdown("", title); got != "" {
 				t.Fatalf("summary = %q, want empty text for a title with no visible content", got)
 			}
 		})

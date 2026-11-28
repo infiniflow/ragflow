@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	kcwiki "ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 
@@ -1379,6 +1380,7 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 				return fmt.Errorf("rewrite Wiki page %q returned empty content", kccommon.MetaString(page.Meta, "slug"))
 			}
 			pages[idx].Content = content
+			pages[idx].Meta["summary"] = kcwiki.SummarizeMarkdown(content, kccommon.MetaString(page.Meta, "title"))
 			return nil
 		})
 	}
