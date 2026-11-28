@@ -1,0 +1,20 @@
+{
+  "name": "ragflow",
+  "interface": {
+    "displayName": "RAGFlow"
+  },
+  "plugins": [
+    {
+      "name": "ragflow",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ragflow"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
