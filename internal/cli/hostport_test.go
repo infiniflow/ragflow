@@ -44,3 +44,20 @@ func TestParseHostPortIPv4AndEmpty(t *testing.T) {
 		t.Fatalf("empty parse = (%q, %d, %v)", host, port, err)
 	}
 }
+
+func TestParseHostPortRange(t *testing.T) {
+	for _, address := range []string{"localhost:-1", "localhost:0", "[::1]:65536"} {
+		t.Run(address, func(t *testing.T) {
+			if _, _, err := parseHostPort(address); err == nil {
+				t.Fatalf("parseHostPort(%q) accepted a port outside 1–65535", address)
+			}
+		})
+	}
+	for address, want := range map[string]int{"localhost:1": 1, "[::1]:65535": 65535} {
+		t.Run(address, func(t *testing.T) {
+			if _, got, err := parseHostPort(address); err != nil || got != want {
+				t.Fatalf("parseHostPort(%q) returned port %d, error %v; want port %d", address, got, err, want)
+			}
+		})
+	}
+}
