@@ -4050,6 +4050,47 @@ func TestIngest_RunningTask_SkippedWhenBatchStartingParse(t *testing.T) {
 	}
 }
 
+func TestIngestRejectsBatchWithRetiredParserBeforeClearing(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 2, 20, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestDoc(t, "doc-2", "kb-1", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id IN ?", []string{"doc-1", "doc-2"}).Update("location", "source.txt").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-2").Update("parser_id", "knowledge_graph").Error; err != nil {
+		t.Fatal(err)
+	}
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := documentTestContext(t.Context())
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2"}, Run: string(entity.TaskStatusRunning), Delete: true,
+	})
+	if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "doc-2: unknown builtin parser_id: knowledge_graph") {
+		t.Errorf("Ingest = code %v, error %v, want retired parser rejection", code, err)
+	}
+	if len(publisher.messages) != 0 {
+		t.Errorf("published %d ingestion tasks, want zero", len(publisher.messages))
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.ChunkNum != 5 || doc.TokenNum != 10 {
+		t.Errorf("valid document counters = (%d chunks, %d tokens), want (5, 10)", doc.ChunkNum, doc.TokenNum)
+	}
+	task, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil || task == nil || task.ID != "task-1" || task.Status != common.COMPLETED {
+		t.Fatalf("ingestion task = %+v, err = %v, want original completed task", task, err)
+	}
+}
+
 func TestIngest_AllActiveTasks_ReturnsSuccessIdempotent(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -5161,6 +5202,60 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	remaining, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
 	if remaining == nil {
 		t.Fatal("ingestion task should NOT be deleted when storage validation fails")
+	}
+}
+
+func TestStartParseDocumentsRejectsRetiredParserBeforeClearing(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	ctx := documentTestContext(t.Context())
+	documentDAO := dao.NewDocumentDAO()
+	if err := documentDAO.UpdateByID(ctx, db, "doc-1", map[string]any{
+		"parser_id": "knowledge_graph",
+		"location":  "source.txt",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := testDocumentService(t)
+	publisher := &recordingTaskPublisher{}
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{RerunWithDelete: true})
+	if err == nil || !strings.Contains(err.Error(), "unknown builtin parser_id: knowledge_graph") {
+		t.Errorf("StartParseDocuments = %v, want unknown parser error", err)
+	}
+	if len(publisher.messages) != 0 {
+		t.Errorf("published %d ingestion tasks, want zero", len(publisher.messages))
+	}
+	doc, err = documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.ChunkNum != 5 || doc.TokenNum != 10 {
+		t.Errorf("document counters = (%d chunks, %d tokens), want (5, 10)", doc.ChunkNum, doc.TokenNum)
+	}
+	kb, err = dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kb.ChunkNum != 5 || kb.TokenNum != 10 {
+		t.Errorf("dataset counters = (%d chunks, %d tokens), want (5, 10)", kb.ChunkNum, kb.TokenNum)
+	}
+	task, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil || task == nil || task.ID != "task-1" || task.Status != common.COMPLETED {
+		t.Fatalf("ingestion task = %+v, err = %v, want original completed task", task, err)
 	}
 }
 

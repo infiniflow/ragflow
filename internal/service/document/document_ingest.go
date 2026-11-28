@@ -154,6 +154,9 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 				common.Debug(fmt.Sprintf("skip document %s ingestion, already completed and delete is false", vd.doc.ID))
 				continue
 			}
+			if err := ValidateDocumentParser(vd.doc); err != nil {
+				return common.CodeDataError, err
+			}
 			toStart = append(toStart, vd)
 		}
 

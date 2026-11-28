@@ -214,6 +214,8 @@ If you used **Tongyi-Qianwen** in the v0.x deployment, go to **User settings** *
 
 If the Python deployment used Tag datasets, confirm that they are no longer treated as datasets, reconfigure their tag files in the Go backend, and verify tag extraction on a representative document.
 
+In v1, `knowledge_graph` is a knowledge compilation template. If a dataset or document still has `knowledge_graph` as its parser ID, select a supported parser before re-parsing it. Configure knowledge graph compilation separately if needed.
+
 Keep the `v0.27.2` backup until the upgraded deployment has completed acceptance testing and operated successfully under normal workload.
 
 ## 6. Recover from a failed upgrade

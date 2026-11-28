@@ -41,6 +41,41 @@ func testDatasetCreateService(t *testing.T) *DatasetService {
 
 func iptr(i int) *int { return &i }
 
+func TestDatasetWritesRejectRetiredParser(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+
+	parserID := "knowledge_graph"
+	parseType := 1
+	_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:      "Retired parser",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+	})
+	if err == nil || code != common.CodeDataError || !strings.Contains(err.Error(), "'general'") {
+		t.Errorf("CreateDataset = (code=%d, err=%v), want invalid parser error", code, err)
+	}
+
+	_, code, err = testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
+		ParserID:  &parserID,
+		ParseType: &parseType,
+	})
+	if err == nil || code != common.CodeDataError || !strings.Contains(err.Error(), "'general'") {
+		t.Errorf("UpdateDataset = (code=%d, err=%v), want invalid parser error", code, err)
+	}
+
+	var datasets []entity.Knowledgebase
+	if err := db.Find(&datasets).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(datasets) != 1 || datasets[0].ID != "kb-1" || datasets[0].ParserID != "naive" {
+		t.Fatalf("persisted datasets = %+v, want only the original dataset and parser", datasets)
+	}
+}
+
 func TestCreateDataset_NoComponentParams(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

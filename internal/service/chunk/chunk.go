@@ -808,11 +808,15 @@ func (s *ChunkService) Parse(ctx context.Context, datasetID string, req *service
 	if len(notFound) > 0 {
 		return nil, common.CodeDataError, fmt.Errorf("documents not found: %v", notFound)
 	}
-
 	// Batch pre-check: refuse the whole request if any document's ingestion
 	// task is non-terminal (RUNNING/STOPPING), so we never partially clean.
 	if err = (document.NewDocumentService().AssertIngestionTasksTerminal(ctx, docIDs)); err != nil {
 		return nil, common.CodeDataError, err
+	}
+	for _, docID := range docIDs {
+		if err := document.ValidateDocumentParser(docByID[docID]); err != nil {
+			return nil, common.CodeDataError, err
+		}
 	}
 
 	startParse := s.startParseDocumentsFunc

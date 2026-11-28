@@ -66,9 +66,6 @@ const (
 // canonicalDatasetParserID resolves a parser ID to its canonical builtin ID.
 // The registry retains legacy aliases such as naive -> general for old clients.
 func canonicalDatasetParserID(parserID string) (string, error) {
-	if parserID == "knowledge_graph" {
-		return parserID, nil
-	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
 		return "", errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")

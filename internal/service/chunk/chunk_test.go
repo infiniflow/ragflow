@@ -2905,6 +2905,28 @@ func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
 	}
 }
 
+func TestChunkServiceParseRejectsBatchWithRetiredParser(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	insertChunkTestDoc(t, "doc-2", "kb-1")
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-2").Update("parser_id", "knowledge_graph").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newParseTestService(t)
+	svc.startParseDocumentsFunc = func(_ context.Context, doc *entity.Document, _ *entity.Knowledgebase, _ document.StartParseOptions) error {
+		t.Errorf("started document %s before rejecting batch", doc.ID)
+		return nil
+	}
+	ctx := chunkTestContext(t, "user-1", "user-1")
+	_, code, err := svc.Parse(ctx, "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
+	if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "doc-2: unknown builtin parser_id: knowledge_graph") {
+		t.Fatalf("Parse = code %v, error %v, want retired parser rejection", code, err)
+	}
+}
+
 func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
