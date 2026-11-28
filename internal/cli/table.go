@@ -21,9 +21,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/mattn/go-runewidth"
 )
 
 const maxColWidth = 256
+
+var tableWidth = runewidth.Condition{StrictEmojiNeutral: true}
 
 // PrintTableSimple prints data in a simple table format (default: table format with borders)
 // Similar to Python's _print_table_simple
@@ -103,7 +107,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		colIsNumeric[col] = isNumeric
 	}
 
-	// Calculate column widths (capped at maxColWidth)
+	// Calculate column widths, capping them only in plain mode.
 	colWidths := make(map[string]int)
 	for _, col := range columns {
 		maxWidth := getStringWidth(strings.ToLower(col))
@@ -114,7 +118,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 				maxWidth = valueWidth
 			}
 		}
-		if maxWidth > maxColWidth {
+		if format == OutputFormatPlain && maxWidth > maxColWidth {
 			maxWidth = maxColWidth
 		}
 		if maxWidth < 2 {
@@ -148,9 +152,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 					// Normal cell: truncate if too long, then pad
 					valueWidth := getStringWidth(value)
 					if valueWidth > colWidths[col] {
-						runes := []rune(value)
-						value = truncateStringByWidth(runes, colWidths[col])
-						valueWidth = getStringWidth(value)
+						value = truncateStringByWidth(value, colWidths[col])
 					}
 					rowParts = append(rowParts, padCell(value, colWidths[col], isNumeric))
 				}
@@ -170,7 +172,7 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		fmt.Println(separator)
 		headerParts := make([]string, 0, len(columns))
 		for _, col := range columns {
-			headerParts = append(headerParts, fmt.Sprintf(" %-*s ", colWidths[col], col))
+			headerParts = append(headerParts, fmt.Sprintf(" %s ", padCell(col, colWidths[col], false)))
 		}
 		fmt.Println("|" + strings.Join(headerParts, "|") + "|")
 		fmt.Println(separator)
@@ -232,19 +234,8 @@ func isNumericValue(v interface{}) bool {
 }
 
 // truncateStringByWidth truncates a string to fit within maxWidth display width
-func truncateStringByWidth(runes []rune, maxWidth int) string {
-	width := 0
-	for i, r := range runes {
-		if isHalfWidth(r) {
-			width++
-		} else {
-			width += 2
-		}
-		if width > maxWidth-3 {
-			return string(runes[:i]) + "..."
-		}
-	}
-	return string(runes)
+func truncateStringByWidth(text string, maxWidth int) string {
+	return tableWidth.Truncate(text, maxWidth, "...")
 }
 
 // padCell pads a string to the specified width for alignment
@@ -263,25 +254,5 @@ func padCell(content string, width int, alignRight bool) string {
 // getStringWidth calculates the display width of a string
 // Treats CJK characters as width 2
 func getStringWidth(text string) int {
-	width := 0
-	for _, r := range text {
-		if isHalfWidth(r) {
-			width++
-		} else {
-			width += 2
-		}
-	}
-	return width
-}
-
-// isHalfWidth checks if a rune is half-width
-func isHalfWidth(r rune) bool {
-	// ASCII printable characters and common whitespace
-	if r >= 0x20 && r <= 0x7E {
-		return true
-	}
-	if r == '\t' || r == '\n' || r == '\r' {
-		return true
-	}
-	return false
+	return tableWidth.StringWidth(text)
 }
