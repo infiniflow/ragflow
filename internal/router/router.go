@@ -20,6 +20,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
 	"ragflow/internal/mcp"
+	rflowotel "ragflow/internal/observability/otel"
 
 	"github.com/gin-gonic/gin"
 )
@@ -138,6 +139,9 @@ func NewRouter(
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
 	engine.Use(requestBodyLimitMiddleware())
+	// Server span per request. When otel.enable is false the global provider
+	// is a no-op and this middleware is effectively free.
+	engine.Use(rflowotel.ServerMiddleware())
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.

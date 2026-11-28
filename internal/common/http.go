@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 )
 
@@ -121,6 +122,10 @@ func newSSRFHTTPClient() *http.Client {
 
 	var rt http.RoundTripper = t
 	rt = &strictSSRFTransport{base: rt}
+	// Inject W3C traceparent and record a client span for each provider call.
+	// When no TracerProvider has been initialized (otel.enable: false) the
+	// global provider is a no-op and this wrapper adds no overhead.
+	rt = otelhttp.NewTransport(rt)
 	rt = NewProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
 }
@@ -161,6 +166,7 @@ func buildSchemeSafeHTTPClient(responseHeaderTimeout time.Duration) *http.Client
 
 	var rt http.RoundTripper = t
 	rt = &schemeSafeTransport{base: rt}
+	rt = otelhttp.NewTransport(rt)
 	rt = NewProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
 }
