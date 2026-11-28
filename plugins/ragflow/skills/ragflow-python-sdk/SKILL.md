@@ -77,11 +77,17 @@ print(parts[-1].content)
 
 ## Agents
 
-Agent sessions use `rag.list_agents()` then `agent.create_session()`. Streaming
-does not mirror chat: collect answer text from `message` events only. When the
-run has references, the SDK still yields a final `message_end` event with
-empty `content` (and the references), so do not take `parts[-1].content` as
-the answer.
+Agent sessions use `rag.list_agents()` then `agent.create_session()`.
+`Session.ask()` yields `Message` objects without an event type, so filter on
+`content` instead. Streaming sends content deltas; join non-empty parts and
+ignore the empty final part (references may appear there):
+
+```python
+agent = rag.list_agents()[0]
+session = agent.create_session()
+parts = list(session.ask("Summarize the policy", stream=True))
+answer = "".join(part.content for part in parts if part.content)
+```
 
 ## OpenAI-compatible endpoint
 
