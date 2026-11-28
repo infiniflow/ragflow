@@ -426,6 +426,7 @@ type Engine struct {
 	client                 *infinityClient
 	mappingFileName        string
 	docMetaMappingFileName string
+	languageIndexes        sync.Map
 }
 
 // NewEngine creates an Infinity engine

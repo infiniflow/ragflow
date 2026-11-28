@@ -736,6 +736,9 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	documentID := "doc-1"
 	insertChunkTestUserTenant(t, userID, tenantID)
 	insertChunkTestKB(t, datasetID, tenantID)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", datasetID).Update("language", "Slovak").Error; err != nil {
+		t.Fatalf("set dataset language: %v", err)
+	}
 	insertChunkTestDoc(t, documentID, datasetID)
 
 	engine := &listChunksSearchEngine{}
@@ -764,6 +767,9 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if engine.searchReq == nil {
 		t.Fatal("expected Search to be called")
+	}
+	if engine.searchReq.Language != "Slovak" {
+		t.Fatalf("search language = %q, want Slovak", engine.searchReq.Language)
 	}
 	if engine.searchReq.Offset != 5 || engine.searchReq.Limit != 5 {
 		t.Fatalf("pagination = offset %d limit %d, want offset 5 limit 5", engine.searchReq.Offset, engine.searchReq.Limit)

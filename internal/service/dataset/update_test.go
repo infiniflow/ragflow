@@ -17,7 +17,9 @@
 package dataset
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,6 +31,79 @@ import (
 
 	"gorm.io/gorm"
 )
+
+type recordingLanguageEnsurer struct {
+	fakeChatDocEngine
+	baseName  string
+	datasetID string
+	language  string
+	err       error
+}
+
+func (e *recordingLanguageEnsurer) EnsureChunkStoreLanguage(_ context.Context, baseName, datasetID, language string) error {
+	e.baseName = baseName
+	e.datasetID = datasetID
+	e.language = language
+	return e.err
+}
+
+func TestUpdateDatasetPreparesIndexesBeforeChangingLanguage(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	engine := &recordingLanguageEnsurer{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = engine
+
+	language := "Czech"
+	_, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{Language: &language})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+	if engine.baseName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || engine.language != language {
+		t.Fatalf("EnsureChunkStoreLanguage called with (%q, %q, %q)", engine.baseName, engine.datasetID, engine.language)
+	}
+}
+
+func TestUpdateDatasetSkipsIndexPreparationWhenLanguageIsUnchanged(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	engine := &recordingLanguageEnsurer{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = engine
+
+	language := "English"
+	_, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{Language: &language})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+	if engine.language != "" {
+		t.Fatalf("EnsureChunkStoreLanguage should not be called, got language %q", engine.language)
+	}
+}
+
+func TestUpdateDatasetDoesNotChangeLanguageWhenIndexPreparationFails(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	engine := &recordingLanguageEnsurer{err: errors.New("index failure")}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = engine
+
+	language := "Czech"
+	_, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{Language: &language})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset err=%v code=%d, want index error", err, code)
+	}
+	persisted, getErr := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), db, "kb-1")
+	if getErr != nil {
+		t.Fatalf("get dataset: %v", getErr)
+	}
+	if persisted.Language == nil || *persisted.Language != "English" {
+		t.Fatalf("language changed despite index failure: %#v", persisted.Language)
+	}
+}
 
 func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
