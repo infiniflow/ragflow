@@ -50,6 +50,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.SoMark,
   LLMFactory.HostingerRouter,
   LLMFactory.Synap,
+  LLMFactory.MartLLM,
   LLMFactory.Wiro,
   LLMFactory.Crusoe,
   LLMFactory.Onomeo,
