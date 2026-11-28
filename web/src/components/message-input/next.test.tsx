@@ -30,6 +30,7 @@ type InputOverrides = {
   isUploading?: boolean;
   showUploadIcon?: boolean;
   showReasoning?: boolean;
+  initialThinkingMode?: '0' | '5';
   showInternet?: boolean;
 };
 
@@ -181,6 +182,23 @@ describe('NextMessageInput', () => {
     fireEvent.click(screen.getByText('chat.thinkingLevelAgentic'));
 
     expect(mockSetThinkingLevel).toHaveBeenCalledWith('5');
+  });
+
+  it('uses and overrides an embedded thinking mode without persisting it', async () => {
+    renderInput({ showReasoning: true, initialThinkingMode: '5' });
+    const sendButton = screen.getByTestId('chat-detail-send');
+    fireEvent.click(sendButton);
+    expect(mockOnPressEnter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enableThinking: '5' }),
+    );
+
+    fireEvent.click(screen.getByTestId('chat-detail-thinking-toggle'));
+    fireEvent.click(await screen.findByText('chat.thinkingLevelNone'));
+    fireEvent.click(sendButton);
+    expect(mockOnPressEnter).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enableThinking: '0' }),
+    );
+    expect(mockSetThinkingLevel).not.toHaveBeenCalled();
   });
 
   it('disables every composer action when the input is disabled', () => {

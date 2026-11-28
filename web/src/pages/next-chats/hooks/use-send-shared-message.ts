@@ -7,10 +7,11 @@ import {
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
+import { ThinkingMode } from '@/hooks/use-thinking-level';
 import { Message } from '@/interfaces/database/chat';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 
@@ -24,16 +25,25 @@ export const useSendButtonDisabled = (value: string) => {
 export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
-  const data = Object.fromEntries(
-    Array.from(searchParams.entries())
-      .filter(([key]) => key.startsWith(data_prefix))
-      .map(([key, value]) => [key.replace(data_prefix, ''), value]),
+  const data = useMemo(
+    () =>
+      Object.fromEntries(
+        Array.from(searchParams.entries())
+          .filter(([key]) => key.startsWith(data_prefix))
+          .map(([key, value]) => [key.replace(data_prefix, ''), value]),
+      ),
+    [searchParams],
   );
+  const reasoning = searchParams.get('reasoning');
   return {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
     locale: searchParams.get('locale'),
     theme: searchParams.get('theme'),
+    reasoning:
+      reasoning === ThinkingMode.Agentic || reasoning === ThinkingMode.Naive
+        ? reasoning
+        : undefined,
     data: data,
     visibleAvatar: searchParams.get('visible_avatar')
       ? searchParams.get('visible_avatar') !== '1'
@@ -45,7 +55,8 @@ export const useSendSharedMessage = () => {
   const {
     from,
     sharedId: conversationId,
-    data: data,
+    data,
+    reasoning,
   } = useGetSharedChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const completionUrl = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
@@ -75,7 +86,7 @@ export const useSendSharedMessage = () => {
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
-        reasoning: Number(enableThinking),
+        reasoning: Number(enableThinking ?? reasoning ?? ThinkingMode.Naive),
         internet: enableInternet,
         ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
@@ -94,6 +105,7 @@ export const useSendSharedMessage = () => {
       setValue,
       removeLatestMessage,
       chatInfo,
+      reasoning,
     ],
   );
 
@@ -115,7 +127,7 @@ export const useSendSharedMessage = () => {
       message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
-  }, [send, completionUrl]);
+  }, [send, completionUrl, data]);
 
   useEffect(() => {
     fetchSessionId();

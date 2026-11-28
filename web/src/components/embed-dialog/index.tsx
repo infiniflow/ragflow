@@ -42,6 +42,7 @@ import {
 } from '@/constants/common';
 import { IModalProps } from '@/interfaces/common';
 import { Routes } from '@/routes';
+import storage from '@/utils/authorization-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty, trim } from 'lodash';
 import { ExternalLink } from 'lucide-react';
@@ -185,6 +186,10 @@ function EmbedDialog({
     src.searchParams.append('shared_id', token);
     src.searchParams.append('from', from);
     src.searchParams.append('auth', beta);
+    // Preserve the host chat's thinking preference in the standalone share.
+    // The embedded page has its own input state and otherwise falls back to
+    // the default thinking level.
+    src.searchParams.append('reasoning', storage.getThinkingLevel());
 
     if (published) {
       src.searchParams.append('release', 'true');

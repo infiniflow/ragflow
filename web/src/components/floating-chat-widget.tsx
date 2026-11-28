@@ -641,27 +641,17 @@ const FloatingChatWidget = () => {
     if (!inputValue.trim() || sendLoading || isWaiting || isInitialLoading)
       return;
 
-    // Update the hook's internal state first
-    const syntheticEvent = {
-      target: { value: inputValue },
-      currentTarget: { value: inputValue },
-      preventDefault: () => {},
-    } as any;
-
-    handleInputChange(syntheticEvent);
-
-    // Wait for state to update, then send
-    setTimeout(() => {
-      handlePressEnter({ enableThinking: '0', enableInternet: false });
-      // Clear our local input after sending
-      setInputValue('');
-    }, 50);
+    handlePressEnter({
+      enableThinking: isFromAgent ? '0' : undefined,
+      enableInternet: false,
+    });
+    setInputValue('');
   }, [
     inputValue,
     sendLoading,
     isWaiting,
     isInitialLoading,
-    handleInputChange,
+    isFromAgent,
     handlePressEnter,
   ]);
 

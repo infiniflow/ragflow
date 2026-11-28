@@ -86,6 +86,7 @@ interface NextMessageInputProps {
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
   removeFile?(file: File): void;
   showReasoning?: boolean;
+  initialThinkingMode?: ThinkingMode;
   showInternet?: boolean;
   resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
@@ -104,6 +105,7 @@ export function NextMessageInput({
   onPressEnter,
   removeFile,
   showReasoning = false,
+  initialThinkingMode,
   showInternet = false,
 }: NextMessageInputProps) {
   const { t } = useTranslation();
@@ -112,7 +114,10 @@ export function NextMessageInput({
     null,
   );
 
-  const enableThinking = useThinkingLevel();
+  const storedThinkingMode = useThinkingLevel();
+  const [thinkingOverride, setThinkingOverride] = useState<ThinkingMode>();
+  const enableThinking =
+    thinkingOverride ?? initialThinkingMode ?? storedThinkingMode;
   const [enableInternet, setEnableInternet] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -183,11 +188,17 @@ export function NextMessageInput({
     { label: t('chat.thinkingLevelNone'), value: '0' },
   ];
 
-  const handleThinkingChange = useCallback((value: string) => {
-    // Storage sanitizes anything outside the accepted set on read, so the
-    // selector's own option values pass through unchanged here.
-    setThinkingLevel(value as ThinkingMode);
-  }, []);
+  const handleThinkingChange = useCallback(
+    (value: string) => {
+      const mode = value as ThinkingMode;
+      if (initialThinkingMode !== undefined) {
+        setThinkingOverride(mode);
+      } else {
+        setThinkingLevel(mode);
+      }
+    },
+    [initialThinkingMode],
+  );
 
   const handleInternetSelect = useCallback(() => {
     setEnableInternet(true);
