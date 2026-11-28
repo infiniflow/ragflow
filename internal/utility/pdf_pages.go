@@ -2,7 +2,7 @@ package utility
 
 import (
 	"fmt"
-	"ragflow/internal/common"
+	"math"
 	"sort"
 )
 
@@ -48,13 +48,13 @@ func NormalizePDFPages(raw any) ([][]int, error) {
 		}
 
 		var from int
-		from, ok = common.ToInt(pair[0])
+		from, ok = pdfPageEndpoint(pair[0])
 		if !ok {
 			return nil, fmt.Errorf("invalid page range [%v,%v]: from must be an integer", pair[0], pair[1])
 		}
 
 		var to int
-		to, ok = common.ToInt(pair[1])
+		to, ok = pdfPageEndpoint(pair[1])
 		if !ok {
 			return nil, fmt.Errorf("invalid page range [%v,%v]: to must be an integer", pair[0], pair[1])
 		}
@@ -77,7 +77,7 @@ func NormalizePDFPages(raw any) ([][]int, error) {
 	merged := ranges[:1]
 	for _, r := range ranges[1:] {
 		last := merged[len(merged)-1]
-		if r[0] <= last[1]+1 { // overlap or adjacent
+		if r[0]-1 <= last[1] { // overlap or adjacent
 			if r[1] > last[1] {
 				last[1] = r[1]
 			}
@@ -86,6 +86,23 @@ func NormalizePDFPages(raw any) ([][]int, error) {
 		}
 	}
 	return merged, nil
+}
+
+func pdfPageEndpoint(value any) (int, bool) {
+	switch n := value.(type) {
+	case int:
+		return n, true
+	case int64:
+		page := int(n)
+		return page, int64(page) == n
+	case float64:
+		// The upper bound is exclusive because float64 can round MaxInt up.
+		if n >= float64(math.MinInt) && n < -float64(math.MinInt) {
+			page := int(n)
+			return page, float64(page) == n
+		}
+	}
+	return 0, false
 }
 
 // PDFPageInRanges reports whether the 1-indexed page lies inside ranges, as

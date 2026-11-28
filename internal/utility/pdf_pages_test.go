@@ -1,6 +1,7 @@
 package utility
 
 import (
+	"math"
 	"reflect"
 	"testing"
 )
@@ -29,6 +30,7 @@ func TestNormalizePDFPages(t *testing.T) {
 		{"two disjoint ranges", f64([2]float64{1, 100}, [2]float64{400, 500}), [][]int{{1, 100}, {400, 500}}},
 		{"overlap merged", f64([2]float64{1, 200}, [2]float64{111, 333}), [][]int{{1, 333}}},
 		{"adjacent merged", f64([2]float64{1, 100}, [2]float64{101, 200}), [][]int{{1, 200}}},
+		{"overlap at max int", []any{[]any{1, math.MaxInt}, []any{2, math.MaxInt}}, [][]int{{1, math.MaxInt}}},
 		{"unsorted input sorted", f64([2]float64{400, 500}, [2]float64{1, 100}), [][]int{{1, 100}, {400, 500}}},
 		{"int accepted", []any{[]any{1, 100}}, [][]int{{1, 100}}},
 		{"int64 accepted", []any{[]any{int64(1), int64(100)}}, [][]int{{1, 100}}},
@@ -78,7 +80,12 @@ func TestNormalizePDFPages(t *testing.T) {
 		{"mixed valid and invalid", f64([2]float64{1, 10}, [2]float64{9, 2}, [2]float64{20, 30})},
 		{"wrong arity", []any{[]any{float64(1)}}},
 		{"non-numeric", []any{[]any{"a", "b"}}},
-		//{"non-integral float", f64([2]float64{1.5, 3})},
+		{"fractional start", f64([2]float64{1.5, 3})},
+		{"fractional end", f64([2]float64{1, 3.5})},
+		{"boolean endpoint", []any{[]any{true, 3}}},
+		{"string endpoint", []any{[]any{1, "3"}}},
+		{"null endpoint", []any{[]any{1, nil}}},
+		{"overflowing float endpoint", f64([2]float64{1, -float64(math.MinInt)})},
 		{"all invalid", f64([2]float64{5, 3}, [2]float64{0, 2})},
 	}
 	for _, c := range invalidCases {

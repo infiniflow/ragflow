@@ -61,6 +61,17 @@ func TestNormalizeParserConfigPages(t *testing.T) {
 		}
 	})
 
+	t.Run("fractional endpoint -> error", func(t *testing.T) {
+		cfg := map[string]any{
+			"Parser:X": map[string]any{
+				"pdf": map[string]any{"pages": f64([2]float64{1.5, 3})},
+			},
+		}
+		if err := NormalizeParserConfigPages(cfg); err == nil {
+			t.Fatal("expected an error for a fractional page number")
+		}
+	})
+
 	t.Run("non-list pages -> error", func(t *testing.T) {
 		cfg := map[string]any{
 			"Parser:X": map[string]any{
