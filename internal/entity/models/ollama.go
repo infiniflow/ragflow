@@ -169,7 +169,7 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	// Build request body
 	reqBody := buildOllamaRequestBody(chatModelConfig, modelName, messages, false)
 
-	if chatModelConfig != nil {
+	if chatModelConfig != nil && (chatModelConfig.Thinking == nil || *chatModelConfig.Thinking) {
 		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
 			if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
 				reqBody["think"] = *chatModelConfig.Effort
@@ -203,7 +203,7 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	// Build request body with streaming enabled
 	reqBody := buildOllamaRequestBody(modelConfig, modelName, messages, true)
 
-	if modelConfig != nil {
+	if modelConfig != nil && (modelConfig.Thinking == nil || *modelConfig.Thinking) {
 		if modelConfig.Effort != nil && *modelConfig.Effort != "" {
 			if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
 				reqBody["think"] = *modelConfig.Effort

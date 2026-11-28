@@ -190,33 +190,116 @@ func TestOllamaThinkingPayloadTriState(t *testing.T) {
 	}
 }
 
-func TestOllamaThinkingOverridesEffortOnlyForGPTOSS(t *testing.T) {
+func TestOllamaThinkingAndEffort(t *testing.T) {
+	withSSRFBypass(t)
+	effort, emptyEffort := "high", ""
+	for _, tc := range []struct {
+		name, model string
+		thinking    *bool
+		effort      *string
+		want        any
+	}{
+		{name: "gpt-oss disabled wins over effort", model: "gpt-oss:20b", thinking: boolPointer(false), effort: &effort, want: false},
+		{name: "gpt-oss enabled uses effort", model: "gpt-oss:20b", thinking: boolPointer(true), effort: &effort, want: "high"},
+		{name: "gpt-oss unset uses effort", model: "gpt-oss:20b", effort: &effort, want: "high"},
+		{name: "gpt-oss disabled without effort", model: "gpt-oss:20b", thinking: boolPointer(false), want: false},
+		{name: "gpt-oss enabled without effort", model: "gpt-oss:20b", thinking: boolPointer(true), want: true},
+		{name: "gpt-oss empty effort omitted", model: "gpt-oss:20b", effort: &emptyEffort},
+		{name: "gpt-oss defaults omitted", model: "gpt-oss:20b"},
+		{name: "other model keeps disabled", model: "llava", thinking: boolPointer(false), effort: &effort, want: false},
+		{name: "other model keeps enabled", model: "llava", thinking: boolPointer(true), effort: &effort, want: true},
+		{name: "other model ignores effort", model: "llava", effort: &effort},
+	} {
+		for _, stream := range []bool{false, true} {
+			name := tc.name + "/nonstream"
+			if stream {
+				name = tc.name + "/stream"
+			}
+			t.Run(name, func(t *testing.T) {
+				requestBody := make(chan map[string]interface{}, 1)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]interface{}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Errorf("decode request: %v", err)
+						http.Error(w, "invalid request", http.StatusBadRequest)
+						return
+					}
+					requestBody <- body
+					_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":true}\n")
+				}))
+				defer srv.Close()
+				runThinkingPayloadRequest(t, newOllamaForChatTest(srv.URL), tc.model, stream, &ChatConfig{Thinking: tc.thinking, Effort: tc.effort})
+				body := <-requestBody
+				if body["stream"] != stream {
+					t.Errorf("stream=%v, want %v", body["stream"], stream)
+				}
+				got, exists := body["think"]
+				if tc.want == nil {
+					if exists {
+						t.Fatalf("think=%v, want omitted", got)
+					}
+				} else if !exists || got != tc.want {
+					t.Fatalf("think=%v, want %v", got, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestOllamaChatModelThinkingAndEffort(t *testing.T) {
 	withSSRFBypass(t)
 	for _, tc := range []struct {
 		name, model string
+		thinking    *bool
+		effort      *string
 		want        any
 	}{
-		{name: "gpt-oss uses effort", model: "gpt-oss:20b", want: "high"},
-		{name: "other model keeps thinking", model: "llava", want: false},
+		{name: "unset thinking keeps effort", model: "gpt-oss:20b", effort: new("high"), want: "high"},
+		{name: "case insensitive family", model: "GPT-OSS:20b", effort: new("low"), want: "low"},
+		{name: "disabled overrides effort", model: "gpt-oss:20b", thinking: new(false), effort: new("high"), want: false},
+		{name: "enabled uses effort", model: "gpt-oss:20b", thinking: new(true), effort: new("high"), want: "high"},
+		{name: "enabled without effort", model: "gpt-oss:20b", thinking: new(true), want: true},
+		{name: "disabled without effort", model: "gpt-oss:20b", thinking: new(false), want: false},
+		{name: "no effort keeps default disabled", model: "gpt-oss:20b", want: false},
+		{name: "empty effort keeps default disabled", model: "gpt-oss:20b", effort: new(""), want: false},
+		{name: "other family keeps default disabled", model: "llava", effort: new("high"), want: false},
+		{name: "other family keeps enabled", model: "llava", thinking: new(true), effort: new("high"), want: true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var body map[string]interface{}
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Errorf("decode request: %v", err)
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, stream), func(t *testing.T) {
+				requestBody := make(chan map[string]any, 1)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Errorf("decode request: %v", err)
+						http.Error(w, "invalid request", http.StatusBadRequest)
+						return
+					}
+					requestBody <- body
+					_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":true}\n")
+				}))
+				defer srv.Close()
+				model := NewChatModelWithInfo(newOllamaForChatTest(srv.URL), &tc.model, &APIConfig{}, &ModelInfo{
+					Thinking: &ModelThinking{DefaultValue: true},
+				})
+				cfg := &ChatConfig{Thinking: tc.thinking, Effort: tc.effort}
+				messages := []Message{{Role: "user", Content: "hello"}}
+				if stream {
+					if err := model.ChatStreamlyWithSender(t.Context(), messages, cfg, nil, func(*string, *string) error { return nil }); err != nil {
+						t.Fatal(err)
+					}
+				} else if _, err := model.ChatWithMessages(t.Context(), messages, cfg, nil); err != nil {
+					t.Fatal(err)
 				}
-				_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
-			}))
-			defer srv.Close()
-			thinking := false
-			effort := "high"
-			if _, err := newOllamaForChatTest(srv.URL).ChatWithMessages(t.Context(), tc.model, []Message{{Role: "user", Content: "hello"}}, &APIConfig{}, &ChatConfig{Thinking: &thinking, Effort: &effort}, nil); err != nil {
-				t.Fatalf("ChatWithMessages: %v", err)
-			}
-			if got := body["think"]; got != tc.want {
-				t.Fatalf("think=%v, want %v", got, tc.want)
-			}
-		})
+				body := <-requestBody
+				if body["think"] != tc.want {
+					t.Errorf("think=%v, want %v", body["think"], tc.want)
+				}
+				if body["stream"] != stream {
+					t.Errorf("stream=%v, want %v", body["stream"], stream)
+				}
+			})
+		}
 	}
 }
 
