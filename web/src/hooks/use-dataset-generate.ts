@@ -138,8 +138,8 @@ const TraceTypeMap: Record<GenerateType, TraceType> = {
   [GenerateType.ToSkills]: TraceType.Skill,
   [GenerateType.MindMap]: TraceType.MindMap,
   ...PrivateTraceTypeMap,
-  [GenerateType.SessionEssence]: TraceType.SessionEssence,
-  [GenerateType.SessionGraph]: TraceType.SessionGraph,
+  [GenerateType.MemoryNotes]: TraceType.MemoryNotes,
+  [GenerateType.MemoryFacts]: TraceType.MemoryFacts,
 };
 
 export const useTraceRunData = (type: GenerateType, open = true) => {

@@ -244,7 +244,7 @@ func TestExtractByLLMMarksMissingModelPermanent(t *testing.T) {
 		TenantID: "tenant-1",
 		LLMID:    "deleted-model-id",
 	}}
-	_, err := svc.extractByLLM(t.Context(), mem, []string{"semantic"}, MemoryMessage{}, "task-missing-model")
+	_, err := svc.extractByLLM(t.Context(), mem, resolveMemoryCompileKinds([]string{"semantic"}), MemoryMessage{}, "task-X")
 	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, errModelConfigUnavailable) {
 		t.Fatalf("extractByLLM error = %v, want permanent missing-model error", err)
 	}
@@ -284,7 +284,7 @@ func TestExtractByLLMMarksInvalidModelConfigPermanent(t *testing.T) {
 		TenantID: "tenant-1",
 		LLMID:    "gpt-4o@default@OpenAI",
 	}}
-	_, err := svc.extractByLLM(t.Context(), mem, []string{"semantic"}, MemoryMessage{}, "task-invalid-model-config")
+	_, err := svc.extractByLLM(t.Context(), mem, resolveMemoryCompileKinds([]string{"semantic"}), MemoryMessage{}, "task-X")
 	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, errModelConfigUnavailable) {
 		t.Fatalf("extractByLLM error = %v, want permanent invalid-model-config error", err)
 	}
@@ -993,70 +993,5 @@ func TestUpdateTaskProgressReturnsPersistenceError(t *testing.T) {
 	svc := &MemoryMessageService{taskDAO: dao.NewTaskDAO(), memories: NewMemoryService(db, nil)}
 	if err := svc.updateTaskProgress(t.Context(), "mem-task-1", 1.0, "completed"); err == nil {
 		t.Fatal("updateTaskProgress() error = nil, want persistence error")
-	}
-}
-
-// TestTypeInstructionsStayInLockstepWithPython pins the rules that
-// memory/utils/prompt_util.py carries and the Go map historically dropped:
-// per-type Examples lines, the full "Timestamp Rules for <Type> Knowledge:"
-// titles, and the semantic Default line. If a substring fails here, the two
-// implementations are handing the extracting LLM different contracts (the
-// drift this map was merged with — see #18415).
-func TestTypeInstructionsStayInLockstepWithPython(t *testing.T) {
-	want := map[string][]string{
-		"semantic": {
-			"- Examples: \"The capital of France is Paris\", \"Water boils at 100°C\"",
-			"**Timestamp Rules for Semantic Knowledge:**",
-			"- valid_at: When the fact became true (e.g., law enactment, discovery)",
-			"- invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true",
-			"- Default: valid_at = conversation time, invalid_at = \"\" for timeless facts",
-		},
-		"episodic": {
-			"- Examples: \"Yesterday I fixed the bug\", \"User reported issue last week\"",
-			"**Timestamp Rules for Episodic Knowledge:**",
-			"- Extract explicit times: \"at 3 PM\", \"last Monday\", \"from X to Y\"",
-		},
-		"procedural": {
-			"- Examples: \"To reset password, click...\", \"Debugging steps: 1)...\"",
-			"**Timestamp Rules for Procedural Knowledge:**",
-			"- For version-specific: use release dates",
-			"- For best practices: invalid_at = \"\"",
-		},
-	}
-	for memoryType, lines := range want {
-		got, ok := TYPE_INSTRUCTIONS[memoryType]
-		if !ok {
-			t.Fatalf("TYPE_INSTRUCTIONS has no entry for %q", memoryType)
-		}
-		for _, line := range lines {
-			if !strings.Contains(got, line) {
-				t.Errorf("TYPE_INSTRUCTIONS[%q] is missing the Python-side rule: %s", memoryType, line)
-			}
-		}
-	}
-}
-
-// TestMemoryLLMErrorDetectsInBandChatModelFailures pins the check that keeps a
-// driver-reported "**ERROR**: ..." answer out of the JSON parser: the failure is
-// logged and the extraction stays empty, so the task completes with the same
-// "No memory extracted from raw message." outcome Python reports.
-func TestMemoryLLMErrorDetectsInBandChatModelFailures(t *testing.T) {
-	cases := []struct {
-		name   string
-		answer string
-		want   string
-	}{
-		{name: "detail", answer: "**ERROR**: rate limit exceeded", want: "rate limit exceeded"},
-		{name: "no colon", answer: "**ERROR** quota exceeded", want: "quota exceeded"},
-		{name: "reasoning prefix", answer: "<think>ok</think>\n**ERROR**: upstream 503", want: "upstream 503"},
-		{name: "no detail", answer: "**ERROR**:", want: "chat model returned an error without detail"},
-		{name: "json answer", answer: `{"profile": []}`, want: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := memoryLLMError(tc.answer); got != tc.want {
-				t.Fatalf("memoryLLMError(%q) = %q, want %q", tc.answer, got, tc.want)
-			}
-		})
 	}
 }

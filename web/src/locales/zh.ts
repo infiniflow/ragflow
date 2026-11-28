@@ -317,6 +317,8 @@ export default {
 情景记忆: 带时间戳的特定事件和经历记录。
 程序记忆: 学习的技能、习惯和自动化程序。`,
       raw: '原始',
+      memoryNotes: '记忆笔记',
+      memoryFacts: '记忆事实',
       semantic: '语义',
       episodic: '情景',
       procedural: '程序',

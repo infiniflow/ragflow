@@ -330,7 +330,7 @@ func TestDatasetLevelStructureID_StableAndCaseInsensitive(t *testing.T) {
 func TestKwdToVariant_MapsStructureSubKinds(t *testing.T) {
 	for _, kwd := range []string{
 		"hypergraph", "list", "set", "page_index",
-		"session_essence", "session_graph", "knowledge_graph", "graph", "structure",
+		"memory_notes", "memory_facts", "knowledge_graph", "graph", "structure",
 	} {
 		v, err := KwdToVariant(kwd)
 		if err != nil {

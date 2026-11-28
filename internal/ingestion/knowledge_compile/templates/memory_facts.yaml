@@ -1,0 +1,104 @@
+kind: memory_facts
+display_name: Memory Facts — Bitemporal fact graph from conversations
+config:
+  kind: knowledge_graph
+  rechunk_rules: |
+    - Group only adjacent source chunks that discuss the same conversation topic or entity.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Split when the speaker, topic, intent, or semantic focus changes.
+    - Never split a single fact across chunks: a subject, predicate and object must stay together.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
+  entity:
+    description: >-
+      You are a bitemporal fact extractor for conversational memory. Every fact must be a
+      single proposition that can be restated, changed or ended by a later conversation.
+    fields:
+      - type: person
+        description: A person mentioned or participating in the conversation.
+        rule: |
+          - Full name preferred (e.g., "Alice Zhang", not "A. Zhang").
+          - Max length: 60 characters.
+      - type: org
+        description: Organization, company, team, or department.
+        rule: |
+          - Use the official name when possible (e.g., "Acme Corp").
+          - Max length: 80 characters.
+      - type: topic
+        description: Discussed topic, theme, or subject area.
+        rule: |
+          - Use the phrasing from the conversation (e.g., "API migration").
+          - Max length: 80 characters.
+      - type: fact
+        description: A verifiable statement about the world or the user, keyed by subject and predicate.
+        rule: |
+          - One proposition only (subject + predicate + object). Split compounds into separate facts.
+          - subject and predicate together are the fact's identity: restating the same subject+predicate
+            must produce the same key even when the object changes.
+          - object is the value the proposition asserts (a name, a place, a number, a state).
+          - polarity is "affirm" when the proposition holds and "negate" when the conversation denies it.
+          - confidence is a 0-1 number reflecting how directly the source states the fact.
+          - valid_at is when the fact became true (ISO 8601). Use the conversation time when the fact
+            carries no date of its own.
+          - invalid_at is when the fact stopped being true, or empty while it still holds. Never invent
+            an end time: an empty invalid_at means "still true as of this conversation".
+          - Must be directly supported by the source text. No opinions, speculation, or hypotheticals.
+        fact_fields:
+          - subject
+          - predicate
+          - object
+          - polarity
+          - confidence
+          - valid_at
+          - invalid_at
+  relation:
+    description: >-
+      You are an expert in extracting semantic relations between the facts and entities of a conversation.
+    fields:
+      - type: mentions
+        description: One entity references or brings up another.
+        rule: |
+          - Direction from referrer to referred: (A mentions B).
+      - type: decides
+        description: A decision or resolution made during the conversation.
+        rule: |
+          - Direction from decision-maker to decision: (A decides B).
+      - type: assigns
+        description: Task or responsibility assigned to someone.
+        rule: |
+          - Direction from assigner to assignee: (A assigns B to C).
+      - type: references
+        description: Reference to a prior topic, document, or event.
+        rule: |
+          - Direction from current to referenced: (A references B).
+      - type: restates
+        description: A fact states the same proposition again, with the same object.
+        rule: |
+          - Direction from the newer fact to the fact it restates: (A restates B).
+          - Emit this relation instead of duplicating the fact.
+      - type: changes
+        description: A fact replaces an earlier fact's object for the same subject and predicate.
+        rule: |
+          - Direction from the newer fact to the replaced fact: (A changes B).
+          - The newer fact keeps invalid_at empty; the older fact's invalid_at is the newer fact's valid_at.
+      - type: ends
+        description: A fact states that an earlier fact no longer holds.
+        rule: |
+          - Direction from the ending fact to the ended fact: (A ends B).
+          - The ended fact's invalid_at is the ending fact's valid_at.
+      - type: other
+        description: Any meaningful relation not covered by the above types.
+        rule: |
+          - Provide an explicit label in a "relation_label" field.
+  global_rules: |
+    Consolidation rules — a conversation is recompiled with the facts it already produced, so your
+    output must be mergeable, not additive:
+    - Facts are identified by subject + predicate. Emit the same key when the conversation talks about
+      the same thing again; do not paraphrase the subject or predicate into a new fact.
+    - If a later statement repeats an existing fact without changing it, emit the fact once and mark
+      it with a "restates" relation to the previous one.
+    - If a later statement gives a different object for the same subject + predicate, emit the newer
+      fact with the newer object and set the previous fact's invalid_at to the newer fact's valid_at,
+      linked by a "changes" relation.
+    - If a later statement denies a previous fact, emit the denying fact with polarity "negate" and an
+      "ends" relation to the denied fact, and set the denied fact's invalid_at.
+    - Never drop a fact that is still valid just because the conversation moved on.

@@ -689,10 +689,10 @@ func resolveDatasetStructureKind(kind string) string {
 		// user-facing "mindmap" to the canonical compilation kind
 		// "mind_map" (the template kind, which is what read/delete paths match on).
 		return "mind_map"
-	case "session_essence":
-		return "session_essence"
-	case "session_graph":
-		return "session_graph"
+	case "memory_notes":
+		return "memory_notes"
+	case "memory_facts":
+		return "memory_facts"
 	}
 	return additionalDatasetStructureKinds[k]
 }

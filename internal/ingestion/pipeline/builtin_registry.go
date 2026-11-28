@@ -105,7 +105,7 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, builtinTemplatePrefix) || !strings.HasSuffix(name, ".json") {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		// io/fs paths are slash-separated on every GOOS. filepath.Join rendered
@@ -253,13 +253,13 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 
 func builtinRefFromFilename(filename string) string {
 	name := strings.TrimSuffix(filename, filepath.Ext(filename))
-	name = strings.TrimPrefix(name, builtinTemplatePrefix)
+	stripped := strings.TrimPrefix(name, builtinTemplatePrefix)
 	// The optional edition suffix identifies the asset, not the parser_id.
-	name = strings.TrimSuffix(name, "_ee")
-	if name == filename || name == "" {
+	stripped = strings.TrimSuffix(stripped, "_ee")
+	if stripped == name || stripped == "" {
 		return ""
 	}
-	return name
+	return stripped
 }
 
 // LoadBuiltinDSL returns the canonical DSL JSON for a builtin parser_id,

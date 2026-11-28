@@ -366,7 +366,7 @@ func TestHypergraphPromptsSetUniquenessAndNoRelations(t *testing.T) {
 			t.Errorf("InferType(kind=%q) = %q, want hypergraph", alias, got)
 		}
 	}
-	// Template kinds (page_index, session_graph) are returned verbatim — Python
+	// Template kinds (page_index, memory_facts) are returned verbatim — Python
 	// stamps them as the autotype/compile_kwd.
 	if got := InferType(map[string]any{"kind": "page_index"}); got != Type("page_index") {
 		t.Errorf("InferType(kind=page_index) = %q, want verbatim page_index", got)

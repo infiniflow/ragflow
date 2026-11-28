@@ -41,6 +41,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/service/nlp"
 )
 
@@ -107,100 +108,41 @@ func (e *ResourceNotFoundError) Error() string {
 // PromptAssembler handles the assembly of system prompts for memory extraction
 type PromptAssembler struct{}
 
-// SYSTEM_BASE_TEMPLATE is the base template for the system prompt used in memory extraction
-// It includes placeholders for type-specific instructions, timestamp format, and max items
-var SYSTEM_BASE_TEMPLATE = `**Memory Extraction Specialist**
-You are an expert at analyzing conversations to extract structured memory.
-
-{type_specific_instructions}
-
-
-**OUTPUT REQUIREMENTS:**
-1. Output MUST be valid JSON
-2. Follow the specified output format exactly
-3. Each extracted item MUST have: content, valid_at, invalid_at
-4. Timestamps in {timestamp_format} format
-5. Only extract memory types specified above
-6. Maximum {max_items} items per type
-`
-
-// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction.
-// Kept in lockstep with Python's memory/utils/prompt_util.py TYPE_INSTRUCTIONS —
-// both implementations drive the same extraction contract, and a rule present on
-// only one side (e.g. the semantic Default line) drifts extraction behavior across
-// languages (see #18415).
-var TYPE_INSTRUCTIONS = map[string]string{
-	"semantic": `
-**EXTRACT SEMANTIC KNOWLEDGE:**
-- Universal facts, definitions, concepts, relationships
-- Time-invariant, generally true information
-- Examples: "The capital of France is Paris", "Water boils at 100°C"
-
-**Timestamp Rules for Semantic Knowledge:**
-- valid_at: When the fact became true (e.g., law enactment, discovery)
-- invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true
-- Default: valid_at = conversation time, invalid_at = "" for timeless facts
-`,
-	"episodic": `
-**EXTRACT EPISODIC KNOWLEDGE:**
-- Specific experiences, events, personal stories
-- Time-bound, person-specific, contextual
-- Examples: "Yesterday I fixed the bug", "User reported issue last week"
-
-**Timestamp Rules for Episodic Knowledge:**
-- valid_at: Event start/occurrence time
-- invalid_at: Event end time or empty if instantaneous
-- Extract explicit times: "at 3 PM", "last Monday", "from X to Y"
-`,
-	"procedural": `
-**EXTRACT PROCEDURAL KNOWLEDGE:**
-- Processes, methods, step-by-step instructions
-- Goal-oriented, actionable, often includes conditions
-- Examples: "To reset password, click...", "Debugging steps: 1)..."
-
-**Timestamp Rules for Procedural Knowledge:**
-- valid_at: When procedure becomes valid/effective
-- invalid_at: When it expires/becomes obsolete or empty if current
-- For version-specific: use release dates
-- For best practices: invalid_at = ""
-`,
-}
-
-// OUTPUT_TEMPLATES defines the output format for each memory type
-var OUTPUT_TEMPLATES = map[string]string{
-	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp — use the conversation time when the fact has no date of its own", "invalid_at": "timestamp or empty"}]`,
-	"episodic":   `"episodic": [{"content": "Narrative event description", "valid_at": "event start timestamp", "invalid_at": "event end timestamp or empty"}]`,
-	"procedural": `"procedural": [{"content": "Actionable instructions", "valid_at": "procedure effective timestamp", "invalid_at": "procedure expiration timestamp or empty"}]`,
-}
-
-// AssembleSystemPrompt generates a complete system prompt for memory extraction
+// AssembleSystemPrompt renders the extraction system prompt from the built-in
+// memory pipelines selected by the memory's configured types.
+//
+// The per-type rules and output fragments are data, not Go literals: each
+// memory type is a built-in pipeline template next to the ingestion ones
+// (internal/ingestion/pipeline/template/memory_pipeline_<id>.json), so retuning
+// extraction never touches this worker and the prompt the model sees is the
+// pipeline's own prompt in canonical order.
 //
 // Parameters:
-//   - memoryTypes: Array of memory type names to extract (e.g., ["semantic", "episodic"])
-//
-// Returns:
-//   - string: Complete system prompt with type-specific instructions and output format
-//
-// Example:
-//
-//	AssembleSystemPrompt([]string{"semantic", "episodic"}) returns a prompt with instructions
-//	for both semantic and episodic memory extraction
+//   - memoryTypes: configured memory types (e.g. ["semantic", "episodic"]);
+//     nil means "the caller did not choose" and selects every built-in
+//     pipeline, while an explicit raw-only selection renders the preamble only.
 func (PromptAssembler) AssembleSystemPrompt(memoryTypes []string) string {
-	typesToExtract := getTypesToExtract(memoryTypes)
-	if len(typesToExtract) == 0 {
-		typesToExtract = []string{"raw"}
+	// The prompt now belongs to the compilation template, so the "default"
+	// prompt of a memory is the concatenation of the prompts its selected
+	// kinds compile with. It is stored for display and for detecting a
+	// user customization; extraction itself always uses the template.
+	var builder strings.Builder
+	for _, kind := range resolveMemoryCompileKinds(memoryTypes) {
+		template, err := builtinMemoryTemplate(kind)
+		if err != nil {
+			continue
+		}
+		nodePrompt, edgePrompt := structure.HypergraphPrompts(map[string]any(template.Config), "")
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(nodePrompt)
+		if edgePrompt != "" {
+			builder.WriteString("\n")
+			builder.WriteString(edgePrompt)
+		}
 	}
-
-	typeInstructions := generateTypeInstructions(typesToExtract)
-	outputFormat := generateOutputFormat(typesToExtract)
-
-	fullPrompt := strings.Replace(SYSTEM_BASE_TEMPLATE, "{type_specific_instructions}", typeInstructions, 1)
-	fullPrompt = strings.Replace(fullPrompt, "{timestamp_format}", "ISO 8601", 1)
-	fullPrompt = strings.Replace(fullPrompt, "{max_items}", "5", 1)
-
-	fullPrompt += fmt.Sprintf("\n**REQUIRED OUTPUT FORMAT (JSON):\n```json\n{\n%s\n}\n```\n", outputFormat)
-
-	return fullPrompt
+	return builder.String()
 }
 
 // baseUserPromptTemplate is the default user prompt for memory extraction,
@@ -222,62 +164,27 @@ func (PromptAssembler) AssembleUserPrompt(conversation, conversationTime, curren
 	return prompt
 }
 
-// getTypesToExtract filters out "raw" type and returns valid memory types
-//
-// Parameters:
-//   - requestedTypes: Array of requested memory type names
-//
-// Returns:
-//   - []string: Filtered array of memory type names (excluding "raw")
-func getTypesToExtract(requestedTypes []string) []string {
-	types := make(map[string]bool)
-	for _, rt := range requestedTypes {
-		lowerRT := strings.ToLower(rt)
-		if lowerRT != "raw" {
-			if _, ok := dao.MemoryTypeMap[lowerRT]; ok {
-				types[lowerRT] = true
-			}
-		}
-	}
-	result := make([]string, 0, len(types))
-	for t := range types {
-		result = append(result, t)
-	}
-	return result
+// DefaultMemoryTypes returns every built-in pipeline id. A memory created
+// without an explicit selection records this set, so the UI no longer has to
+// ask the user which memory types to extract.
+func DefaultMemoryTypes() []string {
+	return append([]string(nil), MemoryCompileKinds...)
 }
 
-// generateTypeInstructions concatenates type-specific instructions
-//
-// Parameters:
-//   - typesToExtract: Array of memory type names
-//
-// Returns:
-//   - string: Concatenated instructions for all specified types
-func generateTypeInstructions(typesToExtract []string) string {
-	var instructions []string
-	for _, mt := range typesToExtract {
-		if instr, ok := TYPE_INSTRUCTIONS[mt]; ok {
-			instructions = append(instructions, instr)
+// MemoryPipelines describes the built-in extraction pipelines for the API
+// catalog: id, display title and description.
+func MemoryPipelines() []map[string]any {
+	out := make([]map[string]any, 0, len(MemoryCompileKinds))
+	for _, kind := range MemoryCompileKinds {
+		entry := map[string]any{"id": kind, "kind": kind}
+		if template, err := builtinMemoryTemplate(kind); err == nil {
+			entry["title"] = template.DisplayName
+			entry["description"] = template.Description
+			entry["template_id"] = template.ID
 		}
+		out = append(out, entry)
 	}
-	return strings.Join(instructions, "\n")
-}
-
-// generateOutputFormat concatenates output format templates
-//
-// Parameters:
-//   - typesToExtract: Array of memory type names
-//
-// Returns:
-//   - string: Concatenated output format templates
-func generateOutputFormat(typesToExtract []string) string {
-	var outputParts []string
-	for _, mt := range typesToExtract {
-		if tmpl, ok := OUTPUT_TEMPLATES[mt]; ok {
-			outputParts = append(outputParts, tmpl)
-		}
-	}
-	return strings.Join(outputParts, ",\n")
+	return out
 }
 
 // MemoryService handles business logic for memory operations
@@ -332,8 +239,10 @@ func NewMemoryService(db *gorm.DB, eng engine.DocEngine, opts ...MemoryServiceOp
 type CreateMemoryRequest struct {
 	// Name is the memory name (required, max 128 characters)
 	Name string `json:"name" binding:"required"`
-	// MemoryType is the array of memory type names (required)
-	MemoryType []string `json:"memory_type" binding:"required"`
+	// MemoryType optionally narrows which built-in extraction pipelines run.
+	// Omitting it (the default, and what the UI sends now that type selection
+	// is gone) enables every built-in pipeline; ["raw"] keeps raw storage only.
+	MemoryType []string `json:"memory_type"`
 	// EmbdID is the embedding model ID (required)
 	EmbdID string `json:"embd_id" binding:"required"`
 	// LLMID is the language model ID (required)
@@ -544,8 +453,15 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 		return nil, errors.New("memory type must be a list")
 	}
 
+	// No explicit selection means "run every built-in pipeline": the UI no
+	// longer asks for semantic/episodic/procedural, and raw is always stored.
+	requestedTypes := req.MemoryType
+	if len(requestedTypes) == 0 {
+		requestedTypes = append([]string{"raw"}, DefaultMemoryTypes()...)
+	}
+
 	memoryTypeSet := make(map[string]bool)
-	for _, mt := range req.MemoryType {
+	for _, mt := range requestedTypes {
 		lowerMT := strings.ToLower(mt)
 		if _, ok := dao.MemoryTypeMap[lowerMT]; !ok {
 			return nil, fmt.Errorf("memory type '%s' is not supported", mt)
@@ -1256,6 +1172,67 @@ func (s *MemoryService) SearchMessage(ctx context.Context, filterDict, params ma
 	return s.queryMessage(ctx, memories, filterDict, params)
 }
 
+// SearchFacts searches only the extracted facts of one memory, hiding the raw
+// conversations that share the same index. It is the fact-level entry point
+// (the analogue of Hindsight's recall over memory_units): same hybrid
+// retrieval and validity filters as SearchMessage, with the type filter
+// defaulted to every built-in pipeline.
+func (s *MemoryService) SearchFacts(ctx context.Context, memoryID string, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
+	scoped := make(map[string]interface{}, len(filterDict)+2)
+	for key, value := range filterDict {
+		scoped[key] = value
+	}
+	scoped["memory_id"] = []string{memoryID}
+	if len(splitFilterValues(scoped["message_type"])) == 0 {
+		scoped["message_type"] = FactOnlyMessageTypes()
+	}
+	return s.SearchMessage(ctx, scoped, params)
+}
+
+// existingFactDedupeWindow bounds the ingest-time fold. Hindsight's real fold
+// is its asynchronous consolidation pass; this ingest-side check only covers
+// the most recent window of a memory, which is where a repeated statement
+// shows up.
+const existingFactDedupeWindow = 100
+
+// ExistingFactTexts returns the normalised identity of a memory's already
+// stored facts for the given message types. It is the read side of the
+// ingest-time fold: the extractor skips an item whose text is already known
+// instead of storing a second copy of the same statement.
+func (s *MemoryService) ExistingFactTexts(ctx context.Context, memory *entity.Memory, types []string) (map[string]struct{}, error) {
+	if s == nil || s.docEngine == nil || memory == nil || len(types) == 0 {
+		return nil, nil
+	}
+	searchReq := &enginetypes.SearchRequest{
+		IndexNames:   []string{MemoryIndexName(memory.TenantID)},
+		Limit:        existingFactDedupeWindow,
+		SelectFields: []string{"message_type", "content"},
+		Filter: map[string]interface{}{
+			"memory_id":    []string{memory.ID},
+			"message_type": types,
+			"status":       1,
+		},
+		OrderBy: (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+	}
+	searchResult, err := s.docEngine.Search(ctx, searchReq)
+	if err != nil {
+		return nil, err
+	}
+	if searchResult == nil || len(searchResult.Chunks) == 0 {
+		return nil, nil
+	}
+	known := make(map[string]struct{}, len(searchResult.Chunks))
+	for _, chunk := range searchResult.Chunks {
+		messageType := strings.TrimSpace(memoryStringParam(chunk["message_type"]))
+		content := memoryStringParam(chunk["content"])
+		if messageType == "" || strings.TrimSpace(content) == "" {
+			continue
+		}
+		known[factKey(messageType, content)] = struct{}{}
+	}
+	return known, nil
+}
+
 func validateMemorySearchModels(memories []*entity.Memory) error {
 	if len(memories) == 0 {
 		return nil
@@ -1296,9 +1273,25 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	} else if topN > maxMessageLimit {
 		topN = maxMessageLimit
 	}
+	offset := memoryIntParam(params["offset"], 0)
+	if offset < 0 {
+		offset = 0
+	}
 	similarityThreshold := memoryFloatParam(params["similarity_threshold"], 0.2)
 	keywordsSimilarityWeight := memoryFloatParam(params["keywords_similarity_weight"], 0.7)
 	question := strings.TrimSpace(memoryStringParam(params["query"]))
+
+	// Fact-type filter: the memory store keeps raw conversations and extracted
+	// facts in one index, so a caller that wants facts must say so. The names
+	// are the built-in pipeline ids (semantic/episodic/procedural) plus "raw".
+	messageTypes, err := memoryMessageTypes(filterDict["message_type"])
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	validity, err := parseMemoryValidityFilter(params)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 
 	memoryIDs := make([]string, 0, len(memories))
 	conditionDict := make(map[string]interface{})
@@ -1309,6 +1302,9 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 		memoryIDs = append(memoryIDs, memory.ID)
 	}
 	conditionDict["memory_id"] = memoryIDs
+	if len(messageTypes) > 0 {
+		conditionDict["message_type"] = messageTypes
+	}
 	for _, key := range []string{"agent_id", "session_id", "user_id"} {
 		value := strings.TrimSpace(memoryStringParam(filterDict[key]))
 		if value != "" {
@@ -1326,6 +1322,15 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 		if _, present := conditionDict[key]; !present {
 			conditionDict[key] = value
 		}
+	}
+
+	// Time filtering runs in Go: neither engine's condition builder supports a
+	// range over the stored timestamp strings (only available_int has a range
+	// branch), so pushing it down would silently drop the condition on
+	// Infinity. When a validity filter is present, over-fetch and post-filter.
+	fetchLimit := topN
+	if validity.active() {
+		fetchLimit = min((offset+topN)*4, maxMessageLimit)
 	}
 
 	matchExprs := make([]interface{}, 0, 3)
@@ -1348,11 +1353,14 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	searchReq := &enginetypes.SearchRequest{
 		IndexNames:   memorySearchIndexNames(memories, s.docEngine),
 		Offset:       0,
-		Limit:        topN,
+		Limit:        fetchLimit,
 		SelectFields: memoryMessageSelectFields(),
 		Filter:       conditionDict,
 		MatchExprs:   matchExprs,
 		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+	}
+	if !validity.active() {
+		searchReq.Offset = offset
 	}
 
 	searchResult, err := s.docEngine.Search(ctx, searchReq)
@@ -1365,7 +1373,10 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 
 	messages := make([]map[string]interface{}, 0, len(searchResult.Chunks))
 	for _, chunk := range searchResult.Chunks {
-		message := make(map[string]interface{}, len(chunk))
+		if validity.active() && !validity.matches(chunk) {
+			continue
+		}
+		message := make(map[string]interface{}, len(memoryMessageSelectFields()))
 		for _, field := range memoryMessageSelectFields() {
 			if value, ok := chunk[field]; ok {
 				message[field] = value
@@ -1373,7 +1384,151 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 		}
 		messages = append(messages, message)
 	}
+	if validity.active() {
+		// Offset applies after filtering so a page is never short-changed by
+		// rows the validity window rejected.
+		if offset >= len(messages) {
+			messages = messages[:0]
+		} else {
+			messages = messages[offset:]
+		}
+		if len(messages) > topN {
+			messages = messages[:topN]
+		}
+	}
 	return common.ConvertFloatsToPyFormat(messages).([]map[string]interface{}), common.CodeSuccess, nil
+}
+
+// memoryMessageTypes normalises the message_type filter. Values are pipeline
+// ids or "raw"; unknown names are rejected so a typo never turns into "search
+// everything" (an empty UNKNOWN filter would otherwise be dropped).
+func memoryMessageTypes(value interface{}) ([]string, error) {
+	values := splitFilterValues(value)
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		name := strings.ToLower(strings.TrimSpace(raw))
+		if name == "" {
+			continue
+		}
+		if _, ok := dao.MemoryTypeMap[name]; !ok {
+			return nil, fmt.Errorf("message_type '%s' is not supported", raw)
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
+// FactOnlyMessageTypes returns the message types that identify extracted facts
+// (every built-in pipeline), i.e. everything except raw conversations.
+func FactOnlyMessageTypes() []string {
+	types := make([]string, 0, len(dao.MemoryTypeMap))
+	for _, name := range dao.MemoryTypeNames() {
+		if name == "raw" {
+			continue
+		}
+		types = append(types, name)
+	}
+	return types
+}
+
+// memoryValidityFilter is the temporal predicate over a message's
+// valid_at/invalid_at window. The window is the analogue of Hindsight's
+// occurred_start/occurred_end: valid_at is when the fact became true,
+// invalid_at when it stopped being true (empty = still true).
+type memoryValidityFilter struct {
+	asOf    time.Time
+	hasAsOf bool
+	from    time.Time
+	hasFrom bool
+	to      time.Time
+	hasTo   bool
+}
+
+func (f memoryValidityFilter) active() bool { return f.hasAsOf || f.hasFrom || f.hasTo }
+
+func (f memoryValidityFilter) matches(row map[string]interface{}) bool {
+	validAt, validOK := memoryParseStoredTime(row["valid_at"])
+	invalidAt, invalidOK := memoryParseStoredTime(row["invalid_at"])
+	if f.hasAsOf {
+		// A fact is true at asOf when it had become true and has not ended.
+		if validOK && validAt.After(f.asOf) {
+			return false
+		}
+		if invalidOK && !invalidAt.After(f.asOf) {
+			return false
+		}
+	}
+	if f.hasFrom {
+		if validOK && validAt.Before(f.from) {
+			return false
+		}
+	}
+	if f.hasTo {
+		if !validOK || validAt.After(f.to) {
+			return false
+		}
+	}
+	return true
+}
+
+// parseMemoryValidityFilter builds the predicate from as_of / valid_at_from /
+// valid_at_to. Timeless facts (empty valid_at) stay visible for as_of/from and
+// are excluded by an explicit upper bound, which is the only reading that keeps
+// "facts before T" meaningful.
+func parseMemoryValidityFilter(params map[string]interface{}) (memoryValidityFilter, error) {
+	var filter memoryValidityFilter
+	for _, spec := range []struct {
+		key    string
+		target *time.Time
+		seen   *bool
+	}{
+		{key: "as_of", target: &filter.asOf, seen: &filter.hasAsOf},
+		{key: "valid_at_from", target: &filter.from, seen: &filter.hasFrom},
+		{key: "valid_at_to", target: &filter.to, seen: &filter.hasTo},
+	} {
+		value := strings.TrimSpace(memoryStringParam(params[spec.key]))
+		if value == "" {
+			continue
+		}
+		parsed, err := memoryParseFilterTime(value)
+		if err != nil {
+			return memoryValidityFilter{}, fmt.Errorf("%s must be a timestamp (YYYY-MM-DD HH:MM:SS or RFC3339)", spec.key)
+		}
+		*spec.target = parsed
+		*spec.seen = true
+	}
+	return filter, nil
+}
+
+// memoryParseFilterTime accepts the stored layout and RFC3339, in server-local
+// time, matching how valid_at is stamped.
+func memoryParseFilterTime(value string) (time.Time, error) {
+	if parsed, err := time.ParseInLocation(memoryTimeLayout, value, time.Local); err == nil {
+		return parsed, nil
+	}
+	return time.Parse(time.RFC3339, value)
+}
+
+// memoryParseStoredTime reads a stored valid_at/invalid_at value. Empty or
+// unparseable values report ok=false: an unusable bound must not hide the row.
+func memoryParseStoredTime(value interface{}) (time.Time, bool) {
+	text := strings.TrimSpace(memoryStringParam(value))
+	if text == "" {
+		return time.Time{}, false
+	}
+	parsed, err := memoryParseFilterTime(text)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func (s *MemoryService) filterAccessibleMemories(ctx context.Context, memoryIDs []string) ([]*entity.Memory, error) {

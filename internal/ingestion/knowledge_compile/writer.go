@@ -1129,7 +1129,7 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 			KbIDs:        []string{kb},
 			SelectFields: []string{"id", "source_doc_ids", "compile_kwd"},
 			// Match dataset-scope entity/relation rows across ALL structure kinds
-			// (timeline/graph/session_graph/mindmap), which now each stamp their
+			// (timeline/graph/memory_facts/mindmap), which now each stamp their
 			// raw compile_kwd; type_kwd ∈ {entity,relation} + scope_kwd
 			// =dataset is the kind-agnostic predicate (plan §1, §4.2).
 			Filter: map[string]interface{}{
@@ -1835,7 +1835,7 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 			}
 			// structure/mindmap dataset rows are scope_kwd="dataset" +
 			// type_kwd ∈ {entity,relation,kg_build_meta} with a raw
-			// compile_kwd (timeline/graph/session_graph/mindmap). type_kwd
+			// compile_kwd (timeline/graph/memory_facts/mindmap). type_kwd
 			// is required: wiki merged rows ALSO carry scope_kwd="dataset" (W5), so
 			// a scope-only sweep would wrongly delete wiki merged rows too (review
 			// Major). kg_build_meta (the build marker) is deleted together with the

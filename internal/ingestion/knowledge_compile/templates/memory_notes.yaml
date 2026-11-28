@@ -1,5 +1,5 @@
-kind: session_essence
-display_name: Session Essence — Cross-source entity synopses from conversations
+kind: memory_notes
+display_name: Memory Notes — Cross-source entity synopses from conversations
 config:
   kind: knowledge_graph
   rechunk_rules: |

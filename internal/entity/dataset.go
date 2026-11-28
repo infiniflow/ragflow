@@ -145,10 +145,10 @@ type Knowledgebase struct {
 	StructureMindmapTaskFinishAt *time.Time `gorm:"column:structure_mindmap_task_finish_at" json:"structure_mindmap_task_finish_at,omitempty"`
 	TimelineTaskID               *string    `gorm:"column:timeline_task_id;size:32;index" json:"timeline_task_id,omitempty"`
 	TimelineTaskFinishAt         *time.Time `gorm:"column:timeline_task_finish_at" json:"timeline_task_finish_at,omitempty"`
-	SessionGraphTaskID           *string    `gorm:"column:session_graph_task_id;size:32;index" json:"session_graph_task_id,omitempty"`
-	SessionGraphTaskFinishAt     *time.Time `gorm:"column:session_graph_task_finish_at" json:"session_graph_task_finish_at,omitempty"`
-	SessionEssenceTaskID         *string    `gorm:"column:session_essence_task_id;size:32;index" json:"session_essence_task_id,omitempty"`
-	SessionEssenceTaskFinishAt   *time.Time `gorm:"column:session_essence_task_finish_at" json:"session_essence_task_finish_at,omitempty"`
+	MemoryFactsTaskID            *string    `gorm:"column:memory_facts_task_id;size:32;index" json:"memory_facts_task_id,omitempty"`
+	MemoryFactsTaskFinishAt      *time.Time `gorm:"column:memory_facts_task_finish_at" json:"memory_facts_task_finish_at,omitempty"`
+	MemoryNotesTaskID            *string    `gorm:"column:memory_notes_task_id;size:32;index" json:"memory_notes_task_id,omitempty"`
+	MemoryNotesTaskFinishAt      *time.Time `gorm:"column:memory_notes_task_finish_at" json:"memory_notes_task_finish_at,omitempty"`
 	OperatorPermission           int32      `gorm:"-" json:"operator_permission,omitempty"`
 	Status                       *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel

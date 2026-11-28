@@ -205,8 +205,8 @@ enum BaseGenerateType {
   Artifact = 'Artifact',
   ToSkills = 'ToSkills',
   MindMap = 'MindMap',
-  SessionEssence = 'SessionEssence',
-  SessionGraph = 'SessionGraph',
+  MemoryNotes = 'MemoryNotes',
+  MemoryFacts = 'MemoryFacts',
 }
 
 export const GenerateType = { ...BaseGenerateType, ...PrivateGenerateType };
@@ -218,8 +218,8 @@ enum BaseTraceType {
   Artifact = 'wiki',
   Skill = 'skill',
   MindMap = 'mindmap',
-  SessionEssence = 'session_essence',
-  SessionGraph = 'session_graph',
+  MemoryNotes = 'memory_notes',
+  MemoryFacts = 'memory_facts',
 }
 
 export const TraceType = { ...BaseTraceType, ...PrivateTraceType };
@@ -232,6 +232,6 @@ export const GenerateTypeMap = {
   [GenerateType.ToSkills]: ProcessingType.skill,
   [GenerateType.MindMap]: ProcessingType.mindmap,
   ...PrivateGenerateTypeMap,
-  [GenerateType.SessionEssence]: ProcessingType.sessionEssence,
-  [GenerateType.SessionGraph]: ProcessingType.sessionGraph,
+  [GenerateType.MemoryNotes]: ProcessingType.sessionEssence,
+  [GenerateType.MemoryFacts]: ProcessingType.sessionGraph,
 };

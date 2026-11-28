@@ -298,14 +298,15 @@ func (p Param) PlanEnabled() bool {
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.
 //
 // The model uses richer kind values (mind_map, page_index
-// session_essence, session_graph, knowledge_graph, tree, wiki); the
+// memory_notes, memory_facts, knowledge_graph, tree, wiki); the
 // Go port collapses them onto its variants. Per the agreed mapping:
 //
 //	tree                            -> tree
 //	mind_map                        -> mindmap
 //	wiki                            -> wiki
-//	page_index / session_essence /  -> structure (the graph/knowledge-graph path)
-//	session_graph /                 ->
+//	page_index / memory_notes /  -> structure (the graph/knowledge-graph path)
+//	memory_facts /               ->
+//	memory_facts /                 ->
 //	knowledge_graph                 ->
 //
 // The canonical variant names are also accepted as identity (so a template kind
@@ -324,7 +325,7 @@ func KindToVariant(kind string) (Variant, error) {
 		return VariantMindmap, nil
 	case "wiki":
 		return VariantWiki, nil
-	case "page_index", "session_essence", "session_graph",
+	case "page_index", "memory_notes", "memory_facts",
 		"knowledge_graph", "structure", "knowledgegraph", "graph":
 		return VariantStructure, nil
 	default:

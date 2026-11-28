@@ -63,7 +63,6 @@ export default function MemoryMessage() {
       description: data?.description || '',
       avatar: data?.avatar || '',
       memory_size: data?.memory_size,
-      memory_type: data?.memory_type,
       temperature: data?.temperature,
       system_prompt: data?.system_prompt || '',
       user_prompt: data?.user_prompt || '',

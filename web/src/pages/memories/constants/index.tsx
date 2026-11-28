@@ -2,18 +2,23 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { EmbeddingSelect } from '@/pages/dataset/setting/embedding-select';
 import { LLMSelect } from '@/pages/dataset/setting/common-item';
 import { TFunction } from 'i18next';
+// Memory types are the built-in compilation pipelines. The old
+// semantic/episodic/procedural split is gone: all three are one pipeline
+// (memory_notes), and memory_facts is the fact graph.
 export enum MemoryType {
   Raw = 'raw',
-  Semantic = 'semantic',
-  Episodic = 'episodic',
-  Procedural = 'procedural',
+  Notes = 'memory_notes',
+  Facts = 'memory_facts',
 }
 export const MemoryOptions = (t: TFunction) => [
   { label: t('memories.raw'), value: MemoryType.Raw, locked: true },
-  { label: t('memories.semantic'), value: MemoryType.Semantic },
-  { label: t('memories.episodic'), value: MemoryType.Episodic },
-  { label: t('memories.procedural'), value: MemoryType.Procedural },
+  { label: t('memories.memoryNotes'), value: MemoryType.Notes },
+  { label: t('memories.memoryFacts'), value: MemoryType.Facts },
 ];
+// createMemoryFields no longer asks which memory types to extract: semantic,
+// episodic and procedural are built-in pipelines that always run, and raw is
+// always stored. The API keeps accepting memory_type, but omitting it now
+// means "every built-in pipeline", so the form simply says nothing.
 export const createMemoryFields = (t: TFunction) =>
   [
     {
@@ -21,21 +26,6 @@ export const createMemoryFields = (t: TFunction) =>
       label: t('memories.name'),
       placeholder: t('memories.memoryNamePlaceholder'),
       required: true,
-    },
-    {
-      name: 'memory_type',
-      label: t('memories.memoryType'),
-      type: FormFieldType.MultiSelect,
-      placeholder: t('memories.descriptionPlaceholder'),
-      tooltip: t('memories.memoryTypeTooltip'),
-      options: MemoryOptions(t),
-      required: true,
-      customValidate: (value) => {
-        if (!value.includes(MemoryType.Raw) || !value.length) {
-          return t('memories.embeddingModelError');
-        }
-        return true;
-      },
     },
     {
       name: 'embd_id',
@@ -60,7 +50,6 @@ export const createMemoryFields = (t: TFunction) =>
 
 export const defaultMemoryFields = {
   name: '',
-  memory_type: [MemoryType.Raw],
   embd_id: '',
   llm_id: '',
 };

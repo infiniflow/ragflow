@@ -30,7 +30,7 @@ stopped. Server startup rejects a database that still has either source column.
 
 `compile_kwd` identifies the producing knowledge compilation kind. New rows use
 `graph`, `mind_map`, `page_index`, `tree`, `timeline`, or `wiki`. The existing
-session kinds remain `session_graph` and `session_essence`.
+session kinds remain `memory_facts` and `memory_notes`.
 
 `type_kwd` identifies the row's role:
 
