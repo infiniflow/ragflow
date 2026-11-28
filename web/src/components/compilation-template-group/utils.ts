@@ -51,6 +51,7 @@ export const isConfigMetaKey = (key: string) =>
     'synthesis',
     'use_blueprint',
     'mode',
+    'disable_concept_pages',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -108,6 +109,12 @@ export const buildConfigFromBuiltin = (
       typeof builtinTemplate.config?.mode === 'string'
         ? builtinTemplate.config.mode
         : '',
+    ...(kind === CompilationTemplateKind.Artifacts
+      ? {
+          disable_concept_pages:
+            builtinTemplate.config?.disable_concept_pages === true,
+        }
+      : {}),
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -177,6 +184,9 @@ export const transformDetailToForm = (
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && hasBlueprintContent,
     mode: typeof config.mode === 'string' ? config.mode : '',
+    ...(detail.kind === CompilationTemplateKind.Artifacts
+      ? { disable_concept_pages: config.disable_concept_pages === true }
+      : {}),
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
