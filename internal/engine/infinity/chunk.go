@@ -3501,6 +3501,9 @@ func decodeVarcharJSONFields(chunk map[string]interface{}) {
 		}
 		var decoded interface{}
 		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+			if fieldName == common.TAG_FLD {
+				decoded = normalizeTagFeasValue(decoded)
+			}
 			chunk[fieldName] = decoded
 		}
 	}
@@ -3800,6 +3803,99 @@ func numericSlice(v interface{}) ([]interface{}, bool) {
 	return out, true
 }
 
+// encodeTagFeasColumn renders tag_feas as a JSON array of single-key objects,
+// e.g. [{"finance":4},{"travel":8}].
+//
+// Infinity's `rankfeatures` analyzer reads the root of the value as an array
+// and only inspects object items; a root object fails with INCORRECT_TYPE, so
+// `{"finance":4}` never built ft_tag_feas_rankfeatures. Every table holding
+// tagged chunks was re-inverted and re-failed on each startup, and the
+// tag_feas^<feature>^<weight> boost searched an empty index — tags had no
+// effect on ranking without a rerank model (#22454).
+//
+// The pairs keep the order the caller marshaled (OrderedTagWeights emits them
+// by descending weight), so the column stays byte-stable for tests and diffs.
+func encodeTagFeasColumn(value interface{}) (string, bool) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "", false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return "", false
+	}
+	type taggedWeight struct {
+		name  string
+		value float64
+	}
+	pairs := make([]taggedWeight, 0, 8)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return "", false
+		}
+		name, ok := token.(string)
+		if !ok {
+			return "", false
+		}
+		// Decode into interface{} rather than float64: json.Unmarshal leaves a
+		// float64 untouched and reports no error for JSON null, so
+		// {"finance":null} would be rewritten as {"finance":0}.
+		var decodedWeight interface{}
+		if err := decoder.Decode(&decodedWeight); err != nil {
+			return "", false
+		}
+		weight, ok := decodedWeight.(float64)
+		if !ok {
+			return "", false
+		}
+		pairs = append(pairs, taggedWeight{name: name, value: weight})
+	}
+	if _, err := decoder.Token(); err != nil {
+		return "", false
+	}
+
+	var out strings.Builder
+	out.WriteByte('[')
+	for i, pair := range pairs {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		nameJSON, err := json.Marshal(pair.name)
+		if err != nil {
+			return "", false
+		}
+		out.WriteByte('{')
+		out.Write(nameJSON)
+		out.WriteByte(':')
+		out.WriteString(strconv.FormatFloat(pair.value, 'f', -1, 64))
+		out.WriteByte('}')
+	}
+	out.WriteByte(']')
+	return out.String(), true
+}
+
+// normalizeTagFeasValue folds the array form back into the map every reader of
+// tag_feas expects. Rows written before #22454 hold the object form and are
+// returned unchanged.
+func normalizeTagFeasValue(decoded interface{}) interface{} {
+	entries, ok := decoded.([]interface{})
+	if !ok {
+		return decoded
+	}
+	out := make(map[string]interface{}, len(entries))
+	for _, entry := range entries {
+		pair, ok := entry.(map[string]interface{})
+		if !ok || len(pair) != 1 {
+			return decoded
+		}
+		for name, weight := range pair {
+			out[name] = weight
+		}
+	}
+	return out
+}
+
 // transformChunkFields converts chunk field names to Infinity format.
 // Converts internal field names (like docnm_kwd) to Infinity column names (docnm).
 // Also handles:
@@ -3936,8 +4032,16 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			if fieldJSON(k) {
 				d[k] = encodeJSONField(k, v)
 			} else if fieldVarcharJSON(k) {
-				jsonBytes, _ := json.Marshal(v)
-				d[k] = string(jsonBytes)
+				encoded, encodedOK := "", false
+				if k == common.TAG_FLD {
+					encoded, encodedOK = encodeTagFeasColumn(v)
+				}
+				if encodedOK {
+					d[k] = encoded
+				} else {
+					jsonBytes, _ := json.Marshal(v)
+					d[k] = string(jsonBytes)
+				}
 			} else if fieldKeyword(k) {
 				// keyword fields with list values -> ### joined; accept the
 				// Go-native []string as well as []interface{}.

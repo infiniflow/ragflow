@@ -1143,3 +1143,87 @@ func TestSortChunksByFieldsRanksUnsetKeyFirst(t *testing.T) {
 		t.Errorf("sort(unset-first input) = %v, want %v", got, want)
 	}
 }
+
+// orderedTagWeights emits its pairs in a fixed order, like the
+// component.OrderedTagWeights the ingestion path hands to the engine.
+type orderedTagWeights struct{}
+
+func (orderedTagWeights) MarshalJSON() ([]byte, error) {
+	return []byte(`{"travel":8,"finance":4}`), nil
+}
+
+// TestTransformChunkFieldsWritesTagFeaturesAsSingleKeyObjects pins the shape
+// Infinity's rankfeatures analyzer can invert: a root object is rejected with
+// INCORRECT_TYPE, an array of single-key objects is not (#22454).
+func TestTransformChunkFieldsWritesTagFeaturesAsSingleKeyObjects(t *testing.T) {
+	row := transformChunkFields(map[string]interface{}{"tag_feas": orderedTagWeights{}}, nil)
+
+	text, ok := row["tag_feas"].(string)
+	if !ok {
+		t.Fatalf("write path should store tag_feas as JSON text, got %#v", row["tag_feas"])
+	}
+	var pairs []map[string]float64
+	if err := json.Unmarshal([]byte(text), &pairs); err != nil {
+		t.Fatalf("tag_feas = %q, want a JSON array of objects: %v", text, err)
+	}
+	want := []map[string]float64{{"travel": 8}, {"finance": 4}}
+	if !reflect.DeepEqual(pairs, want) {
+		t.Errorf("tag_feas pairs = %#v, want %#v (order preserved from the marshaled object)", pairs, want)
+	}
+}
+
+// TestTransformChunkFieldsKeepsNonNumericTagFeaturesAsTheyWere guards the
+// fallback: a payload the array form cannot express keeps the legacy object
+// encoding instead of being coerced to numbers. JSON null is the case a plain
+// float64 decode misses — encoding/json leaves the destination at zero and
+// reports no error, so {"finance":null} came out as [{"finance":0}].
+func TestTransformChunkFieldsKeepsNonNumericTagFeaturesAsTheyWere(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload map[string]interface{}
+		want    string
+	}{
+		{"null weight", map[string]interface{}{"finance": nil}, `{"finance":null}`},
+		{"string weight", map[string]interface{}{"finance": "high"}, `{"finance":"high"}`},
+	}
+	for _, tc := range cases {
+		row := transformChunkFields(map[string]interface{}{"tag_feas": tc.payload}, nil)
+		text, ok := row["tag_feas"].(string)
+		if !ok {
+			t.Fatalf("%s: tag_feas stored as %T, want JSON text", tc.name, row["tag_feas"])
+		}
+		if text != tc.want {
+			t.Errorf("%s: tag_feas = %q, want the legacy encoding %q", tc.name, text, tc.want)
+		}
+	}
+}
+
+// TestDecodeVarcharJSONFieldsAcceptsArrayTagFeatures covers rows already written
+// in the array form: readers must still see the map.
+func TestDecodeVarcharJSONFieldsAcceptsArrayTagFeatures(t *testing.T) {
+	row := map[string]interface{}{"tag_feas": `[{"物流查询":7},{"售后服务":8}]`}
+
+	decodeVarcharJSONFields(row)
+
+	got, ok := row["tag_feas"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decodeVarcharJSONFields left tag_feas as %T, want map", row["tag_feas"])
+	}
+	want := map[string]interface{}{"物流查询": float64(7), "售后服务": float64(8)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tag_feas = %#v, want %#v", got, want)
+	}
+}
+
+// TestDecodeVarcharJSONFieldsKeepsTheLegacyObjectForm guards the rows written
+// before the column changed shape.
+func TestDecodeVarcharJSONFieldsKeepsTheLegacyObjectForm(t *testing.T) {
+	row := map[string]interface{}{"tag_feas": `{"物流查询":7}`}
+
+	decodeVarcharJSONFields(row)
+
+	want := map[string]interface{}{"物流查询": float64(7)}
+	if !reflect.DeepEqual(row["tag_feas"], want) {
+		t.Errorf("legacy tag_feas = %#v, want %#v", row["tag_feas"], want)
+	}
+}
