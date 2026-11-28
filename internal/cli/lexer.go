@@ -100,12 +100,8 @@ func (l *Lexer) NextToken() Token {
 	case ']':
 		tok = newToken(TokenRBracket, l.ch)
 		l.readChar()
-	case '\'':
-		tok.Type = TokenQuotedString
-		tok.Value = l.readQuotedString('\'')
-	case '"':
-		tok.Type = TokenQuotedString
-		tok.Value = l.readQuotedString('"')
+	case '\'', '"':
+		return l.readQuotedString(l.ch)
 	case '\\':
 		// Meta command: backslash followed by command name
 		tok.Type = TokenIdentifier
@@ -171,17 +167,18 @@ func (l *Lexer) readNumber() (string, int) {
 	return l.input[start:l.pos], tokenType
 }
 
-func (l *Lexer) readQuotedString(quote byte) string {
+func (l *Lexer) readQuotedString(quote byte) Token {
 	l.readChar() // skip opening quote
 	start := l.pos
 	for l.ch != quote && l.ch != 0 {
 		l.readChar()
 	}
-	str := l.input[start:l.pos]
-	if l.ch == quote {
-		l.readChar() // skip closing quote
+	if l.ch != quote {
+		return Token{Type: TokenIllegal, Value: "unterminated quoted string"}
 	}
-	return str
+	value := l.input[start:l.pos]
+	l.readChar() // skip closing quote
+	return Token{Type: TokenQuotedString, Value: value}
 }
 
 func (l *Lexer) lookupIdent(ident string) Token {
