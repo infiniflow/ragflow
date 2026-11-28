@@ -39,6 +39,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	_ "ragflow/internal/ingestion/wire"
+	rflowotel "ragflow/internal/observability/otel"
 	"ragflow/internal/server"
 	"ragflow/internal/server/admin"
 	apipkg "ragflow/internal/server/api"
@@ -302,6 +303,21 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if err := server.Init(configPath); err != nil {
 		return fmt.Errorf("initialize configuration: %w", err)
 	}
+
+	// Initialize OpenTelemetry tracing. When otel.enable is false this is a
+	// cheap no-op; the global provider stays at the OTel default (no-op) and
+	// no exporter connection is established.
+	otelShutdown, err := rflowotel.Init(server.GetConfig().GetOpenTelemetryConfig())
+	if err != nil {
+		return fmt.Errorf("initialize OpenTelemetry: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if shutdownErr := otelShutdown(shutdownCtx); shutdownErr != nil {
+			common.Error("Failed to flush OpenTelemetry spans", shutdownErr)
+		}
+	}()
 
 	// Set log level according to config file
 	globalConfig := server.GetConfig()
