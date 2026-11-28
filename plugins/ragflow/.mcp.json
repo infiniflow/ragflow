@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ragflow": {
+      "type": "http",
+      "url": "http://127.0.0.1:9380/api/v1/mcp",
+      "bearer_token_env_var": "RAGFLOW_API_KEY",
+      "headers": {
+        "Authorization": "Bearer ${RAGFLOW_API_KEY}"
+      }
+    }
+  }
+}

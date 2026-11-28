@@ -302,6 +302,13 @@ For document-engine changes, configuration updates, restarting services, and ret
 
 See [Launch Service from Source](./docs/develop/launch_ragflow_from_source.md) for details.
 
+## 🧩 Agent Skills
+
+An agent-agnostic plugin marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) registers
+[`plugins/ragflow`](plugins/ragflow), with [agent skills](https://agentskills.io/) for deploying RAGFlow, using its MCP
+retrieval tools and scripting it with the Python SDK. The plugin's `.mcp.json` connects to `http://127.0.0.1:9380/api/v1/mcp`
+with the API key in `RAGFLOW_API_KEY`.
+
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)

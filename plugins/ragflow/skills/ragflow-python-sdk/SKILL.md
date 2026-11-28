@@ -1,0 +1,120 @@
+---
+name: ragflow-python-sdk
+description: >-
+  Script RAGFlow with the ragflow-sdk Python package: create datasets,
+  upload and parse documents, retrieve chunks, create chat assistants and
+  sessions and ask questions, plus the OpenAI-compatible chat endpoint. Use
+  when building or automating a RAG pipeline on a RAGFlow server from code.
+---
+
+# RAGFlow Python SDK
+
+References: `docs/references/python_api_reference.md`,
+`docs/references/http_api_reference.md`, `sdk/python/ragflow_sdk/`.
+
+```bash
+python3.13 -m pip install "ragflow-sdk>=1.0.0,<2" openai
+```
+
+The repository SDK is version 1.0.0 and requires Python 3.13.
+
+```python
+import os
+from ragflow_sdk import RAGFlow
+
+rag = RAGFlow(api_key=os.environ["RAGFLOW_API_KEY"], base_url="http://localhost:9380")
+```
+
+## Ingest
+
+```python
+dataset = rag.create_dataset(name="handbook")          # parser_id="table" etc. for other chunk methods
+with open("policy.pdf", "rb") as f:
+    docs = dataset.upload_documents([{"display_name": "policy.pdf", "blob": f.read()}])
+
+ids = [d.id for d in docs]
+for doc_id, status, chunks, tokens in dataset.parse_documents(ids):   # blocks until done
+    print(doc_id, status, chunks, tokens)
+    if status != "DONE":
+        raise RuntimeError(f"parse failed for {doc_id}: {status}")
+```
+
+`parse_documents` yields `DONE`, `FAIL`, or `CANCEL` as status rather than
+raising on failure; stop or report unless the status is `DONE`.
+Use `dataset.async_parse_documents(ids)` to start parsing without waiting.
+Uploading alone does not make documents searchable; they must be parsed.
+`avatar`/`description` are set afterwards with `dataset.update(...)`.
+
+## Retrieve
+
+```python
+chunks = rag.retrieve(
+    dataset_ids=[dataset.id],
+    question="How many vacation days do new hires get?",
+    page_size=10,
+    similarity_threshold=0.2,
+    vector_similarity_weight=0.3,
+)
+for c in chunks:
+    print(c.content)
+```
+
+All `document_ids` passed together must share an embedding model.
+
+## Chat
+
+```python
+assistant = rag.create_chat("Handbook bot", dataset_ids=[dataset.id])
+session = assistant.create_session()
+# ask() always yields Message objects; consume with next() when stream=False.
+answer = next(session.ask("How many vacation days do new hires get?", stream=False))
+print(answer.content)
+
+# Streaming yields intermediate content then a final full answer; take the last.
+parts = list(session.ask("And after five years?", stream=True))
+print(parts[-1].content)
+```
+
+## Agents
+
+Agent sessions use `rag.list_agents()` then `agent.create_session()`.
+An agent must already exist (create one in the RAGFlow UI first, or guard
+against an empty list); `list_agents()` returns `[]` when the account has
+none, and indexing `[0]` raises `IndexError`.
+`Session.ask()` yields `Message` objects without an event type, so filter on
+`content` instead. Streaming sends content deltas; join non-empty parts and
+ignore the empty final part (references may appear there). When the agent
+has thinking enabled, that join includes reasoning text before the final
+answer (the SDK drops `start_to_think`/`end_to_think` markers and does not
+expose a separate boundary):
+
+```python
+agent = rag.list_agents()[0]
+session = agent.create_session()
+parts = list(session.ask("Summarize the policy", stream=True))
+answer = "".join(part.content for part in parts if part.content)
+```
+
+## OpenAI-compatible endpoint
+
+```python
+import os
+from openai import OpenAI
+
+RAGFLOW_API_KEY = os.environ["RAGFLOW_API_KEY"]
+chat_id = assistant.id  # from create_chat above
+client = OpenAI(api_key=RAGFLOW_API_KEY, base_url=f"http://<host>/api/v1/openai/{chat_id}/chat")
+# OpenAI SDK merges extra_body into the top-level JSON; nest once so the
+# server sees {"extra_body": {"reference": true}}.
+client.chat.completions.create(
+    model="model",
+    messages=[{"role": "user", "content": "How many vacation days do new hires get?"}],
+    extra_body={"extra_body": {"reference": True}},
+)
+```
+
+## Errors
+
+SDK methods raise `Exception` with the server message on failure. A
+missing Chat/Embedding default model in the account is the most common
+cause of parse or chat failures.

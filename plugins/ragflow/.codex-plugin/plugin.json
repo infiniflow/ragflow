@@ -1,0 +1,44 @@
+{
+  "name": "ragflow",
+  "version": "1.0.0",
+  "description": "Agent skills for deploying RAGFlow, connecting agents to its MCP retrieval tools, and scripting datasets, parsing, retrieval and chat with the Python SDK.",
+  "author": {
+    "name": "InfiniFlow",
+    "url": "https://ragflow.io"
+  },
+  "homepage": "https://ragflow.io",
+  "repository": "https://github.com/infiniflow/ragflow",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ragflow",
+    "rag",
+    "retrieval",
+    "mcp",
+    "knowledge-base",
+    "llm",
+    "agent-skills"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "RAGFlow",
+    "shortDescription": "RAG engine: deploy, retrieve, chat",
+    "longDescription": "Skills and an MCP server config for RAGFlow, the open-source RAG engine. Covers deploying with Docker Compose (vm.max_map_count, release tags, health checks, model provider setup); connecting agents to RAGFlow's MCP endpoint and using ragflow_retrieval, ragflow_list_datasets and ragflow_list_chats with sensible retrieval parameters and authentication modes; and using the ragflow-sdk Python package to create datasets, upload and parse documents, retrieve chunks and run chat assistant sessions.",
+    "developerName": "InfiniFlow",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://ragflow.io",
+    "defaultPrompt": [
+      "Deploy RAGFlow locally with Docker Compose",
+      "Search my RAGFlow datasets for our refund policy",
+      "Write a script that uploads and parses these PDFs into RAGFlow"
+    ],
+    "brandColor": "#1070E0",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
+}

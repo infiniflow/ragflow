@@ -1,0 +1,23 @@
+{
+  "name": "ragflow",
+  "version": "1.0.0",
+  "description": "Agent skills for deploying RAGFlow, connecting agents to its MCP retrieval tools, and scripting datasets, parsing, retrieval and chat with the Python SDK.",
+  "author": {
+    "name": "InfiniFlow",
+    "url": "https://ragflow.io"
+  },
+  "homepage": "https://ragflow.io",
+  "repository": "https://github.com/infiniflow/ragflow",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ragflow",
+    "rag",
+    "retrieval",
+    "mcp",
+    "knowledge-base",
+    "llm",
+    "agent-skills"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
